@@ -15,6 +15,8 @@ const gatePassword = () => (process.env.SITE_GATE_PASSWORD || "").trim();
 function isSiteGateBypass(pathname: string): boolean {
   if (pathname.startsWith("/client/verify-email")) return true;
   if (pathname.startsWith("/api/client/email-verification/")) return true;
+  /** OTP SMS no registo — mesmo racional que o email (fetch pode não levar credenciais Basic em alguns clientes). */
+  if (pathname.startsWith("/api/client/phone-verification/")) return true;
   return false;
 }
 
