@@ -1,0 +1,12 @@
+import "@/styles/globals.css";
+import type { AppProps } from "next/app";
+import StructuralStageWatcher from "../components/StructuralStageWatcher";
+
+export default function App({ Component, pageProps }: AppProps) {
+  return (
+    <>
+      <Component {...pageProps} />
+      <StructuralStageWatcher />
+    </>
+  );
+}

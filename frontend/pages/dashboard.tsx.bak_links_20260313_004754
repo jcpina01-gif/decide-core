@@ -1,0 +1,865 @@
+import React, { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+
+const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
+
+type KPIBlockProps = {
+  title: string;
+  value: string;
+};
+
+type PositionRow = {
+  ticker: string;
+  short_name?: string;
+  name_short?: string;
+  name?: string;
+  weight?: number;
+  weight_pct?: number;
+  score?: number | null;
+  rank_momentum?: number;
+  region?: string;
+  sector?: string;
+};
+
+type CurrentPortfolio = {
+  profile?: string;
+  as_of?: string | null;
+  n_positions?: number;
+  max_weight?: number;
+  max_weight_pct?: number;
+  top5_weight?: number;
+  top5_weight_pct?: number;
+  gross_exposure?: number;
+  gross_exposure_pct?: number;
+  turnover?: number;
+  turnover_pct?: number;
+  hhi?: number;
+  positions?: PositionRow[];
+};
+
+type Meta = {
+  profile?: string;
+  top_q?: number;
+  data_start?: string;
+  data_end?: string;
+};
+
+type KPISet = {
+  cagr?: number;
+  vol?: number;
+  volatility?: number;
+  sharpe?: number;
+  max_drawdown?: number;
+  total_return?: number;
+  best_month?: number | null;
+  worst_month?: number | null;
+  positive_months?: number | null;
+  negative_months?: number | null;
+  months_above_benchmark?: number | null;
+};
+
+type Series = {
+  dates: string[];
+  benchmark_equity: number[];
+  equity_raw: number[];
+  equity_raw_volmatched: number[];
+  equity_overlayed: number[];
+};
+
+type DashboardPayload = {
+  meta?: Meta;
+  series?: Series;
+  kpis?: KPISet;
+  benchmark_kpis?: KPISet;
+  raw_kpis?: KPISet;
+  raw_volmatched_kpis?: KPISet;
+  overlay_pre_vol_kpis?: KPISet;
+  current_portfolio?: CurrentPortfolio;
+};
+
+type ActiveTab = "performance" | "carteira";
+
+function safeNumber(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function formatPct(value: unknown, decimals = 2): string {
+  const n = safeNumber(value, NaN);
+  if (!Number.isFinite(n)) return "—";
+  return `${(n * 100).toFixed(decimals)}%`;
+}
+
+function formatPctFromPercent(value: unknown, decimals = 2): string {
+  const n = safeNumber(value, NaN);
+  if (!Number.isFinite(n)) return "—";
+  return `${n.toFixed(decimals)}%`;
+}
+
+function formatNumber(value: unknown, decimals = 2): string {
+  const n = safeNumber(value, NaN);
+  if (!Number.isFinite(n)) return "—";
+  return n.toFixed(decimals);
+}
+
+function formatInteger(value: unknown): string {
+  const n = safeNumber(value, NaN);
+  if (!Number.isFinite(n)) return "—";
+  return Math.round(n).toString();
+}
+
+function computeDrawdown(equity: number[]): number[] {
+  if (!equity.length) return [];
+
+  let peak = equity[0];
+  const out: number[] = [];
+
+  for (let i = 0; i < equity.length; i += 1) {
+    const value = safeNumber(equity[i], 0);
+    if (value > peak) peak = value;
+    out.push(peak > 0 ? value / peak - 1 : 0);
+  }
+
+  return out;
+}
+
+function computeRollingSharpe(equity: number[], window = 252): Array<number | null> {
+  if (!equity.length) return [];
+
+  const returns: number[] = [];
+  for (let i = 1; i < equity.length; i += 1) {
+    const prev = safeNumber(equity[i - 1], 0);
+    const curr = safeNumber(equity[i], 0);
+    returns.push(prev > 0 ? curr / prev - 1 : 0);
+  }
+
+  const out: Array<number | null> = new Array(equity.length).fill(null);
+
+  for (let i = window; i < returns.length; i += 1) {
+    const slice = returns.slice(i - window, i);
+    if (!slice.length) continue;
+
+    const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
+    const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / slice.length;
+    const vol = Math.sqrt(variance);
+
+    out[i] = vol > 0 ? (mean / vol) * Math.sqrt(252) : null;
+  }
+
+  return out;
+}
+
+function KPIBlock({ title, value }: KPIBlockProps) {
+  return (
+    <div
+      style={{
+        background: "#020b24",
+        border: "1px solid #15305b",
+        borderRadius: 18,
+        padding: 18,
+        minHeight: 92,
+      }}
+    >
+      <div style={{ color: "#9fb3d1", fontSize: 14, marginBottom: 10 }}>{title}</div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: "#ffffff", lineHeight: 1.2 }}>{value}</div>
+    </div>
+  );
+}
+
+function KPISection({
+  title,
+  subtitle,
+  kpis,
+}: {
+  title: string;
+  subtitle: string;
+  kpis?: KPISet;
+}) {
+  return (
+    <div
+      style={{
+        background: "#020b24",
+        border: "1px solid #15305b",
+        borderRadius: 26,
+        padding: 26,
+      }}
+    >
+      <div style={{ fontSize: 26, fontWeight: 700, marginBottom: 8 }}>{title}</div>
+      <div style={{ color: "#9fb3d1", fontSize: 16, marginBottom: 26 }}>{subtitle}</div>
+
+      <div
+        style={{
+          border: "1px solid #15305b",
+          borderRadius: 20,
+          overflow: "hidden",
+        }}
+      >
+        {[
+          ["CAGR", formatPct(kpis?.cagr)],
+          ["Volatilidade", formatPct(kpis?.vol ?? kpis?.volatility)],
+          ["Sharpe", formatNumber(kpis?.sharpe)],
+          ["Max Drawdown", formatPct(kpis?.max_drawdown)],
+          ["Total Return", formatPct(kpis?.total_return)],
+        ].map(([label, value], idx, arr) => (
+          <div
+            key={label}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 20,
+              padding: "22px 24px",
+              borderBottom: idx < arr.length - 1 ? "1px solid #10284f" : "none",
+            }}
+          >
+            <div style={{ fontSize: 18 }}>{label}</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background: active ? "#3b82f6" : "#020b24",
+        color: "#ffffff",
+        border: active ? "none" : "1px solid #15305b",
+        borderRadius: 18,
+        padding: "18px 28px",
+        fontSize: 18,
+        fontWeight: 700,
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+export default function DashboardPage() {
+  const [profile, setProfile] = useState("moderado");
+  const [payload, setPayload] = useState<DashboardPayload | null>(null);
+  const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("performance");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        setError("");
+        const res = await fetch(`/api/proxy/run-model?profile=${encodeURIComponent(profile)}`);
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        const json = (await res.json()) as DashboardPayload;
+        if (!cancelled) {
+          setPayload(json);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Erro ao carregar dashboard");
+        }
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [profile]);
+
+  const series = payload?.series ?? {
+    dates: [],
+    benchmark_equity: [],
+    equity_raw: [],
+    equity_raw_volmatched: [],
+    equity_overlayed: [],
+  };
+
+  const currentPortfolio = payload?.current_portfolio ?? {};
+  const positions = (currentPortfolio.positions ?? []).map((row) => ({
+    ...row,
+    short_name: row.short_name || row.name_short || row.ticker || "—",
+    name_short: row.name_short || row.short_name || row.ticker || "—",
+    name: row.name || row.short_name || row.name_short || row.ticker || "—",
+    region: row.region || "—",
+    sector: row.sector || "—",
+  }));
+
+  const drawdown = useMemo(() => {
+    return {
+      benchmark: computeDrawdown(series.benchmark_equity ?? []),
+      raw: computeDrawdown(series.equity_raw ?? []),
+      rawVm: computeDrawdown(series.equity_raw_volmatched ?? []),
+      overlayed: computeDrawdown(series.equity_overlayed ?? []),
+    };
+  }, [series]);
+
+  const rollingSharpe = useMemo(() => {
+    return {
+      benchmark: computeRollingSharpe(series.benchmark_equity ?? []),
+      raw: computeRollingSharpe(series.equity_raw ?? []),
+      rawVm: computeRollingSharpe(series.equity_raw_volmatched ?? []),
+      overlayed: computeRollingSharpe(series.equity_overlayed ?? []),
+    };
+  }, [series]);
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#000000",
+        color: "#ffffff",
+        padding: 32,
+        fontFamily: "Inter, Arial, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 24,
+          marginBottom: 34,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 40, fontWeight: 800, marginBottom: 8 }}>DECIDE Dashboard</div>
+          <div style={{ fontSize: 18, color: "#d7e3f7" }}>
+            Benchmark / Raw / Raw Vol Matched / Overlayed
+          </div>
+        </div>
+
+        <div
+          style={{
+            background: "#020b24",
+            border: "1px solid #15305b",
+            borderRadius: 24,
+            padding: 18,
+            minWidth: 250,
+          }}
+        >
+          <div style={{ color: "#9fb3d1", fontSize: 16, marginBottom: 10 }}>Perfil</div>
+          <select
+            value={profile}
+            onChange={(e) => setProfile(e.target.value)}
+            style={{
+              width: "100%",
+              background: "#020816",
+              color: "#ffffff",
+              border: "1px solid #15305b",
+              borderRadius: 18,
+              padding: "16px 18px",
+              fontSize: 18,
+              outline: "none",
+            }}
+          >
+            <option value="moderado">Moderado</option>
+            <option value="conservador">Conservador</option>
+            <option value="dinamico">Dinâmico</option>
+          </select>
+        </div>
+      </div>
+
+      {error ? (
+        <div
+          style={{
+            marginBottom: 24,
+            padding: 18,
+            borderRadius: 16,
+            border: "1px solid #7f1d1d",
+            background: "#2a0a0a",
+            color: "#fecaca",
+            fontSize: 16,
+          }}
+        >
+          Erro a carregar dashboard: {error}
+        </div>
+      ) : null}
+
+      <div style={{ display: "flex", gap: 14, marginBottom: 34 }}>
+        <TabButton active={activeTab === "performance"} label="Performance" onClick={() => setActiveTab("performance")} />
+        <TabButton active={activeTab === "carteira"} label="Carteira" onClick={() => setActiveTab("carteira")} />
+      </div>
+
+      {activeTab === "performance" && (
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 24,
+              marginBottom: 34,
+            }}
+          >
+            <KPISection
+              title="Modelo"
+              subtitle="Estratégia final overlayed"
+              kpis={payload?.kpis}
+            />
+            <KPISection
+              title="Benchmark"
+              subtitle="Cesta de benchmark do motor"
+              kpis={payload?.benchmark_kpis}
+            />
+          </div>
+
+          <div
+            style={{
+              background: "#020b24",
+              border: "1px solid #15305b",
+              borderRadius: 28,
+              padding: 28,
+              marginBottom: 34,
+            }}
+          >
+            <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 10 }}>Curvas de Equity</div>
+            <div style={{ fontSize: 16, color: "#9fb3d1", marginBottom: 20 }}>Escala logarítmica</div>
+
+            <div
+              style={{
+                border: "1px solid #e6e6e6",
+                borderRadius: 14,
+                padding: 10,
+                background: "#01081c",
+              }}
+            >
+              <Plot
+                data={[
+                  {
+                    x: series.dates,
+                    y: series.benchmark_equity,
+                    type: "scatter",
+                    mode: "lines",
+                    name: "Benchmark",
+                    line: { color: "#94a3b8", width: 2 },
+                  },
+                  {
+                    x: series.dates,
+                    y: series.equity_overlayed,
+                    type: "scatter",
+                    mode: "lines",
+                    name: "Overlayed",
+                    line: { color: "#22c55e", width: 3 },
+                  },
+                  {
+                    x: series.dates,
+                    y: series.equity_raw,
+                    type: "scatter",
+                    mode: "lines",
+                    name: "Raw",
+                    line: { color: "#f59e0b", width: 3 },
+                  },
+                  {
+                    x: series.dates,
+                    y: series.equity_raw_volmatched,
+                    type: "scatter",
+                    mode: "lines",
+                    name: "Raw Vol Matched",
+                    line: { color: "#38bdf8", width: 3 },
+                  },
+                ]}
+                layout={{
+                  autosize: true,
+                  height: 650,
+                  paper_bgcolor: "#01081c",
+                  plot_bgcolor: "#01081c",
+                  font: { color: "#dbeafe", size: 16 },
+                  margin: { l: 70, r: 30, t: 20, b: 70 },
+                  xaxis: {
+                    gridcolor: "#16315d",
+                    zerolinecolor: "#16315d",
+                  },
+                  yaxis: {
+                    type: "log",
+                    gridcolor: "#16315d",
+                    zerolinecolor: "#16315d",
+                  },
+                  legend: {
+                    orientation: "h",
+                    x: 0.5,
+                    xanchor: "center",
+                    y: -0.12,
+                  },
+                }}
+                config={{ responsive: true, displaylogo: false }}
+                style={{ width: "100%" }}
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: "#020b24",
+              border: "1px solid #15305b",
+              borderRadius: 28,
+              padding: 28,
+              marginBottom: 34,
+            }}
+          >
+            <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 10 }}>Curvas de Drawdown</div>
+            <div style={{ fontSize: 16, color: "#9fb3d1", marginBottom: 20 }}>
+              Drawdown histórico por estratégia
+            </div>
+
+            <div
+              style={{
+                border: "1px solid #e6e6e6",
+                borderRadius: 14,
+                padding: 10,
+                background: "#01081c",
+              }}
+            >
+              <Plot
+                data={[
+                  {
+                    x: series.dates,
+                    y: drawdown.benchmark,
+                    type: "scatter",
+                    mode: "lines",
+                    name: "Benchmark",
+                    line: { color: "#94a3b8", width: 2 },
+                  },
+                  {
+                    x: series.dates,
+                    y: drawdown.overlayed,
+                    type: "scatter",
+                    mode: "lines",
+                    name: "Overlayed",
+                    line: { color: "#22c55e", width: 3 },
+                  },
+                  {
+                    x: series.dates,
+                    y: drawdown.raw,
+                    type: "scatter",
+                    mode: "lines",
+                    name: "Raw",
+                    line: { color: "#f59e0b", width: 3 },
+                  },
+                  {
+                    x: series.dates,
+                    y: drawdown.rawVm,
+                    type: "scatter",
+                    mode: "lines",
+                    name: "Raw Vol Matched",
+                    line: { color: "#38bdf8", width: 3 },
+                  },
+                ]}
+                layout={{
+                  autosize: true,
+                  height: 420,
+                  paper_bgcolor: "#01081c",
+                  plot_bgcolor: "#01081c",
+                  font: { color: "#dbeafe", size: 16 },
+                  margin: { l: 70, r: 30, t: 20, b: 70 },
+                  xaxis: {
+                    gridcolor: "#16315d",
+                    zerolinecolor: "#16315d",
+                  },
+                  yaxis: {
+                    tickformat: ".0%",
+                    gridcolor: "#16315d",
+                    zerolinecolor: "#16315d",
+                  },
+                  legend: {
+                    orientation: "h",
+                    x: 0.5,
+                    xanchor: "center",
+                    y: -0.18,
+                  },
+                }}
+                config={{ responsive: true, displaylogo: false }}
+                style={{ width: "100%" }}
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: "#020b24",
+              border: "1px solid #15305b",
+              borderRadius: 28,
+              padding: 28,
+              marginBottom: 34,
+            }}
+          >
+            <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 10 }}>
+              Rolling Sharpe (252 dias)
+            </div>
+            <div style={{ fontSize: 16, color: "#9fb3d1", marginBottom: 20 }}>
+              Sharpe anualizado em janela móvel de 12 meses
+            </div>
+
+            <div
+              style={{
+                border: "1px solid #e6e6e6",
+                borderRadius: 14,
+                padding: 10,
+                background: "#01081c",
+              }}
+            >
+              <Plot
+                data={[
+                  {
+                    x: series.dates,
+                    y: rollingSharpe.benchmark,
+                    type: "scatter",
+                    mode: "lines",
+                    name: "Benchmark",
+                    line: { color: "#94a3b8", width: 2 },
+                  },
+                  {
+                    x: series.dates,
+                    y: rollingSharpe.overlayed,
+                    type: "scatter",
+                    mode: "lines",
+                    name: "Overlayed",
+                    line: { color: "#22c55e", width: 3 },
+                  },
+                  {
+                    x: series.dates,
+                    y: rollingSharpe.raw,
+                    type: "scatter",
+                    mode: "lines",
+                    name: "Raw",
+                    line: { color: "#f59e0b", width: 3 },
+                  },
+                  {
+                    x: series.dates,
+                    y: rollingSharpe.rawVm,
+                    type: "scatter",
+                    mode: "lines",
+                    name: "Raw Vol Matched",
+                    line: { color: "#38bdf8", width: 3 },
+                  },
+                ]}
+                layout={{
+                  autosize: true,
+                  height: 420,
+                  paper_bgcolor: "#01081c",
+                  plot_bgcolor: "#01081c",
+                  font: { color: "#dbeafe", size: 16 },
+                  margin: { l: 70, r: 30, t: 20, b: 70 },
+                  xaxis: {
+                    gridcolor: "#16315d",
+                    zerolinecolor: "#16315d",
+                  },
+                  yaxis: {
+                    gridcolor: "#16315d",
+                    zerolinecolor: "#48556f",
+                  },
+                  shapes: [
+                    {
+                      type: "line",
+                      xref: "paper",
+                      x0: 0,
+                      x1: 1,
+                      y0: 0,
+                      y1: 0,
+                      line: {
+                        color: "#64748b",
+                        width: 1,
+                        dash: "dot",
+                      },
+                    },
+                  ],
+                  legend: {
+                    orientation: "h",
+                    x: 0.5,
+                    xanchor: "center",
+                    y: -0.18,
+                  },
+                }}
+                config={{ responsive: true, displaylogo: false }}
+                style={{ width: "100%" }}
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 24,
+              marginBottom: 34,
+            }}
+          >
+            <KPISection title="Raw" subtitle="Estratégia base sem overlay" kpis={payload?.raw_kpis} />
+            <KPISection
+              title="Raw Vol Matched"
+              subtitle="Raw com matching de volatilidade"
+              kpis={payload?.raw_volmatched_kpis}
+            />
+            <KPISection
+              title="Overlay Pre Vol"
+              subtitle="Overlay antes do vol targeting final"
+              kpis={payload?.overlay_pre_vol_kpis}
+            />
+          </div>
+
+          <div
+            style={{
+              background: "#020b24",
+              border: "1px solid #15305b",
+              borderRadius: 28,
+              padding: 28,
+              marginBottom: 34,
+            }}
+          >
+            <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 20 }}>Estatísticas Mensais</div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(5, 1fr)",
+                gap: 18,
+              }}
+            >
+              <KPIBlock title="Melhor mês" value={formatPct(payload?.kpis?.best_month)} />
+              <KPIBlock title="Pior mês" value={formatPct(payload?.kpis?.worst_month)} />
+              <KPIBlock title="Meses positivos" value={formatInteger(payload?.kpis?.positive_months)} />
+              <KPIBlock title="Meses negativos" value={formatInteger(payload?.kpis?.negative_months)} />
+              <KPIBlock
+                title="Meses acima benchmark"
+                value={formatInteger(payload?.kpis?.months_above_benchmark)}
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: "#020b24",
+              border: "1px solid #15305b",
+              borderRadius: 28,
+              padding: 28,
+              marginBottom: 34,
+            }}
+          >
+            <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 20 }}>Metadados</div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: 18,
+              }}
+            >
+              <KPIBlock title="Profile" value={payload?.meta?.profile || "—"} />
+              <KPIBlock title="Top Q" value={formatInteger(payload?.meta?.top_q)} />
+              <KPIBlock title="Data início" value={payload?.meta?.data_start || "—"} />
+              <KPIBlock title="Data fim" value={payload?.meta?.data_end || "—"} />
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === "carteira" && (
+        <div
+          style={{
+            background: "#020b24",
+            border: "1px solid #15305b",
+            borderRadius: 28,
+            padding: 28,
+            marginBottom: 34,
+          }}
+        >
+          <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 20 }}>Carteira Atual</div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, 1fr)",
+              gap: 18,
+              marginBottom: 24,
+            }}
+          >
+            <KPIBlock title="Data" value={currentPortfolio.as_of || "—"} />
+            <KPIBlock title="Nº posições" value={formatInteger(currentPortfolio.n_positions)} />
+            <KPIBlock
+              title="Peso máximo"
+              value={formatPctFromPercent(currentPortfolio.max_weight_pct)}
+            />
+            <KPIBlock
+              title="Top 5 peso"
+              value={formatPctFromPercent(currentPortfolio.top5_weight_pct)}
+            />
+            <KPIBlock title="Concentração HHI" value={formatNumber(currentPortfolio.hhi, 4)} />
+            <KPIBlock
+              title="Exposição bruta"
+              value={formatPctFromPercent(currentPortfolio.gross_exposure_pct)}
+            />
+            <KPIBlock
+              title="Turnover"
+              value={formatPctFromPercent(currentPortfolio.turnover_pct)}
+            />
+          </div>
+
+          <div
+            style={{
+              border: "1px solid #15305b",
+              borderRadius: 22,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1.4fr 1.4fr 0.9fr 0.8fr 1fr 1fr 1fr",
+                gap: 16,
+                padding: "22px 20px",
+                fontSize: 18,
+                fontWeight: 700,
+                borderBottom: "1px solid #15305b",
+              }}
+            >
+              <div>Ticker</div>
+              <div>Nome curto</div>
+              <div>Nome</div>
+              <div>Peso</div>
+              <div>Score</div>
+              <div>Rank Momentum</div>
+              <div>Região</div>
+              <div>Sector</div>
+            </div>
+
+            {positions.map((row, idx) => (
+              <div
+                key={`${row.ticker}-${idx}`}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1.4fr 1.4fr 0.9fr 0.8fr 1fr 1fr 1fr",
+                  gap: 16,
+                  padding: "20px 20px",
+                  fontSize: 18,
+                  borderBottom: "1px solid #10284f",
+                }}
+              >
+                <div style={{ fontWeight: 700 }}>{row.ticker || "—"}</div>
+                <div>{row.short_name}</div>
+                <div>{row.name}</div>
+                <div>{formatPctFromPercent(row.weight_pct)}</div>
+                <div>{row.score == null ? "—" : formatNumber(row.score, 4)}</div>
+                <div>{formatInteger(row.rank_momentum)}</div>
+                <div>{row.region}</div>
+                <div>{row.sector}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

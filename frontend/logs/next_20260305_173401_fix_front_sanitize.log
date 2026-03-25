@@ -1,0 +1,26 @@
+
+> decide-frontend@1.0.0 dev
+> next dev
+
+ ⚠ Invalid next.config.js options detected: 
+ ⚠     Unrecognized key(s) in object: 'enabled' at "turbopack"
+ ⚠ See more info here: https://nextjs.org/docs/messages/invalid-next-config
+   ▲ Next.js 16.0.0 (Turbopack)
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.1.3:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+ ✓ Ready in 456ms
+ GET /api/performance/core_overlayed?profile=moderado&benchmark=SPY&top_q=20&lookback_days=120&voltarget_window=60 200 in 83ms (compile: 23ms, render: 60ms)
+ POST /api/performance/core_overlayed 200 in 26ms (compile: 1107µs, render: 24ms)
+ ⚠ Cross origin request detected from 127.0.0.1 to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+ GET /performance/core_overlayed 200 in 1947ms (compile: 1922ms, render: 25ms)
+ GET /performance/core_overlayed 200 in 25ms (compile: 5ms, render: 20ms)
+ GET /api/performance/core_overlayed?profile=moderado&top_q=20&benchmark=SPY 200 in 33ms (compile: 1727µs, render: 31ms)
+ GET /api/performance/core_overlayed?profile=moderado&top_q=20&benchmark=SPY 200 in 26ms (compile: 1105µs, render: 25ms)
+ GET /performance/core_overlayed 200 in 8ms (compile: 3ms, render: 5ms)
+ GET /api/performance/core_overlayed?profile=moderado&top_q=20&benchmark=SPY 200 in 36ms (compile: 1180µs, render: 35ms)
+ GET /api/performance/core_overlayed?profile=moderado&top_q=20&benchmark=SPY 200 in 30ms (compile: 1113µs, render: 29ms)

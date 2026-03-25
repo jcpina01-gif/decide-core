@@ -1,0 +1,1354 @@
+import React, { useEffect, useMemo, useState } from "react";
+
+type OverviewResponse = {
+  dataset?: string;
+  period?: string;
+  cagr: number | null;
+  vol: number | null;
+  sharpe: number | null;
+  maxdd: number | null;
+  meta?: {
+    strategy?: string;
+    freeze?: string;
+    benchmark_name?: string;
+    start_date?: string;
+    end_date?: string;
+    points?: number;
+    source_file?: string;
+    source_kind?: string;
+    years_covered?: number;
+  };
+  series_meta?: {
+    raw_available?: boolean;
+    overlayed_available?: boolean;
+    equity_available?: boolean;
+    overlayed_equals_equity?: boolean;
+    raw_equals_overlayed?: boolean;
+    raw_equals_equity?: boolean;
+    recommended_model_key?: string;
+    notes?: string[];
+  };
+};
+
+type EquityPoint = {
+  date: string;
+  benchmark: number | null;
+  raw: number | null;
+  overlayed: number | null;
+};
+
+type AlphaPoint = {
+  date: string;
+  alpha: number | null;
+};
+
+type RollingSharpePoint = {
+  date: string;
+  rolling_sharpe: number | null;
+};
+
+type KpiBlock = {
+  total_return_pct: number | null;
+  annualized_return_pct: number | null;
+  volatility_pct: number | null;
+  max_drawdown_pct: number | null;
+  sharpe: number | null;
+  last_equity: number | null;
+};
+
+type MonthPoint = {
+  month: string | null;
+  return_pct: number | null;
+};
+
+type MonthlyStats = {
+  months_compared: number;
+  model: {
+    positive_months: number;
+    negative_months: number;
+    flat_months: number;
+    best_month: MonthPoint;
+    worst_month: MonthPoint;
+    average_month_pct: number | null;
+    median_month_pct: number | null;
+  };
+  benchmark: {
+    positive_months: number;
+    negative_months: number;
+    flat_months: number;
+    best_month: MonthPoint;
+    worst_month: MonthPoint;
+    average_month_pct: number | null;
+    median_month_pct: number | null;
+  };
+  relative: {
+    months_above_benchmark: number;
+    months_below_benchmark: number;
+    months_equal_benchmark: number;
+    best_alpha_month: MonthPoint;
+    worst_alpha_month: MonthPoint;
+    average_alpha_month_pct: number | null;
+    median_alpha_month_pct: number | null;
+  };
+};
+
+type KpisResponse = {
+  dataset?: string;
+  period?: string;
+  model: KpiBlock;
+  model_raw: KpiBlock;
+  benchmark: KpiBlock;
+  monthly_stats?: MonthlyStats;
+  meta?: {
+    strategy?: string;
+    freeze?: string;
+    benchmark_name?: string;
+    start_date?: string;
+    end_date?: string;
+    points?: number;
+    source_file?: string;
+    source_kind?: string;
+    years_covered?: number;
+  };
+  series_meta?: {
+    raw_available?: boolean;
+    overlayed_available?: boolean;
+    equity_available?: boolean;
+    overlayed_equals_equity?: boolean;
+    raw_equals_overlayed?: boolean;
+    raw_equals_equity?: boolean;
+    recommended_model_key?: string;
+    notes?: string[];
+  };
+};
+
+type PortfolioPosition = {
+  ticker: string;
+  short_name: string;
+  weight: number | null;
+  country: string;
+};
+
+type PortfolioResponse = {
+  date: string | null;
+  positions: PortfolioPosition[];
+  source_file: string | null;
+  status: string;
+  count?: number;
+  raw_count?: number;
+};
+
+type TooltipRow = {
+  label: string;
+  value: string;
+  color: string;
+};
+
+const API_BASE = "http://127.0.0.1:8000";
+const DATASET = "backtest20y";
+const PERIOD = "MAX";
+
+function pct(x: number | null | undefined, digits = 2): string {
+  if (x === null || x === undefined || Number.isNaN(x)) return "—";
+  return `${x.toFixed(digits)}%`;
+}
+
+function pctFromRatio(x: number | null | undefined, digits = 2): string {
+  if (x === null || x === undefined || Number.isNaN(x)) return "—";
+  return `${(x * 100).toFixed(digits)}%`;
+}
+
+function num(x: number | null | undefined, digits = 2): string {
+  if (x === null || x === undefined || Number.isNaN(x)) return "—";
+  return x.toFixed(digits);
+}
+
+function compactNum(x: number | null | undefined): string {
+  if (x === null || x === undefined || Number.isNaN(x)) return "—";
+  if (Math.abs(x) >= 1000) return x.toFixed(0);
+  if (Math.abs(x) >= 100) return x.toFixed(0);
+  if (Math.abs(x) >= 10) return x.toFixed(1);
+  return x.toFixed(2);
+}
+
+function getSharedRange(seriesList: Array<Array<number | null>>, useLog = false): { min: number; max: number } {
+  const allValues = seriesList.flat().filter((v): v is number => v !== null && Number.isFinite(v));
+
+  if (!allValues.length) {
+    return { min: 0, max: 1 };
+  }
+
+  let working = allValues;
+
+  if (useLog) {
+    working = allValues
+      .map((v) => (v > 0 ? Math.log(v) : null))
+      .filter((v): v is number => v !== null && Number.isFinite(v));
+    if (!working.length) {
+      return { min: 0, max: 1 };
+    }
+  }
+
+  let min = Math.min(...working);
+  let max = Math.max(...working);
+
+  if (min === max) {
+    min = min - 1;
+    max = max + 1;
+  }
+
+  return { min, max };
+}
+
+function buildLinePathWithRange(
+  values: Array<number | null>,
+  width: number,
+  height: number,
+  min: number,
+  max: number,
+  padLeft = 54,
+  padRight = 12,
+  padTop = 12,
+  padBottom = 28,
+  useLog = false
+): string {
+  const clean = values.map((v) => {
+    if (!Number.isFinite(v as number)) return null;
+    const n = v as number;
+    if (useLog) {
+      if (n <= 0) return null;
+      return Math.log(n);
+    }
+    return n;
+  });
+
+  const range = max - min || 1;
+  const innerW = width - padLeft - padRight;
+  const innerH = height - padTop - padBottom;
+
+  let path = "";
+  let started = false;
+
+  clean.forEach((v, i) => {
+    const x = padLeft + (i / Math.max(clean.length - 1, 1)) * innerW;
+
+    if (v === null) {
+      started = false;
+      return;
+    }
+
+    const y = padTop + innerH - ((v - min) / range) * innerH;
+    path += `${started ? " L" : "M"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    started = true;
+  });
+
+  return path.trim();
+}
+
+function buildAreaPath(
+  values: Array<number | null>,
+  width: number,
+  height: number,
+  padLeft = 54,
+  padRight = 12,
+  padTop = 12,
+  padBottom = 28
+): string {
+  const clean = values.map((v) => (Number.isFinite(v as number) ? (v as number) : null));
+  const finite = clean.filter((v): v is number => v !== null);
+
+  if (!finite.length) return "";
+
+  const min = Math.min(...finite);
+  const max = Math.max(...finite);
+  const range = max - min || 1;
+
+  const innerW = width - padLeft - padRight;
+  const innerH = height - padTop - padBottom;
+  const bottomY = height - padBottom;
+
+  const points = clean
+    .map((v, i) => {
+      if (v === null) return null;
+      const x = padLeft + (i / Math.max(clean.length - 1, 1)) * innerW;
+      const y = padTop + innerH - ((v - min) / range) * innerH;
+      return { x, y };
+    })
+    .filter((p): p is { x: number; y: number } => p !== null);
+
+  if (!points.length) return "";
+
+  const top = points
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
+    .join(" ");
+
+  const last = points[points.length - 1];
+  const first = points[0];
+
+  return `${top} L ${last.x.toFixed(2)} ${bottomY.toFixed(2)} L ${first.x.toFixed(
+    2
+  )} ${bottomY.toFixed(2)} Z`;
+}
+
+function yTickLabel(value: number, useLog: boolean, isPercentAxis = false): string {
+  const original = useLog ? Math.exp(value) : value;
+  if (isPercentAxis) return `${(original * 100).toFixed(0)}%`;
+  return compactNum(original);
+}
+
+function xTickLabel(date: string): string {
+  if (!date) return "";
+  return date.slice(0, 4);
+}
+
+function getTenTickIndexes(length: number): number[] {
+  if (length <= 1) return [0];
+  const count = Math.min(10, length);
+  const idxs = new Set<number>();
+  for (let i = 0; i < count; i += 1) {
+    const idx = Math.round((i * (length - 1)) / Math.max(count - 1, 1));
+    idxs.add(idx);
+  }
+  return Array.from(idxs).sort((a, b) => a - b);
+}
+
+function ChartTooltip(props: {
+  x: number;
+  y: number;
+  date: string;
+  rows: TooltipRow[];
+  width?: number;
+}) {
+  const boxWidth = props.width ?? 190;
+  const rowHeight = 18;
+  const headerHeight = 20;
+  const boxHeight = headerHeight + props.rows.length * rowHeight + 12;
+
+  return (
+    <g transform={`translate(${props.x}, ${props.y})`}>
+      <rect
+        x="0"
+        y="0"
+        width={boxWidth}
+        height={boxHeight}
+        rx="10"
+        fill="rgba(7,12,22,0.96)"
+        stroke="rgba(255,255,255,0.12)"
+      />
+      <text x="10" y="16" fill="#ffffff" fontSize="12" fontWeight="700">
+        {props.date}
+      </text>
+      {props.rows.map((row, i) => (
+        <g key={`${row.label}-${i}`} transform={`translate(10, ${28 + i * rowHeight})`}>
+          <circle cx="4" cy="5" r="4" fill={row.color} />
+          <text x="14" y="9" fill="#cdd8e8" fontSize="11">
+            {row.label}: {row.value}
+          </text>
+        </g>
+      ))}
+    </g>
+  );
+}
+
+function SimpleLineChart(props: {
+  title: string;
+  lines: Array<{ name: string; values: Array<number | null>; color: string }>;
+  dates?: string[];
+  height?: number;
+  footerLeft?: string;
+  footerRight?: string;
+  useLog?: boolean;
+  isPercentAxis?: boolean;
+}) {
+  const width = 960;
+  const height = props.height ?? 300;
+  const useLog = props.useLog ?? false;
+  const isPercentAxis = props.isPercentAxis ?? false;
+  const padLeft = 54;
+  const padRight = 12;
+  const padTop = 12;
+  const padBottom = 28;
+
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
+  const sharedRange = getSharedRange(
+    props.lines.map((line) => line.values),
+    useLog
+  );
+
+  const yTicks = [0, 1, 2, 3].map((i) => {
+    const ratio = i / 3;
+    const value = sharedRange.max - ratio * (sharedRange.max - sharedRange.min);
+    const innerH = height - padTop - padBottom;
+    const y = padTop + ratio * innerH;
+    return { y, value };
+  });
+
+  const dates = props.dates ?? [];
+  const xTickIndexes = getTenTickIndexes(dates.length);
+  const innerW = width - padLeft - padRight;
+
+  const hoverX =
+    hoverIndex === null ? null : padLeft + (hoverIndex / Math.max(dates.length - 1, 1)) * innerW;
+
+  const tooltipRows: TooltipRow[] =
+    hoverIndex === null
+      ? []
+      : props.lines.map((line) => {
+          const raw = line.values[hoverIndex];
+          return {
+            label: line.name,
+            value: isPercentAxis ? pctFromRatio(raw) : compactNum(raw),
+            color: line.color,
+          };
+        });
+
+  return (
+    <div style={styles.card}>
+      <div style={styles.cardHeaderRow}>
+        <div style={styles.cardTitle}>{props.title}</div>
+        <div style={styles.legendRow}>
+          {props.lines.map((line) => (
+            <div key={line.name} style={styles.legendItem}>
+              <span style={{ ...styles.legendDot, background: line.color }} />
+              <span>{line.name}</span>
+            </div>
+          ))}
+          <div style={styles.scaleBadge}>{useLog ? "Escala log" : "Escala linear"}</div>
+        </div>
+      </div>
+
+      <div style={{ width: "100%", overflowX: "auto" }}>
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          style={{ width: "100%", height }}
+          preserveAspectRatio="none"
+          onMouseLeave={() => setHoverIndex(null)}
+          onMouseMove={(e) => {
+            const svg = e.currentTarget;
+            const rect = svg.getBoundingClientRect();
+            const xPx = ((e.clientX - rect.left) / rect.width) * width;
+            const boundedX = Math.min(Math.max(xPx, padLeft), width - padRight);
+            const idx = Math.round(((boundedX - padLeft) / innerW) * Math.max(dates.length - 1, 0));
+            setHoverIndex(Math.min(Math.max(idx, 0), Math.max(dates.length - 1, 0)));
+          }}
+        >
+          <rect x="0" y="0" width={width} height={height} fill="transparent" />
+
+          {yTicks.map((tick, i) => (
+            <g key={i}>
+              <line
+                x1={padLeft}
+                y1={tick.y}
+                x2={width - padRight}
+                y2={tick.y}
+                stroke="rgba(255,255,255,0.08)"
+                strokeWidth="1"
+              />
+              <text
+                x={padLeft - 8}
+                y={tick.y + 4}
+                fill="#8ea4c7"
+                fontSize="11"
+                textAnchor="end"
+              >
+                {yTickLabel(tick.value, useLog, isPercentAxis)}
+              </text>
+            </g>
+          ))}
+
+          <line
+            x1={padLeft}
+            y1={padTop}
+            x2={padLeft}
+            y2={height - padBottom}
+            stroke="rgba(255,255,255,0.08)"
+            strokeWidth="1"
+          />
+          <line
+            x1={padLeft}
+            y1={height - padBottom}
+            x2={width - padRight}
+            y2={height - padBottom}
+            stroke="rgba(255,255,255,0.08)"
+            strokeWidth="1"
+          />
+
+          {xTickIndexes.map((idx, i) => {
+            const x = padLeft + (idx / Math.max(dates.length - 1, 1)) * innerW;
+            return (
+              <g key={i}>
+                <line
+                  x1={x}
+                  y1={height - padBottom}
+                  x2={x}
+                  y2={height - padBottom + 4}
+                  stroke="rgba(255,255,255,0.20)"
+                  strokeWidth="1"
+                />
+                <text
+                  x={x}
+                  y={height - 8}
+                  fill="#8ea4c7"
+                  fontSize="11"
+                  textAnchor="middle"
+                >
+                  {xTickLabel(dates[idx])}
+                </text>
+              </g>
+            );
+          })}
+
+          {hoverX !== null && (
+            <line
+              x1={hoverX}
+              y1={padTop}
+              x2={hoverX}
+              y2={height - padBottom}
+              stroke="rgba(255,255,255,0.25)"
+              strokeWidth="1"
+              strokeDasharray="4 4"
+            />
+          )}
+
+          {props.lines.map((line) => (
+            <path
+              key={line.name}
+              d={buildLinePathWithRange(
+                line.values,
+                width,
+                height,
+                sharedRange.min,
+                sharedRange.max,
+                padLeft,
+                padRight,
+                padTop,
+                padBottom,
+                useLog
+              )}
+              fill="none"
+              stroke={line.color}
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ))}
+
+          {hoverIndex !== null && dates[hoverIndex] && (
+            <ChartTooltip
+              x={Math.min(Math.max((hoverX ?? 0) + 10, 10), width - 210)}
+              y={18}
+              date={dates[hoverIndex]}
+              rows={tooltipRows}
+            />
+          )}
+        </svg>
+      </div>
+
+      <div style={styles.chartFooter}>
+        <div>{props.footerLeft ?? "—"}</div>
+        <div>{props.footerRight ?? "—"}</div>
+      </div>
+    </div>
+  );
+}
+
+function DrawdownChart(props: { title: string; values: Array<number | null>; dates?: string[] }) {
+  const width = 960;
+  const height = 220;
+  const vals = props.values;
+  const dates = props.dates ?? [];
+  const padLeft = 54;
+  const padRight = 12;
+  const padTop = 12;
+  const padBottom = 28;
+
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
+  const finiteVals = vals.filter((v): v is number => v !== null && Number.isFinite(v));
+  const current = finiteVals.length ? finiteVals[finiteVals.length - 1] : null;
+  const minimum = finiteVals.length ? Math.min(...finiteVals) : null;
+
+  const minForChart = finiteVals.length ? Math.min(...finiteVals, -1) : -1;
+  const maxForChart = finiteVals.length ? Math.max(...finiteVals, 0) : 0;
+
+  const yTicks = [0, 1, 2, 3].map((i) => {
+    const ratio = i / 3;
+    const value = maxForChart - ratio * (maxForChart - minForChart);
+    const innerH = height - padTop - padBottom;
+    const y = padTop + ratio * innerH;
+    return { y, value };
+  });
+
+  const xTickIndexes = getTenTickIndexes(dates.length);
+  const innerW = width - padLeft - padRight;
+  const hoverX =
+    hoverIndex === null ? null : padLeft + (hoverIndex / Math.max(dates.length - 1, 1)) * innerW;
+
+  return (
+    <div style={styles.card}>
+      <div style={styles.cardTitle}>{props.title}</div>
+      <div style={{ width: "100%", overflowX: "auto" }}>
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          style={{ width: "100%", height }}
+          preserveAspectRatio="none"
+          onMouseLeave={() => setHoverIndex(null)}
+          onMouseMove={(e) => {
+            const svg = e.currentTarget;
+            const rect = svg.getBoundingClientRect();
+            const xPx = ((e.clientX - rect.left) / rect.width) * width;
+            const boundedX = Math.min(Math.max(xPx, padLeft), width - padRight);
+            const idx = Math.round(((boundedX - padLeft) / innerW) * Math.max(dates.length - 1, 0));
+            setHoverIndex(Math.min(Math.max(idx, 0), Math.max(dates.length - 1, 0)));
+          }}
+        >
+          <rect x="0" y="0" width={width} height={height} fill="transparent" />
+
+          {yTicks.map((tick, i) => (
+            <g key={i}>
+              <line
+                x1={padLeft}
+                y1={tick.y}
+                x2={width - padRight}
+                y2={tick.y}
+                stroke="rgba(255,255,255,0.08)"
+                strokeWidth="1"
+              />
+              <text
+                x={padLeft - 8}
+                y={tick.y + 4}
+                fill="#8ea4c7"
+                fontSize="11"
+                textAnchor="end"
+              >
+                {pctFromRatio(tick.value, 0)}
+              </text>
+            </g>
+          ))}
+
+          <line
+            x1={padLeft}
+            y1={padTop}
+            x2={padLeft}
+            y2={height - padBottom}
+            stroke="rgba(255,255,255,0.08)"
+            strokeWidth="1"
+          />
+          <line
+            x1={padLeft}
+            y1={height - padBottom}
+            x2={width - padRight}
+            y2={height - padBottom}
+            stroke="rgba(255,255,255,0.08)"
+            strokeWidth="1"
+          />
+
+          {xTickIndexes.map((idx, i) => {
+            const x = padLeft + (idx / Math.max(dates.length - 1, 1)) * innerW;
+            return (
+              <g key={i}>
+                <line
+                  x1={x}
+                  y1={height - padBottom}
+                  x2={x}
+                  y2={height - padBottom + 4}
+                  stroke="rgba(255,255,255,0.20)"
+                  strokeWidth="1"
+                />
+                <text
+                  x={x}
+                  y={height - 8}
+                  fill="#8ea4c7"
+                  fontSize="11"
+                  textAnchor="middle"
+                >
+                  {xTickLabel(dates[idx])}
+                </text>
+              </g>
+            );
+          })}
+
+          {hoverX !== null && (
+            <line
+              x1={hoverX}
+              y1={padTop}
+              x2={hoverX}
+              y2={height - padBottom}
+              stroke="rgba(255,255,255,0.25)"
+              strokeWidth="1"
+              strokeDasharray="4 4"
+            />
+          )}
+
+          <path
+            d={buildAreaPath(vals, width, height, padLeft, padRight, padTop, padBottom)}
+            fill="rgba(59,130,246,0.18)"
+          />
+          <path
+            d={buildLinePathWithRange(
+              vals,
+              width,
+              height,
+              minForChart,
+              maxForChart,
+              padLeft,
+              padRight,
+              padTop,
+              padBottom
+            )}
+            fill="none"
+            stroke="#60a5fa"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+
+          {hoverIndex !== null && dates[hoverIndex] && (
+            <ChartTooltip
+              x={Math.min(Math.max((hoverX ?? 0) + 10, 10), width - 210)}
+              y={18}
+              date={dates[hoverIndex]}
+              rows={[
+                {
+                  label: "Drawdown",
+                  value: pctFromRatio(vals[hoverIndex]),
+                  color: "#60a5fa",
+                },
+              ]}
+              width={175}
+            />
+          )}
+        </svg>
+      </div>
+      <div style={styles.chartFooter}>
+        <div>Atual {pctFromRatio(current)}</div>
+        <div>Mín {pctFromRatio(minimum)}</div>
+      </div>
+    </div>
+  );
+}
+
+function computeDrawdown(series: Array<number | null>): Array<number | null> {
+  let peak = -Infinity;
+  return series.map((v) => {
+    if (v === null || !Number.isFinite(v)) return null;
+    peak = Math.max(peak, v);
+    if (!Number.isFinite(peak) || peak === 0) return null;
+    return v / peak - 1;
+  });
+}
+
+function DetailKpiCard(props: { title: string; kpis: KpiBlock; accent: string }) {
+  return (
+    <div style={styles.card}>
+      <div style={{ ...styles.cardTitle, marginBottom: 14 }}>{props.title}</div>
+      <div style={styles.detailGrid}>
+        <div style={styles.detailItem}>
+          <div style={styles.detailLabel}>CAGR</div>
+          <div style={{ ...styles.detailValue, color: props.accent }}>
+            {pct(props.kpis.annualized_return_pct)}
+          </div>
+        </div>
+        <div style={styles.detailItem}>
+          <div style={styles.detailLabel}>Vol</div>
+          <div style={styles.detailValue}>{pct(props.kpis.volatility_pct)}</div>
+        </div>
+        <div style={styles.detailItem}>
+          <div style={styles.detailLabel}>Sharpe</div>
+          <div style={styles.detailValue}>{num(props.kpis.sharpe)}</div>
+        </div>
+        <div style={styles.detailItem}>
+          <div style={styles.detailLabel}>Max DD</div>
+          <div style={styles.detailValue}>{pct(props.kpis.max_drawdown_pct)}</div>
+        </div>
+        <div style={styles.detailItem}>
+          <div style={styles.detailLabel}>Retorno total</div>
+          <div style={styles.detailValue}>{pct(props.kpis.total_return_pct)}</div>
+        </div>
+        <div style={styles.detailItem}>
+          <div style={styles.detailLabel}>Equity final</div>
+          <div style={styles.detailValue}>{num(props.kpis.last_equity)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MonthlyStatsCard(props: {
+  title: string;
+  items: Array<{ label: string; value: string }>;
+}) {
+  return (
+    <div style={styles.card}>
+      <div style={{ ...styles.cardTitle, marginBottom: 14 }}>{props.title}</div>
+      <div style={styles.detailGrid}>
+        {props.items.map((item) => (
+          <div key={item.label} style={styles.detailItem}>
+            <div style={styles.detailLabel}>{item.label}</div>
+            <div style={styles.detailValueSmall}>{item.value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HoldingsTable(props: { portfolio: PortfolioResponse | null }) {
+  const basePositions = props.portfolio?.positions ?? [];
+
+  const shownExposure = basePositions.reduce((acc, p) => {
+    const w = p.weight ?? 0;
+    return acc + w;
+  }, 0);
+
+  const residual = Math.max(0, 100 - shownExposure);
+  const total = shownExposure + residual;
+
+  const positions =
+    residual > 0.0001
+      ? [
+          ...basePositions,
+          {
+            ticker: "HEDGE/CASH",
+            short_name: "Hedge / Cash / Overlay",
+            weight: Number(residual.toFixed(2)),
+            country: "—",
+          },
+        ]
+      : basePositions;
+
+  return (
+    <div style={styles.card}>
+      <div style={styles.cardHeaderRow}>
+        <div style={styles.cardTitle}>Carteira Atual</div>
+        <div style={styles.legendRow}>
+          <div>Data: {props.portfolio?.date ?? "—"}</div>
+          <div>Nº posições: {basePositions.length}</div>
+          <div>Exposição mostrada: {shownExposure.toFixed(2)}%</div>
+          <div>Residual: {residual.toFixed(2)}%</div>
+          <div>Total: {total.toFixed(2)}%</div>
+        </div>
+      </div>
+
+      <div style={styles.tableWrap}>
+        <table style={styles.table}>
+          <thead>
+            <tr>
+              <th style={styles.th}>Ticker</th>
+              <th style={styles.th}>Nome curto</th>
+              <th style={styles.th}>Peso</th>
+              <th style={styles.th}>País</th>
+            </tr>
+          </thead>
+          <tbody>
+            {positions.length === 0 ? (
+              <tr>
+                <td style={styles.td} colSpan={4}>
+                  Não foram encontradas posições válidas no endpoint /api/portfolio/current.
+                </td>
+              </tr>
+            ) : (
+              positions.map((p, i) => (
+                <tr key={`${p.ticker}-${i}`}>
+                  <td style={p.ticker === "HEDGE/CASH" ? styles.tdStrongAlt : styles.tdStrong}>
+                    {p.ticker || "—"}
+                  </td>
+                  <td style={styles.td}>{p.short_name || "—"}</td>
+                  <td style={styles.td}>
+                    {p.weight === null || p.weight === undefined ? "—" : `${p.weight.toFixed(2)}%`}
+                  </td>
+                  <td style={styles.td}>{p.country || "—"}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={styles.chartFooter}>
+        <div>Fonte: {props.portfolio?.source_file ?? "—"}</div>
+        <div>
+          Leitura atual: pesos mostrados + residual não exibido no ficheiro original
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function monthPointText(p?: MonthPoint): string {
+  if (!p || !p.month || p.return_pct === null || p.return_pct === undefined) return "—";
+  return `${p.month} (${p.return_pct.toFixed(2)}%)`;
+}
+
+export default function DashboardFreezePage() {
+  const [activeTab, setActiveTab] = useState<"overview" | "portfolio">("overview");
+  const [overview, setOverview] = useState<OverviewResponse | null>(null);
+  const [equity, setEquity] = useState<EquityPoint[]>([]);
+  const [alpha, setAlpha] = useState<AlphaPoint[]>([]);
+  const [rollingSharpe, setRollingSharpe] = useState<RollingSharpePoint[]>([]);
+  const [kpis, setKpis] = useState<KpisResponse | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        setLoading(true);
+        setError("");
+
+        const qs = `dataset=${DATASET}&period=${PERIOD}`;
+
+        const [o, e, a, rs, k, p] = await Promise.all([
+          fetch(`${API_BASE}/api/dashboard/overview?${qs}`).then((r) => r.json()),
+          fetch(`${API_BASE}/api/dashboard/equity?${qs}`).then((r) => r.json()),
+          fetch(`${API_BASE}/api/dashboard/alpha?${qs}`).then((r) => r.json()),
+          fetch(`${API_BASE}/api/dashboard/rolling_sharpe?${qs}`).then((r) => r.json()),
+          fetch(`${API_BASE}/api/dashboard/kpis?${qs}`).then((r) => r.json()),
+          fetch(`${API_BASE}/api/portfolio/current`).then((r) => r.json()),
+        ]);
+
+        if (cancelled) return;
+
+        setOverview(o);
+        setEquity(Array.isArray(e) ? e : []);
+        setAlpha(Array.isArray(a) ? a : []);
+        setRollingSharpe(Array.isArray(rs) ? rs : []);
+        setKpis(k);
+        setPortfolio(p);
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err?.message || "Erro ao carregar dados do dashboard.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const allDates = useMemo(() => equity.map((x) => x.date), [equity]);
+  const alphaDates = useMemo(() => alpha.map((x) => x.date), [alpha]);
+  const rollingDates = useMemo(() => rollingSharpe.map((x) => x.date), [rollingSharpe]);
+
+  const benchmarkSeries = useMemo(() => equity.map((x) => x.benchmark), [equity]);
+  const modelSeries = useMemo(() => equity.map((x) => x.overlayed), [equity]);
+  const alphaSeries = useMemo(() => alpha.map((x) => x.alpha), [alpha]);
+  const rollingSeries = useMemo(() => rollingSharpe.map((x) => x.rolling_sharpe), [rollingSharpe]);
+
+  const modelDrawdown = useMemo(() => computeDrawdown(modelSeries), [modelSeries]);
+  const benchDrawdown = useMemo(() => computeDrawdown(benchmarkSeries), [benchmarkSeries]);
+
+  const lastDate = equity.length ? equity[equity.length - 1].date : "—";
+  const meta = overview?.meta || kpis?.meta;
+  const seriesMeta = overview?.series_meta || kpis?.series_meta;
+  const monthly = kpis?.monthly_stats;
+
+  const monthlyModelItems = [
+    { label: "Meses positivos", value: monthly ? String(monthly.model.positive_months) : "—" },
+    { label: "Meses negativos", value: monthly ? String(monthly.model.negative_months) : "—" },
+    { label: "Meses flat", value: monthly ? String(monthly.model.flat_months) : "—" },
+    { label: "Melhor mês", value: monthPointText(monthly?.model.best_month) },
+    { label: "Pior mês", value: monthPointText(monthly?.model.worst_month) },
+    { label: "Média mensal", value: monthly ? pct(monthly.model.average_month_pct) : "—" },
+    { label: "Mediana mensal", value: monthly ? pct(monthly.model.median_month_pct) : "—" },
+    { label: "Meses comparados", value: monthly ? String(monthly.months_compared) : "—" },
+  ];
+
+  const monthlyRelativeItems = [
+    { label: "Meses acima do bench", value: monthly ? String(monthly.relative.months_above_benchmark) : "—" },
+    { label: "Meses abaixo do bench", value: monthly ? String(monthly.relative.months_below_benchmark) : "—" },
+    { label: "Meses iguais ao bench", value: monthly ? String(monthly.relative.months_equal_benchmark) : "—" },
+    { label: "Melhor mês de alpha", value: monthPointText(monthly?.relative.best_alpha_month) },
+    { label: "Pior mês de alpha", value: monthPointText(monthly?.relative.worst_alpha_month) },
+    { label: "Alpha médio mensal", value: monthly ? pct(monthly.relative.average_alpha_month_pct) : "—" },
+    { label: "Alpha mediano mensal", value: monthly ? pct(monthly.relative.median_alpha_month_pct) : "—" },
+    { label: "Meses comparados", value: monthly ? String(monthly.months_compared) : "—" },
+  ];
+
+  return (
+    <div style={styles.page}>
+      <div style={styles.container}>
+        <header style={styles.header}>
+          <div>
+            <div style={styles.brand}>
+              decide<span style={styles.brandAI}>AI</span>
+            </div>
+            <div style={styles.subtitle}>Dashboard técnico do freeze oficial a 20 anos</div>
+          </div>
+
+          <div style={styles.headerMeta}>
+            <div style={styles.metaLine}><strong>Strategy:</strong> {meta?.strategy ?? "Global Momentum Equity"}</div>
+            <div style={styles.metaLine}><strong>Freeze:</strong> {meta?.freeze ?? "DECIDE_MODEL_V1"}</div>
+            <div style={styles.metaLine}><strong>Benchmark:</strong> {meta?.benchmark_name ?? "60/25/10/5 composite"}</div>
+            <div style={styles.metaLine}><strong>Período:</strong> {PERIOD}</div>
+            <div style={styles.metaLine}><strong>Última data:</strong> {lastDate}</div>
+            <div style={styles.metaLine}><strong>Observações:</strong> {meta?.points ?? equity.length}</div>
+          </div>
+        </header>
+
+        <div style={styles.tabsRow}>
+          <button
+            type="button"
+            onClick={() => setActiveTab("overview")}
+            style={activeTab === "overview" ? styles.tabButtonActive : styles.tabButton}
+          >
+            Visão Geral
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("portfolio")}
+            style={activeTab === "portfolio" ? styles.tabButtonActive : styles.tabButton}
+          >
+            Carteira
+          </button>
+        </div>
+
+        {loading ? (
+          <div style={styles.loadingCard}>A carregar dados do freeze 20Y...</div>
+        ) : error ? (
+          <div style={styles.errorCard}>{error}</div>
+        ) : activeTab === "portfolio" ? (
+          <HoldingsTable portfolio={portfolio} />
+        ) : (
+          <>
+            <section style={styles.twoCol}>
+              <DetailKpiCard
+                title="KPIs Modelo"
+                kpis={
+                  kpis?.model ?? {
+                    total_return_pct: null,
+                    annualized_return_pct: null,
+                    volatility_pct: null,
+                    max_drawdown_pct: null,
+                    sharpe: null,
+                    last_equity: null,
+                  }
+                }
+                accent="#60a5fa"
+              />
+              <DetailKpiCard
+                title="KPIs Benchmark"
+                kpis={
+                  kpis?.benchmark ?? {
+                    total_return_pct: null,
+                    annualized_return_pct: null,
+                    volatility_pct: null,
+                    max_drawdown_pct: null,
+                    sharpe: null,
+                    last_equity: null,
+                  }
+                }
+                accent="#cbd5e1"
+              />
+            </section>
+
+            <section style={styles.twoCol}>
+              <MonthlyStatsCard title="Estatística Mensal Modelo" items={monthlyModelItems} />
+              <MonthlyStatsCard title="Estatística Mensal Relativa" items={monthlyRelativeItems} />
+            </section>
+
+            <SimpleLineChart
+              title="Benchmark vs Modelo"
+              lines={[
+                { name: "Benchmark", values: benchmarkSeries, color: "#94a3b8" },
+                { name: "Modelo", values: modelSeries, color: "#60a5fa" },
+              ]}
+              dates={allDates}
+              height={380}
+              useLog={true}
+              footerLeft={equity.length ? `Início ${equity[0].date} · Base=1.00` : "—"}
+              footerRight={equity.length ? `Fim ${equity[equity.length - 1].date} · Dataset=${DATASET}` : "—"}
+            />
+
+            <div style={styles.twoCol}>
+              <DrawdownChart title="Drawdown Modelo" values={modelDrawdown} dates={allDates} />
+              <DrawdownChart title="Drawdown Benchmark" values={benchDrawdown} dates={allDates} />
+            </div>
+
+            <SimpleLineChart
+              title="Alpha Curve (Modelo / Benchmark)"
+              lines={[{ name: "Alpha", values: alphaSeries, color: "#38bdf8" }]}
+              dates={alphaDates}
+              height={260}
+              useLog={false}
+              footerLeft={alpha.length ? `Início ${alpha[0].date}` : "—"}
+              footerRight={alpha.length ? `Fim ${alpha[alpha.length - 1].date}` : "—"}
+            />
+
+            <SimpleLineChart
+              title="Rolling Sharpe 3Y"
+              lines={[{ name: "Rolling Sharpe", values: rollingSeries, color: "#f59e0b" }]}
+              dates={rollingDates}
+              height={260}
+              useLog={false}
+              footerLeft={rollingSharpe.length ? `Início ${rollingSharpe[0].date}` : "—"}
+              footerRight={
+                rollingSharpe.length ? `Fim ${rollingSharpe[rollingSharpe.length - 1].date}` : "—"
+              }
+            />
+
+            <section style={styles.infoGrid}>
+              <div style={styles.card}>
+                <div style={styles.cardTitle}>Estado do dataset</div>
+                <div style={styles.infoList}>
+                  <div>Dataset fixo: {DATASET}</div>
+                  <div>Período fixo: {PERIOD}</div>
+                  <div>Fonte: {meta?.source_file ?? "—"}</div>
+                  <div>Tipo de origem: {meta?.source_kind ?? "—"}</div>
+                  <div>Anos cobertos: {meta?.years_covered ?? "—"}</div>
+                  <div>Recommended model key: {seriesMeta?.recommended_model_key ?? "—"}</div>
+                </div>
+              </div>
+
+              <div style={styles.card}>
+                <div style={styles.cardTitle}>Leitura</div>
+                <div style={styles.infoList}>
+                  <div>A aba Carteira usa /api/portfolio/current</div>
+                  <div>Alphabet é agregada quando existirem GOOG + GOOGL</div>
+                  <div>Se os pesos mostrados somarem menos de 100%, o residual é mostrado como Hedge/Cash</div>
+                  <div>O eixo X usa 10 marcas temporais</div>
+                  <div>Todos os gráficos têm mouse over com data e valores</div>
+                  <div>Notas: {(seriesMeta?.notes || []).join(" | ") || "—"}</div>
+                </div>
+              </div>
+            </section>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    minHeight: "100vh",
+    background: "#08111f",
+    color: "#e5eefb",
+    fontFamily:
+      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    padding: "24px",
+  },
+  container: {
+    maxWidth: "1400px",
+    margin: "0 auto",
+  },
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "18px",
+    alignItems: "flex-start",
+    marginBottom: "16px",
+    flexWrap: "wrap",
+  },
+  brand: {
+    fontSize: "34px",
+    fontWeight: 700,
+    letterSpacing: "-0.03em",
+    color: "#ffffff",
+  },
+  brandAI: {
+    color: "#60a5fa",
+  },
+  subtitle: {
+    color: "#8ea4c7",
+    marginTop: "4px",
+    fontSize: "14px",
+  },
+  headerMeta: {
+    textAlign: "right",
+    color: "#9fb3d1",
+    fontSize: "12px",
+    lineHeight: 1.35,
+    marginTop: "0px",
+    display: "grid",
+    gap: "2px",
+    alignSelf: "flex-start",
+  },
+  metaLine: {},
+  tabsRow: {
+    display: "flex",
+    gap: "10px",
+    marginBottom: "18px",
+  },
+  tabButton: {
+    background: "rgba(255,255,255,0.04)",
+    color: "#cfe0f5",
+    border: "1px solid rgba(255,255,255,0.10)",
+    borderRadius: "12px",
+    padding: "10px 16px",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: 600,
+  },
+  tabButtonActive: {
+    background: "rgba(96,165,250,0.18)",
+    color: "#ffffff",
+    border: "1px solid rgba(96,165,250,0.45)",
+    borderRadius: "12px",
+    padding: "10px 16px",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: 700,
+  },
+  card: {
+    background: "linear-gradient(180deg, rgba(14,24,40,0.96), rgba(9,16,29,0.96))",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: "20px",
+    padding: "18px",
+    boxShadow: "0 8px 30px rgba(0,0,0,0.22)",
+    marginBottom: "18px",
+  },
+  cardHeaderRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "18px",
+    marginBottom: "12px",
+    flexWrap: "wrap",
+  },
+  cardTitle: {
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "#f8fbff",
+  },
+  legendRow: {
+    display: "flex",
+    gap: "12px",
+    alignItems: "center",
+    flexWrap: "wrap",
+    color: "#9fb3d1",
+    fontSize: "13px",
+  },
+  legendItem: {
+    display: "flex",
+    gap: "8px",
+    alignItems: "center",
+  },
+  legendDot: {
+    width: "10px",
+    height: "10px",
+    borderRadius: "999px",
+    display: "inline-block",
+  },
+  scaleBadge: {
+    padding: "4px 8px",
+    borderRadius: "999px",
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.04)",
+    color: "#9fb3d1",
+    fontSize: "12px",
+  },
+  chartFooter: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "12px",
+    marginTop: "10px",
+    color: "#8ea4c7",
+    fontSize: "12px",
+  },
+  twoCol: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "18px",
+  },
+  infoGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "18px",
+  },
+  infoList: {
+    display: "grid",
+    gap: "8px",
+    color: "#c9d7ea",
+    fontSize: "14px",
+  },
+  detailGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: "12px",
+  },
+  detailItem: {
+    background: "rgba(255,255,255,0.03)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    borderRadius: "14px",
+    padding: "14px",
+  },
+  detailLabel: {
+    color: "#8ea4c7",
+    fontSize: "12px",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    marginBottom: "8px",
+  },
+  detailValue: {
+    color: "#ffffff",
+    fontWeight: 700,
+    fontSize: "24px",
+    letterSpacing: "-0.03em",
+  },
+  detailValueSmall: {
+    color: "#ffffff",
+    fontWeight: 700,
+    fontSize: "18px",
+    lineHeight: 1.35,
+  },
+  tableWrap: {
+    overflowX: "auto",
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse" as const,
+  },
+  th: {
+    textAlign: "left" as const,
+    padding: "12px 10px",
+    borderBottom: "1px solid rgba(255,255,255,0.10)",
+    color: "#8ea4c7",
+    fontSize: "12px",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.08em",
+  },
+  td: {
+    padding: "12px 10px",
+    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    color: "#dce7f7",
+    fontSize: "14px",
+  },
+  tdStrong: {
+    padding: "12px 10px",
+    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    color: "#ffffff",
+    fontSize: "14px",
+    fontWeight: 700,
+  },
+  tdStrongAlt: {
+    padding: "12px 10px",
+    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    color: "#fbbf24",
+    fontSize: "14px",
+    fontWeight: 700,
+  },
+  loadingCard: {
+    background: "rgba(14,24,40,0.96)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: "18px",
+    padding: "24px",
+    color: "#cbd8ea",
+  },
+  errorCard: {
+    background: "rgba(60, 16, 16, 0.95)",
+    border: "1px solid rgba(255, 120, 120, 0.25)",
+    borderRadius: "18px",
+    padding: "24px",
+    color: "#ffd4d4",
+  },
+};

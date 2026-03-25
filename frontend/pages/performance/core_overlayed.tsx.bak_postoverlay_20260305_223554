@@ -1,0 +1,472 @@
+import React, { useMemo, useState } from "react";
+
+type Series = {
+  dates: string[];
+  equity: number[];
+  benchmark_equity: number[];
+};
+
+type Resp = {
+  ok: boolean;
+  result?: any;
+  series?: Series;
+  [k: string]: any;
+};
+
+function fmtPct(x: any): string {
+  const v = Number(x);
+  if (!isFinite(v)) return "—";
+  return (v * 100).toFixed(2) + "%";
+}
+function fmtNum(x: any, d = 2): string {
+  const v = Number(x);
+  if (!isFinite(v)) return "—";
+  return v.toFixed(d);
+}
+function safeArr<T>(x: any): T[] {
+  return Array.isArray(x) ? x : [];
+}
+function pickFirst(obj: any, keys: string[]) {
+  if (!obj) return undefined;
+  for (const k of keys) {
+    if (obj[k] !== undefined && obj[k] !== null) return obj[k];
+  }
+  return undefined;
+}
+function toNumArr(x: any): number[] {
+  return safeArr<any>(x).map((v) => Number(v)).filter((v) => Number.isFinite(v));
+}
+
+/**
+ * Normalize equity series to "base 100" if it looks like 0..1 style.
+ * Heuristic:
+ * - if first value < 10 OR max < 50 => treat as 0..1 or small-scale and multiply by 100
+ */
+function normalizeBase100(arr: number[]): number[] {
+  if (!arr || arr.length === 0) return [];
+  const a0 = arr[0];
+  let mx = -Infinity;
+  for (const v of arr) if (isFinite(v) && v > mx) mx = v;
+
+  const looksSmall = (isFinite(a0) && a0 < 10) || (isFinite(mx) && mx < 50);
+  if (!looksSmall) return arr.slice();
+  return arr.map((v) => (isFinite(v) ? v * 100 : v));
+}
+
+/**
+ * Compute KPIs from equity curve + dates (ISO strings).
+ * Returns decimals (e.g. 0.35 for 35%), sharpe as number, max_dd as negative decimal.
+ */
+function computeKpisFromEquity(dates: string[], equity: number[]) {
+  const d = safeArr<string>(dates);
+  const e = toNumArr(equity);
+
+  if (d.length < 3 || e.length < 3) return { error: "not_enough_points" };
+
+  const n = Math.min(d.length, e.length);
+  const dd = d.slice(0, n);
+  const ee = e.slice(0, n);
+
+  // total return
+  const e0 = ee[0];
+  const eN = ee[n - 1];
+  if (!(e0 > 0) || !(eN > 0)) return { error: "bad_equity_values" };
+  const total_return = eN / e0 - 1;
+
+  // years
+  const t0 = Date.parse(dd[0]);
+  const tN = Date.parse(dd[n - 1]);
+  if (!isFinite(t0) || !isFinite(tN) || tN <= t0) return { error: "bad_dates" };
+  const years = (tN - t0) / (365.25 * 24 * 3600 * 1000);
+  const cagr = years > 0 ? Math.pow(eN / e0, 1 / years) - 1 : NaN;
+
+  // daily returns
+  const rets: number[] = [];
+  for (let i = 1; i < n; i++) {
+    const prev = ee[i - 1];
+    const cur = ee[i];
+    if (prev > 0 && cur > 0) {
+      const r = cur / prev - 1;
+      if (isFinite(r)) rets.push(r);
+    }
+  }
+  if (rets.length < 2) return { error: "not_enough_returns" };
+
+  // mean + stdev
+  let sum = 0;
+  for (const r of rets) sum += r;
+  const mean = sum / rets.length;
+
+  let vsum = 0;
+  for (const r of rets) {
+    const z = r - mean;
+    vsum += z * z;
+  }
+  const stdev = Math.sqrt(vsum / Math.max(1, rets.length - 1));
+
+  const vol = stdev * Math.sqrt(252);
+  const sharpe = vol > 1e-12 ? (mean * 252) / vol : NaN;
+
+  // max drawdown
+  let peak = ee[0];
+  let max_dd = 0; // negative
+  for (let i = 0; i < n; i++) {
+    const v = ee[i];
+    if (v > peak) peak = v;
+    const ddv = peak > 0 ? v / peak - 1 : 0;
+    if (ddv < max_dd) max_dd = ddv;
+  }
+
+  return {
+    total_return,
+    cagr,
+    vol,
+    sharpe,
+    max_dd,
+  };
+}
+
+function computeMinMax(arrs: number[][]): { vmin: number; vmax: number } {
+  let vmin = Number.POSITIVE_INFINITY;
+  let vmax = Number.NEGATIVE_INFINITY;
+  for (const a of arrs) {
+    for (const v of a) {
+      if (!isFinite(v)) continue;
+      if (v < vmin) vmin = v;
+      if (v > vmax) vmax = v;
+    }
+  }
+  if (!isFinite(vmin) || !isFinite(vmax) || vmin === vmax) return { vmin: 0, vmax: 1 };
+  return { vmin, vmax };
+}
+
+function buildPolyline(vals: number[], w: number, h: number, vmin: number, vmax: number, pad = 10): string {
+  if (!vals || vals.length < 2) return "";
+  const span = Math.max(1e-9, vmax - vmin);
+
+  const innerW = w - pad * 2;
+  const innerH = h - pad * 2;
+
+  const pts: string[] = [];
+  for (let i = 0; i < vals.length; i++) {
+    const v = vals[i];
+    const x = pad + (innerW * i) / (vals.length - 1);
+    const y = pad + innerH * (1 - (v - vmin) / span);
+    pts.push(x.toFixed(2) + "," + y.toFixed(2));
+  }
+  return pts.join(" ");
+}
+
+export default function CoreOverlayedPage() {
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string>("");
+  const [resp, setResp] = useState<Resp | null>(null);
+
+  const [profile, setProfile] = useState("moderado");
+  const [benchmark, setBenchmark] = useState("SPY");
+  const [lookbackDays, setLookbackDays] = useState(120);
+  const [topQ, setTopQ] = useState(20);
+  const [capPerTicker, setCapPerTicker] = useState(0.2);
+  const [useTwsRaw, setUseTwsRaw] = useState(false);
+  const [volTargetEnabled, setVolTargetEnabled] = useState(true);
+  const [volTargetWindow, setVolTargetWindow] = useState(60);
+
+  const [commonScale, setCommonScale] = useState(true);
+
+  const rawSeries: Series = useMemo(() => {
+    const s = resp?.series as any;
+    return {
+      dates: safeArr<string>(s?.dates),
+      equity: toNumArr(s?.equity),
+      benchmark_equity: toNumArr(s?.benchmark_equity),
+    };
+  }, [resp]);
+
+  // Normalize to base 100 so curves are comparable
+  const series: Series = useMemo(() => {
+    return {
+      dates: rawSeries.dates,
+      equity: normalizeBase100(rawSeries.equity),
+      benchmark_equity: normalizeBase100(rawSeries.benchmark_equity),
+    };
+  }, [rawSeries]);
+
+  const lens = useMemo(() => {
+    return {
+      dates: series.dates.length,
+      equity: series.equity.length,
+      bench: series.benchmark_equity.length,
+    };
+  }, [series]);
+
+  const kpis = useMemo(() => {
+    const r = resp?.result || {};
+    const k = r?.kpis || {};
+    const bk = r?.benchmark_kpis || {};
+
+    const model_total_return = pickFirst(k, ["total_return", "totalReturn", "ret_total"]);
+    const model_cagr = pickFirst(k, ["CAGR", "cagr", "ann_return", "annual_return"]);
+    const model_vol = pickFirst(k, ["vol", "vol_ann", "ann_vol", "volatility", "annual_vol"]);
+    const model_sharpe = pickFirst(k, ["sharpe", "sharpe_ann", "sharpe_ratio"]);
+    const model_max_dd = pickFirst(k, ["max_dd", "maxDD", "max_drawdown", "mdd"]);
+
+    const benchError = typeof bk?.error === "string" ? bk.error : undefined;
+
+    // If backend fails benchmark_kpis (e.g. SPY not found in prices_close.csv),
+    // compute KPIs locally from series.benchmark_equity + dates.
+    let benchLocal: any = null;
+    if (benchError && series.dates.length >= 3 && series.benchmark_equity.length >= 3) {
+      benchLocal = computeKpisFromEquity(series.dates, series.benchmark_equity);
+    }
+
+    const bench_total_return = benchError ? benchLocal?.total_return : pickFirst(bk, ["total_return", "totalReturn", "ret_total"]);
+    const bench_cagr = benchError ? benchLocal?.cagr : pickFirst(bk, ["CAGR", "cagr", "ann_return", "annual_return"]);
+    const bench_vol = benchError ? benchLocal?.vol : pickFirst(bk, ["vol", "vol_ann", "ann_vol", "volatility", "annual_vol"]);
+    const bench_sharpe = benchError ? benchLocal?.sharpe : pickFirst(bk, ["sharpe", "sharpe_ann", "sharpe_ratio"]);
+    const bench_max_dd = benchError ? benchLocal?.max_dd : pickFirst(bk, ["max_dd", "maxDD", "max_drawdown", "mdd"]);
+
+    const bkKeys = Object.keys(bk || {}).sort();
+
+    return {
+      engine: r?.engine_version || "—",
+      benchPresent: !!r?.benchmark_present,
+      benchUsed: r?.benchmark_used || "",
+      bkKeys,
+      benchError,
+      benchLocalError: benchLocal?.error,
+      model: {
+        total_return: model_total_return,
+        cagr: model_cagr,
+        vol: model_vol,
+        sharpe: model_sharpe,
+        max_dd: model_max_dd,
+      },
+      bench: {
+        total_return: bench_total_return,
+        cagr: bench_cagr,
+        vol: bench_vol,
+        sharpe: bench_sharpe,
+        max_dd: bench_max_dd,
+      },
+    };
+  }, [resp, series.dates, series.benchmark_equity]);
+
+  async function run() {
+    setErr("");
+    setLoading(true);
+    setResp(null);
+    try {
+      const body = {
+        profile,
+        benchmark,
+        lookback_days: Number(lookbackDays),
+        top_q: Number(topQ),
+        cap_per_ticker: Number(capPerTicker),
+        use_tws_raw: !!useTwsRaw,
+        include_series: true,
+        voltarget_enabled: !!volTargetEnabled,
+        voltarget_window: Number(volTargetWindow),
+      };
+
+      const res = await fetch("/api/proxy/performance/core_overlayed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error("HTTP " + res.status + ": " + t);
+      }
+
+      const j = (await res.json()) as Resp;
+      setResp(j);
+    } catch (e: any) {
+      setErr(e?.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function downloadCsv() {
+    setErr("");
+    try {
+      const url = "/api/proxy/equity_curves/core_overlayed/latest.csv";
+      const r = await fetch(url);
+      if (!r.ok) throw new Error("Download failed: HTTP " + r.status);
+
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      const href = URL.createObjectURL(blob);
+      a.href = href;
+      a.download = "core_overlayed_latest.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+    } catch (e: any) {
+      setErr(e?.message || String(e));
+    }
+  }
+
+  const W = 980;
+  const H = 260;
+
+  const { vmin: commonMin, vmax: commonMax } = useMemo(() => {
+    return computeMinMax([series.equity, series.benchmark_equity]);
+  }, [series.equity, series.benchmark_equity]);
+
+  const { vmin: modelMin, vmax: modelMax } = useMemo(() => computeMinMax([series.equity]), [series.equity]);
+  const { vmin: benchMin, vmax: benchMax } = useMemo(() => computeMinMax([series.benchmark_equity]), [series.benchmark_equity]);
+
+  const polyModel = useMemo(() => {
+    const mn = commonScale ? commonMin : modelMin;
+    const mx = commonScale ? commonMax : modelMax;
+    return buildPolyline(series.equity, W, H, mn, mx);
+  }, [series.equity, W, H, commonScale, commonMin, commonMax, modelMin, modelMax]);
+
+  const polyBench = useMemo(() => {
+    const mn = commonScale ? commonMin : benchMin;
+    const mx = commonScale ? commonMax : benchMax;
+    return buildPolyline(series.benchmark_equity, W, H, mn, mx);
+  }, [series.benchmark_equity, W, H, commonScale, commonMin, commonMax, benchMin, benchMax]);
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0b0f14", color: "white", padding: 18, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+        <h1 style={{ margin: 0, fontSize: 22 }}>Performance — Core Overlayed</h1>
+        <div style={{ opacity: 0.75, marginTop: 6, fontSize: 12 }}>
+          Engine: <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>{kpis.engine}</span>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14, padding: 12, borderRadius: 14, background: "#101826", border: "1px solid #1f2a3a" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+            Perfil
+            <select value={profile} onChange={(e) => setProfile(e.target.value)} style={{ background: "#0b0f14", color: "white", border: "1px solid #2a3a52", borderRadius: 10, padding: "8px 10px" }}>
+              <option value="conservador">conservador</option>
+              <option value="moderado">moderado</option>
+              <option value="dinamico">dinâmico</option>
+            </select>
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+            Benchmark
+            <input value={benchmark} onChange={(e) => setBenchmark(e.target.value)} style={{ background: "#0b0f14", color: "white", border: "1px solid #2a3a52", borderRadius: 10, padding: "8px 10px", width: 120 }} />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+            Lookback (dias)
+            <input type="number" value={lookbackDays} onChange={(e) => setLookbackDays(Number(e.target.value))} style={{ background: "#0b0f14", color: "white", border: "1px solid #2a3a52", borderRadius: 10, padding: "8px 10px", width: 120 }} />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+            Top Q
+            <input type="number" value={topQ} onChange={(e) => setTopQ(Number(e.target.value))} style={{ background: "#0b0f14", color: "white", border: "1px solid #2a3a52", borderRadius: 10, padding: "8px 10px", width: 90 }} />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+            Cap por ticker
+            <input type="number" step="0.01" value={capPerTicker} onChange={(e) => setCapPerTicker(Number(e.target.value))} style={{ background: "#0b0f14", color: "white", border: "1px solid #2a3a52", borderRadius: 10, padding: "8px 10px", width: 120 }} />
+          </label>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 18, fontSize: 12 }}>
+            <input type="checkbox" checked={useTwsRaw} onChange={(e) => setUseTwsRaw(e.target.checked)} />
+            IBKR TWS raw
+          </label>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 18, fontSize: 12 }}>
+            <input type="checkbox" checked={volTargetEnabled} onChange={(e) => setVolTargetEnabled(e.target.checked)} />
+            Vol target
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+            Janela vol
+            <input type="number" value={volTargetWindow} onChange={(e) => setVolTargetWindow(Number(e.target.value))} style={{ background: "#0b0f14", color: "white", border: "1px solid #2a3a52", borderRadius: 10, padding: "8px 10px", width: 100 }} />
+          </label>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 18, fontSize: 12 }}>
+            <input type="checkbox" checked={commonScale} onChange={(e) => setCommonScale(e.target.checked)} />
+            Escala comum (Y)
+          </label>
+
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 10, marginLeft: "auto" }}>
+            <button onClick={run} disabled={loading} style={{ background: "#1f6feb", color: "white", border: "none", borderRadius: 12, padding: "10px 14px", cursor: "pointer" }}>
+              {loading ? "A correr..." : "Run Model"}
+            </button>
+            <button onClick={downloadCsv} style={{ background: "#0b0f14", color: "white", border: "1px solid #2a3a52", borderRadius: 12, padding: "10px 14px", cursor: "pointer" }}>
+              Download latest CSV
+            </button>
+          </div>
+        </div>
+
+        {err ? (
+          <div style={{ marginTop: 12, padding: 12, background: "#2b1220", border: "1px solid #6b1a37", borderRadius: 12 }}>
+            <div style={{ fontWeight: 700 }}>Erro</div>
+            <div style={{ opacity: 0.9, marginTop: 6, whiteSpace: "pre-wrap" }}>{err}</div>
+          </div>
+        ) : null}
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 14 }}>
+          <div style={{ padding: 12, borderRadius: 14, background: "#101826", border: "1px solid #1f2a3a" }}>
+            <div style={{ fontWeight: 700, marginBottom: 10 }}>KPIs — Modelo</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 13 }}>
+              <div>Total Return</div><div style={{ textAlign: "right" }}>{fmtPct(kpis.model.total_return)}</div>
+              <div>CAGR</div><div style={{ textAlign: "right" }}>{fmtPct(kpis.model.cagr)}</div>
+              <div>Vol</div><div style={{ textAlign: "right" }}>{fmtPct(kpis.model.vol)}</div>
+              <div>Sharpe</div><div style={{ textAlign: "right" }}>{fmtNum(kpis.model.sharpe, 2)}</div>
+              <div>Max DD</div><div style={{ textAlign: "right" }}>{fmtPct(kpis.model.max_dd)}</div>
+            </div>
+          </div>
+
+          <div style={{ padding: 12, borderRadius: 14, background: "#101826", border: "1px solid #1f2a3a" }}>
+            <div style={{ fontWeight: 700, marginBottom: 10 }}>KPIs — Benchmark</div>
+            <div style={{ opacity: 0.75, fontSize: 12, marginBottom: 6 }}>
+              present={String(kpis.benchPresent)} used={kpis.benchUsed || "—"} | len={lens.bench}
+            </div>
+
+            {kpis.benchError ? (
+              <div style={{ marginBottom: 10, padding: 10, borderRadius: 10, background: "#2b1220", border: "1px solid #6b1a37", fontSize: 12, whiteSpace: "pre-wrap" }}>
+                benchmark_kpis.error: {kpis.benchError}
+                {kpis.benchLocalError ? (
+                  <div style={{ marginTop: 6, opacity: 0.9 }}>frontend fallback error: {kpis.benchLocalError}</div>
+                ) : null}
+              </div>
+            ) : (
+              <div style={{ opacity: 0.75, fontSize: 11, marginBottom: 10 }}>
+                keys: {kpis.bkKeys.length ? kpis.bkKeys.join(", ") : "(none)"}
+              </div>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 13 }}>
+              <div>Total Return</div><div style={{ textAlign: "right" }}>{fmtPct(kpis.bench.total_return)}</div>
+              <div>CAGR</div><div style={{ textAlign: "right" }}>{fmtPct(kpis.bench.cagr)}</div>
+              <div>Vol</div><div style={{ textAlign: "right" }}>{fmtPct(kpis.bench.vol)}</div>
+              <div>Sharpe</div><div style={{ textAlign: "right" }}>{fmtNum(kpis.bench.sharpe, 2)}</div>
+              <div>Max DD</div><div style={{ textAlign: "right" }}>{fmtPct(kpis.bench.max_dd)}</div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14, padding: 12, borderRadius: 14, background: "#101826", border: "1px solid #1f2a3a" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <div style={{ fontWeight: 700 }}>Curvas (base 100)</div>
+            <div style={{ fontSize: 12, opacity: 0.75 }}>
+              len: dates={lens.dates} model={lens.equity} bench={lens.bench} | escala={commonScale ? "comum" : "independente"}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 10, overflowX: "auto" }}>
+            <svg width={W} height={H} style={{ background: "#0b0f14", borderRadius: 12, border: "1px solid #1f2a3a" }}>
+              {polyBench ? <polyline points={polyBench} fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth="2" /> : null}
+              {polyModel ? <polyline points={polyModel} fill="none" stroke="rgba(31,111,235,0.9)" strokeWidth="2.4" /> : null}
+            </svg>
+          </div>
+
+          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
+            Azul = Modelo | Branco = Benchmark | (base 100 + escala comum = comparação “óbvia”.)
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

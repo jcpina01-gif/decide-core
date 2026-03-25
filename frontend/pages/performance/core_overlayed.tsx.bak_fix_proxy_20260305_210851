@@ -1,0 +1,314 @@
+import React, { useEffect, useMemo, useState } from "react";
+
+type SeriesBlock = {
+  dates?: string[];
+  equity?: number[];
+  benchmark_equity?: number[];
+};
+
+type ApiResp = {
+  ok?: boolean;
+  engine_module?: string;
+  result?: any;
+  series?: SeriesBlock;
+  detail?: any;
+  error?: string;
+  _ddcap_marker_perf?: string;
+  _ddcap_engine_marker?: string;
+  _payload_hygiene_marker?: string;
+};
+
+type ReqBody = {
+  profile: string;
+  benchmark: string;
+  lookback_days: number;
+  top_q: number;
+  cap_per_ticker: number;
+  use_tws_raw: boolean;
+  include_series: boolean;
+  voltarget_enabled: boolean;
+  voltarget_window: number;
+};
+
+function fmtNum(x: any, digits = 2): string {
+  if (x === null || x === undefined) return "—";
+  const n = Number(x);
+  if (!isFinite(n)) return "—";
+  return n.toFixed(digits);
+}
+
+function fmtPct(x: any, digits = 2): string {
+  if (x === null || x === undefined) return "—";
+  const n = Number(x);
+  if (!isFinite(n)) return "—";
+  return (n * 100).toFixed(digits) + "%";
+}
+
+function safeLen(a: any): number {
+  if (!a) return 0;
+  if (Array.isArray(a)) return a.length;
+  return 0;
+}
+
+function pick(obj: any, path: string[], fallback: any = undefined) {
+  try {
+    let cur = obj;
+    for (const k of path) cur = cur?.[k];
+    return cur === undefined ? fallback : cur;
+  } catch {
+    return fallback;
+  }
+}
+
+export default function CoreOverlayedPage() {
+  const [profile, setProfile] = useState<string>("moderado");
+  const [benchmark, setBenchmark] = useState<string>("SPY");
+  const [lookbackDays, setLookbackDays] = useState<number>(120);
+  const [topQ, setTopQ] = useState<number>(20);
+  const [capPerTicker, setCapPerTicker] = useState<number>(0.2);
+  const [useTwsRaw, setUseTwsRaw] = useState<boolean>(false);
+  const [volTargetEnabled, setVolTargetEnabled] = useState<boolean>(true);
+  const [volTargetWindow, setVolTargetWindow] = useState<number>(60);
+
+  const [loading, setLoading] = useState<boolean>(false);
+  const [err, setErr] = useState<string>("");
+  const [resp, setResp] = useState<ApiResp | null>(null);
+
+  const body: ReqBody = useMemo(
+    () => ({
+      profile,
+      benchmark,
+      lookback_days: lookbackDays,
+      top_q: topQ,
+      cap_per_ticker: capPerTicker,
+      use_tws_raw: useTwsRaw,
+      include_series: true,
+      voltarget_enabled: volTargetEnabled,
+      voltarget_window: volTargetWindow,
+    }),
+    [profile, benchmark, lookbackDays, topQ, capPerTicker, useTwsRaw, volTargetEnabled, volTargetWindow]
+  );
+
+  async function run() {
+    setLoading(true);
+    setErr("");
+    try {
+      // IMPORTANT: go through Next proxy (no hardcoded backend host)
+      const r = await fetch("/api/proxy/performance/core_overlayed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify(body),
+      });
+
+      const txt = await r.text();
+      let json: any = null;
+      try {
+        json = JSON.parse(txt);
+      } catch {
+        throw new Error("Resposta não-JSON do proxy. HTTP " + r.status + " :: " + txt.slice(0, 300));
+      }
+
+      if (!r.ok || json?.ok === false) {
+        const detail = json?.detail ? (typeof json.detail === "string" ? json.detail : JSON.stringify(json.detail)) : "";
+        const msg = json?.error || json?.message || detail || ("HTTP " + r.status);
+        throw new Error(msg);
+      }
+
+      setResp(json as ApiResp);
+    } catch (e: any) {
+      setResp(null);
+      setErr(String(e?.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    // auto-load once
+    run().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const series = resp?.series || {};
+  const lenDates = safeLen(series?.dates);
+  const lenEq = safeLen(series?.equity);
+  const lenBench = safeLen(series?.benchmark_equity);
+
+  // KPI extraction (best-effort; backend schema may vary)
+  const kpiOverlay = pick(resp, ["result", "kpis_overlayed"], null) ?? pick(resp, ["result", "kpis"], null);
+  const kpiPre = pick(resp, ["result", "kpis_pre_rule"], null) ?? pick(resp, ["result", "kpis_pre"], null);
+  const kpiBench = pick(resp, ["result", "kpis_benchmark"], null) ?? pick(resp, ["result", "benchmark_kpis"], null);
+
+  function KpiRow({ label, value }: { label: string; value: string }) {
+    return (
+      <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <div style={{ color: "rgba(255,255,255,0.78)" }}>{label}</div>
+        <div style={{ fontWeight: 600 }}>{value}</div>
+      </div>
+    );
+  }
+
+  function KpiCard({ title, kpi }: { title: string; kpi: any }) {
+    return (
+      <div
+        style={{
+          background: "rgba(0,0,0,0.35)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 18,
+          padding: 18,
+          minHeight: 260,
+          boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ fontSize: 26, fontWeight: 800 }}>{title}</div>
+
+          <a
+            href="/api/proxy/equity_curves/core_overlayed/latest.csv"
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: "inline-block",
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.18)",
+              background: "rgba(255,255,255,0.06)",
+              color: "white",
+              textDecoration: "none",
+              fontWeight: 600,
+              fontSize: 14,
+            }}
+            title="Descarrega o CSV mais recente (gerado ao correr o modelo)"
+          >
+            Descarregar curva (CSV)
+          </a>
+        </div>
+
+        <KpiRow label="Return (ann)" value={fmtPct(pick(kpi, ["return_ann"]))} />
+        <KpiRow label="CAGR" value={fmtPct(pick(kpi, ["cagr"]))} />
+        <KpiRow label="Vol" value={fmtPct(pick(kpi, ["vol"]))} />
+        <KpiRow label="Sharpe" value={fmtNum(pick(kpi, ["sharpe"]), 2)} />
+        <KpiRow label="Max DD" value={fmtPct(pick(kpi, ["max_dd"]))} />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        padding: 36,
+        color: "white",
+        background: "radial-gradient(1200px 600px at 15% 15%, rgba(40,100,255,0.35), transparent 60%), radial-gradient(1200px 600px at 70% 35%, rgba(200,60,200,0.25), transparent 60%), linear-gradient(180deg, #070b14 0%, #050712 100%)",
+      }}
+    >
+      <div style={{ maxWidth: 1320, margin: "0 auto" }}>
+        <div style={{ fontSize: 64, fontWeight: 900, letterSpacing: -1, marginBottom: 10 }}>Performance — Core Overlayed</div>
+
+        <div style={{ color: "rgba(255,255,255,0.78)", marginBottom: 18 }}>
+          Profile: <b>{profile}</b> · Top Q: <b>{topQ}</b> · Benchmark: <b>{benchmark}</b> · Engine: <b>{resp?.engine_module || "—"}</b>
+        </div>
+
+        {err ? (
+          <div
+            style={{
+              padding: 16,
+              borderRadius: 14,
+              border: "1px solid rgba(255,80,160,0.35)",
+              background: "rgba(255,50,140,0.10)",
+              marginBottom: 16,
+              fontWeight: 600,
+            }}
+          >
+            Erro: {err}
+          </div>
+        ) : null}
+
+        <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
+          <button
+            onClick={() => run()}
+            disabled={loading}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.18)",
+              background: loading ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.10)",
+              color: "white",
+              cursor: loading ? "not-allowed" : "pointer",
+              fontWeight: 700,
+            }}
+          >
+            {loading ? "A calcular..." : "Recalcular"}
+          </button>
+
+          <div style={{ color: "rgba(255,255,255,0.80)" }}>
+            series: dates={lenDates} · bench_eq={lenBench} · note={resp?._payload_hygiene_marker || "—"}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 18 }}>
+          <KpiCard title="Overlay volcapped" kpi={kpiOverlay} />
+          <KpiCard title="Pré-regra" kpi={kpiPre} />
+          <KpiCard title="Benchmark" kpi={kpiBench} />
+        </div>
+
+        <div
+          style={{
+            marginTop: 18,
+            background: "rgba(0,0,0,0.35)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 18,
+            padding: 18,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 26, fontWeight: 800 }}>Tickers / Pesos</div>
+            <a
+              href="/api/proxy/equity_curves/core_overlayed/latest.csv"
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: "inline-block",
+                padding: "10px 14px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.18)",
+                background: "rgba(255,255,255,0.06)",
+                color: "white",
+                textDecoration: "none",
+                fontWeight: 600,
+                fontSize: 14,
+              }}
+            >
+              Descarregar curva (CSV)
+            </a>
+          </div>
+
+          <div style={{ color: "rgba(255,255,255,0.78)" }}>
+            {pick(resp, ["result", "weights_used"]) ? "Pesos disponíveis (ver JSON no Debug)." : "Seleção vazia."}
+          </div>
+
+          <details style={{ marginTop: 14 }}>
+            <summary style={{ cursor: "pointer", color: "rgba(255,255,255,0.78)" }}>Debug (payload e chaves)</summary>
+            <pre style={{ whiteSpace: "pre-wrap", marginTop: 10, padding: 12, background: "rgba(0,0,0,0.35)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.06)" }}>
+              {JSON.stringify(
+                {
+                  request: body,
+                  topKeys: resp ? Object.keys(resp) : [],
+                  resultKeys: resp?.result ? Object.keys(resp.result) : [],
+                  seriesLens: { dates: lenDates, equity: lenEq, benchmark_equity: lenBench },
+                  markers: {
+                    _ddcap_marker_perf: resp?._ddcap_marker_perf,
+                    _ddcap_engine_marker: resp?._ddcap_engine_marker,
+                    _payload_hygiene_marker: resp?._payload_hygiene_marker,
+                  },
+                },
+                null,
+                2
+              )}
+            </pre>
+          </details>
+        </div>
+      </div>
+    </div>
+  );
+}

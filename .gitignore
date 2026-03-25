@@ -1,0 +1,30 @@
+node_modules/
+**/node_modules/
+
+# Python (inclui .venv311, .venv, etc.)
+.venv*/
+**/.venv*/
+venv/
+ENV/
+
+# Dados locais / backups enormes
+.data/
+_ARCHIVE_BACKUPS/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Snapshots / cópias locais (muito grandes)
+backend/RELEASES/
+backend_CORRUPTED*/
+
+# Segredos e ambiente local
+.env
+.env.local
+**/.env.local
+
+# Next (build)
+.next/
+next-cache/
+**/next-cache/

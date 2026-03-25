@@ -1,0 +1,16 @@
+
+> decide-frontend@1.0.0 dev
+> next dev --webpack -H 127.0.0.1 -p 4701
+
+   ▲ Next.js 16.0.0 (webpack)
+   - Local:        http://127.0.0.1:4701
+   - Network:      http://127.0.0.1:4701
+   - Environments: .env.local
+
+ ✓ Starting...
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+SyntaxError: Unexpected token '﻿', "﻿{
+    "n"... is not valid JSON
+while determining default 'output.uniqueName' from 'name' in C:\Users\Joaquim\Documents\DECIDE_CORE22_CLONE\frontend\package.json
+    at JSON.parse (<anonymous>)
+[?25h

@@ -1,0 +1,37 @@
+
+> decide-frontend@1.0.0 dev
+> next dev -H 127.0.0.1 -p 4701
+
+   ▲ Next.js 16.0.0 (Turbopack)
+   - Local:        http://127.0.0.1:4701
+   - Network:      http://127.0.0.1:4701
+   - Environments: .env.local
+
+ ✓ Starting...
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+node:internal/validators:162
+    throw new ERR_INVALID_ARG_TYPE(name, 'string', value);
+          ^
+
+TypeError: The "to" argument must be of type string. Received undefined
+    at validateString (node:internal/validators:162:11)
+    at Object.relative (node:path:502:5)
+    at Watchpack.<anonymous> (C:\Users\Joaquim\Documents\DECIDE_CORE22_CLONE\frontend\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js:540:55)
+    at Watchpack.emit (node:events:518:28)
+    at Watchpack._onTimeout (C:\Users\Joaquim\Documents\DECIDE_CORE22_CLONE\frontend\node_modules\next\dist\compiled\watchpack\watchpack.js:1:37727)
+    at listOnTimeout (node:internal/timers:573:17)
+    at process.processTimers (node:internal/timers:514:7) {
+  code: 'ERR_INVALID_ARG_TYPE'
+}
+Thrown at:
+    at validateString (node:internal/validators:162:11)
+    at relative (node:path:502:5)
+    at C:\Users\Joaquim\Documents\DECIDE_CORE22_CLONE\frontend\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js:540:55
+    at emit (node:events:518:28)
+    at _onTimeout (C:\Users\Joaquim\Documents\DECIDE_CORE22_CLONE\frontend\node_modules\next\dist\compiled\watchpack\watchpack.js:1:37727)
+    at listOnTimeout (node:internal/timers:573:17)
+    at processTimers (node:internal/timers:514:7)
+
+
+Node.js v20.11.1
+[?25h

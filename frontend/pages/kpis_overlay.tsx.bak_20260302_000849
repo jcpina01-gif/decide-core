@@ -1,0 +1,430 @@
+import React, { useEffect, useMemo, useState } from "react";
+
+type Kpis = {
+  total_return?: number | null;
+  cagr?: number | null;
+  vol?: number | null;
+  sharpe?: number | null;
+  max_drawdown?: number | null;
+};
+
+type RunResp = {
+  ok: boolean;
+  router_version?: string;
+
+  profile?: string;
+  profile_effective?: string;
+
+  benchmark?: string;
+  benchmark_used?: string;
+  benchmark_present?: boolean;
+  benchmark_kpis?: Kpis;
+
+  regime?: string;
+  vol_bench?: number | null;
+
+  exposure?: { from?: number | null; to?: number | null; current?: number | null };
+
+  multiplier_total_raw?: number | null;
+  multiplier_total_clamped?: number | null;
+  multiplier_total_used?: number | null;
+
+  kpis_pre?: Kpis;
+  kpis_mid?: Kpis;
+  kpis_post?: Kpis;
+
+  detail?: any;
+  _debug?: any;
+};
+
+function fmtPct(x: any, digits = 2): string {
+  if (x === null || x === undefined) return "—";
+  const v = Number(x);
+  if (!Number.isFinite(v)) return "—";
+  return (v * 100).toFixed(digits) + "%";
+}
+function fmtNum(x: any, digits = 2): string {
+  if (x === null || x === undefined) return "—";
+  const v = Number(x);
+  if (!Number.isFinite(v)) return "—";
+  return v.toFixed(digits);
+}
+
+function badgeForClamp(clamped: string | undefined): { text: string; cls: string } {
+  const c = (clamped || "").toLowerCase();
+  if (c.includes("floor")) return { text: "FLOOR", cls: "bg-emerald-500/15 text-emerald-200 border-emerald-400/30" };
+  if (c.includes("cap")) return { text: "CAP", cls: "bg-amber-500/15 text-amber-200 border-amber-400/30" };
+  if (c === "ok") return { text: "OK", cls: "bg-sky-500/15 text-sky-200 border-sky-400/30" };
+  return { text: "—", cls: "bg-white/5 text-white/60 border-white/10" };
+}
+
+function Card(props: { title: string; right?: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-2xl border border-white/10 bg-white/[0.04] shadow-[0_10px_40px_rgba(0,0,0,0.45)] ${props.className || ""}`}>
+      <div className="flex items-start justify-between gap-3 px-5 pt-4">
+        <div className="text-xs tracking-widest text-white/55 uppercase">{props.title}</div>
+        {props.right}
+      </div>
+      <div className="px-5 pb-5 pt-3">{props.children}</div>
+    </div>
+  );
+}
+
+function MetricMini(props: { label: string; value: string; emph?: boolean }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
+      <div className="text-[11px] tracking-widest text-white/55 uppercase">{props.label}</div>
+      <div className={`mt-1 ${props.emph ? "text-2xl font-semibold text-white" : "text-lg font-medium text-white"}`}>{props.value}</div>
+    </div>
+  );
+}
+
+function KpisGrid(props: { kpis?: Kpis; tag?: string }) {
+  const k = props.kpis || {};
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <MetricMini label="CAGR" value={fmtPct(k.cagr)} />
+      <MetricMini label="Vol" value={fmtPct(k.vol)} />
+      <MetricMini label="Sharpe" value={fmtNum(k.sharpe)} />
+      <MetricMini label="MaxDD" value={fmtPct(k.max_drawdown)} />
+    </div>
+  );
+}
+
+export default function KpisOverlayPage() {
+  const [profile, setProfile] = useState<string>("moderado");
+  const [benchmark, setBenchmark] = useState<string>("SPY");
+  const [historyDays, setHistoryDays] = useState<number>(60);
+
+  const [applyVolTarget, setApplyVolTarget] = useState<boolean>(true);
+  const [targetVolMode, setTargetVolMode] = useState<string>("benchmark");
+  const [targetVolFixed, setTargetVolFixed] = useState<string>("0,15");
+  const [clampTotal, setClampTotal] = useState<boolean>(true);
+
+  const [loading, setLoading] = useState<boolean>(false);
+  const [err, setErr] = useState<string>("");
+  const [resp, setResp] = useState<RunResp | null>(null);
+
+  const endpoint = useMemo(() => "/api/proxy/api/kpis_overlay/regimes/run", []);
+
+  async function run() {
+    setLoading(true);
+    setErr("");
+    try {
+      const body = {
+        profile,
+        benchmark,
+        top_q: 20,
+        lookback: 120,
+        cap_per_ticker: 0.2,
+        include_history: true,
+        history_days: historyDays,
+        use_tws_raw: true,
+        force_tws_csv: true,
+        apply_vol_target: applyVolTarget,
+        target_vol_mode: targetVolMode,
+        target_vol_fixed: Number(String(targetVolFixed).replace(",", ".")),
+        clamp_total_multiplier: clampTotal,
+      };
+
+      const r = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const j = (await r.json()) as RunResp;
+      setResp(j);
+      if (!j.ok) {
+        setErr(j?._debug?.note || "Erro ao calcular (ok=false)");
+      }
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+      setResp(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const clampInfo = resp?.detail?.clamp_total_stage || {};
+  const clampBadge = badgeForClamp(clampInfo?.clamped);
+
+  const totalUsed = resp?.multiplier_total_used ?? null;
+  const totalRaw = resp?.multiplier_total_raw ?? null;
+
+  const benchPresent = Boolean(resp?.benchmark_present);
+  const bench = resp?.benchmark_kpis || {};
+
+  return (
+    <div className="min-h-screen text-white">
+      {/* background */}
+      <div className="fixed inset-0 -z-10 bg-[#070B12]" />
+      <div className="fixed inset-0 -z-10 opacity-70 bg-[radial-gradient(1200px_600px_at_20%_10%,rgba(59,130,246,0.18),transparent_60%),radial-gradient(900px_500px_at_85%_35%,rgba(16,185,129,0.10),transparent_60%),radial-gradient(900px_600px_at_50%_95%,rgba(99,102,241,0.10),transparent_60%)]" />
+      <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.06),transparent_55%)]" />
+
+      <div className="mx-auto max-w-7xl px-6 py-10">
+        <div className="flex items-start justify-between gap-6">
+          <div>
+            <h1 className="text-4xl font-semibold tracking-tight">KPIs Overlay + Regimes</h1>
+            <div className="mt-2 text-sm text-white/55">
+              Endpoint: <span className="text-white/70">{endpoint}</span>{" "}
+              {resp?.router_version ? (
+                <span className="ml-2 text-white/45">({resp.router_version})</span>
+              ) : null}
+            </div>
+          </div>
+
+          <button
+            onClick={run}
+            disabled={loading}
+            className="rounded-xl border border-white/10 bg-blue-500/20 px-5 py-3 text-sm font-semibold text-blue-100 shadow-[0_10px_30px_rgba(0,0,0,0.4)] hover:bg-blue-500/25 active:scale-[0.99] disabled:opacity-60"
+          >
+            {loading ? "A calcular..." : "Recalcular"}
+          </button>
+        </div>
+
+        <div className="mt-8 grid grid-cols-12 gap-5">
+          {/* LEFT: params */}
+          <div className="col-span-12 lg:col-span-4">
+            <Card title="Parâmetros">
+              <div className="space-y-4">
+                <div>
+                  <div className="text-xs tracking-widest text-white/55 uppercase">Perfil</div>
+                  <select
+                    value={profile}
+                    onChange={(e) => setProfile(e.target.value)}
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none"
+                  >
+                    <option value="conservador">Conservador</option>
+                    <option value="moderado">Moderado</option>
+                    <option value="dinamico">Dinâmico</option>
+                  </select>
+                  {resp?.profile_effective ? (
+                    <div className="mt-2 text-xs text-white/45">profile_effective: {resp.profile_effective}</div>
+                  ) : null}
+                </div>
+
+                <div>
+                  <div className="text-xs tracking-widest text-white/55 uppercase">Benchmark</div>
+                  <input
+                    value={benchmark}
+                    onChange={(e) => setBenchmark(e.target.value)}
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none"
+                    placeholder="SPY"
+                  />
+                </div>
+
+                <div>
+                  <div className="text-xs tracking-widest text-white/55 uppercase">Histórico (dias)</div>
+                  <input
+                    value={historyDays}
+                    onChange={(e) => setHistoryDays(Number(e.target.value))}
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none"
+                    type="number"
+                    min={20}
+                    max={365}
+                  />
+                </div>
+
+                <div className="h-px bg-white/10" />
+
+                <div>
+                  <div className="text-xs tracking-widest text-white/55 uppercase">Vol Target (Final)</div>
+
+                  <label className="mt-3 flex items-center gap-3 text-sm text-white/80">
+                    <input
+                      type="checkbox"
+                      checked={applyVolTarget}
+                      onChange={(e) => setApplyVolTarget(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    Ativo
+                  </label>
+
+                  <div className="mt-3">
+                    <div className="text-xs tracking-widest text-white/55 uppercase">Modo</div>
+                    <select
+                      value={targetVolMode}
+                      onChange={(e) => setTargetVolMode(e.target.value)}
+                      className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none"
+                    >
+                      <option value="benchmark">Benchmark (vol do benchmark)</option>
+                      <option value="fixed">Vol fixa</option>
+                    </select>
+                  </div>
+
+                  <div className="mt-3">
+                    <div className="text-xs tracking-widest text-white/55 uppercase">Vol fixa</div>
+                    <input
+                      value={targetVolFixed}
+                      onChange={(e) => setTargetVolFixed(e.target.value)}
+                      className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none"
+                      placeholder="0,15"
+                    />
+                  </div>
+
+                  <label className="mt-4 flex items-center gap-3 text-sm text-white/80">
+                    <input
+                      type="checkbox"
+                      checked={clampTotal}
+                      onChange={(e) => setClampTotal(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    Clamp do multiplicador total (por perfil)
+                  </label>
+
+                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
+                    <div className="flex items-center justify-between">
+                      <div className="text-white/60">Multiplicador usado</div>
+                      <div className="font-semibold text-white">{totalUsed === null ? "—" : fmtNum(totalUsed, 3)}</div>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between">
+                      <div className="text-white/60">Multiplicador raw</div>
+                      <div className="text-white/80">{totalRaw === null ? "—" : fmtNum(totalRaw, 3)}</div>
+                    </div>
+                    {resp?.detail?.vol_target_stage ? (
+                      <div className="mt-3 text-xs text-white/50">
+                        scale={fmtNum(resp.detail.vol_target_stage.scale_applied, 3)} | target_used=
+                        {fmtPct(resp.detail.vol_target_stage.target_vol_used, 2)} | source=
+                        {String(resp.detail.vol_target_stage.target_vol_source || "—")}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                {err ? (
+                  <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-4 text-sm text-red-100">
+                    <div className="font-semibold">Erro</div>
+                    <div className="mt-1">{err}</div>
+                  </div>
+                ) : null}
+              </div>
+            </Card>
+          </div>
+
+          {/* TOP ROW */}
+          <div className="col-span-12 lg:col-span-8">
+            <div className="grid grid-cols-12 gap-5">
+              <div className="col-span-12 md:col-span-5">
+                <Card
+                  title="Regime"
+                  right={
+                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] tracking-widest text-white/70">
+                      {(resp?.regime || "—").toString().toUpperCase()}
+                    </span>
+                  }
+                >
+                  <div className="text-3xl font-semibold">{(resp?.regime || "—").toString().toUpperCase()}</div>
+                  <div className="mt-2 text-sm text-white/60">Vol benchmark (regime): {fmtPct(resp?.vol_bench, 2)}</div>
+                </Card>
+              </div>
+
+              <div className="col-span-12 md:col-span-4">
+                <Card title="Exposição (Regime)">
+                  <div className="text-3xl font-semibold">{fmtNum(resp?.exposure?.current, 2)}</div>
+                  <div className="mt-2 text-sm text-white/60">
+                    Range: {fmtNum(resp?.exposure?.from, 2)} — {fmtNum(resp?.exposure?.to, 2)}
+                  </div>
+                </Card>
+              </div>
+
+              <div className="col-span-12 md:col-span-3">
+                <Card
+                  title="Multiplicador Total"
+                  right={
+                    <span className={`rounded-full border px-3 py-1 text-[11px] tracking-widest ${clampBadge.cls}`}>
+                      {clampBadge.text}
+                    </span>
+                  }
+                >
+                  <div className="text-3xl font-semibold">{totalUsed === null ? "—" : fmtNum(totalUsed, 3)}</div>
+                  <div className="mt-2 text-xs text-white/50">
+                    clamp: {String(clampInfo?.clamped || "—")} | floor: {fmtNum(clampInfo?.floor_total, 2)} | cap:{" "}
+                    {fmtNum(clampInfo?.cap_total, 2)}
+                  </div>
+                </Card>
+              </div>
+
+              <div className="col-span-12">
+                <Card title="Engine / Benchmark">
+                  <div className="grid grid-cols-12 gap-4">
+                    <div className="col-span-12 md:col-span-6">
+                      <div className="text-sm text-white/60">
+                        Engine:{" "}
+                        <span className="text-white/80">
+                          {String(resp?.detail?.engine_version || resp?.detail?.engine_source || "—")}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-sm text-white/60">
+                        Benchmark usado: <span className="text-white/80">{String(resp?.benchmark_used || "—")}</span>
+                      </div>
+                      <div className="mt-2 text-sm text-white/60">
+                        Benchmark presente: <span className="text-white/80">{benchPresent ? "Sim" : "Não"}</span>
+                      </div>
+                    </div>
+
+                    <div className="col-span-12 md:col-span-6">
+                      {benchPresent ? (
+                        <div>
+                          <div className="text-xs tracking-widest text-white/55 uppercase">KPIs Benchmark</div>
+                          <div className="mt-3 grid grid-cols-2 gap-3">
+                            <MetricMini label="CAGR" value={fmtPct(bench.cagr)} />
+                            <MetricMini label="Vol" value={fmtPct(bench.vol)} />
+                            <MetricMini label="Sharpe" value={fmtNum(bench.sharpe)} />
+                            <MetricMini label="MaxDD" value={fmtPct(bench.max_drawdown)} />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-white/60">
+                          Sem benchmark_kpis no payload.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              </div>
+            </div>
+
+            {/* KPI cards */}
+            <div className="mt-5 grid grid-cols-12 gap-5">
+              <div className="col-span-12 md:col-span-4">
+                <Card title="KPIs Pré" right={<span className="text-xs text-white/45">TWS bruto</span>}>
+                  <KpisGrid kpis={resp?.kpis_pre} />
+                </Card>
+              </div>
+
+              <div className="col-span-12 md:col-span-4">
+                <Card title="KPIs MID" right={<span className="text-xs text-white/45">Pós regimes</span>}>
+                  <KpisGrid kpis={resp?.kpis_mid} />
+                </Card>
+              </div>
+
+              <div className="col-span-12 md:col-span-4">
+                <Card title="KPIs Final" right={<span className="text-xs text-white/45">Regime + VolTarget + Clamp</span>}>
+                  <KpisGrid kpis={resp?.kpis_post} />
+                </Card>
+              </div>
+            </div>
+
+            {/* Debug hint */}
+            <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm text-white/55">
+              <div className="font-semibold text-white/70">Debug</div>
+              <div className="mt-1">
+                {resp?._debug?.note ? String(resp._debug.note) : "—"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-10 text-xs text-white/35">
+          Nota: Vol e MaxDD “melhor” é mais baixo; Sharpe e CAGR “melhor” é mais alto.
+        </div>
+      </div>
+    </div>
+  );
+}

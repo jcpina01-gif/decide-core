@@ -1,0 +1,394 @@
+import React, { useEffect, useMemo, useState } from "react";
+
+type AnyObj = Record<string, any>;
+
+function fmtPct(x: any, digits = 1): string {
+  const n = Number(x);
+  if (!isFinite(n)) return "—";
+  return (
+      
+n * 100).toFixed(digits) + "%";
+}
+
+function fmtNum(x: any, digits = 2): string {
+  const n = Number(x);
+  if (!isFinite(n)) return "—";
+  return n.toFixed(digits);
+}
+
+function pick(obj: AnyObj | null | undefined, paths: string[]): any {
+  if (!obj) return undefined;
+  for (const p of paths) {
+    const parts = p.split(".");
+    let cur: any = obj;
+    let ok = true;
+    for (const part of parts) {
+      if (cur && Object.prototype.hasOwnProperty.call(cur, part)) cur = cur[part];
+      else { ok = false; break; }
+    }
+    if (ok && cur !== undefined && cur !== null) return cur;
+  }
+  return undefined;
+}
+
+function getKpisBlock(data: AnyObj, blockNames: string[]): AnyObj | null {
+  for (const name of blockNames) {
+    const v = data?.[name];
+    if (v && typeof v === "object") return v;
+  }
+  return null;
+}
+
+function normalizeKpis(k: AnyObj | null): { ret: any; cagr: any; vol: any; sharpe: any; mdd: any } {
+  if (!k) return { ret: undefined, cagr: undefined, vol: undefined, sharpe: undefined, mdd: undefined };
+
+  // Tentativa de cobrir vários nomes possíveis
+  const ret =
+    pick(k, ["return_ann", "return_ann_pct", "ann_return", "return", "ret_ann", "ret"]) ??
+    pick(k, ["return_annual", "annual_return"]);
+  const cagr = pick(k, ["cagr", "CAGR"]);
+  const vol =
+    pick(k, ["vol", "vol_ann", "ann_vol", "volatility", "vol_annual"]) ??
+    pick(k, ["stdev_ann", "stdev_annual"]);
+  const sharpe = pick(k, ["sharpe", "sharpe_ratio", "sr"]);
+  const mdd =
+    pick(k, ["max_dd", "max_drawdown", "mdd", "maxDD"]) ??
+    pick(k, ["drawdown_max"]);
+  return { ret, cagr, vol, sharpe, mdd };
+}
+
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{
+      borderRadius: 18,
+      border: "1px solid rgba(255,255,255,0.08)",
+      background: "rgba(10,12,18,0.55)",
+      padding: 18,
+      boxShadow: "0 8px 30px rgba(0,0,0,0.25)"
+    }}>
+
+      {/* DECIDE_DOWNLOAD_LATEST_CSV_BTN_V1 */}
+      <div style={display:"flex", gap:12, alignItems:"center", marginTop:12, marginBottom:12}>
+        <a
+          href="http://127.0.0.1:8067/api/equity_curves/core_overlayed/latest.csv"
+          target="_blank"
+          rel="noreferrer"
+          style={
+            display:"inline-flex",
+            alignItems:"center",
+            justifyContent:"center",
+            padding:"10px 12px",
+            borderRadius:10,
+            border:"1px solid rgba(255,255,255,0.20)",
+            background:"rgba(255,255,255,0.06)",
+            color:"#fff",
+            textDecoration:"none",
+            fontSize:14,
+            lineHeight:"14px",
+            cursor:"pointer"
+          }
+          title="Descarregar a curva mais recente (CSV)"
+        >
+          Descarregar curva (CSV)
+        </a>
+        <span style={opacity:0.75, fontSize:12}>
+          (gera-se ao correr o modelo)
+        </span>
+      </div>
+      {/* END DECIDE_DOWNLOAD_LATEST_CSV_BTN_V1 */}
+
+      <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 12 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      <div style={{ opacity: 0.85 }}>{label}</div>
+      <div style={{ fontWeight: 700 }}>{value}</div>
+    </div>
+  );
+}
+
+export default function CoreOverlayedPage() {
+  const [profile, setProfile] = useState<string>("moderado");
+  const [benchmark, setBenchmark] = useState<string>("SPY");
+  const [topQ, setTopQ] = useState<number>(20);
+  const [lookbackDays, setLookbackDays] = useState<number>(120);
+  const [capPerTicker, setCapPerTicker] = useState<number>(0.2);
+  const [voltargetEnabled, setVoltargetEnabled] = useState<boolean>(true);
+  const [voltargetWindow, setVoltargetWindow] = useState<number>(60);
+
+  const [loading, setLoading] = useState<boolean>(false);
+  const [err, setErr] = useState<string>("");
+  const [data, setData] = useState<AnyObj | null>(null);
+
+  const payload = useMemo(() => {
+    return {
+      profile,
+      benchmark,
+      lookback_days: lookbackDays,
+      top_q: topQ,
+      cap_per_ticker: capPerTicker,
+      use_tws_raw: false,
+      include_series: true,
+      voltarget_enabled: voltargetEnabled,
+      voltarget_window: voltargetWindow,
+    };
+  }, [profile, benchmark, lookbackDays, topQ, capPerTicker, voltargetEnabled, voltargetWindow]);
+
+  async function run() {
+    setLoading(true);
+    setErr("");
+    try {
+      const res = await fetch("/api/performance/core_overlayed?include_series=1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const txt = await res.text();
+      let j: AnyObj = {};
+      try { j = JSON.parse(txt); } catch { j = { ok: false, error: "invalid_json", raw: txt }; }
+
+      if (!res.ok) {
+        setErr(`HTTP ${res.status} — ${j?.error || j?.message || "erro desconhecido"}`);
+        setData(j);
+        return;
+      }
+
+      if (j?.ok === false) {
+        setErr(j?.error || j?.message || "ok=false");
+        setData(j);
+        return;
+      }
+
+      setData(j);
+    } catch (e: any) {
+      setErr(e?.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { run(); /* auto-run */ }, []);
+
+  const engine = data?.engine_version || data?.engine || data?.meta?.engine_version || "—";
+
+  // KPIs: tentamos vários nomes possíveis
+  const kOverlay = normalizeKpis(
+    getKpisBlock(data || {}, [
+      "kpis_overlayed",
+      "kpis_post",
+      "kpis_post_ddcap",
+      "kpis_post_overlay",
+      "kpis_after",
+      "kpis_final",
+      "kpis_volcapped",
+    ])
+  );
+
+  const kPre = normalizeKpis(
+    getKpisBlock(data || {}, [
+      "kpis_pre",
+      "kpis_pre_rule",
+      "kpis_before",
+      "kpis_base",
+      "kpis_pre_ddcap",
+      "kpis_raw",
+    ])
+  );
+
+  const kBench = normalizeKpis(
+    getKpisBlock(data || {}, [
+      "kpis_benchmark",
+      "benchmark_kpis",
+      "kpis_bench",
+    ])
+  );
+
+  // Pesos
+  const weights: AnyObj = pick(data || {}, [
+    "weights",
+    "weights_used",
+    "detail.weights_used",
+    "detail.weights",
+    "out.weights_used",
+  ]) || null;
+
+  const tickers = useMemo(() => {
+    if (!weights || typeof weights !== "object") return [];
+    const entries = Object.entries(weights)
+      .filter(([k, v]) => k && v !== null && v !== undefined)
+      .map(([k, v]) => [String(k), Number(v)] as [string, number])
+      .filter(([, v]) => isFinite(v) && Math.abs(v) > 0)
+      .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+    return entries.slice(0, 40);
+  }, [weights]);
+
+  const seriesDatesLen = Array.isArray(data?.series?.dates) ? data!.series!.dates.length : 0;
+  const benchEqLen = Array.isArray(data?.series?.benchmark_equity) ? data!.series!.benchmark_equity.length : 0;
+
+  const fbUsed = data?.detail?.series_fallback?.used;
+  const fbNote = data?.detail?.series_fallback?.note;
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      padding: "34px 26px",
+      color: "white",
+      background: "radial-gradient(1200px 700px at 20% 10%, rgba(60,110,255,0.28), rgba(0,0,0,0) 55%), radial-gradient(900px 600px at 75% 15%, rgba(180,60,255,0.22), rgba(0,0,0,0) 55%), #05060a",
+      fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+        <div style={{ fontSize: 56, fontWeight: 800, letterSpacing: "-0.02em", marginBottom: 10 }}>
+          Performance — Core Overlayed
+        </div>
+
+        <div style={{ opacity: 0.9, marginBottom: 18 }}>
+          Profile: <b>{profile}</b> · Top Q: <b>{topQ}</b> · Benchmark: <b>{benchmark}</b> · Engine: <b>{engine}</b>
+        </div>
+
+        {err ? (
+          <div style={{
+            marginBottom: 18,
+            padding: "14px 16px",
+            borderRadius: 14,
+            border: "1px solid rgba(255,80,140,0.35)",
+            background: "rgba(120,20,60,0.25)"
+          }}>
+            <b>Erro:</b> {err}
+          </div>
+        ) : null}
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
+          <button
+            onClick={run}
+            disabled={loading}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.14)",
+              background: loading ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.10)",
+              color: "white",
+              cursor: loading ? "not-allowed" : "pointer",
+              fontWeight: 700
+            }}
+          >
+            {loading ? "A correr..." : "Recalcular"}
+          </button>
+
+          <div style={{ opacity: 0.85, paddingTop: 10 }}>
+            series: dates={seriesDatesLen} · bench_eq={benchEqLen} · fallback={String(fbUsed)} · note={fbNote || "—"}
+          </div>
+        </div>
+
+        {/* KPI CARDS */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
+          <Card title="Overlay volcapped">
+            <Row label="Return (ann)" value={fmtPct(kOverlay.ret)} />
+            <Row label="CAGR" value={fmtPct(kOverlay.cagr)} />
+            <Row label="Vol" value={fmtPct(kOverlay.vol)} />
+            <Row label="Sharpe" value={fmtNum(kOverlay.sharpe)} />
+            <Row label="Max DD" value={fmtPct(kOverlay.mdd)} />
+          </Card>
+
+          <Card title="Pré-regra">
+            <Row label="Return (ann)" value={fmtPct(kPre.ret)} />
+            <Row label="CAGR" value={fmtPct(kPre.cagr)} />
+            <Row label="Vol" value={fmtPct(kPre.vol)} />
+            <Row label="Sharpe" value={fmtNum(kPre.sharpe)} />
+            <Row label="Max DD" value={fmtPct(kPre.mdd)} />
+          </Card>
+
+          <Card title="Benchmark">
+            <Row label="Return (ann)" value={fmtPct(kBench.ret)} />
+            <Row label="CAGR" value={fmtPct(kBench.cagr)} />
+            <Row label="Vol" value={fmtPct(kBench.vol)} />
+            <Row label="Sharpe" value={fmtNum(kBench.sharpe)} />
+            <Row label="Max DD" value={fmtPct(kBench.mdd)} />
+          </Card>
+        </div>
+
+        {/* WEIGHTS */}
+        <div style={{ marginTop: 18 }}>
+          <Card title="Tickers / Pesos">
+            {tickers.length === 0 ? (
+              <div style={{ opacity: 0.85 }}>Seleção vazia.</div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                {tickers.map(([t, w]) => (
+                  <div key={t} style={{ display: "flex", justifyContent: "space-between", padding: "8px 10px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)" }}>
+                    <div style={{ fontWeight: 700 }}>{t}</div>
+                    <div style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>{fmtPct(w, 2)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ marginTop: 12, opacity: 0.7, fontSize: 12 }}>
+              engine: {engine} · cache: —
+            </div>
+
+            {/* DEBUG (mínimo) */}
+            <details style={{ marginTop: 12, opacity: 0.85 }}>
+              <summary style={{ cursor: "pointer" }}>Debug (payload e chaves)</summary>
+              <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, marginTop: 10, background: "rgba(0,0,0,0.35)", padding: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)" }}>
+{JSON.stringify({
+  payload,
+  top_level_keys: data ? Object.keys(data).sort() : [],
+  kpi_keys_guess: data ? Object.keys(data).filter(k => k.toLowerCase().includes("kpi")).sort() : [],
+  has_series: !!data?.series,
+  series_keys: data?.series ? Object.keys(data.series).sort() : [],
+  detail_keys: data?.detail ? Object.keys(data.detail).sort() : [],
+}, null, 2)}
+              </pre>
+            </details>
+          </Card>
+        </div>
+
+        {/* CONTROLS (simples, para já) */}
+        <div style={{ marginTop: 18, opacity: 0.9 }}>
+          <details>
+            <summary style={{ cursor: "pointer", fontWeight: 700 }}>Parâmetros</summary>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, marginTop: 12 }}>
+              <div>
+                <div style={{ opacity: 0.8, marginBottom: 6 }}>Profile</div>
+                <input value={profile} onChange={(e) => setProfile(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 12, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "white" }} />
+              </div>
+              <div>
+                <div style={{ opacity: 0.8, marginBottom: 6 }}>Benchmark</div>
+                <input value={benchmark} onChange={(e) => setBenchmark(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 12, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "white" }} />
+              </div>
+              <div>
+                <div style={{ opacity: 0.8, marginBottom: 6 }}>Top Q</div>
+                <input type="number" value={topQ} onChange={(e) => setTopQ(Number(e.target.value))} style={{ width: "100%", padding: 10, borderRadius: 12, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "white" }} />
+              </div>
+              <div>
+                <div style={{ opacity: 0.8, marginBottom: 6 }}>Lookback days</div>
+                <input type="number" value={lookbackDays} onChange={(e) => setLookbackDays(Number(e.target.value))} style={{ width: "100%", padding: 10, borderRadius: 12, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "white" }} />
+              </div>
+              <div>
+                <div style={{ opacity: 0.8, marginBottom: 6 }}>Cap por ticker</div>
+                <input type="number" step="0.01" value={capPerTicker} onChange={(e) => setCapPerTicker(Number(e.target.value))} style={{ width: "100%", padding: 10, borderRadius: 12, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "white" }} />
+              </div>
+              <div>
+                <div style={{ opacity: 0.8, marginBottom: 6 }}>Vol-target window</div>
+                <input type="number" value={voltargetWindow} onChange={(e) => setVoltargetWindow(Number(e.target.value))} style={{ width: "100%", padding: 10, borderRadius: 12, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "white" }} />
+              </div>
+              <div style={{ gridColumn: "1 / span 3" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 6 }}>
+                  <input type="checkbox" checked={voltargetEnabled} onChange={(e) => setVoltargetEnabled(e.target.checked)} />
+                  <span>Vol-target enabled</span>
+                </label>
+              </div>
+            </div>
+          </details>
+        </div>
+
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,13 @@
+⚠ Invalid next.config.js options detected: 
+⚠     Unrecognized key(s) in object: 'allowedDevOrigins' at "experimental"
+⚠ See more info here: https://nextjs.org/docs/messages/invalid-next-config
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:8090
+- Network:       http://192.168.1.3:8090
+- Environments: .env.local
+- Experiments (use with caution):
+  ? allowedDevOrigins (invalid experimental key)
+
+✓ Starting...
+✓ Ready in 443ms
+ GET /api/proxy/performance/core_overlayed?profile=moderado&top_q=20&benchmark=SPY 200 in 60s (compile: 24ms, render: 60s)

@@ -1,0 +1,14 @@
+
+> decide-frontend@1.0.0 dev
+> next dev -H 127.0.0.1 -p 4701
+
+   ▲ Next.js 16.0.0 (Turbopack)
+   - Local:        http://127.0.0.1:4701
+   - Network:      http://127.0.0.1:4701
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 454ms
+ GET /dashboard 500 in 1643ms (compile: 1548ms, render: 95ms)
+ GET /dashboard 500 in 16ms (compile: 10ms, render: 6ms)
+ GET /dashboard 500 in 17ms (compile: 13ms, render: 4ms)

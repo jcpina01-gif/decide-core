@@ -1,0 +1,5 @@
+# Build local do Next (quando distDir é .next)
+.data/
+.next/
+# distDir alternativo (ex.: NEXT_DIST_DIR=next-cache no .env.local)
+next-cache/

@@ -1,0 +1,32 @@
+
+> decide-frontend@1.0.0 dev
+> next dev -p 4700
+
+ ⚠ Invalid next.config.js options detected: 
+ ⚠     Unrecognized key(s) in object: 'enabled' at "turbopack"
+ ⚠ See more info here: https://nextjs.org/docs/messages/invalid-next-config
+   ▲ Next.js 16.0.0 (Turbopack)
+   - Local:        http://localhost:4700
+   - Network:      http://192.168.1.3:4700
+   - Environments: .env.local
+
+ ✓ Starting...
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+ ✓ Ready in 489ms
+ ⚠ Cross origin request detected from 127.0.0.1 to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+ GET /kpis_overlay 200 in 1010ms (compile: 989ms, render: 21ms)
+ GET /kpis_overlay 200 in 9ms (compile: 5ms, render: 5ms)
+ POST /api/proxy/api/kpis_overlay/regimes/run 200 in 79ms (compile: 21ms, render: 58ms)
+ POST /api/proxy/api/kpis_overlay/regimes/run 200 in 80ms (compile: 14ms, render: 66ms)
+ POST /api/proxy/api/kpis_overlay/regimes/run 200 in 28ms (compile: 1329µs, render: 27ms)
+ POST /api/proxy/api/kpis_overlay/regimes/run 200 in 28ms (compile: 884µs, render: 27ms)
+ POST /api/proxy/api/kpis_overlay/regimes/run 200 in 41ms (compile: 924µs, render: 40ms)
+ POST /api/proxy/api/kpis_overlay/regimes/run 200 in 42ms (compile: 827µs, render: 41ms)
+ POST /api/proxy/api/kpis_overlay/regimes/run 200 in 43ms (compile: 1314µs, render: 41ms)
+ POST /api/proxy/api/kpis_overlay/regimes/run 200 in 40ms (compile: 978µs, render: 39ms)
+ POST /api/proxy/api/kpis_overlay/regimes/run 200 in 36ms (compile: 1016µs, render: 35ms)
+ POST /api/proxy/api/kpis_overlay/regimes/run 200 in 34ms (compile: 1140µs, render: 33ms)
+ POST /api/proxy/api/kpis_overlay/regimes/run 200 in 52ms (compile: 1882µs, render: 50ms)
+ GET /kpis_overlay 200 in 75ms (compile: 65ms, render: 10ms)
+[?25h

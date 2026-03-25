@@ -1,0 +1,22 @@
+
+> decide-frontend@1.0.0 dev
+> next dev -p 4700
+
+   ▲ Next.js 16.0.0 (Turbopack)
+   - Local:        http://localhost:4700
+   - Network:      http://192.168.1.3:4700
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 449ms
+ GET /debug_markers 200 in 930ms (compile: 910ms, render: 19ms)
+ GET /debug_markers 200 in 11ms (compile: 5ms, render: 6ms)
+ GET /debug_markers 200 in 7ms (compile: 3ms, render: 5ms)
+ GET /debug_markers 200 in 9ms (compile: 3ms, render: 6ms)
+ GET / 200 in 135ms (compile: 132ms, render: 3ms)
+ GET /debug_markers 200 in 7ms (compile: 3ms, render: 4ms)
+ POST /api/proxy/performance/core_overlayed 500 in 24ms (compile: 14ms, render: 10ms)
+ POST /api/proxy/performance/core_overlayed 500 in 26ms (compile: 20ms, render: 5ms)
+ POST /api/proxy/kpis_overlay/regimes/run 200 in 30ms (compile: 5ms, render: 25ms)
+ POST /api/proxy/kpis_overlay/regimes/run 200 in 30ms (compile: 7ms, render: 23ms)
+[?25h
