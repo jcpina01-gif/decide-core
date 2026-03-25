@@ -357,6 +357,8 @@ export default function ClientRegisterPage() {
   }>({ twilioConfigured: false, allowClientPhoneVerify: false, devSignupSmsSimulate: false });
   const [phoneConfigLoading, setPhoneConfigLoading] = useState(false);
   const [phoneOtp, setPhoneOtp] = useState("");
+  /** Devolvido por POST send — obrigatório em Vercel (serverless sem disco partilhado). */
+  const [phoneOtpProof, setPhoneOtpProof] = useState("");
   const [phoneSmsBusy, setPhoneSmsBusy] = useState(false);
   const [phoneVerifyBusy, setPhoneVerifyBusy] = useState(false);
   const [phoneSmsMsg, setPhoneSmsMsg] = useState("");
@@ -682,6 +684,7 @@ export default function ClientRegisterPage() {
     resetMsgs();
     setPhoneSmsMsg("");
     setPhoneVerifyFeedback("");
+    setPhoneOtpProof("");
     setRegFieldErr((x) => ({ ...x, phone: false, phoneNotVerified: false }));
     const ph = normalizeClientPhone(phone);
     if (!ph.ok) {
@@ -697,9 +700,11 @@ export default function ClientRegisterPage() {
         body: JSON.stringify({ phone: ph.e164 }),
       });
       const text = await r.text();
-      let j: { ok?: boolean; error?: string; devOtp?: string } = {};
+      let j: { ok?: boolean; error?: string; devOtp?: string; otpProof?: string } = {};
       try {
-        j = text ? (JSON.parse(text) as { ok?: boolean; error?: string; devOtp?: string }) : {};
+        j = text
+          ? (JSON.parse(text) as { ok?: boolean; error?: string; devOtp?: string; otpProof?: string })
+          : {};
       } catch {
         setError(
           registerDevUi
@@ -730,6 +735,9 @@ export default function ClientRegisterPage() {
                   : `Erro HTTP ${r.status}. Não foi possível enviar o SMS.`),
         );
         return;
+      }
+      if (typeof j.otpProof === "string" && j.otpProof.length > 0) {
+        setPhoneOtpProof(j.otpProof);
       }
       const masked = formatPhoneForDisplayMasked(ph.e164);
       if (j.devOtp && /^\d{6}$/.test(String(j.devOtp))) {
@@ -778,7 +786,11 @@ export default function ClientRegisterPage() {
       const r = await fetch("/api/client/phone-verification/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: ph.e164, code }),
+        body: JSON.stringify({
+          phone: ph.e164,
+          code,
+          ...(phoneOtpProof ? { otpProof: phoneOtpProof } : {}),
+        }),
         signal: controller.signal,
       });
       const text = await r.text();
@@ -809,6 +821,7 @@ export default function ClientRegisterPage() {
       setSignupPhoneVerifiedFromServerPhone(ph.e164);
       setStorageTick((t) => t + 1);
       setPhoneOtp("");
+      setPhoneOtpProof("");
       const okMsg = "Telemóvel confirmado.";
       setMsg(okMsg);
       setPhoneVerifyFeedback("✓ Código aceite. Continua para o passo seguinte.");

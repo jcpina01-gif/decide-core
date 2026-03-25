@@ -6,12 +6,13 @@ import {
   savePendingCode,
 } from "../../../../lib/server/phoneVerificationPendingStore";
 import { isDevSignupSmsSimulate, isPhoneVerificationApiEnabled } from "../../../../lib/server/phoneVerificationGate";
+import { createPhoneOtpProofToken } from "../../../../lib/server/phoneVerificationOtpProof";
 import { sendTwilioSms, isTwilioSmsConfigured } from "../../../../lib/server/twilioSms";
 
 type Body = { phone?: string };
 
 type Out =
-  | { ok: true; devOtp?: string }
+  | { ok: true; devOtp?: string; otpProof?: string }
   | { ok: false; error: string };
 
 function randomSixDigit(): string {
@@ -56,7 +57,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   if (devSim && !twilioOk) {
     savePendingCode(norm.e164, code);
     recordPhoneVerificationSend(norm.e164);
-    return res.status(200).json({ ok: true, devOtp: code });
+    const proof = createPhoneOtpProofToken(norm.e164, code);
+    return res.status(200).json({ ok: true, devOtp: code, otpProof: proof || undefined });
   }
 
   const msg = `DECIDE: código de confirmação do telemóvel: ${code} (válido 10 min).`;
@@ -72,7 +74,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   savePendingCode(norm.e164, code);
   recordPhoneVerificationSend(norm.e164);
 
-  const out: { ok: true; devOtp?: string } = { ok: true };
+  const proof = createPhoneOtpProofToken(norm.e164, code);
+  const out: { ok: true; devOtp?: string; otpProof?: string } = { ok: true, otpProof: proof || undefined };
   if (devSim && process.env.NODE_ENV === "development") out.devOtp = code;
   return res.status(200).json(out);
 }

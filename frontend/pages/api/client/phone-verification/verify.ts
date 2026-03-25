@@ -1,10 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { normalizeClientPhoneE164 } from "../../../../lib/server/normalizeClientPhone";
+import { verifyPhoneOtpProofToken } from "../../../../lib/server/phoneVerificationOtpProof";
 import { verifyAndConsumePendingCode } from "../../../../lib/server/phoneVerificationPendingStore";
 import { isPhoneVerificationApiEnabled } from "../../../../lib/server/phoneVerificationGate";
 import { recordSignupPhoneVerified } from "../../../../lib/server/signupPhoneVerifiedStore";
 
-type Body = { phone?: string; code?: string };
+type Body = { phone?: string; code?: string; otpProof?: string };
 
 type Out = { ok: boolean; error?: string };
 
@@ -44,12 +45,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       return res.status(400).json({ ok: false, error: "Código inválido — usa só os algarismos (4 a 8 dígitos)." });
     }
 
-    const ok = verifyAndConsumePendingCode(norm.e164, code);
+    const proofRaw = typeof body.otpProof === "string" ? body.otpProof.trim() : "";
+    const okProof = proofRaw.length > 0 && verifyPhoneOtpProofToken(proofRaw, norm.e164, code);
+    const okFile = verifyAndConsumePendingCode(norm.e164, code);
+    const ok = okProof || okFile;
     if (!ok) {
       return res.status(400).json({
         ok: false,
         error:
-          "Código incorreto ou expirado (10 min). Se mudaste VERIFY_EMAIL_SECRET ou reiniciaste o .env entre o SMS e aqui, pede um SMS novo.",
+          "Código incorreto ou expirado (10 min). Se mudaste VERIFY_EMAIL_SECRET na Vercel, pede um SMS novo. Em produção serverless é normal precisares do último SMS após cada deploy.",
       });
     }
 
