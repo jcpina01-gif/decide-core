@@ -54,11 +54,11 @@ export default function ClientLoginPage() {
       </Head>
       <div style={{ minHeight: "100vh", background: "#000", color: "#fff", padding: 32, fontFamily: "Inter, Arial, sans-serif" }}>
         <div style={{ maxWidth: 920, margin: "0 auto" }}>
-          {!(loggedIn && onboardingComplete) ? (
+          {loggedIn && !onboardingComplete ? (
             <OnboardingFlowBar
               currentStepId="auth"
               authStepHref="/client/login"
-              authStepPending={loggedIn && !onboardingComplete}
+              authStepPending
             />
           ) : null}
 

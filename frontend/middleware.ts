@@ -11,7 +11,18 @@ import type { NextRequest } from "next/server";
 const gateUser = () => (process.env.SITE_GATE_USER || "decide").trim();
 const gatePassword = () => (process.env.SITE_GATE_PASSWORD || "").trim();
 
+/** Rotas que têm de funcionar sem Basic Auth (link no email abre noutro browser / app de correio). */
+function isSiteGateBypass(pathname: string): boolean {
+  if (pathname.startsWith("/client/verify-email")) return true;
+  if (pathname.startsWith("/api/client/email-verification/")) return true;
+  return false;
+}
+
 export function middleware(req: NextRequest) {
+  if (isSiteGateBypass(req.nextUrl.pathname)) {
+    return NextResponse.next();
+  }
+
   const pass = gatePassword();
   if (!pass) {
     return NextResponse.next();
@@ -52,5 +63,9 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/:path*"],
+  /**
+   * Não aplicar o gate a ficheiros Next (_next/static, _next/image) nem favicon.
+   * Caso contrário, sem Basic Auth o browser não carrega JS/CSS e a página parece “erro” em branco.
+   */
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
