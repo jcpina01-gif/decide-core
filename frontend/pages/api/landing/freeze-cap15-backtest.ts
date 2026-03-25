@@ -16,7 +16,19 @@ import type { NextApiRequest, NextApiResponse } from "next";
 
 
 
-const FREEZE_SEG = ["..", "freeze", "DECIDE_MODEL_V5_OVERLAY_CAP15_MAX100EXP", "model_outputs"] as const;
+/** Bundled em `frontend/data/landing/` (Vercel root = frontend); fallback ao monorepo local. */
+function resolveFreezeCsvPaths(): { modelP: string; benchP: string } | null {
+  const dirs = [
+    path.join(process.cwd(), "data", "landing", "freeze-cap15"),
+    path.join(process.cwd(), "..", "freeze", "DECIDE_MODEL_V5_OVERLAY_CAP15_MAX100EXP", "model_outputs"),
+  ];
+  for (const dir of dirs) {
+    const modelP = path.join(dir, "model_equity_final_20y.csv");
+    const benchP = path.join(dir, "benchmark_equity_final_20y.csv");
+    if (fs.existsSync(modelP) && fs.existsSync(benchP)) return { modelP, benchP };
+  }
+  return null;
+}
 
 
 
@@ -140,15 +152,9 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
 
 
-  const dir = path.join(process.cwd(), ...FREEZE_SEG);
+  const resolved = resolveFreezeCsvPaths();
 
-  const modelP = path.join(dir, "model_equity_final_20y.csv");
-
-  const benchP = path.join(dir, "benchmark_equity_final_20y.csv");
-
-
-
-  if (!fs.existsSync(modelP) || !fs.existsSync(benchP)) {
+  if (!resolved) {
 
     return res.status(404).json({
 
@@ -156,11 +162,13 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
       error:
 
-        "Freeze modelo plafonado (≤100% NV) não encontrado em ../freeze/DECIDE_MODEL_V5_OVERLAY_CAP15_MAX100EXP/model_outputs/. Usa o fallback core-overlayed ou gera o freeze.",
+        "Freeze modelo plafonado (≤100% NV) não encontrado (data/landing/freeze-cap15/ nem ../freeze/...). Usa o fallback core-overlayed ou coloca os CSV no bundle.",
 
     });
 
   }
+
+  const { modelP, benchP } = resolved;
 
 
 

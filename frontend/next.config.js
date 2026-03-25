@@ -42,6 +42,12 @@ const nextConfig = {
   reactStrictMode: false,
   pageExtensions: ["tsx", "ts", "jsx", "js"],
 
+  /** Garante que os CSV/JSON da landing entram no bundle serverless (fs em /api/landing/*). */
+  outputFileTracingIncludes: {
+    "/api/landing/freeze-cap15-backtest": ["./data/landing/**/*"],
+    "/api/landing/core-overlayed": ["./data/landing/**/*"],
+  },
+
   typescript: {
     ignoreBuildErrors: true,
   },

@@ -50,19 +50,25 @@ function normalizeSnapshot(raw: unknown): SeriesPack {
 }
 
 function loadLocalSnapshot(): { series: SeriesPack; source: string } | null {
-  const snap = path.join(
-    process.cwd(),
-    "..",
-    "backend",
-    "data",
-    "equity_curves",
-    "core_overlayed",
-    "core_overlayed_latest.json",
-  );
-  if (!fs.existsSync(snap)) return null;
-  const raw = JSON.parse(fs.readFileSync(snap, "utf8")) as unknown;
-  const series = normalizeSnapshot(raw);
-  return { series, source: snap };
+  const candidates = [
+    path.join(process.cwd(), "data", "landing", "core_overlayed_latest.json"),
+    path.join(
+      process.cwd(),
+      "..",
+      "backend",
+      "data",
+      "equity_curves",
+      "core_overlayed",
+      "core_overlayed_latest.json",
+    ),
+  ];
+  for (const snap of candidates) {
+    if (!fs.existsSync(snap)) continue;
+    const raw = JSON.parse(fs.readFileSync(snap, "utf8")) as unknown;
+    const series = normalizeSnapshot(raw);
+    return { series, source: snap };
+  }
+  return null;
 }
 
 /**
