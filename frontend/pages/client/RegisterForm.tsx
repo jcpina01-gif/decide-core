@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import OnboardingFlowBar from "../../components/OnboardingFlowBar";
@@ -355,6 +355,7 @@ export default function ClientRegisterPage() {
     allowClientPhoneVerify: boolean;
     devSignupSmsSimulate: boolean;
   }>({ twilioConfigured: false, allowClientPhoneVerify: false, devSignupSmsSimulate: false });
+  const [phoneConfigLoading, setPhoneConfigLoading] = useState(false);
   const [phoneOtp, setPhoneOtp] = useState("");
   const [phoneSmsBusy, setPhoneSmsBusy] = useState(false);
   const [phoneVerifyBusy, setPhoneVerifyBusy] = useState(false);
@@ -496,41 +497,45 @@ export default function ClientRegisterPage() {
     setRegFieldErr((r) => ({ ...r, phoneNotVerified: false }));
   }, [wizardStep, phoneSmsRequiredForSignup]);
 
-  useEffect(() => {
-    void fetch("/api/client/phone-verification/config")
-      .then(async (r) => {
-        if (!r.ok) return null;
-        return (await r.json()) as {
-          smsVerificationEnabled?: boolean;
-          twilioConfigured?: boolean;
-          allowClientPhoneVerify?: boolean;
-          devSignupSmsSimulate?: boolean;
-          phoneSmsRequiredForSignup?: boolean;
-        };
-      })
-      .then((j) => {
-        if (!j) {
-          setSmsVerificationEnabled(false);
-          setPhoneSmsRequiredForSignup(false);
-          return;
-        }
-        const smsOn = j.smsVerificationEnabled === true;
-        setSmsVerificationEnabled(smsOn);
-        const req =
-          typeof j.phoneSmsRequiredForSignup === "boolean" ? j.phoneSmsRequiredForSignup : smsOn;
-        setPhoneSmsRequiredForSignup(req);
-        setPhoneVerifyDiag({
-          twilioConfigured: j.twilioConfigured === true,
-          allowClientPhoneVerify: j.allowClientPhoneVerify === true,
-          devSignupSmsSimulate: j.devSignupSmsSimulate === true,
-        });
-      })
-      .catch(() => {
+  const loadPhoneVerificationConfig = useCallback(async () => {
+    setPhoneConfigLoading(true);
+    try {
+      const r = await fetch("/api/client/phone-verification/config");
+      if (!r.ok) {
         setSmsVerificationEnabled(false);
         setPhoneSmsRequiredForSignup(false);
         setPhoneVerifyDiag({ twilioConfigured: false, allowClientPhoneVerify: false, devSignupSmsSimulate: false });
+        return;
+      }
+      const j = (await r.json()) as {
+        smsVerificationEnabled?: boolean;
+        twilioConfigured?: boolean;
+        allowClientPhoneVerify?: boolean;
+        devSignupSmsSimulate?: boolean;
+        phoneSmsRequiredForSignup?: boolean;
+      };
+      const smsOn = j.smsVerificationEnabled === true;
+      setSmsVerificationEnabled(smsOn);
+      const req =
+        typeof j.phoneSmsRequiredForSignup === "boolean" ? j.phoneSmsRequiredForSignup : smsOn;
+      setPhoneSmsRequiredForSignup(req);
+      setPhoneVerifyDiag({
+        twilioConfigured: j.twilioConfigured === true,
+        allowClientPhoneVerify: j.allowClientPhoneVerify === true,
+        devSignupSmsSimulate: j.devSignupSmsSimulate === true,
       });
+    } catch {
+      setSmsVerificationEnabled(false);
+      setPhoneSmsRequiredForSignup(false);
+      setPhoneVerifyDiag({ twilioConfigured: false, allowClientPhoneVerify: false, devSignupSmsSimulate: false });
+    } finally {
+      setPhoneConfigLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadPhoneVerificationConfig();
+  }, [loadPhoneVerificationConfig]);
 
   useEffect(() => {
     function onStorage(e: StorageEvent) {
@@ -1596,9 +1601,70 @@ export default function ClientRegisterPage() {
                         </div>
                       </>
                     ) : (
-                      <p style={{ color: "#94a3b8", fontSize: 14, margin: 0, lineHeight: 1.5 }}>
-                        A confirmação por SMS não está activa. O número será guardado na tua conta.
-                      </p>
+                      <div>
+                        <p style={{ color: "#94a3b8", fontSize: 14, margin: "0 0 12px", lineHeight: 1.55 }}>
+                          Os botões <strong style={{ color: "#e2e8f0" }}>Enviar código SMS</strong> e{" "}
+                          <strong style={{ color: "#e2e8f0" }}>Validar código</strong> só aparecem quando o{" "}
+                          <strong style={{ color: "#e2e8f0" }}>servidor</strong> tem SMS ligado (Vercel + Twilio). Aqui o SMS está
+                          desligado — o telemóvel que indicaste no passo anterior será guardado na conta quando concluíres o
+                          registo.
+                        </p>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "#cbd5e1",
+                            lineHeight: 1.5,
+                            marginBottom: 12,
+                            padding: "10px 12px",
+                            borderRadius: 10,
+                            background: "rgba(30,41,59,0.55)",
+                            border: "1px solid rgba(71,85,105,0.55)",
+                          }}
+                        >
+                          <strong style={{ color: "#93c5fd" }}>Quem gere o site (Vercel → Environment Variables → Production):</strong>
+                          <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                            {!phoneVerifyDiag.twilioConfigured ? (
+                              <li style={{ marginBottom: 6 }}>
+                                Configurar Twilio:{" "}
+                                <code style={{ color: "#e2e8f0", fontSize: 11 }}>TWILIO_ACCOUNT_SID</code>,{" "}
+                                <code style={{ color: "#e2e8f0", fontSize: 11 }}>TWILIO_AUTH_TOKEN</code> e{" "}
+                                <code style={{ color: "#e2e8f0", fontSize: 11 }}>TWILIO_FROM_NUMBER</code> (E.164) ou{" "}
+                                <code style={{ color: "#e2e8f0", fontSize: 11 }}>TWILIO_MESSAGING_SERVICE_SID</code> (MG…).
+                              </li>
+                            ) : null}
+                            {!phoneVerifyDiag.allowClientPhoneVerify ? (
+                              <li style={{ marginBottom: 6 }}>
+                                Definir <code style={{ color: "#e2e8f0", fontSize: 11 }}>ALLOW_CLIENT_PHONE_VERIFY=1</code> e fazer{" "}
+                                <strong>Redeploy</strong> do projeto.
+                              </li>
+                            ) : null}
+                            {phoneVerifyDiag.twilioConfigured && phoneVerifyDiag.allowClientPhoneVerify ? (
+                              <li>
+                                A API reporta Twilio + flag OK — carrega em «Recarregar estado SMS» ou actualiza a página; se persistir,
+                                vê <code style={{ color: "#e2e8f0", fontSize: 11 }}>/api/client/phone-verification/config</code>.
+                              </li>
+                            ) : null}
+                          </ul>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={phoneConfigLoading}
+                          onClick={() => void loadPhoneVerificationConfig()}
+                          style={{
+                            background: "#334155",
+                            color: "#e2e8f0",
+                            borderRadius: 12,
+                            padding: "10px 16px",
+                            fontSize: 13,
+                            fontWeight: 800,
+                            border: "1px solid rgba(148,163,184,0.35)",
+                            cursor: phoneConfigLoading ? "wait" : "pointer",
+                            opacity: phoneConfigLoading ? 0.7 : 1,
+                          }}
+                        >
+                          {phoneConfigLoading ? "A verificar…" : "Recarregar estado SMS"}
+                        </button>
+                      </div>
                     )}
                     {registerDevUi && !smsVerificationEnabled ? (
                       <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
