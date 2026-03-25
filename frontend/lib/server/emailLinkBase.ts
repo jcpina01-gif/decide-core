@@ -9,12 +9,21 @@ function stripTrailingSlash(s: string): string {
  * EMAIL_LINK_BASE_URL tem prioridade (só servidor, .env.local — não precisa de rebuild).
  */
 export function getEmailLinkBaseUrl(): string {
-  const raw =
+  const fromEnv =
     process.env.EMAIL_LINK_BASE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.SITE_URL ||
-    "http://127.0.0.1:4701";
-  return stripTrailingSlash(String(raw).trim());
+    "";
+  const trimmed = stripTrailingSlash(String(fromEnv).trim());
+  if (trimmed) return trimmed;
+
+  /** Vercel define isto em cada deploy — evita links no email para 127.0.0.1. */
+  const vercel = String(process.env.VERCEL_URL || "").trim();
+  if (vercel && process.env.NODE_ENV === "production") {
+    return stripTrailingSlash(`https://${vercel}`);
+  }
+
+  return "http://127.0.0.1:4701";
 }
 
 /**
@@ -29,26 +38,33 @@ export function resolveEmailLinkBaseUrl(req: NextApiRequest | undefined): string
     return explicit;
   }
 
-  if (process.env.NODE_ENV === "production" || !req?.headers?.host) {
-    return getEmailLinkBaseUrl();
-  }
-  const host = String(req.headers.host || "").trim().toLowerCase();
-  if (!host) {
-    return getEmailLinkBaseUrl();
-  }
+  const hostRaw = req?.headers?.host ? String(req.headers.host).trim() : "";
+  const hostLc = hostRaw.toLowerCase();
   const isLoopback =
-    host.startsWith("127.0.0.1:") ||
-    host.startsWith("localhost:") ||
-    host === "localhost" ||
-    host === "127.0.0.1";
-  if (!isLoopback) {
+    !hostLc ||
+    hostLc.startsWith("127.0.0.1:") ||
+    hostLc.startsWith("localhost:") ||
+    hostLc === "localhost" ||
+    hostLc === "127.0.0.1";
+
+  /**
+   * Em produção na Vercel o Host é o domínio público (ex. www.decidepoweredbyai.com).
+   * Antes: caíamos sempre em getEmailLinkBaseUrl() → 127.0.0.1 nos emails.
+   */
+  if (hostRaw && !isLoopback) {
     const xf = String(req.headers["x-forwarded-proto"] || "")
       .split(",")[0]
       ?.trim()
       .toLowerCase();
-    const proto = xf === "https" || xf === "http" ? xf : "http";
-    return stripTrailingSlash(`${proto}://${String(req.headers.host).trim()}`);
+    const proto =
+      xf === "https" || xf === "http"
+        ? xf
+        : process.env.NODE_ENV === "production"
+          ? "https"
+          : "http";
+    return stripTrailingSlash(`${proto}://${hostRaw}`);
   }
+
   return getEmailLinkBaseUrl();
 }
 
