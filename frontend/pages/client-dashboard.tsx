@@ -9,6 +9,7 @@ import {
   isClientLoggedIn,
   isSessionEmailVerified,
   logoutClient,
+  normalizeClientPhone,
   requestEmailVerificationProspectSend,
   requestEmailVerificationSend,
   updateClientContact,
@@ -82,6 +83,8 @@ export default function ClientDashboardPage() {
   /** Força releitura do calendário de carteira após gravar no localStorage */
   const [portfolioScheduleRev, setPortfolioScheduleRev] = useState(0);
   const [notifyPhoneInput, setNotifyPhoneInput] = useState("");
+  /** Feedback ao gravar telemóvel (onBlur falha em muitos browsers móveis). */
+  const [notifyPhoneSaveFeedback, setNotifyPhoneSaveFeedback] = useState("");
   /** Erro ou aviso do envio automático (antes do rebalance); o botão grande não dispara envio. */
   const [preadviceMsg, setPreadviceMsg] = useState("");
   const [verifyResendBusy, setVerifyResendBusy] = useState(false);
@@ -260,6 +263,7 @@ export default function ClientDashboardPage() {
     return describeScheduleForUi(sch);
   }, [mounted, sessionUser, portfolioScheduleRev]);
 
+  /** Só ao mudar sessão — não depender de portfolioScheduleRev (senão apaga o número a meio da edição). */
   useEffect(() => {
     if (!mounted || !sessionUser) {
       setNotifyPhoneInput("");
@@ -268,7 +272,31 @@ export default function ClientDashboardPage() {
     const fromAccount = getCurrentSessionUserPhone();
     const loose = getNotifyPhone(sessionUser);
     setNotifyPhoneInput(fromAccount || loose || "");
-  }, [mounted, sessionUser, portfolioScheduleRev]);
+  }, [mounted, sessionUser]);
+
+  const persistNotifyPhone = useCallback(() => {
+    if (!sessionUser) {
+      setNotifyPhoneSaveFeedback("Inicia sessão para gravar o telemóvel.");
+      return;
+    }
+    const phTry = normalizeClientPhone(notifyPhoneInput);
+    const current = (getCurrentSessionUserPhone() || "").trim();
+    if (phTry.ok && phTry.e164 === current) {
+      setNotifyPhoneSaveFeedback("");
+      return;
+    }
+    setNotifyPhoneSaveFeedback("");
+    const em = (getCurrentSessionUserEmail() || "").trim();
+    const r = updateClientContact(em, notifyPhoneInput);
+    if (r.ok) {
+      if (r.phoneE164) setNotifyPhoneInput(r.phoneE164);
+      setPortfolioScheduleRev((n) => n + 1);
+      setNotifyPhoneSaveFeedback("Telemóvel guardado.");
+      window.setTimeout(() => setNotifyPhoneSaveFeedback(""), 5000);
+    } else {
+      setNotifyPhoneSaveFeedback(r.error || "Não foi possível gravar.");
+    }
+  }, [sessionUser, notifyPhoneInput]);
 
   useEffect(() => {
     // Keep state consistent after login/logout without refresh.
@@ -1065,33 +1093,73 @@ export default function ClientDashboardPage() {
                     </div>
                   </div>
                 ) : null}
-                <div style={{ marginBottom: 10, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                  <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700 }}>Telemóvel (conta)</span>
-                  <input
-                    type="tel"
-                    placeholder="+351912345678"
-                    value={notifyPhoneInput}
-                    onChange={(e) => setNotifyPhoneInput(e.target.value)}
-                    onBlur={() => {
-                      if (!sessionUser) return;
-                      const em = getCurrentSessionUserEmail();
-                      if (!em) return;
-                      const r = updateClientContact(em, notifyPhoneInput);
-                      if (r.ok) setPortfolioScheduleRev((n) => n + 1);
-                    }}
-                    style={{
-                      flex: "1 1 200px",
-                      maxWidth: 280,
-                      background: "rgba(15,23,42,0.6)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: 10,
-                      padding: "6px 10px",
-                      color: "#fff",
-                      fontSize: 12,
-                    }}
-                  />
+                <div style={{ marginBottom: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                    <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700 }}>Telemóvel (conta)</span>
+                    <input
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      placeholder="+351912345678 ou 912345678"
+                      value={notifyPhoneInput}
+                      onChange={(e) => {
+                        setNotifyPhoneInput(e.target.value);
+                        if (notifyPhoneSaveFeedback) setNotifyPhoneSaveFeedback("");
+                      }}
+                      onBlur={() => {
+                        if (!sessionUser) return;
+                        persistNotifyPhone();
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          persistNotifyPhone();
+                        }
+                      }}
+                      style={{
+                        flex: "1 1 200px",
+                        maxWidth: 280,
+                        background: "rgba(15,23,42,0.6)",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        borderRadius: 10,
+                        padding: "6px 10px",
+                        color: "#fff",
+                        fontSize: 12,
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => persistNotifyPhone()}
+                      style={{
+                        background: "#334155",
+                        color: "#e2e8f0",
+                        border: "1px solid rgba(255,255,255,0.18)",
+                        borderRadius: 10,
+                        padding: "6px 14px",
+                        fontSize: 12,
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Guardar telemóvel
+                    </button>
+                  </div>
+                  {notifyPhoneSaveFeedback ? (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: notifyPhoneSaveFeedback.startsWith("Telemóvel guardado") ? "#86efac" : "#fca5a5",
+                        maxWidth: 420,
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {notifyPhoneSaveFeedback}
+                    </div>
+                  ) : null}
                   <span style={{ fontSize: 10, color: "#64748b" }}>
-                    Email na conta: {getCurrentSessionUserEmail() || "—"} · ao sair do campo, grava email+telemóvel
+                    Email na conta: {getCurrentSessionUserEmail() || "—"} · no telemóvel usa «Guardar» ou Enter (só sair do
+                    campo por vezes não grava)
                   </span>
                 </div>
                 {!portfolioScheduleUi.hasOnboarding ? (

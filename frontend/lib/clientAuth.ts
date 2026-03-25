@@ -369,16 +369,27 @@ export function getCurrentSessionUserPhone(): string | null {
 }
 
 /** Atualiza email e telemóvel da conta com sessão iniciada (ex.: conta antiga sem telemóvel). */
-export function updateClientContact(email: string, phone: string): { ok: boolean; error?: string } {
+export function updateClientContact(
+  email: string,
+  phone: string,
+): { ok: boolean; error?: string; phoneE164?: string } {
   const u = getCurrentSessionUser();
   if (!u) return { ok: false, error: "Precisas de estar com login." };
-  const emailTrim = (email || "").trim();
-  if (!emailTrim || !emailTrim.includes("@")) return { ok: false, error: "Email é obrigatório." };
   const ph = normalizeClientPhone(phone);
   if (!ph.ok) return { ok: false, error: ph.error };
   const db = readDb();
   const rec = db[u];
   if (!rec) return { ok: false, error: "User não encontrado." };
+  const emailParam = (email || "").trim();
+  const emailTrim =
+    emailParam && emailParam.includes("@") ? emailParam : (rec.email || "").trim();
+  if (!emailTrim || !emailTrim.includes("@")) {
+    return {
+      ok: false,
+      error:
+        "É preciso email na conta para gravar o telemóvel. Completa o registo ou o email em /client/register.",
+    };
+  }
   const emailChanged = (rec.email || "").trim().toLowerCase() !== emailTrim.toLowerCase();
   db[u] = {
     ...rec,
@@ -389,7 +400,7 @@ export function updateClientContact(email: string, phone: string): { ok: boolean
   };
   writeDb(db);
   setNotifyPhone(u, ph.e164);
-  return { ok: true };
+  return { ok: true, phoneE164: ph.e164 };
 }
 
 /** Email da sessão considerado válido para alertas (confirmado por link). */
