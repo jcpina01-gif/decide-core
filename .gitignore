@@ -28,3 +28,9 @@ backend_CORRUPTED*/
 .next/
 next-cache/
 **/next-cache/
+
+# Raiz do clone: só README + frontend/ são do projeto; o resto são cópias locais / notas / logs
+/*
+!/.gitignore
+!/README.md
+!/frontend/
