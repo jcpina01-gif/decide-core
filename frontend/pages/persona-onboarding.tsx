@@ -4,6 +4,8 @@ import OnboardingFlowBar, {
   ONBOARDING_LOCALSTORAGE_CHANGED_EVENT,
   ONBOARDING_STORAGE_KEYS,
 } from "../components/OnboardingFlowBar";
+import { getCurrentSessionUser, getCurrentSessionUserEmail, getCurrentSessionUserPhone } from "../lib/clientAuth";
+import { buildReferenceIdFromUserAndEmail } from "../lib/personaReference";
 
 function bumpOnboardingFlowBarFromLocalStorage() {
   try {
@@ -14,8 +16,6 @@ function bumpOnboardingFlowBarFromLocalStorage() {
     // ignore
   }
 }
-import { getCurrentSessionUser, getCurrentSessionUserEmail, getCurrentSessionUserPhone } from "../lib/clientAuth";
-import { buildReferenceIdFromUserAndEmail } from "../lib/personaReference";
 
 type PersonaCompletePayload = {
   inquiryId?: string;
