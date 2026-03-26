@@ -373,6 +373,8 @@ export default function ClientRegisterPage() {
     phoneOtpProofEnabled: false,
   });
   const [phoneConfigLoading, setPhoneConfigLoading] = useState(false);
+  /** True quando o GET da config falhou (rede, 5xx, etc.) — não confundir com «SMS desligado no servidor». */
+  const [phoneConfigLoadFailed, setPhoneConfigLoadFailed] = useState(false);
   const [phoneOtp, setPhoneOtp] = useState("");
   /** Remonta o `<input>` do OTP ao pedir novo SMS — limpa autofill / extensões que repõem o valor. */
   const [phoneOtpInputMountKey, setPhoneOtpInputMountKey] = useState(0);
@@ -582,6 +584,7 @@ export default function ClientRegisterPage() {
     try {
       const r = await fetch("/api/client/phone-verification/config");
       if (!r.ok) {
+        setPhoneConfigLoadFailed(true);
         setSmsVerificationEnabled(false);
         setPhoneSmsRequiredForSignup(false);
         setPhoneVerifyDiag({
@@ -600,6 +603,7 @@ export default function ClientRegisterPage() {
         phoneSmsRequiredForSignup?: boolean;
         phoneOtpProofEnabled?: boolean;
       };
+      setPhoneConfigLoadFailed(false);
       const smsOn = j.smsVerificationEnabled === true;
       setSmsVerificationEnabled(smsOn);
       const req =
@@ -612,6 +616,7 @@ export default function ClientRegisterPage() {
         phoneOtpProofEnabled: j.phoneOtpProofEnabled === true,
       });
     } catch {
+      setPhoneConfigLoadFailed(true);
       setSmsVerificationEnabled(false);
       setPhoneSmsRequiredForSignup(false);
       setPhoneVerifyDiag({
@@ -813,10 +818,16 @@ export default function ClientRegisterPage() {
           ? (JSON.parse(text) as { ok?: boolean; error?: string; devOtp?: string; otpProof?: string })
           : {};
       } catch {
+        const snippet = text.trim().slice(0, 140).replace(/\s+/g, " ");
+        const looksHtml = /^\s*</.test(text) || /<html[\s>]/i.test(text.slice(0, 300));
         setError(
           registerDevUi
             ? `Resposta inválida (HTTP ${r.status}). Corpo: ${text.slice(0, 160).replace(/\s+/g, " ")}`
-            : "Não foi possível contactar o servidor. Verifica a ligação e tenta outra vez.",
+            : looksHtml
+              ? `O servidor devolveu uma página de erro (HTTP ${r.status}), não JSON — típico de crash ou timeout na API. Vê «Functions» / Runtime logs deste deployment na Vercel ao carregar em «Enviar código SMS».`
+              : snippet
+                ? `Resposta inválida do servidor (HTTP ${r.status}): ${snippet}${text.length > 140 ? "…" : ""}`
+                : `Resposta vazia ou inválida do servidor (HTTP ${r.status}). Verifica a ligação e os logs na Vercel.`,
         );
         return;
       }
@@ -908,12 +919,17 @@ export default function ClientRegisterPage() {
       try {
         j = text ? (JSON.parse(text) as { ok?: boolean; error?: string }) : {};
       } catch {
-        const snippet = text.slice(0, 120).replace(/\s+/g, " ");
+        const snippet = text.trim().slice(0, 120).replace(/\s+/g, " ");
+        const looksHtml = /^\s*</.test(text) || /<html[\s>]/i.test(text.slice(0, 300));
         const fb = registerDevUi
           ? snippet
             ? `Resposta inválida (${r.status}). ${snippet}`
             : `Resposta vazia (${r.status}). Reinicia o servidor de desenvolvimento.`
-          : "Resposta inválida do servidor. Tenta outra vez.";
+          : looksHtml
+            ? `O servidor devolveu erro (HTTP ${r.status}), não JSON — vê logs na Vercel no pedido de validar código.`
+            : snippet
+              ? `Resposta inválida (HTTP ${r.status}): ${snippet}${text.length > 120 ? "…" : ""}`
+              : `Resposta vazia ou inválida (HTTP ${r.status}). Tenta outra vez.`;
         setError("");
         setPhoneVerifyFeedback(fb);
         return;
@@ -1821,13 +1837,25 @@ export default function ClientRegisterPage() {
                       </>
                     ) : (
                       <div>
-                        <p style={{ color: "#94a3b8", fontSize: 14, margin: "0 0 12px", lineHeight: 1.55 }}>
-                          Os botões <strong style={{ color: "#e2e8f0" }}>Enviar código SMS</strong> e{" "}
-                          <strong style={{ color: "#e2e8f0" }}>Validar código</strong> só aparecem quando o{" "}
-                          <strong style={{ color: "#e2e8f0" }}>servidor</strong> tem SMS ligado (Vercel + Twilio). Aqui o SMS está
-                          desligado — o telemóvel que indicaste no passo anterior será guardado na conta quando concluíres o
-                          registo.
-                        </p>
+                        {phoneConfigLoadFailed ? (
+                          <p style={{ color: "#fecaca", fontSize: 14, margin: "0 0 12px", lineHeight: 1.55 }}>
+                            Não foi possível ler a configuração SMS do servidor (rede ou erro HTTP). Isto não significa que o Twilio
+                            esteja desligado — só que o browser não recebeu{" "}
+                            <code style={{ color: "#fecaca", fontSize: 12 }}>/api/client/phone-verification/config</code>. O mesmo
+                            problema costuma afectar o envio do email de confirmação. Confirma a ligação, que abres o registo na mesma
+                            origem que o Next (ex. <code style={{ color: "#fecaca", fontSize: 12 }}>npm run dev</code> em localhost) e
+                            tenta «Recarregar estado SMS».
+                          </p>
+                        ) : (
+                          <p style={{ color: "#94a3b8", fontSize: 14, margin: "0 0 12px", lineHeight: 1.55 }}>
+                            Os botões <strong style={{ color: "#e2e8f0" }}>Enviar código SMS</strong> e{" "}
+                            <strong style={{ color: "#e2e8f0" }}>Validar código</strong> só aparecem quando o{" "}
+                            <strong style={{ color: "#e2e8f0" }}>servidor</strong> tem SMS ligado (Vercel + Twilio). Aqui o SMS está
+                            desligado — o telemóvel que indicaste no passo anterior será guardado na conta quando concluíres o
+                            registo.
+                          </p>
+                        )}
+                        {!phoneConfigLoadFailed ? (
                         <div
                           style={{
                             fontSize: 12,
@@ -1865,6 +1893,7 @@ export default function ClientRegisterPage() {
                             ) : null}
                           </ul>
                         </div>
+                        ) : null}
                         <button
                           type="button"
                           disabled={phoneConfigLoading}
