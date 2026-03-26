@@ -454,7 +454,9 @@ export default function PersonaOnboardingPage() {
       let client: any;
 
       const personaHostRaw = (process.env.NEXT_PUBLIC_PERSONA_HOST || "").trim().toLowerCase();
-      const personaHostOpt =
+      const pageHostname = typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "";
+      const isLocalPage = pageHostname === "localhost" || pageHostname === "127.0.0.1";
+      const parsedHost =
         personaHostRaw === "development" ||
         personaHostRaw === "staging" ||
         personaHostRaw === "canary" ||
@@ -463,6 +465,8 @@ export default function PersonaOnboardingPage() {
           : personaHostRaw
             ? personaHostRaw
             : undefined;
+      // Safety: outside localhost, never force host overrides from env.
+      const personaHostOpt = isLocalPage ? parsedHost : undefined;
 
       /** O SDK Persona cria um overlay fullscreen; não aninhar dentro de #persona-flow-container (overflow:hidden / caixa pequena) — o modal ficava invisível ou sem «open». */
       const embedParent = typeof document !== "undefined" ? document.body : undefined;
