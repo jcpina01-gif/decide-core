@@ -34,3 +34,8 @@ next-cache/
 !/.gitignore
 !/README.md
 !/frontend/
+# API FastAPI (Render): só estes ficheiros (há pasta backend/ local com muito lixo ignorado)
+!/backend/
+/backend/*
+!/backend/server.py
+!/backend/requirements.txt
