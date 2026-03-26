@@ -1075,6 +1075,26 @@ export default function PersonaOnboardingPage() {
                   é opcional; em sandbox, se a Persona o pedir, defina também{" "}
                   <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_HOST=development</code> na Vercel e redeploy.
                 </div>
+                {stageStr === "persona-iframe-mounted" ? (
+                  <div
+                    style={{
+                      marginTop: 14,
+                      padding: "12px 14px",
+                      borderRadius: 12,
+                      background: "rgba(14, 165, 233, 0.1)",
+                      border: "1px solid rgba(56, 189, 248, 0.35)",
+                      color: "#bae6fd",
+                      fontSize: 12,
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    <strong>Diagnóstico:</strong> o iframe da Persona está montado na página. Se a área escura continua vazia,
+                    trate de configuração na consola Persona (template publicado, mesmo ambiente que o{" "}
+                    <code style={{ color: "#7dd3fc" }}>NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID</code>) e, em Sandbox,{" "}
+                    <code style={{ color: "#7dd3fc" }}>NEXT_PUBLIC_PERSONA_HOST=development</code> + redeploy. Confirme também no
+                    DevTools → Rede se há pedidos bloqueados.
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
