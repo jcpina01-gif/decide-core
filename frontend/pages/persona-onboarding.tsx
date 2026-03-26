@@ -464,7 +464,8 @@ export default function PersonaOnboardingPage() {
             ? personaHostRaw
             : undefined;
 
-      const containerEl = typeof document !== "undefined" ? document.getElementById("persona-flow-container") : null;
+      /** O SDK Persona cria um overlay fullscreen; não aninhar dentro de #persona-flow-container (overflow:hidden / caixa pequena) — o modal ficava invisível ou sem «open». */
+      const embedParent = typeof document !== "undefined" ? document.body : undefined;
       let opened = false;
       const pageOrigin =
         typeof window !== "undefined" ? window.location.origin : "http://localhost:4701";
@@ -478,7 +479,7 @@ export default function PersonaOnboardingPage() {
         referenceId,
         fields,
         ...(personaHostOpt ? { host: personaHostOpt } : {}),
-        parent: containerEl || undefined,
+        parent: embedParent,
         // Fixes postMessage target-origin mismatch by explicitly matching our allowed origin.
         messageTargetOrigin: personaOrigin,
         onLoad: () => {
@@ -642,36 +643,34 @@ export default function PersonaOnboardingPage() {
 
       personaClientRef.current = client;
 
-      // Diagnostic: check if the iframe gets mounted.
-      // If nothing is mounted, it is likely a browser/network block or SDK embed issue.
-      if (containerEl) {
-        const checkContainer = () => {
-          try {
-            const iframe = containerEl.querySelector("iframe") as HTMLIFrameElement | null;
-            const src = iframe?.getAttribute("src") || "";
-            if (iframe) {
-              setStatusResult((prev: any) => ({
-                ...(prev || {}),
-                ok: false,
-                stage: "persona-iframe-mounted",
-                iframeSrc: src,
-                referenceId,
-              }));
-            } else {
-              setStatusResult((prev: any) => ({
-                ...(prev || {}),
-                ok: false,
-                stage: "persona-iframe-not-found",
-                referenceId,
-              }));
-            }
-          } catch {
-            // ignore diagnostic errors
+      // Diagnostic: iframe fica sob document.body (overlay Persona), não dentro de #persona-flow-container.
+      const checkWidgetIframe = () => {
+        try {
+          const iframe = document.querySelector(
+            ".persona-widget__overlay iframe.persona-widget__iframe",
+          ) as HTMLIFrameElement | null;
+          const src = iframe?.getAttribute("src") || "";
+          if (iframe) {
+            setStatusResult((prev: any) => ({
+              ...(prev || {}),
+              ok: false,
+              stage: "persona-iframe-mounted",
+              iframeSrc: src,
+              referenceId,
+            }));
+          } else {
+            setStatusResult((prev: any) => ({
+              ...(prev || {}),
+              ok: false,
+              stage: "persona-iframe-not-found",
+              referenceId,
+            }));
           }
-        };
-
-        window.setTimeout(checkContainer, 7000);
-      }
+        } catch {
+          // ignore
+        }
+      };
+      window.setTimeout(checkWidgetIframe, 7000);
     } catch (e) {
       setError("Não foi possível abrir a verificação. Atualize a página e tente novamente.");
       if (process.env.NODE_ENV === "development") console.error(e);
@@ -1069,7 +1068,7 @@ export default function PersonaOnboardingPage() {
 
             {!backendSaveConfirmed ? (
               <div style={{ color: "#64748b", fontSize: 12, lineHeight: 1.5, marginTop: 16 }}>
-                O assistente de verificação pode abrir por cima desta página — siga as instruções até concluir.
+                O assistente abre como <strong>janela escura em ecrã completo</strong> (não só na caixa abaixo) — verifique se não ficou atrás do browser ou se o bloqueador não impediu o iframe.
                 <div style={{ marginTop: 10, color: "#57534e", fontSize: 11 }}>
                   Se ficar em branco: o template na Persona precisa de <strong>versão publicada</strong> (na lista de templates,
                   «Last published» não pode estar vazio). A 3.ª variável <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_TEMPLATE_VERSION_ID</code>{" "}
