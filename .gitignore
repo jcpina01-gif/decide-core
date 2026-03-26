@@ -39,3 +39,6 @@ next-cache/
 /backend/*
 !/backend/server.py
 !/backend/requirements.txt
+# KPI Flask (iframe do client-dashboard) — ficheiro na raiz; dados em freeze/ (deploy separado ou disco)
+!/kpi_server.py
+!/requirements-kpi.txt
