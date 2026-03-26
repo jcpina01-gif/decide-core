@@ -5,6 +5,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { getVerifyEmailSecret } from "./emailVerificationToken";
+import { getServerPersistDir } from "./persistDir";
 
 const PENDING_TTL_MS = 10 * 60 * 1000;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
@@ -14,11 +15,11 @@ type PendingEntry = { codeHash: string; exp: number };
 type RateEntry = { sends: number[] };
 
 function pendingPath(): string {
-  return path.join(process.cwd(), ".data", "phone_verification_pending.json");
+  return path.join(getServerPersistDir(), "phone_verification_pending.json");
 }
 
 function ratePath(): string {
-  return path.join(process.cwd(), ".data", "phone_verification_rate.json");
+  return path.join(getServerPersistDir(), "phone_verification_rate.json");
 }
 
 function phoneHmac(phone: string): string {

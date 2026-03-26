@@ -6,11 +6,12 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { getVerifyEmailSecret } from "./emailVerificationToken";
+import { getServerPersistDir } from "./persistDir";
 
 const TTL_MS = 48 * 3600 * 1000;
 
 function filePath(): string {
-  return path.join(process.cwd(), ".data", "signup_phone_verified.json");
+  return path.join(getServerPersistDir(), "signup_phone_verified.json");
 }
 
 function storeKeyForPhone(e164: string): string {

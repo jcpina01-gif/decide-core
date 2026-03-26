@@ -7,11 +7,12 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { getVerifyEmailSecret } from "./emailVerificationToken";
+import { getServerPersistDir } from "./persistDir";
 
 const TTL_MS = 48 * 3600 * 1000;
 
 function filePath(): string {
-  return path.join(process.cwd(), ".data", "signup_email_verified.json");
+  return path.join(getServerPersistDir(), "signup_email_verified.json");
 }
 
 /** HMAC do email normalizado — o ficheiro não contém endereços em claro. */
