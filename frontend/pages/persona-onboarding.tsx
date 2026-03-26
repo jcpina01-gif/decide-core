@@ -467,6 +467,23 @@ export default function PersonaOnboardingPage() {
       /** O SDK Persona cria um overlay fullscreen; não aninhar dentro de #persona-flow-container (overflow:hidden / caixa pequena) — o modal ficava invisível ou sem «open». */
       const embedParent = typeof document !== "undefined" ? document.body : undefined;
       let opened = false;
+      const tryOpenPersona = (reason: string) => {
+        try {
+          if (opened) return;
+          if (!client || typeof client.open !== "function") return;
+          opened = true;
+          client.open();
+          setStatusResult((prev: any) => ({
+            ...(prev || {}),
+            ok: false,
+            stage: "persona-open-invoked",
+            openReason: reason,
+            referenceId,
+          }));
+        } catch {
+          // keep callback-specific handlers as source of user-facing errors
+        }
+      };
       const pageOrigin =
         typeof window !== "undefined" ? window.location.origin : "http://localhost:4701";
       // messageTargetOrigin tem de coincidir com a origem real do parent window.
@@ -485,6 +502,8 @@ export default function PersonaOnboardingPage() {
         onLoad: () => {
           try {
             setStatusResult({ ok: false, stage: "persona-load", referenceId });
+            // Some browsers never emit onReady consistently; try opening on load too.
+            window.setTimeout(() => tryOpenPersona("onLoad"), 120);
           } catch (e) {
             setError(e instanceof Error ? e.message : "Falha ao abrir Persona flow");
           }
@@ -492,9 +511,7 @@ export default function PersonaOnboardingPage() {
         onReady: () => {
           try {
             setStatusResult({ ok: false, stage: "persona-ready", referenceId });
-            if (opened) return;
-            opened = true;
-            client.open();
+            tryOpenPersona("onReady");
           } catch (e) {
             setError(e instanceof Error ? e.message : "Falha ao abrir Persona flow");
           }
@@ -642,6 +659,8 @@ export default function PersonaOnboardingPage() {
       });
 
       personaClientRef.current = client;
+      // Defensive fallback: invoke open shortly after client creation.
+      window.setTimeout(() => tryOpenPersona("post-init"), 800);
 
       // Diagnostic: iframe fica sob document.body (overlay Persona), não dentro de #persona-flow-container.
       const checkWidgetIframe = () => {
