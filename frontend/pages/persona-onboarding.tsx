@@ -5,6 +5,7 @@ import OnboardingFlowBar, {
   ONBOARDING_STORAGE_KEYS,
 } from "../components/OnboardingFlowBar";
 import { getCurrentSessionUser, getCurrentSessionUserEmail, getCurrentSessionUserPhone } from "../lib/clientAuth";
+import { getResolvedPersonaEnvironmentId, getResolvedPersonaTemplateId } from "../lib/personaPublicEnv";
 import { buildReferenceIdFromUserAndEmail } from "../lib/personaReference";
 
 function bumpOnboardingFlowBarFromLocalStorage() {
@@ -215,9 +216,9 @@ export default function PersonaOnboardingPage() {
   const [optionalNameCorrection, setOptionalNameCorrection] = useState("");
 
   // From Persona dashboard (inquiry template + environment)
-  const [templateId, setTemplateId] = useState(process.env.NEXT_PUBLIC_PERSONA_TEMPLATE_ID || "");
+  const [templateId, setTemplateId] = useState(getResolvedPersonaTemplateId());
   const [templateVersionId, setTemplateVersionId] = useState(process.env.NEXT_PUBLIC_PERSONA_TEMPLATE_VERSION_ID || "");
-  const [environmentId, setEnvironmentId] = useState(process.env.NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID || "");
+  const [environmentId, setEnvironmentId] = useState(getResolvedPersonaEnvironmentId());
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
