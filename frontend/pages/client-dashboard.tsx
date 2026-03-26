@@ -54,6 +54,16 @@ const ALLOWED_KPI_EMBED_TABS = new Set([
   "faq",
 ]);
 
+/** Base URL do KPI Flask em modo embed (porta 5000 em dev). Em produção define NEXT_PUBLIC_KPI_EMBED_BASE. */
+function getKpiEmbedBase(): string {
+  const fromEnv = String(process.env.NEXT_PUBLIC_KPI_EMBED_BASE || "").trim().replace(/\/+$/, "");
+  if (fromEnv) return fromEnv;
+  if (typeof window === "undefined") return "";
+  const h = window.location.hostname;
+  if (h === "localhost" || h === "127.0.0.1") return "http://127.0.0.1:5000";
+  return "";
+}
+
 function getOverlayFactor(resp: CoreOverlayedResp | null) {
   const d = (resp && resp.detail) || {};
   const candidates = [
@@ -434,10 +444,11 @@ export default function ClientDashboardPage() {
   }, [resp]);
 
   const flaskCap15Url = useMemo(() => {
+    const base = getKpiEmbedBase();
+    if (!base) return "";
     const t = iframeRefresh ? `&t=${iframeRefresh}` : "";
     const tab = `&embed_tab=${encodeURIComponent(kpiEmbedTab)}`;
-    // Usar 127.0.0.1: Flask está em host 127.0.0.1; "localhost" pode ir para ::1 e falhar no iframe.
-    return `http://127.0.0.1:5000/?client_embed=1&profile=${encodeURIComponent(profile)}${tab}${t}`;
+    return `${base}/?client_embed=1&profile=${encodeURIComponent(profile)}${tab}${t}`;
   }, [profile, iframeRefresh, kpiEmbedTab]);
 
   return (
@@ -1353,22 +1364,54 @@ export default function ClientDashboardPage() {
               {/*
                 Altura ~viewport: gráficos no Flask (modo embed) em grelha 2×2 compacta; evita iframe de 3600px.
               */}
-              <iframe
-                ref={kpiIframeRef}
-                src={flaskCap15Url}
-                title="KPIs DECIDE (Flask)"
-                allowFullScreen
-                style={{
-                  width: "100%",
-                  display: "block",
-                  minHeight: 720,
-                  height: "min(1240px, calc(100vh - 220px))",
-                  border: 0,
-                  borderRadius: 12,
-                  background: "#020b24",
-                }}
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
-              />
+              {flaskCap15Url ? (
+                <iframe
+                  ref={kpiIframeRef}
+                  src={flaskCap15Url}
+                  title="KPIs DECIDE (Flask)"
+                  allowFullScreen
+                  style={{
+                    width: "100%",
+                    display: "block",
+                    minHeight: 720,
+                    height: "min(1240px, calc(100vh - 220px))",
+                    border: 0,
+                    borderRadius: 12,
+                    background: "#020b24",
+                  }}
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+                />
+              ) : (
+                <div
+                  style={{
+                    minHeight: 320,
+                    borderRadius: 12,
+                    border: "1px solid rgba(148,163,184,0.25)",
+                    background: "rgba(15,23,42,0.6)",
+                    padding: "20px 18px",
+                    color: "#cbd5e1",
+                    fontSize: 13,
+                    lineHeight: 1.55,
+                  }}
+                >
+                  <div style={{ fontWeight: 800, color: "#f8fafc", marginBottom: 8 }}>Simulador (KPI) não configurado em produção</div>
+                  <p style={{ margin: "0 0 10px" }}>
+                    O painel grande usa um serviço <strong>Flask</strong> separado (não é o mesmo que o backend FastAPI no
+                    Render). Em localhost usa <code style={{ color: "#93c5fd" }}>127.0.0.1:5000</code>; no site público é
+                    preciso URL desse serviço.
+                  </p>
+                  <p style={{ margin: "0 0 10px" }}>
+                    Na <strong>Vercel</strong> (Production), define{" "}
+                    <code style={{ color: "#fde68a" }}>NEXT_PUBLIC_KPI_EMBED_BASE</code> com o URL público do Flask (ex.:{" "}
+                    <code style={{ color: "#a5b4fc" }}>https://kpi-o-teu-dominio.onrender.com</code>) e faz{" "}
+                    <strong>redeploy</strong>.
+                  </p>
+                  <p style={{ margin: 0, color: "#94a3b8", fontSize: 12 }}>
+                    O <code style={{ color: "#94a3b8" }}>BACKEND_URL</code> que já configuraste é para a API; o simulador
+                    visual é outro processo.
+                  </p>
+                </div>
+              )}
             </div>
           ) : null}
         </div>
