@@ -229,26 +229,34 @@ export default function ClientVerifyEmailPage() {
                 <code style={{ color: "#fde68a" }}>http://192.168.1.x:4701</code>) e gera um link novo no dashboard/registo.
               </div>
             ) : null}
-            <button
-              type="button"
-              onClick={() => void runVerifyFlow(tokenRef.current)}
-              style={{
-                display: "block",
-                width: "100%",
-                boxSizing: "border-box",
-                padding: "18px 22px",
-                borderRadius: 14,
-                background: "linear-gradient(180deg, #3b82f6 0%, #2563eb 100%)",
-                color: "#fff",
-                fontSize: 17,
-                fontWeight: 800,
-                border: "1px solid rgba(255,255,255,0.12)",
-                boxShadow: "0 12px 32px rgba(37,99,235,0.35)",
-                cursor: "pointer",
+            <form
+              style={{ margin: 0 }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                void runVerifyFlow(tokenRef.current);
               }}
             >
-              Confirmar email agora
-            </button>
+              <button
+                type="submit"
+                autoFocus
+                style={{
+                  display: "block",
+                  width: "100%",
+                  boxSizing: "border-box",
+                  padding: "18px 22px",
+                  borderRadius: 14,
+                  background: "linear-gradient(180deg, #3b82f6 0%, #2563eb 100%)",
+                  color: "#fff",
+                  fontSize: 17,
+                  fontWeight: 800,
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  boxShadow: "0 12px 32px rgba(37,99,235,0.35)",
+                  cursor: "pointer",
+                }}
+              >
+                Confirmar email agora
+              </button>
+            </form>
             <p style={{ marginTop: 20, fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
               Se o link usar <code style={{ color: "#94a3b8" }}>127.0.0.1</code> e não funcionar no telemóvel, define{" "}
               <code style={{ color: "#94a3b8" }}>EMAIL_LINK_BASE_URL</code> com o IP do PC e reenvia o email.

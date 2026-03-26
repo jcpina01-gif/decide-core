@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import OnboardingFlowBar from "../../components/OnboardingFlowBar";
@@ -78,12 +79,16 @@ function PasswordField({
   onChange,
   placeholder,
   inputStyle,
+  inputRef,
+  onInputKeyDown,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   inputStyle: React.CSSProperties;
+  inputRef?: React.Ref<HTMLInputElement>;
+  onInputKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
 }) {
   const [show, setShow] = useState(false);
   return (
@@ -91,8 +96,10 @@ function PasswordField({
       <div style={{ color: "#9fb3d1", fontSize: 14, marginBottom: 5 }}>{label}</div>
       <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
         <input
+          ref={inputRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onInputKeyDown}
           type={show ? "text" : "password"}
           style={{ ...inputStyle, flex: 1 }}
           placeholder={placeholder}
@@ -154,6 +161,8 @@ type RegisterWizardDraftV1 = {
   username: string;
   password: string;
   passwordConfirm: string;
+  /** Prova HMAC do último SMS — necessária na Vercel; sem isto, F5 apaga e a validação falha. */
+  phoneOtpProof?: string;
   savedAt: number;
 };
 
@@ -187,6 +196,7 @@ function writeRegisterWizardDraft(d: Omit<RegisterWizardDraftV1, "v" | "savedAt"
       username: d.username,
       password: d.password,
       passwordConfirm: d.passwordConfirm,
+      ...(d.phoneOtpProof && d.phoneOtpProof.length > 0 ? { phoneOtpProof: d.phoneOtpProof } : {}),
       savedAt: d.savedAt ?? Date.now(),
     };
     sessionStorage.setItem(REGISTER_WIZARD_DRAFT_KEY, JSON.stringify(payload));
@@ -354,9 +364,18 @@ export default function ClientRegisterPage() {
     twilioConfigured: boolean;
     allowClientPhoneVerify: boolean;
     devSignupSmsSimulate: boolean;
-  }>({ twilioConfigured: false, allowClientPhoneVerify: false, devSignupSmsSimulate: false });
+    /** Servidor pode emitir otpProof (VERIFY_EMAIL_SECRET ≥ 16) — obrigatório em serverless. */
+    phoneOtpProofEnabled: boolean;
+  }>({
+    twilioConfigured: false,
+    allowClientPhoneVerify: false,
+    devSignupSmsSimulate: false,
+    phoneOtpProofEnabled: false,
+  });
   const [phoneConfigLoading, setPhoneConfigLoading] = useState(false);
   const [phoneOtp, setPhoneOtp] = useState("");
+  /** Remonta o `<input>` do OTP ao pedir novo SMS — limpa autofill / extensões que repõem o valor. */
+  const [phoneOtpInputMountKey, setPhoneOtpInputMountKey] = useState(0);
   /** Devolvido por POST send — obrigatório em Vercel (serverless sem disco partilhado). */
   const [phoneOtpProof, setPhoneOtpProof] = useState("");
   const [phoneSmsBusy, setPhoneSmsBusy] = useState(false);
@@ -365,6 +384,35 @@ export default function ClientRegisterPage() {
   const [phoneFormatHint, setPhoneFormatHint] = useState<{ ok: boolean; text: string } | null>(null);
   const [phoneVerifyFeedback, setPhoneVerifyFeedback] = useState<string>("");
   const phoneFeedbackRef = useRef<HTMLDivElement | null>(null);
+  const phoneOtpInputRef = useRef<HTMLInputElement | null>(null);
+  const registerEmailInputRef = useRef<HTMLInputElement | null>(null);
+  const registerPhoneInputRef = useRef<HTMLInputElement | null>(null);
+  const registerPasswordRef = useRef<HTMLInputElement | null>(null);
+  const registerPasswordConfirmRef = useRef<HTMLInputElement | null>(null);
+
+  /** Foco síncrono no OTP (obrigatório antes de qualquer `await` — senão Safari/mobile bloqueia). */
+  function focusPhoneOtpField() {
+    const el = phoneOtpInputRef.current;
+    if (!el) return;
+    try {
+      el.focus({ preventScroll: true });
+    } catch {
+      el.focus();
+    }
+  }
+
+  /** Após `key` no input (novo SMS), o ref liga-se no commit — reforça foco no layout. */
+  useLayoutEffect(() => {
+    if (phoneOtpInputMountKey === 0) return;
+    const el = phoneOtpInputRef.current;
+    if (!el) return;
+    try {
+      el.focus({ preventScroll: true });
+    } catch {
+      el.focus();
+    }
+  }, [phoneOtpInputMountKey]);
+
   const [signupEmailLinkSentOnce, setSignupEmailLinkSentOnce] = useState(false);
   const [smsResendCooldown, setSmsResendCooldown] = useState(0);
 
@@ -445,6 +493,34 @@ export default function ClientRegisterPage() {
     return ph.ok ? formatPhoneForDisplayMasked(ph.e164) : "";
   }, [phone]);
 
+  /** Evita o mesmo texto no banner global e na caixa do SMS (estado antigo / race / build antigo). */
+  const showGlobalErrorBanner = useMemo(() => {
+    if (!error) return false;
+    if (wizardStep !== 2 || !smsVerificationEnabled) return true;
+    const fb = phoneVerifyFeedback;
+    if (!fb || fb.startsWith("✓")) return true;
+    if (error === fb) return false;
+    const minLen = 28;
+    if (error.length >= minLen && fb.startsWith(error)) return false;
+    if (fb.length >= minLen && error.startsWith(fb)) return false;
+    return true;
+  }, [error, wizardStep, smsVerificationEnabled, phoneVerifyFeedback]);
+
+  /** Remove `error` duplicado do painel SMS (evita estado «fantasma» noutros fluxos). */
+  useEffect(() => {
+    if (wizardStep !== 2 || !smsVerificationEnabled) return;
+    const fb = phoneVerifyFeedback;
+    if (!fb || fb.startsWith("✓")) return;
+    setError((prev) => {
+      if (!prev) return prev;
+      if (prev === fb) return "";
+      const minLen = 28;
+      if (prev.length >= minLen && fb.startsWith(prev)) return "";
+      if (fb.length >= minLen && prev.startsWith(fb)) return "";
+      return prev;
+    });
+  }, [wizardStep, smsVerificationEnabled, phoneVerifyFeedback]);
+
   /** Restaura passo e campos após F5 / remount (evita voltar sempre ao passo 1). */
   useEffect(() => {
     const s = readRegisterWizardDraft();
@@ -454,6 +530,7 @@ export default function ClientRegisterPage() {
       setUsername(s.username || "");
       setPassword(s.password || "");
       setPasswordConfirm(s.passwordConfirm || "");
+      setPhoneOtpProof(typeof s.phoneOtpProof === "string" ? s.phoneOtpProof : "");
       let step: 1 | 2 | 3 = s.step;
       const em = (s.email || "").trim();
       const ph = normalizeClientPhone(s.phone || "");
@@ -479,8 +556,9 @@ export default function ClientRegisterPage() {
       username,
       password,
       passwordConfirm,
+      phoneOtpProof,
     });
-  }, [registerDraftReady, wizardStep, email, phone, username, password, passwordConfirm]);
+  }, [registerDraftReady, wizardStep, email, phone, username, password, passwordConfirm, phoneOtpProof]);
 
   /** SMS opcional no servidor: não deixar erros de «obriga SMS» presos no passo 3 (sem campos SMS aqui). */
   useEffect(() => {
@@ -506,7 +584,12 @@ export default function ClientRegisterPage() {
       if (!r.ok) {
         setSmsVerificationEnabled(false);
         setPhoneSmsRequiredForSignup(false);
-        setPhoneVerifyDiag({ twilioConfigured: false, allowClientPhoneVerify: false, devSignupSmsSimulate: false });
+        setPhoneVerifyDiag({
+          twilioConfigured: false,
+          allowClientPhoneVerify: false,
+          devSignupSmsSimulate: false,
+          phoneOtpProofEnabled: false,
+        });
         return;
       }
       const j = (await r.json()) as {
@@ -515,6 +598,7 @@ export default function ClientRegisterPage() {
         allowClientPhoneVerify?: boolean;
         devSignupSmsSimulate?: boolean;
         phoneSmsRequiredForSignup?: boolean;
+        phoneOtpProofEnabled?: boolean;
       };
       const smsOn = j.smsVerificationEnabled === true;
       setSmsVerificationEnabled(smsOn);
@@ -525,11 +609,17 @@ export default function ClientRegisterPage() {
         twilioConfigured: j.twilioConfigured === true,
         allowClientPhoneVerify: j.allowClientPhoneVerify === true,
         devSignupSmsSimulate: j.devSignupSmsSimulate === true,
+        phoneOtpProofEnabled: j.phoneOtpProofEnabled === true,
       });
     } catch {
       setSmsVerificationEnabled(false);
       setPhoneSmsRequiredForSignup(false);
-      setPhoneVerifyDiag({ twilioConfigured: false, allowClientPhoneVerify: false, devSignupSmsSimulate: false });
+      setPhoneVerifyDiag({
+        twilioConfigured: false,
+        allowClientPhoneVerify: false,
+        devSignupSmsSimulate: false,
+        phoneOtpProofEnabled: false,
+      });
     } finally {
       setPhoneConfigLoading(false);
     }
@@ -681,18 +771,35 @@ export default function ClientRegisterPage() {
 
   async function sendPhoneVerificationSms() {
     if (phoneSmsBusy || smsResendCooldown > 0) return;
-    resetMsgs();
-    setPhoneSmsMsg("");
-    setPhoneVerifyFeedback("");
-    setPhoneOtpProof("");
-    setRegFieldErr((x) => ({ ...x, phone: false, phoneNotVerified: false }));
+
     const ph = normalizeClientPhone(phone);
     if (!ph.ok) {
-      setRegFieldErr((x) => ({ ...x, phone: true }));
-      setError(ph.error);
+      flushSync(() => {
+        resetMsgs();
+        setPhoneSmsMsg("");
+        setPhoneVerifyFeedback("");
+        setPhoneOtpProof("");
+        setPhoneOtp("");
+        setPhoneOtpInputMountKey((k) => k + 1);
+        setRegFieldErr((x) => ({ ...x, phone: true }));
+        setError(ph.error);
+      });
+      focusPhoneOtpField();
       return;
     }
-    setPhoneSmsBusy(true);
+
+    flushSync(() => {
+      resetMsgs();
+      setPhoneSmsMsg("");
+      setPhoneVerifyFeedback("");
+      setPhoneOtpProof("");
+      setPhoneOtp("");
+      setPhoneOtpInputMountKey((k) => k + 1);
+      setRegFieldErr((x) => ({ ...x, phone: false, phoneNotVerified: false }));
+      setPhoneSmsBusy(true);
+    });
+    focusPhoneOtpField();
+
     try {
       const r = await fetch("/api/client/phone-verification/send", {
         method: "POST",
@@ -737,8 +844,11 @@ export default function ClientRegisterPage() {
         return;
       }
       if (typeof j.otpProof === "string" && j.otpProof.length > 0) {
-        setPhoneOtpProof(j.otpProof);
+        flushSync(() => {
+          setPhoneOtpProof(j.otpProof);
+        });
       }
+      focusPhoneOtpField();
       const masked = formatPhoneForDisplayMasked(ph.e164);
       if (j.devOtp && /^\d{6}$/.test(String(j.devOtp))) {
         setPhoneSmsMsg(
@@ -775,7 +885,7 @@ export default function ClientRegisterPage() {
       .slice(0, 8);
     if (!/^\d{4,8}$/.test(code)) {
       const hint = "Introduz o código de algarismos que veio no SMS (sem espaços).";
-      setError(hint);
+      setError("");
       setPhoneVerifyFeedback(hint);
       return;
     }
@@ -799,25 +909,33 @@ export default function ClientRegisterPage() {
         j = text ? (JSON.parse(text) as { ok?: boolean; error?: string }) : {};
       } catch {
         const snippet = text.slice(0, 120).replace(/\s+/g, " ");
-        setError(
-          registerDevUi
-            ? snippet
-              ? `Resposta inválida (${r.status}). ${snippet}`
-              : `Resposta vazia (${r.status}). Reinicia o servidor de desenvolvimento.`
-            : "Resposta inválida do servidor. Tenta outra vez.",
-        );
-        setPhoneVerifyFeedback("Falha ao ler a resposta do servidor.");
+        const fb = registerDevUi
+          ? snippet
+            ? `Resposta inválida (${r.status}). ${snippet}`
+            : `Resposta vazia (${r.status}). Reinicia o servidor de desenvolvimento.`
+          : "Resposta inválida do servidor. Tenta outra vez.";
+        setError("");
+        setPhoneVerifyFeedback(fb);
         return;
       }
       if (!r.ok || j.ok !== true) {
         const base =
           j.error ||
           (r.status === 503 ? "Verificação SMS desligada no servidor." : "Não foi possível validar o código.");
-        const err = r.status === 400 || j.error ? base : `${base} (HTTP ${r.status})`;
-        setError(err);
+        let err = r.status === 400 || j.error ? base : `${base} (HTTP ${r.status})`;
+        if (
+          phoneVerifyDiag.phoneOtpProofEnabled &&
+          !phoneOtpProof &&
+          /incorreto ou expirado/i.test(err)
+        ) {
+          err +=
+            " Carrega em «Enviar código SMS» outra vez e usa o código desse envio — falta a prova de sessão no browser (ex.: página recarregada ou separador novo).";
+        }
+        setError("");
         setPhoneVerifyFeedback(err);
         return;
       }
+      setError("");
       setSignupPhoneVerifiedFromServerPhone(ph.e164);
       setStorageTick((t) => t + 1);
       setPhoneOtp("");
@@ -830,12 +948,11 @@ export default function ClientRegisterPage() {
       });
     } catch (e) {
       const aborted = e instanceof DOMException && e.name === "AbortError";
-      setError(
-        aborted
-          ? "O pedido demorou demasiado. Verifica a rede e tenta outra vez."
-          : "Erro de rede ao validar o código.",
-      );
-      setPhoneVerifyFeedback(aborted ? "Pedido cancelado por timeout." : "Erro de rede.");
+      const netMsg = aborted
+        ? "O pedido demorou demasiado. Verifica a rede e tenta outra vez."
+        : "Erro de rede ao validar o código.";
+      setError("");
+      setPhoneVerifyFeedback(netMsg);
     } finally {
       window.clearTimeout(tmo);
       setPhoneVerifyBusy(false);
@@ -1081,7 +1198,7 @@ export default function ClientRegisterPage() {
             </div>
           ) : null}
 
-          {error ? (
+          {showGlobalErrorBanner ? (
             <div style={{ background: "#2a0a0a", border: "1px solid #7f1d1d", borderRadius: 14, padding: 14, marginBottom: 12 }}>
               {error}
             </div>
@@ -1253,10 +1370,16 @@ export default function ClientRegisterPage() {
                   <div>
                     <div style={{ color: "#cbd5e1", fontSize: 14, marginBottom: 5, fontWeight: 600 }}>Email</div>
                     <input
+                      ref={registerEmailInputRef}
                       value={email}
                       onChange={(e) => {
                         setEmail(e.target.value);
                         setRegFieldErr((x) => ({ ...x, email: false, emailNotVerified: false }));
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        registerPhoneInputRef.current?.focus();
                       }}
                       style={regInputStyle({ ...baseInput, width: "100%" }, !!(regFieldErr.email || regFieldErr.emailNotVerified))}
                       placeholder="nome@exemplo.com"
@@ -1270,12 +1393,18 @@ export default function ClientRegisterPage() {
                   <div>
                     <div style={{ color: "#cbd5e1", fontSize: 14, marginBottom: 5, fontWeight: 600 }}>Telemóvel</div>
                     <input
+                      ref={registerPhoneInputRef}
                       value={phone}
                       onChange={(e) => {
                         setPhone(e.target.value);
                         clearSignupPhoneVerifiedFlag();
                         setPhoneFormatHint(null);
                         setRegFieldErr((x) => ({ ...x, phone: false, phoneNotVerified: false }));
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        registerPasswordRef.current?.focus();
                       }}
                       style={regInputStyle(
                         { ...baseInput, width: "100%" },
@@ -1307,6 +1436,12 @@ export default function ClientRegisterPage() {
                       }}
                       placeholder="••••••••"
                       inputStyle={regInputStyle(baseInput, !!regFieldErr.password)}
+                      inputRef={registerPasswordRef}
+                      onInputKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        registerPasswordConfirmRef.current?.focus();
+                      }}
                     />
                     {regFieldErr.password ? (
                       <div style={{ color: "#fca5a5", fontSize: 12, marginBottom: 6, marginTop: -4 }}>
@@ -1324,6 +1459,12 @@ export default function ClientRegisterPage() {
                       }}
                       placeholder="••••••••"
                       inputStyle={regInputStyle(baseInput, !!regFieldErr.passwordConfirm)}
+                      inputRef={registerPasswordConfirmRef}
+                      onInputKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        goWizardNextFromStep1();
+                      }}
                     />
                     {regFieldErr.passwordConfirm ? (
                       <div style={{ color: "#fca5a5", fontSize: 12, marginBottom: 6, marginTop: -4 }}>
@@ -1456,36 +1597,59 @@ export default function ClientRegisterPage() {
                       Enviámos um link para <strong style={{ color: "#e2e8f0" }}>{email.trim() || "…"}</strong>. Abre a mensagem e
                       clica em confirmar. Se não recebeste, pede um novo link.
                     </p>
-                    {regFieldErr.emailNotVerified ? (
-                      <div style={{ color: "#fca5a5", fontSize: 12, marginBottom: 10 }}>
-                        Ainda falta confirmar o email com o link.
+                    <form
+                      style={{ margin: 0 }}
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!signupSendBusy) void sendSignupVerification();
+                      }}
+                    >
+                      <label style={{ display: "block", marginBottom: 10 }}>
+                        <span style={{ display: "block", fontSize: 11, color: "#64748b", marginBottom: 4 }}>
+                          Enter nesta caixa envia ou reenvia o link
+                        </span>
+                        <input
+                          readOnly
+                          value={email.trim()}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter") return;
+                            e.preventDefault();
+                            if (!signupSendBusy) void sendSignupVerification();
+                          }}
+                          aria-label="Email de confirmação — Enter envia ou reenvia o link"
+                          style={regInputStyle({ ...baseInput, width: "100%", cursor: "default" }, false)}
+                        />
+                      </label>
+                      {regFieldErr.emailNotVerified ? (
+                        <div style={{ color: "#fca5a5", fontSize: 12, marginBottom: 10 }}>
+                          Ainda falta confirmar o email com o link.
+                        </div>
+                      ) : null}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                        <button
+                          type="submit"
+                          disabled={signupSendBusy}
+                          style={{
+                            background: "#2563eb",
+                            color: "#fff",
+                            borderRadius: 12,
+                            padding: "10px 16px",
+                            fontSize: 14,
+                            fontWeight: 900,
+                            border: "1px solid rgba(255,255,255,0.2)",
+                            cursor: signupSendBusy ? "wait" : "pointer",
+                            opacity: signupSendBusy ? 0.75 : 1,
+                          }}
+                        >
+                          {signupSendBusy ? "A enviar…" : signupEmailLinkSentOnce ? "Reenviar email" : "Enviar link de confirmação"}
+                        </button>
+                        {signupEmailOk ? (
+                          <span style={{ color: "#86efac", fontSize: 14, fontWeight: 800 }}>✓ Email confirmado</span>
+                        ) : (
+                          <span style={{ color: "#64748b", fontSize: 13 }}>Aguardamos a confirmação do link.</span>
+                        )}
                       </div>
-                    ) : null}
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-                      <button
-                        type="button"
-                        disabled={signupSendBusy}
-                        onClick={() => void sendSignupVerification()}
-                        style={{
-                          background: "#2563eb",
-                          color: "#fff",
-                          borderRadius: 12,
-                          padding: "10px 16px",
-                          fontSize: 14,
-                          fontWeight: 900,
-                          border: "1px solid rgba(255,255,255,0.2)",
-                          cursor: signupSendBusy ? "wait" : "pointer",
-                          opacity: signupSendBusy ? 0.75 : 1,
-                        }}
-                      >
-                        {signupSendBusy ? "A enviar…" : signupEmailLinkSentOnce ? "Reenviar email" : "Enviar link de confirmação"}
-                      </button>
-                      {signupEmailOk ? (
-                        <span style={{ color: "#86efac", fontSize: 14, fontWeight: 800 }}>✓ Email confirmado</span>
-                      ) : (
-                        <span style={{ color: "#64748b", fontSize: 13 }}>Aguardamos a confirmação do link.</span>
-                      )}
-                    </div>
+                    </form>
                   </div>
 
                   <div
@@ -1500,6 +1664,27 @@ export default function ClientRegisterPage() {
                     <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8, color: "#f1f5f9" }}>Confirmar telemóvel</div>
                     {smsVerificationEnabled ? (
                       <>
+                        {!phoneVerifyDiag.phoneOtpProofEnabled ? (
+                          <div
+                            style={{
+                              marginBottom: 12,
+                              padding: "10px 12px",
+                              borderRadius: 10,
+                              background: "rgba(127,29,29,0.32)",
+                              border: "1px solid rgba(248,113,113,0.45)",
+                              color: "#fecaca",
+                              fontSize: 12,
+                              lineHeight: 1.5,
+                            }}
+                          >
+                            <strong>SMS em produção precisa de segredo:</strong> define{" "}
+                            <code style={{ color: "#fff", fontSize: 11 }}>VERIFY_EMAIL_SECRET</code> com{" "}
+                            <strong>pelo menos 16 caracteres</strong> (Vercel → Environment Variables). Sem isto, o servidor não
+                            envia a prova necessária e o código correto é rejeitado em hosting serverless. Em{" "}
+                            <code style={{ color: "#fff", fontSize: 11 }}>npm run dev</code> o ficheiro{" "}
+                            <code style={{ color: "#fff", fontSize: 11 }}>.data/</code> pode dar a falsa sensação de que funciona.
+                          </div>
+                        ) : null}
                         {!phoneSmsRequiredForSignup ? (
                           <div
                             style={{
@@ -1530,11 +1715,25 @@ export default function ClientRegisterPage() {
                             Falta confirmar o código SMS.
                           </div>
                         ) : null}
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                        <form
+                          style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", margin: 0 }}
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (phoneVerifyBusy || phoneSmsBusy) return;
+                            void verifyPhoneOtp();
+                          }}
+                        >
                           <button
                             type="button"
                             disabled={phoneSmsBusy || smsResendCooldown > 0}
-                            onClick={() => void sendPhoneVerificationSms()}
+                            onMouseDown={(e) => {
+                              if (phoneSmsBusy || smsResendCooldown > 0) return;
+                              e.preventDefault();
+                            }}
+                            onClick={() => {
+                              if (phoneSmsBusy || smsResendCooldown > 0) return;
+                              void sendPhoneVerificationSms();
+                            }}
                             style={{
                               background: "#0d9488",
                               color: "#fff",
@@ -1554,11 +1753,19 @@ export default function ClientRegisterPage() {
                                 : "Enviar código SMS"}
                           </button>
                           <input
+                            key={`decide-sms-otp-${phoneOtpInputMountKey}`}
+                            ref={phoneOtpInputRef}
                             value={phoneOtp}
                             onChange={(e) => setPhoneOtp(e.target.value.replace(/\D/g, "").slice(0, 8))}
                             placeholder="Código"
                             inputMode="numeric"
                             autoComplete="one-time-code"
+                            name={`decide-sms-otp-${phoneOtpInputMountKey}`}
+                            autoCorrect="off"
+                            spellCheck={false}
+                            data-lpignore="true"
+                            data-1p-ignore
+                            data-bwignore
                             style={{
                               ...baseInput,
                               width: 140,
@@ -1568,9 +1775,8 @@ export default function ClientRegisterPage() {
                             }}
                           />
                           <button
-                            type="button"
+                            type="submit"
                             disabled={phoneVerifyBusy}
-                            onClick={() => void verifyPhoneOtp()}
                             style={{
                               background: "#2563eb",
                               color: "#fff",
@@ -1588,7 +1794,7 @@ export default function ClientRegisterPage() {
                           {signupPhoneOk ? (
                             <span style={{ color: "#86efac", fontSize: 14, fontWeight: 800 }}>✓ Telemóvel confirmado</span>
                           ) : null}
-                        </div>
+                        </form>
                         {phoneSmsMsg ? (
                           <div style={{ color: "#7dd3fc", fontSize: 13, marginTop: 10, fontWeight: 600 }}>{phoneSmsMsg}</div>
                         ) : null}

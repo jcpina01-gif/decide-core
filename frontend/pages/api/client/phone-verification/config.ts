@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { getVerifyEmailSecret } from "../../../../lib/server/emailVerificationToken";
 import {
   isDevSignupSmsSimulate,
   isPhoneVerificationApiEnabled,
@@ -20,6 +21,8 @@ type Out = {
    * O painel SMS pode continuar visível para testes.
    */
   phoneSmsRequiredForSignup?: boolean;
+  /** VERIFY_EMAIL_SECRET ≥ 16 — sem isto, em Vercel/serverless o POST verify não tem prova HMAC nem ficheiro partilhado. */
+  phoneOtpProofEnabled?: boolean;
 };
 
 /**
@@ -42,5 +45,6 @@ export default function handler(req: NextApiRequest, res: NextApiResponse<Out>) 
     allowClientPhoneVerify: flag,
     devSignupSmsSimulate: devSim,
     phoneSmsRequiredForSignup: isPhoneSmsRequiredForClientSignup(),
+    phoneOtpProofEnabled: getVerifyEmailSecret() != null,
   });
 }
