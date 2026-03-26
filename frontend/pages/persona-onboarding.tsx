@@ -389,36 +389,40 @@ export default function PersonaOnboardingPage() {
     setManualBypassInFlight(true);
     setRecordSaveWarning("");
     try {
-      await savePersonaRecord({
-        reference_id: referenceId,
-        status: "manual_review_pending",
-        fields: {
-          reason: "persona_embed_unavailable",
-          stage: String(statusResult?.stage || ""),
-          ui_error: error || undefined,
-        },
-      });
-      try {
-        // Temporary fallback: unlock next step while KYC waits for backoffice review.
-        window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.kyc, "1");
-        window.localStorage.setItem("decide_kyc_manual_review_pending_v1", "1");
-        bumpOnboardingFlowBarFromLocalStorage();
-      } catch {
-        // ignore
-      }
-      setStatusResult((prev) => ({
-        ...(prev || {}),
-        ok: true,
-        stage: "persona-manual-pending",
-        referenceId,
-      }));
-      setError("");
+      // Keep onboarding unblocked even if backend is temporarily unavailable.
+      window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.kyc, "1");
+      window.localStorage.setItem("decide_kyc_manual_review_pending_v1", "1");
+      bumpOnboardingFlowBarFromLocalStorage();
     } catch {
-      setRecordSaveWarning(
-        "Não foi possível registar o modo manual no sistema. Tente novamente dentro de instantes.",
-      );
-    } finally {
-      setManualBypassInFlight(false);
+      // ignore
+    }
+
+    setStatusResult((prev) => ({
+      ...(prev || {}),
+      ok: true,
+      stage: "persona-manual-pending",
+      referenceId,
+    }));
+    setError("");
+    setManualBypassInFlight(false);
+
+    // Best-effort audit trail (do not block user progression).
+    void savePersonaRecord({
+      reference_id: referenceId,
+      status: "manual_review_pending",
+      fields: {
+        reason: "persona_embed_unavailable",
+        stage: String(statusResult?.stage || ""),
+        ui_error: error || undefined,
+      },
+    }).catch(() => {
+      // keep silent; user can proceed anyway
+    });
+
+    try {
+      window.location.href = "/client/ibkr-prep";
+    } catch {
+      // ignore
     }
   }
 
