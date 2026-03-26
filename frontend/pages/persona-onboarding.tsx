@@ -611,12 +611,21 @@ export default function PersonaOnboardingPage() {
           } catch {
             // keep fallback msg
           }
-          setError("Ocorreu um problema durante a verificação. Tente iniciar de novo.");
+          const code = err && typeof err === "object" && "code" in err ? String((err as { code?: string }).code || "") : "";
+          const inactive =
+            code === "inactive_template" ||
+            /inactive_template|no published versions|published version/i.test(msg);
+          setError(
+            inactive
+              ? "Este modelo de verificação (template) na Persona não tem versão publicada ou está inactivo. Na consola Persona → Inquiry Templates, publique uma versão ou use o template que mostra «Last published» com data — e copie o itmpl_ correcto para NEXT_PUBLIC_PERSONA_TEMPLATE_ID (redeploy na Vercel)."
+              : "Ocorreu um problema durante a verificação. Tente iniciar de novo.",
+          );
           if (process.env.NODE_ENV === "development") console.error("[Persona SDK]", msg);
           setStatusResult({
             ok: false,
-            stage: "persona-sdk-error",
+            stage: inactive ? "persona-inactive-template" : "persona-sdk-error",
             error: msg,
+            code: code || undefined,
             referenceId,
           });
           try {
@@ -702,7 +711,11 @@ export default function PersonaOnboardingPage() {
     if (stage === "persona-validating") return "A validar confirmação…";
     if (stage === "persona-cancelled") return "Interrompida — pode voltar a iniciar";
     if (stage === "persona-sdk-error") return "Não foi possível concluir";
+    if (stage === "persona-inactive-template") return "Template Persona sem versão publicada";
+    if (stage === "persona-iframe-not-found") return "Janela Persona não carregou (rede ou bloqueador)";
+    if (stage === "persona-iframe-mounted") return "Verificação em curso";
     if (stage === "starting") return "A iniciar…";
+    if (stage === "persona-load" || stage === "persona-ready") return "A carregar o assistente…";
     if (stage.includes("persona")) return "Em curso";
     return "Em curso";
   }, [statusResult, loading, persistInFlight]);
@@ -1057,6 +1070,12 @@ export default function PersonaOnboardingPage() {
             {!backendSaveConfirmed ? (
               <div style={{ color: "#64748b", fontSize: 12, lineHeight: 1.5, marginTop: 16 }}>
                 O assistente de verificação pode abrir por cima desta página — siga as instruções até concluir.
+                <div style={{ marginTop: 10, color: "#57534e", fontSize: 11 }}>
+                  Se ficar em branco: o template na Persona precisa de <strong>versão publicada</strong> (na lista de templates,
+                  «Last published» não pode estar vazio). A 3.ª variável <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_TEMPLATE_VERSION_ID</code>{" "}
+                  é opcional; em sandbox, se a Persona o pedir, defina também{" "}
+                  <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_HOST=development</code> na Vercel e redeploy.
+                </div>
               </div>
             ) : null}
           </div>
