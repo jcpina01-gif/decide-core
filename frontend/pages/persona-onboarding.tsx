@@ -1129,6 +1129,29 @@ export default function PersonaOnboardingPage() {
                   {loading ? "A abrir…" : "Iniciar verificação"}
                 </Button>
               )}
+              {!backendSaveConfirmed && !manualFallbackActive ? (
+                <button
+                  type="button"
+                  onClick={() => continueWithManualReview()}
+                  disabled={manualBypassInFlight || persistInFlight}
+                  style={{
+                    display: "inline-block",
+                    alignSelf: "flex-start",
+                    background: manualBypassInFlight ? "#334155" : "rgba(245, 158, 11, 0.15)",
+                    color: manualBypassInFlight ? "#94a3b8" : "#fef3c7",
+                    border: "1px solid rgba(245, 158, 11, 0.45)",
+                    borderRadius: 14,
+                    padding: "10px 16px",
+                    fontSize: 14,
+                    fontWeight: 800,
+                    cursor: manualBypassInFlight ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {manualBypassInFlight
+                    ? "A registar modo manual..."
+                    : "Continuar com validação manual"}
+                </button>
+              ) : null}
             </div>
 
             {showPostPersonaPanel ? (
@@ -1203,11 +1226,6 @@ export default function PersonaOnboardingPage() {
                   >
                     O assistente automático está indisponível para este domínio/plano da Persona. Pode continuar em{" "}
                     <strong>modo manual</strong> e a equipa valida a identidade depois.
-                    <div style={{ marginTop: 10 }}>
-                      <Button onClick={() => continueWithManualReview()} disabled={manualBypassInFlight}>
-                        {manualBypassInFlight ? "A registar modo manual…" : "Continuar com validação manual"}
-                      </Button>
-                    </div>
                   </div>
                 ) : null}
               </div>
