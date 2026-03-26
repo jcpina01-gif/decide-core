@@ -6,6 +6,9 @@ export const DECIDE_INTENDED_INVEST_LS_KEY = "decide_intended_invest_eur_v1";
 
 export const DECIDE_MIN_INVEST_EUR = 5000;
 
+/** Simulador e passo «Valor a investir» quando não há ?capital= nem prefill em localStorage. */
+export const DECIDE_DEFAULT_INVEST_EUR = 50_000;
+
 export function persistIntendedInvestEur(eur: number): void {
   const n = Math.round(eur);
   if (!Number.isFinite(n) || n < DECIDE_MIN_INVEST_EUR) return;

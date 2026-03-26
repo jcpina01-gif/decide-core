@@ -1,11 +1,11 @@
 import Head from "next/head";
 import Link from "next/link";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { DECIDE_MIN_INVEST_EUR } from "../lib/decideInvestPrefill";
+import { DECIDE_DEFAULT_INVEST_EUR, DECIDE_MIN_INVEST_EUR } from "../lib/decideInvestPrefill";
 import { buildSimulatorSeries, TRADING_DAYS_PER_YEAR } from "../lib/decideSimulator";
 
-/** Valores iniciais do exemplo (10k · 20a) — alinhados ao simulador do dashboard. */
-const LANDING_SIM_CAPITAL_EUR = 10_000;
+/** Valores iniciais do exemplo (50k · 20a) — alinhados ao simulador do dashboard. */
+const LANDING_SIM_CAPITAL_EUR = DECIDE_DEFAULT_INVEST_EUR;
 const LANDING_SIM_YEARS_DEFAULT = 20;
 
 /** Largura útil da landing (desktop); simulador usa ~100% disto. */

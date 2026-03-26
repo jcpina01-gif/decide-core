@@ -7,6 +7,7 @@ import OnboardingFlowBar, {
 } from "../components/OnboardingFlowBar";
 import {
   clearIntendedInvestEur,
+  DECIDE_DEFAULT_INVEST_EUR,
   DECIDE_MIN_INVEST_EUR,
   readIntendedInvestEur,
 } from "../lib/decideInvestPrefill";
@@ -53,7 +54,7 @@ function formatEurPt(n: number): string {
 
 export default function ClientMontantePage() {
   const router = useRouter();
-  const [montanteInvestir, setMontanteInvestir] = useState<number | "">("");
+  const [montanteInvestir, setMontanteInvestir] = useState<number | "">(DECIDE_DEFAULT_INVEST_EUR);
   const [confirmAttempted, setConfirmAttempted] = useState(false);
 
   useEffect(() => {
@@ -225,7 +226,7 @@ export default function ClientMontantePage() {
               value={inputDisplay}
               onChange={(e) => setMontanteInvestir(digitsToInt(e.target.value))}
               style={fallbackInputStyle()}
-              placeholder="Ex: 10 000 €"
+              placeholder="Ex: 50 000 €"
               aria-label="Outro valor a investir, em euros"
               aria-invalid={confirmAttempted && !canConfirm}
               aria-describedby="montante-min-hint"

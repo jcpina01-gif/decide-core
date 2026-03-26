@@ -845,18 +845,45 @@ export default function PersonaOnboardingPage() {
                 }}
               >
                 <div style={{ fontWeight: 800, color: "#fde68a", marginBottom: 8 }}>O que pode fazer</div>
-                <p style={{ margin: "0 0 14px" }}>
-                  Não conseguimos iniciar a verificação neste momento. Volte ao passo anterior para confirmar os seus dados
-                  e tente novamente, ou atualize a página.
-                </p>
                 {personaPrepIssue === "session" ? (
-                  <p style={{ margin: "0 0 14px", color: "#fcd34d", fontSize: 13 }}>
-                    Parece que a sessão não está completa. Inicie sessão com a sua conta para continuar.
+                  <p style={{ margin: "0 0 14px" }}>
+                    Não conseguimos associar a sua conta a este passo. Inicie sessão (ou volte ao registo) e abra de novo a
+                    verificação de identidade. Também pode atualizar a página depois de entrar.
                   </p>
                 ) : (
-                  <p style={{ margin: "0 0 14px", color: "#fcd34d", fontSize: 13 }}>
-                    Se o problema continuar após confirmar o perfil, contacte o suporte.
+                  <p style={{ margin: "0 0 14px" }}>
+                    O assistente externo (Persona) <strong>não está configurado</strong> neste site ou o último deploy foi feito{" "}
+                    <strong>antes</strong> de definirem as variáveis — voltar ao passo 3 não resolve isto.
                   </p>
+                )}
+                {personaPrepIssue === "session" ? (
+                  <p style={{ margin: "0 0 14px", color: "#fcd34d", fontSize: 13 }}>
+                    Confirme que tem sessão iniciada (nome de utilizador visível no fluxo cliente).
+                  </p>
+                ) : (
+                  <>
+                    <p style={{ margin: "0 0 10px", color: "#fcd34d", fontSize: 13, lineHeight: 1.55 }}>
+                      Na Vercel: <strong>Project → Settings → Environment Variables → Production</strong>. Depois{" "}
+                      <strong>Redeploy</strong> (obrigatório para <code style={{ color: "#fef9c3" }}>NEXT_PUBLIC_*</code>).
+                    </p>
+                    <ul style={{ margin: "0 0 14px", paddingLeft: 18, color: "#fcd34d", fontSize: 12, lineHeight: 1.55 }}>
+                      {!templateId.trim() ? (
+                        <li>
+                          Falta <strong>template</strong> (ID começa por <code style={{ color: "#fef9c3" }}>itmpl_</code>).
+                        </li>
+                      ) : null}
+                      {!environmentId.trim() ? (
+                        <li>
+                          Falta <strong>environment</strong> (ID começa por <code style={{ color: "#fef9c3" }}>env_</code>).
+                        </li>
+                      ) : null}
+                    </ul>
+                    <p style={{ margin: 0, color: "#a8a29e", fontSize: 12, lineHeight: 1.5 }}>
+                      Copie os IDs em dashboard.withpersona.com → Inquiry template / API. Se o modal Persona disser «Could not
+                      load template», publique uma versão do template e opcionalmente defina{" "}
+                      <code style={{ color: "#d6d3d1" }}>NEXT_PUBLIC_PERSONA_TEMPLATE_VERSION_ID</code>.
+                    </p>
+                  </>
                 )}
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
                   <a href="/mifid-test" style={linkSecondary}>

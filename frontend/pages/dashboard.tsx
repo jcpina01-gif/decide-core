@@ -2,7 +2,7 @@ import Head from "next/head";
 import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
 import { buildSimulatorSeries } from "../lib/decideSimulator";
-import { DECIDE_MIN_INVEST_EUR } from "../lib/decideInvestPrefill";
+import { DECIDE_DEFAULT_INVEST_EUR, DECIDE_MIN_INVEST_EUR } from "../lib/decideInvestPrefill";
 import EquityCurvesChart from "../components/EquityCurvesChart";
 import DashboardQuickLinks from "../components/DashboardQuickLinks";
 import DecideFaqPanel from "../components/DecideFaqPanel";
@@ -417,7 +417,7 @@ export default function DashboardPage() {
   const [errorMsg, setErrorMsg] = useState("");
 
   const [portfolioView, setPortfolioView] = useState<PortfolioViewKey>("constrained");
-  const [simCapital, setSimCapital] = useState(10_000);
+  const [simCapital, setSimCapital] = useState(DECIDE_DEFAULT_INVEST_EUR);
   const [simYears, setSimYears] = useState(20);
 
   async function loadAll(profile: RiskProfileKey) {
@@ -857,7 +857,10 @@ export default function DashboardPage() {
                 }}
               >
                 <strong style={{ color: "#fff" }}>Exemplo pré-preenchido:</strong>{" "}
-                <strong style={{ color: "#e0f2fe" }}>10 000 €</strong> durante{" "}
+                <strong style={{ color: "#e0f2fe" }}>
+                  {DECIDE_DEFAULT_INVEST_EUR.toLocaleString("pt-PT")} €
+                </strong>{" "}
+                durante{" "}
                 <strong style={{ color: "#e0f2fe" }}>20 anos</strong>. Pode alterar os campos abaixo.
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 16, alignItems: "flex-end" }}>
