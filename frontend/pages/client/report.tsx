@@ -280,10 +280,15 @@ function readCsvIfExists(filePath: string): Record<string, string>[] {
 }
 
 function buildBackendRunModelUrl(profile: string, excludedTickers: string[] = []): string {
-  const base =
+  const baseRaw =
+    process.env.DECIDE_BACKEND_URL ||
+    process.env.NEXT_PUBLIC_DECIDE_BACKEND_URL ||
     process.env.BACKEND_URL ||
     process.env.NEXT_PUBLIC_BACKEND_URL ||
     "http://127.0.0.1:8090";
+  let base = String(baseRaw || "").trim().replace(/\/+$/, "");
+  if (/\/api$/i.test(base)) base = base.replace(/\/api$/i, "");
+  if (!base) base = "http://127.0.0.1:8090";
   const url = new URL(base);
   url.pathname = (url.pathname.replace(/\/+$/, "") + "/api/run-model").replace(/\/{2,}/g, "/");
   url.searchParams.set("profile", profile);
