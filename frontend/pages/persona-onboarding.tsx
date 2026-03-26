@@ -227,6 +227,7 @@ export default function PersonaOnboardingPage() {
   /** Só true após `/api/persona/record` OK — única fonte para desbloquear IBKR e stepper. */
   const [backendSaveConfirmed, setBackendSaveConfirmed] = useState(false);
   const [persistInFlight, setPersistInFlight] = useState(false);
+  const [manualBypassInFlight, setManualBypassInFlight] = useState(false);
 
   const personaClientRef = useRef<any>(null);
   const lastPersonaCompleteRef = useRef<LastPersonaComplete | null>(null);
@@ -380,6 +381,44 @@ export default function PersonaOnboardingPage() {
       }));
     } finally {
       setPersistInFlight(false);
+    }
+  }
+
+  async function continueWithManualReview() {
+    if (!referenceId) return;
+    setManualBypassInFlight(true);
+    setRecordSaveWarning("");
+    try {
+      await savePersonaRecord({
+        reference_id: referenceId,
+        status: "manual_review_pending",
+        fields: {
+          reason: "persona_embed_unavailable",
+          stage: String(statusResult?.stage || ""),
+          ui_error: error || undefined,
+        },
+      });
+      try {
+        // Temporary fallback: unlock next step while KYC waits for backoffice review.
+        window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.kyc, "1");
+        window.localStorage.setItem("decide_kyc_manual_review_pending_v1", "1");
+        bumpOnboardingFlowBarFromLocalStorage();
+      } catch {
+        // ignore
+      }
+      setStatusResult((prev) => ({
+        ...(prev || {}),
+        ok: true,
+        stage: "persona-manual-pending",
+        referenceId,
+      }));
+      setError("");
+    } catch {
+      setRecordSaveWarning(
+        "Não foi possível registar o modo manual no sistema. Tente novamente dentro de instantes.",
+      );
+    } finally {
+      setManualBypassInFlight(false);
     }
   }
 
@@ -809,6 +848,13 @@ export default function PersonaOnboardingPage() {
   );
 
   const stageStr = String(statusResult?.stage || "");
+  const embedBlockedByPersona =
+    /refused to connect|recusou-se a ligar/i.test(error || "") ||
+    (stageStr === "persona-sdk-error" &&
+      /refused to connect|recusou-se a ligar|x-frame-options|frame-ancestors/i.test(
+        String(statusResult?.error || ""),
+      ));
+  const manualFallbackActive = stageStr === "persona-manual-pending";
   const showPostPersonaPanel = stageStr === "persona-complete-saved" || stageStr === "persona-save-failed";
   const hideIniciarButton =
     !personaConfigOk ||
@@ -1089,6 +1135,30 @@ export default function PersonaOnboardingPage() {
               <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>{confirmKycButton}</div>
             ) : null}
 
+            {manualFallbackActive ? (
+              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
+                <a
+                  href="/client/ibkr-prep"
+                  style={{
+                    display: "inline-block",
+                    background: "#f59e0b",
+                    color: "#111827",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    borderRadius: 14,
+                    padding: "12px 18px",
+                    fontSize: 15,
+                    fontWeight: 800,
+                    textDecoration: "none",
+                  }}
+                >
+                  Continuar (validação manual pendente)
+                </a>
+                <div style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.5 }}>
+                  O pedido ficou marcado para revisão manual. A aprovação final da identidade será confirmada pela equipa.
+                </div>
+              </div>
+            ) : null}
+
             {!backendSaveConfirmed ? (
               <div style={{ color: "#64748b", fontSize: 12, lineHeight: 1.5, marginTop: 16 }}>
                 O assistente abre como <strong>janela escura em ecrã completo</strong> (não só na caixa abaixo) — verifique se não ficou atrás do browser ou se o bloqueador não impediu o iframe.
@@ -1116,6 +1186,28 @@ export default function PersonaOnboardingPage() {
                     <code style={{ color: "#7dd3fc" }}>NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID</code>) e, em Sandbox,{" "}
                     <code style={{ color: "#7dd3fc" }}>NEXT_PUBLIC_PERSONA_HOST=development</code> + redeploy. Confirme também no
                     DevTools → Rede se há pedidos bloqueados.
+                  </div>
+                ) : null}
+                {embedBlockedByPersona && !manualFallbackActive ? (
+                  <div
+                    style={{
+                      marginTop: 14,
+                      padding: "12px 14px",
+                      borderRadius: 12,
+                      background: "rgba(251, 191, 36, 0.12)",
+                      border: "1px solid rgba(251, 191, 36, 0.45)",
+                      color: "#fef3c7",
+                      fontSize: 12,
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    O assistente automático está indisponível para este domínio/plano da Persona. Pode continuar em{" "}
+                    <strong>modo manual</strong> e a equipa valida a identidade depois.
+                    <div style={{ marginTop: 10 }}>
+                      <Button onClick={() => continueWithManualReview()} disabled={manualBypassInFlight}>
+                        {manualBypassInFlight ? "A registar modo manual…" : "Continuar com validação manual"}
+                      </Button>
+                    </div>
                   </div>
                 ) : null}
               </div>
