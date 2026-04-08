@@ -17,6 +17,9 @@ function isSiteGateBypass(pathname: string): boolean {
   if (pathname.startsWith("/api/client/email-verification/")) return true;
   /** OTP SMS no registo — mesmo racional que o email (fetch pode não levar credenciais Basic em alguns clientes). */
   if (pathname.startsWith("/api/client/phone-verification/")) return true;
+  if (pathname.startsWith("/api/persona/")) return true;
+  /** Rotas internas com `isBackofficeEnabled()` próprio; o fetch do browser não envia Basic Auth automaticamente. */
+  if (pathname.startsWith("/api/backoffice")) return true;
   return false;
 }
 

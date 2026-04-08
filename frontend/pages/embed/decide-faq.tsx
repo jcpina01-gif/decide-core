@@ -16,7 +16,7 @@ export default function EmbedDecideFaqPage() {
         style={{
           minHeight: "100vh",
           boxSizing: "border-box",
-          background: "#030712",
+          background: "#09090b",
           padding: "12px 14px 28px",
         }}
       >

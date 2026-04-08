@@ -16,7 +16,7 @@ export default function EmbedRecommendationsHistoryPage() {
         style={{
           minHeight: "100vh",
           boxSizing: "border-box",
-          background: "#0b1220",
+          background: "#09090b",
           padding: "8px 10px 20px",
         }}
       >

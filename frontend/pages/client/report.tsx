@@ -1,8 +1,42 @@
 import type { GetServerSideProps } from "next";
 import Head from "next/head";
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import ClientFlowDashboardButton from "../../components/ClientFlowDashboardButton";
+import InlineLoadingDots from "../../components/InlineLoadingDots";
+import { isFxHedgeOnboardingApplicable, syncFeeSegmentFromNavEur } from "../../lib/clientSegment";
+import { isHedgeOnboardingDone, readFxHedgePrefs } from "../../lib/fxHedgePrefs";
+import { DECIDE_APP_FONT_FAMILY, DECIDE_DASHBOARD } from "../../lib/decideClientTheme";
+import {
+  recordCancelOpenOrdersPaperResponse,
+  recordExecutionSnapshotFromSyncedFills,
+  recordSendOrdersResponse,
+  recordUserAbortedSendOrders,
+} from "../../lib/clientOrderActivityLog";
+import {
+  cashSleevePlanUiSubtitle,
+  isDecideCashSleeveBrokerSymbol,
+} from "../../lib/decideCashSleeveDisplay";
+import {
+  fillSyntheticEquityBuyQuantities,
+  loadApprovalAlignedProposedTrades,
+} from "../../lib/server/approvalTradePlan";
+import {
+  fetchPlafonadoKpisFromKpiServer,
+  normalizeRiskProfileForKpi,
+} from "../../lib/server/fetchPlafonadoCagrFromKpiServer";
+import { readPlafonadoM100CagrDisplayPercent } from "../../lib/server/readPlafonadoFreezeCagr";
+import { readHeroKpiFreezeContext } from "../../lib/server/readHeroKpiFreezeContext";
+import { FREEZE_PLAFONADO_MODEL_DIR } from "../../lib/freezePlafonadoDir";
 import path from "path";
 import fs from "fs";
 import {
@@ -25,6 +59,9 @@ type SeriesPoint = {
 
 type ActualPosition = {
   ticker: string;
+  /** Nome curto (metadados CSV ou snapshot IBKR). */
+  nameShort: string;
+  sector: string;
   qty: number;
   marketPrice: number;
   /** null quando não há preço de fecho (JSON de GSSP não aceita undefined). */
@@ -39,6 +76,8 @@ type RecommendedPosition = {
   nameShort: string;
   region: string;
   sector: string;
+  /** GICS / sub-sector quando existe nos CSVs (ex.: Gold para NEM). */
+  industry: string;
   score: number;
   weightPct: number;
   originalWeightPct: number;
@@ -62,11 +101,12 @@ type ReportData = {
   profile: string;
   modelDisplayName: string;
   navEur: number;
+  /** Moeda do património líquido na conta IBKR (smoke test), p.ex. USD ou EUR — não é sempre euro. */
+  accountBaseCurrency: string;
   cashEur: number;
   currentValueEur: number;
   totalReturnPct: number;
   benchmarkTotalReturnPct: number;
-  outperformancePct: number;
   cagrPct: number;
   benchmarkCagrPct: number;
   sharpe: number;
@@ -75,14 +115,22 @@ type ReportData = {
   benchmarkVolatilityPct: number;
   maxDrawdownPct: number;
   benchmarkMaxDrawdownPct: number;
-  /** Subtítulo nos KPIs (ex.: horizonte de 10 anos). */
+  /** Subtítulos de horizonte (CAGR vs gráfico/risco — mesmo período). */
   displayHorizonLabel: string;
-  displayCagrLabel: string;
+  /** Subtítulo do cartão «CAGR do modelo». */
+  displayCagrModelSubLabel: string;
+  /** Subtítulo do cartão «CAGR do benchmark». */
+  displayCagrBenchmarkSubLabel: string;
   planSummary: {
     strategyLabel: string;
     riskLabel: string;
     positionCount: number;
+    /** Percentagem mostrada (em constituição inicial, limitada a 100% quando a técnica > 100%). */
     turnoverPct: number;
+    /** Rotação técnica max(compras,vendas)/NAV antes do limite a constituição inicial. */
+    turnoverPctTechnical?: number;
+    /** Poucas vendas + compras relevantes — carteira a ser montada a partir de caixa. */
+    initialConstitution?: boolean;
     buyCount: number;
     sellCount: number;
   };
@@ -102,6 +150,8 @@ type ReportData = {
   estimatedAnnualManagementFeeEur: number;
   estimatedMonthlyManagementFeeEur: number;
   estimatedPerformanceFeeEur: number;
+  /** Símbolo IBKR para executar TBILL_PROXY (ex. BIL, SHV) — espelha TBILL_PROXY_IB_TICKER no backend. */
+  tbillProxyIbTicker: string;
 };
 
 type PageProps = {
@@ -115,6 +165,135 @@ function safeNumber(x: unknown, fallback = 0): number {
 
 function safeString(x: unknown, fallback = ""): string {
   return typeof x === "string" ? x : fallback;
+}
+
+/** Células CSV / API: devolve texto trimado ou "". */
+function trimmedCell(x: unknown): string {
+  return typeof x === "string" ? x.trim() : "";
+}
+
+/**
+ * Sector na carteira recomendada: preferir metadados locais (GICS nos CSVs)
+ * ao valor vindo do motor, que muitas vezes é "Other" ou genérico.
+ */
+function pickRecommendedSector(p: { sector?: unknown }, metaSector: string | undefined): string {
+  const fromMeta = trimmedCell(metaSector);
+  const fromPayload = trimmedCell(
+    typeof p.sector === "string" ? p.sector : p.sector != null ? String(p.sector) : "",
+  );
+  return fromMeta || fromPayload || "";
+}
+
+function pickRecommendedIndustry(p: { industry?: unknown }, metaIndustry: string | undefined): string {
+  const fromMeta = trimmedCell(metaIndustry);
+  const fromPayload = trimmedCell(
+    typeof p.industry === "string" ? p.industry : p.industry != null ? String(p.industry) : "",
+  );
+  return fromMeta || fromPayload || "";
+}
+
+/**
+ * Proximidade da carteira real aos pesos-alvo do plano (só linhas do plano com peso ≥ 0,05%).
+ * Σ min(peso_actual, peso_alvo) / Σ peso_alvo — títulos fora do plano não penalizam.
+ */
+function computePortfolioVsPlanCoveragePct(
+  recommended: RecommendedPosition[],
+  actualRows: ActualPosition[],
+): number | null {
+  const actMap = new Map<string, number>();
+  for (const a of actualRows) {
+    const k = String(a.ticker || "").trim().toUpperCase();
+    if (!k || k === "LIQUIDEZ") continue;
+    const w = safeNumber(a.weightPct, 0);
+    actMap.set(k, (actMap.get(k) || 0) + w);
+  }
+  let denom = 0;
+  let num = 0;
+  for (const r of recommended) {
+    const t = String(r.ticker || "").trim().toUpperCase();
+    if (!t || t === "EURUSD") continue;
+    const wt = safeNumber(r.weightPct, 0);
+    if (wt < 0.05) continue;
+    denom += wt;
+    const wa = actMap.get(t) ?? 0;
+    num += Math.min(wa, wt);
+  }
+  if (denom <= 0) return null;
+  return Math.min(100, Math.round((num / denom) * 1000) / 10);
+}
+
+/** UCITS MM em EUR (proxy `EUR_MM_PROXY` no plano) — alinhar com `EUR_MM_IB_TICKER` no backend. */
+function eurMmIbTicker(): string {
+  const v = (
+    process.env.NEXT_PUBLIC_EUR_MM_IB_TICKER ||
+    process.env.EUR_MM_IB_TICKER ||
+    "CSH2"
+  )
+    .trim()
+    .toUpperCase();
+  return v || "CSH2";
+}
+
+function fallbackEurMmPriceEur(ticker: string): number {
+  const t = ticker.trim().toUpperCase();
+  if (t === "CSH2") return 100.0;
+  if (t === "XEON") return 52.0;
+  return 100.0;
+}
+
+/** Caixa/MM (CSH2, ETF T-Bills), proxies do plano e hedge EURUSD — fora do denominador «só títulos de risco» à direita. */
+function isRecommendedCashOrHedgeRowTicker(ticker: string): boolean {
+  const u = String(ticker || "").trim().toUpperCase();
+  if (u === "EURUSD") return true;
+  if (u === "TBILL_PROXY" || u === "EUR_MM_PROXY") return true;
+  return isDecideCashSleeveBrokerSymbol(u);
+}
+
+/**
+ * Split «Liquidez vs Acções» para PDF / texto (alinhado ao histórico do modelo).
+ * - Liquidez: TBILL_PROXY, EUR_MM_PROXY, símbolos IBKR de caixa (CSH2…), não duplica após TBILL→CSH2 na UI.
+ * - Acções: restantes; **EURUSD** (hedge IDEALPRO) não entra — é overlay % NAV, não parte da alocação modelo.
+ * Renormaliza para os dois somarem ~100% (evita 61,7% + 139% quando a caixa ia para «acções» por ticker ≠ TBILL_PROXY).
+ */
+function planLiquidezVsAccoesPctFromRecommended(
+  rows: RecommendedPosition[],
+): { liquidezPct: number; acoesPct: number } | null {
+  let liquidez = 0;
+  let acoes = 0;
+  for (const p of rows) {
+    if (p.excluded) continue;
+    const u = String(p.ticker || "").trim().toUpperCase();
+    if (u === "EURUSD") continue;
+    const w = safeNumber(p.weightPct, 0);
+    if (w <= 0) continue;
+    if (u === "TBILL_PROXY" || u === "EUR_MM_PROXY" || isDecideCashSleeveBrokerSymbol(u)) {
+      liquidez += w;
+    } else {
+      acoes += w;
+    }
+  }
+  const t = liquidez + acoes;
+  if (t <= 1e-6) return null;
+  return {
+    liquidezPct: (liquidez / t) * 100,
+    acoesPct: (acoes / t) * 100,
+  };
+}
+
+const MIN_FX_HEDGE_USD_ORDER_REPORT = Number(
+  process.env.DECIDE_MIN_FX_HEDGE_USD || process.env.NEXT_PUBLIC_DECIDE_MIN_FX_HEDGE_USD || 500,
+);
+
+function fxHedgeOrderPctFromEnvReport(): number {
+  const raw = Number(
+    process.env.DECIDE_FX_HEDGE_ORDER_PCT ?? process.env.NEXT_PUBLIC_DECIDE_FX_HEDGE_ORDER_PCT ?? 100,
+  );
+  return Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 100;
+}
+
+function eurusdMidHintReport(): number {
+  const raw = Number(process.env.DECIDE_EURUSD_MID_HINT ?? process.env.NEXT_PUBLIC_DECIDE_EURUSD_MID_HINT ?? 1.08);
+  return Number.isFinite(raw) && raw > 0 ? raw : 1.08;
 }
 
 function formatEuro(v: number): string {
@@ -151,6 +330,62 @@ function formatUsdPrice(v: number | null | undefined): string {
   }).format(v);
 }
 
+/** Taxa EUR.USD (IDEALPRO) — não é preço de acção em USD. */
+function formatEurUsdRate(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v) || v <= 0) {
+    return "—";
+  }
+  return new Intl.NumberFormat("pt-PT", {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 6,
+  }).format(v);
+}
+
+/** Montante USD estimado das compras (qty × preço em USD) — usado para EURUSD no mesmo envio que as ações. */
+function estimateUsdNotionalForBuyFxHedge(trades: ProposedTrade[]): number {
+  let sumPx = 0;
+  let sumDelta = 0;
+  for (const t of trades) {
+    if (String(t.side).toUpperCase() !== "BUY") continue;
+    const tick = String(t.ticker).toUpperCase();
+    if (tick === "EURUSD" || tick === "TBILL_PROXY" || tick === "EUR_MM_PROXY") continue;
+    const q = Math.floor(Math.abs(Number(t.absQty) || 0));
+    const px = Number(t.marketPrice) || 0;
+    if (q > 0 && px > 0) sumPx += q * px;
+    sumDelta += Math.abs(Number(t.deltaValueEst) || 0);
+  }
+  const rounded = Math.round(sumPx * 100) / 100;
+  const deltaUsd = Math.round(sumDelta * 100) / 100;
+  /** Se `qty×preço` subestima (close em falta no cliente), usar soma dos |Δ| em valor como tecto. */
+  return Math.max(rounded, deltaUsd);
+}
+
+/**
+ * Montante USD a enviar ao backend para EUR.USD (IDEALPRO): inclui compras de ações e de TBILL_PROXY
+ * (resolve para BIL/SHV no envio). Se o cliente tiver preferência de hedge EUR/USD com % 50 ou 100,
+ * aplica essa fracção ao notional; caso contrário usa o total das compras (comportamento anterior).
+ */
+function fxHedgeUsdNotionalForCoordinatedSend(
+  trades: ProposedTrade[],
+  prefs: ReturnType<typeof readFxHedgePrefs>,
+): number {
+  const base = estimateUsdNotionalForBuyFxHedge(trades);
+  if (prefs && prefs.pct > 0 && prefs.pair === "EURUSD") {
+    return Math.round(base * (prefs.pct / 100) * 100) / 100;
+  }
+  return base;
+}
+
+/** Só o par EUR/USD tem ordem FX na IBKR neste fluxo (`send_orders` → EURUSD). */
+function hedgePrefsImplyCoordinatedFx(): boolean {
+  try {
+    const p = readFxHedgePrefs();
+    return Boolean(p && p.pct > 0 && p.pair === "EURUSD");
+  } catch {
+    return false;
+  }
+}
+
 function formatPct(v: number, digits = 2): string {
   return `${v.toFixed(digits)}%`;
 }
@@ -169,6 +404,17 @@ function remainingOrderQty(f: { requested_qty?: number; filled?: number }): numb
   return Math.max(0, req - done);
 }
 
+/**
+ * IBKR: estados como `PendingCancel` contêm a substring «cancel» mas **não** «cancelled»/«canceled» —
+ * não são cancelamento terminal. Usar só palavras-chave de fim de ordem; evita «Cancelada» falsa.
+ */
+function ibkrStatusIsTerminalCancelled(stRaw: string): boolean {
+  const st = String(stRaw ?? "").toLowerCase().trim();
+  if (!st) return false;
+  if (st.includes("pendingcancel")) return false;
+  return st.includes("cancelled") || st.includes("canceled") || st.includes("bust");
+}
+
 /** Rótulos para o cliente (evita jargão IBKR tipo «Submitted»). */
 function execStatusDisplay(f: {
   status?: string;
@@ -178,7 +424,8 @@ function execStatusDisplay(f: {
   const st = String(f.status ?? "").toLowerCase();
   const req = Number(f.requested_qty ?? 0);
   const fill = Number(f.filled ?? 0);
-  if (st.includes("cancel")) return "Cancelada";
+  if (ibkrStatusIsTerminalCancelled(f.status ?? "")) return "Cancelada";
+  if (st.includes("skip_fx_below_min") || st.includes("skip_fx_size")) return "FX não enviada (limite)";
   if (
     st.includes("not_qualified") ||
     st.includes("qualify_error") ||
@@ -192,6 +439,13 @@ function execStatusDisplay(f: {
   if (st.includes("filled") && ((req > 0 && fill >= req) || (req <= 0 && fill > 0))) {
     return "Executada";
   }
+  if (req > 0 && fill + 1e-6 >= req && !ibkrStatusIsTerminalCancelled(f.status ?? "")) {
+    return "Executada";
+  }
+  /** Ainda não enviada ao sistema da corretora — na TWS costuma aparecer só «Transmitir» (não «Cancelar»). */
+  if (st === "pendingsubmit" || st === "apipending") {
+    return "Pendente — confirmar na TWS (Transmitir)";
+  }
   if (st.includes("submitted") || st.includes("presubmitted") || st.includes("pending")) {
     return "Em curso";
   }
@@ -199,11 +453,22 @@ function execStatusDisplay(f: {
   return f.status ? String(f.status) : "—";
 }
 
-/** Ordem com quantidade em falta e elegível para nova submissão (ex.: mercado fechado, parcial). */
+/**
+ * Ordem com quantidade em falta e elegível para nova submissão.
+ * Não duplicar: ordem já na fila (Submitted/PreSubmitted, 0 fill) → não reenviar ao clicar «Completar pendentes».
+ */
 function fillEligibleForCompletionRetry(f: { status?: string; requested_qty?: number; filled?: number }): boolean {
   if (remainingOrderQty(f) <= 0) return false;
   const st = String(f.status ?? "").toLowerCase();
   if (st.includes("cancel") || st.includes("inactive")) return false;
+  const fill = Math.floor(Number(f.filled ?? 0));
+  const liveNoFill =
+    fill <= 0 &&
+    (st.includes("presubmitted") ||
+      st.includes("pendingsubmit") ||
+      st.includes("apipending") ||
+      (st.includes("submitted") && !st.includes("unsubmitted")));
+  if (liveNoFill) return false;
   return true;
 }
 
@@ -338,6 +603,15 @@ function hasUsableModelPayload(payload: any): boolean {
   return hasPositions && hasSeries;
 }
 
+/** Relatório alinhado ao modelo CAP15 (exposição a risco ≤100% NV). */
+function isCap15ModelMeta(meta: unknown): boolean {
+  if (!meta || typeof meta !== "object") return false;
+  const m = meta as Record<string, unknown>;
+  const mn = String(m.model_name ?? "").toUpperCase();
+  const ds = String(m.data_source ?? "").toLowerCase();
+  return mn.includes("CAP15") || ds.includes("cap15");
+}
+
 function dailyReturnsFromEquity(equity: number[]): number[] {
   const r: number[] = [];
   for (let i = 1; i < equity.length; i += 1) {
@@ -388,9 +662,11 @@ function totalReturnFraction(equity: number[]): number {
   return b / a - 1;
 }
 
-/** Horizonte mostrado ao cliente (evita % cumulativos de 20y que parecem “bug”). */
-const DISPLAY_HORIZON_YEARS = 10;
-const DISPLAY_CAGR_YEARS = 20;
+/**
+ * Horizonte único do relatório: gráfico, CAGR nos cartões e métricas de risco (Sharpe, vol, MDD)
+ * alinhados à mesma janela móvel no fim da série.
+ */
+const DISPLAY_REPORT_YEARS = 20;
 const PCT_DISPLAY_CAP = 400;
 
 function parseDateYmd(s: string): number {
@@ -466,15 +742,10 @@ function pickBestDisplayName(ticker: string, candidate: string, fallback: string
 
 /**
  * Quando o motor em 8090 está offline, usa o snapshot em
- * freeze/DECIDE_MODEL_V5_OVERLAY_CAP15_MAX100EXP/model_outputs/.
+ * `freeze/<FREEZE_PLAFONADO_MODEL_DIR>/model_outputs/` (CAP15 plafonado, V2.3 smooth).
  */
 function loadFreezeRunModelSnapshot(projectRoot: string): any | null {
-  const dir = path.join(
-    projectRoot,
-    "freeze",
-    "DECIDE_MODEL_V5_OVERLAY_CAP15_MAX100EXP",
-    "model_outputs"
-  );
+  const dir = path.join(projectRoot, "freeze", FREEZE_PLAFONADO_MODEL_DIR, "model_outputs");
   const pfPath = path.join(dir, "portfolio_final.json");
   const benchPath = path.join(dir, "benchmark_equity_final_20y.csv");
   const modelPathModerado = path.join(dir, "model_equity_final_20y_moderado.csv");
@@ -565,8 +836,8 @@ function loadFreezeRunModelSnapshot(projectRoot: string): any | null {
   return {
     meta: {
       profile: safeString(kpisMeta?.profile, "moderado"),
-      data_source: "freeze_local_fallback_cap15_exp100",
-      model_name: "DECIDE_MODEL_V5_OVERLAY_CAP15_MAX100EXP",
+      data_source: "freeze_local_fallback_cap15_v23_smooth",
+      model_name: FREEZE_PLAFONADO_MODEL_DIR,
       latest_cash_sleeve: safeNumber(Number(kpisMeta?.latest_cash_sleeve), 0),
       freeze_dir: dir,
     },
@@ -586,6 +857,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
   const frontRoot = process.cwd();
   const projectRoot = path.resolve(frontRoot, "..");
   const tmpDir = path.join(projectRoot, "tmp_diag");
+  const eurMmSym = eurMmIbTicker();
 
   const smokePath = path.join(tmpDir, "ibkr_paper_smoke_test.json");
   const statusPath = path.join(tmpDir, "ibkr_order_status_and_cancel.json");
@@ -593,6 +865,12 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
   const companyMetaPath = path.join(projectRoot, "backend", "data", "company_meta_combined.csv");
   const companyMetaV3Path = path.join(projectRoot, "backend", "data", "company_meta_v3.csv");
   const companyMetaGlobalPath = path.join(projectRoot, "backend", "data", "company_meta_global.csv");
+  const companyMetaGlobalEnrichedPath = path.join(
+    projectRoot,
+    "backend",
+    "data",
+    "company_meta_global_enriched.csv",
+  );
 
   const smokeJson = readJsonIfExists<any>(smokePath);
   const statusJson = readJsonIfExists<any>(statusPath);
@@ -600,20 +878,31 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
   const companyMetaRows = readCsvIfExists(companyMetaPath);
   const companyMetaV3Rows = readCsvIfExists(companyMetaV3Path);
   const companyMetaGlobalRows = readCsvIfExists(companyMetaGlobalPath);
+  const companyMetaGlobalEnrichedRows = readCsvIfExists(companyMetaGlobalEnrichedPath);
 
   const metaByTicker = new Map<
     string,
-    { sector: string; region: string; nameShort: string }
+    { sector: string; region: string; nameShort: string; industry: string }
   >();
   const upsertMeta = (row: Record<string, string>) => {
     const tRaw = safeString(row.ticker || row.symbol).toUpperCase();
     const t = normalizeTickerKey(tRaw);
     if (!t) return;
-    const curr = metaByTicker.get(t) || { sector: "", region: "", nameShort: "" };
+    const curr = metaByTicker.get(t) || { sector: "", region: "", nameShort: "", industry: "" };
+    const sectorFromRow = trimmedCell(row.sector || row.gics_sector || row.sector_name);
+    const industryFromRow = trimmedCell(row.industry || row.gics_sub_industry || row.sub_industry || "");
+    const nameCandidate = trimmedCell(row.name_short || row.name || row.company || "");
+    const nameWeak =
+      !nameCandidate ||
+      normalizeTickerKey(nameCandidate) === t ||
+      normalizeTickerKey(nameCandidate) === exclusionTickerGroup(t);
+    const nextName = nameWeak ? curr.nameShort || nameCandidate : nameCandidate;
+    const regionCandidate = trimmedCell(row.region || row.zone || row.country_group || "");
     const next = {
-      sector: safeString(row.sector || row.gics_sector || row.sector_name, curr.sector),
-      region: safeString(row.region || row.zone || row.country_group, curr.region),
-      nameShort: safeString(row.name_short || row.name || row.company, curr.nameShort),
+      sector: sectorFromRow || curr.sector,
+      region: regionCandidate || curr.region,
+      nameShort: nextName,
+      industry: industryFromRow || curr.industry,
     };
     metaByTicker.set(t, next);
     // Also index the dot/dash variant to avoid lookup misses (e.g. BRK.B vs BRK-B).
@@ -621,15 +910,45 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     if (alt && alt !== t) metaByTicker.set(alt, next);
   };
   for (const row of companyMetaGlobalRows) upsertMeta(row);
+  for (const row of companyMetaGlobalEnrichedRows) upsertMeta(row);
   for (const row of companyMetaV3Rows) upsertMeta(row);
   for (const row of companyMetaRows) upsertMeta(row);
+
+  const brkMeta = {
+    sector: "Conglomerados / Holdings financeiros",
+    region: "US",
+    nameShort: "Berkshire Hathaway (Classe B)",
+    industry: "",
+  };
+  {
+    const nk = normalizeTickerKey("BRK.B");
+    const cur = metaByTicker.get(nk) || { sector: "", region: "", nameShort: "", industry: "" };
+    const merged = {
+      sector: cur.sector || brkMeta.sector,
+      region: cur.region || brkMeta.region,
+      industry: cur.industry || brkMeta.industry,
+      nameShort:
+        cur.nameShort && cur.nameShort !== nk && cur.nameShort !== "BRK.B"
+          ? cur.nameShort
+          : brkMeta.nameShort,
+    };
+    metaByTicker.set(nk, merged);
+    metaByTicker.set("BRK.B", merged);
+  }
 
   const metaForTicker = (ticker: string) => {
     const k = normalizeTickerKey(ticker);
     const direct = metaByTicker.get(k);
     if (direct) return direct;
     const alt = k.includes("-") ? k.replace(/-/g, ".") : k.replace(/\./g, "-");
-    if (alt) return metaByTicker.get(alt);
+    if (alt) {
+      const hit = metaByTicker.get(alt);
+      if (hit) return hit;
+    }
+    const compact = k.replace(/\s+/g, "");
+    if (compact === "BRKB" || k.trim().toUpperCase() === "BRK B") {
+      return metaByTicker.get("BRK-B") ?? metaByTicker.get("BRK.B");
+    }
     return undefined;
   };
 
@@ -730,6 +1049,18 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     0
   );
 
+  const netLiqCurrency = (o: Record<string, unknown> | undefined): string => {
+    const nl = o?.netLiquidation;
+    if (nl && typeof nl === "object" && nl !== null && "currency" in nl) {
+      return safeString((nl as { currency?: string }).currency, "").trim().toUpperCase();
+    }
+    return "";
+  };
+  const sel = smokeJson?.selected as Record<string, unknown> | undefined;
+  const att0 = smokeJson?.attempts?.[0] as Record<string, unknown> | undefined;
+  const accountBaseCurrency =
+    netLiqCurrency(sel) || netLiqCurrency(att0) || "EUR";
+
   const cashEur = safeNumber(
     smokeJson?.selected?.cash?.value ?? smokeJson?.attempts?.[0]?.cash?.value,
     0
@@ -761,9 +1092,18 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     const value = qty * marketPrice;
     const weightPct = navEur > 0 ? (value / navEur) * 100 : 0;
     const closePrice = getClosePrice(ticker);
+    const m = metaForTicker(ticker);
+    const nameShort = pickBestDisplayName(
+      ticker,
+      safeString(p.name ?? p.companyName ?? p.short_name, ""),
+      safeString(m?.nameShort, ""),
+    );
+    const sector = trimmedCell(m?.sector) || trimmedCell(p.sector ?? p.gics_sector);
 
     return {
       ticker,
+      nameShort,
+      sector,
       qty,
       marketPrice,
       closePrice: closePrice > 0 ? closePrice : null,
@@ -810,7 +1150,12 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
         sector: (() => {
           const t = safeString(p.ticker).toUpperCase();
           const m = metaForTicker(t);
-          return safeString(p.sector || m?.sector, "");
+          return pickRecommendedSector(p, m?.sector);
+        })(),
+        industry: (() => {
+          const t = safeString(p.ticker).toUpperCase();
+          const m = metaForTicker(t);
+          return pickRecommendedIndustry(p, m?.industry);
         })(),
         score: safeNumber(p.score, 0),
         weightPct: safeNumber(p.weight_pct, 0) * investedFrac,
@@ -865,6 +1210,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
   if (tbillIdx >= 0) {
     recommendedPositions[tbillIdx].nameShort = "T-Bills / Cash Sleeve";
     recommendedPositions[tbillIdx].sector = "Cash & T-Bills";
+    recommendedPositions[tbillIdx].industry = "";
     recommendedPositions[tbillIdx].region = recommendedPositions[tbillIdx].region || "US";
     recommendedPositions[tbillIdx].weightPct = safeNumber(
       recommendedPositions[tbillIdx].weightPct,
@@ -876,6 +1222,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
       nameShort: "T-Bills / Cash Sleeve",
       region: "US",
       sector: "Cash & T-Bills",
+      industry: "",
       score: 0,
       weightPct: tbillsProxyWeightPct,
       originalWeightPct: tbillsProxyWeightPct,
@@ -1008,7 +1355,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
       closePrice: a.closePrice,
       deltaValueEst: a.value,
       targetWeightPct: 0,
-      nameShort: a.ticker,
+      nameShort: a.nameShort || a.ticker,
     });
     proposedByTicker.add(exclusionTickerGroup(normalizeTickerKey(a.ticker)));
   }
@@ -1043,47 +1390,111 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     proposedByTicker.add(exKey);
   }
 
-  // Sleeve T-Bills do modelo (TBILL_PROXY) → execução na corretora como BIL: garantir BUY com qtd > 0.
-  // Preço: último close em prices_close; se falhar (célula vazia), usa fallback ~último NAV do ETF BIL.
-  const FALLBACK_BIL_USD = 91.5;
+  fillSyntheticEquityBuyQuantities(proposedTrades, navEur, getClosePrice);
+
+  // Sleeve caixa do modelo (TBILL_PROXY no JSON) → ordens como UCITS MM em EUR (`EUR_MM_PROXY` → CSH2/XEON).
   {
+    for (let i = proposedTrades.length - 1; i >= 0; i -= 1) {
+      if (proposedTrades[i].ticker === "TBILL_PROXY") proposedTrades.splice(i, 1);
+    }
     const tbillW = tbillPos ? safeNumber(tbillPos.weightPct, 0) : 0;
     if (tbillW > 0 && navEur > 0) {
-      const pxRaw = getClosePrice("BIL") || getClosePrice("TBILL_PROXY");
-      const pxBil = pxRaw > 0 ? pxRaw : FALLBACK_BIL_USD;
+      const pxRaw = getClosePrice(eurMmSym) || getClosePrice("EUR_MM_PROXY");
+      const pxEur = pxRaw > 0 ? pxRaw : fallbackEurMmPriceEur(eurMmSym);
       const notional = (tbillW / 100) * navEur;
-      const q = Math.max(1, Math.floor(notional / pxBil));
-      const existing = proposedTrades.find((t) => t.ticker === "TBILL_PROXY");
+      const q = Math.max(1, Math.floor(notional / pxEur));
+      const existing = proposedTrades.find((t) => t.ticker === "EUR_MM_PROXY");
       if (existing) {
         if (existing.side === "INACTIVE") {
-          /* reservado: TBILL não é excluível pelo cliente */
+          /* reservado */
         } else {
           existing.side = "BUY";
+          existing.ticker = "EUR_MM_PROXY";
           existing.absQty = Math.max(safeNumber(existing.absQty, 0), q);
-          existing.marketPrice = pxBil;
-          existing.closePrice = pxBil > 0 ? pxBil : null;
+          existing.marketPrice = pxEur;
+          existing.closePrice = pxEur > 0 ? pxEur : null;
           existing.deltaValueEst = notional;
           existing.targetWeightPct = tbillW;
-          if (!existing.nameShort || existing.nameShort.trim() === "") {
-            existing.nameShort = "T-Bills / Cash Sleeve (BIL)";
-          }
+          existing.nameShort = `MM EUR / caixa (${eurMmSym})`;
         }
       } else {
         proposedTrades.push({
-          ticker: "TBILL_PROXY",
+          ticker: "EUR_MM_PROXY",
           side: "BUY",
           absQty: q,
-          marketPrice: pxBil,
-          closePrice: pxBil > 0 ? pxBil : null,
+          marketPrice: pxEur,
+          closePrice: pxEur > 0 ? pxEur : null,
           deltaValueEst: notional,
           targetWeightPct: tbillW,
-          nameShort: "T-Bills / Cash Sleeve (BIL)",
+          nameShort: `MM EUR / caixa (${eurMmSym})`,
+        });
+      }
+    }
+  }
+
+  {
+    const hedgeUsdRaw = estimateUsdNotionalForBuyFxHedge(proposedTrades as ProposedTrade[]);
+    const pct = fxHedgeOrderPctFromEnvReport();
+    const hedgeUsd = (hedgeUsdRaw * pct) / 100;
+    if (hedgeUsd >= MIN_FX_HEDGE_USD_ORDER_REPORT) {
+      const mid = eurusdMidHintReport();
+      const eurQty = Math.round((hedgeUsd / mid) * 100) / 100;
+      if (eurQty >= 1) {
+        proposedTrades.push({
+          ticker: "EURUSD",
+          side: "BUY",
+          absQty: eurQty,
+          marketPrice: mid,
+          closePrice: mid,
+          deltaValueEst: hedgeUsd,
+          targetWeightPct: 0,
+          nameShort: "Hedge cambial EUR.USD (IDEALPRO)",
         });
       }
     }
   }
 
   proposedTrades.sort((a, b) => Math.abs(b.deltaValueEst) - Math.abs(a.deltaValueEst));
+
+  // Carteira recomendada (UI): o modelo usa TBILL_PROXY no JSON; na execução vira MM EUR (UCITS). Mostrar CSH2/XEON + EURUSD quando existir hedge no plano.
+  {
+    const tbIdx = recommendedPositions.findIndex((p) => p.ticker === "TBILL_PROXY");
+    if (tbIdx >= 0) {
+      const prev = recommendedPositions[tbIdx];
+      const w = safeNumber(prev.weightPct, 0);
+      const ow = safeNumber(prev.originalWeightPct, w);
+      const excl = prev.excluded;
+      recommendedPositions.splice(tbIdx, 1);
+      recommendedPositions.push({
+        ticker: eurMmSym,
+        nameShort: `MM EUR / caixa (${eurMmSym})`,
+        region: "EU",
+        sector: "Money market UCITS (EUR)",
+        industry: "",
+        score: 0,
+        weightPct: w,
+        originalWeightPct: ow,
+        excluded: excl,
+      });
+    }
+    const fxRow = proposedTrades.find((t) => t.ticker === "EURUSD");
+    if (fxRow && navEur > 0) {
+      const hedgeUsd = safeNumber(fxRow.deltaValueEst, 0);
+      const wFx = capPctDisplay((hedgeUsd / navEur) * 100);
+      recommendedPositions.push({
+        ticker: "EURUSD",
+        nameShort: fxRow.nameShort || "Hedge cambial EUR.USD (IDEALPRO)",
+        region: "FX",
+        sector: "Cobertura cambial (operacional)",
+        industry: "",
+        score: 0,
+        weightPct: wFx,
+        originalWeightPct: wFx,
+        excluded: false,
+      });
+    }
+    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+  }
 
   const dates: string[] = Array.isArray(modelPayload?.series?.dates)
     ? modelPayload.series.dates
@@ -1099,46 +1510,81 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     : [];
 
   const n = Math.min(dates.length, benchmark.length, raw.length, overlayed.length);
-  const hStart =
-    n >= 50 ? findHorizonStartIdx(dates, n, DISPLAY_HORIZON_YEARS) : 0;
-  const hStartCagr =
-    n >= 50 ? findHorizonStartIdx(dates, n, DISPLAY_CAGR_YEARS) : 0;
-  const ySpanCagr = n >= 2 ? yearsSpanBetween(dates, hStartCagr, n - 1) : 0;
+  const hStart = n >= 50 ? findHorizonStartIdx(dates, n, DISPLAY_REPORT_YEARS) : 0;
+  const ySpanCagr = n >= 2 ? yearsSpanBetween(dates, hStart, n - 1) : 0;
 
   const benchW = benchmark.slice(hStart, n);
   const ovrW = overlayed.slice(hStart, n);
-  const benchCagrW = benchmark.slice(hStartCagr, n);
-  const ovrCagrW = overlayed.slice(hStartCagr, n);
 
-  const cagrPct = capPctDisplay(cagrPctFromEquityWindow(ovrCagrW, ySpanCagr));
-  const benchmarkCagrPct = capPctDisplay(
-    cagrPctFromEquityWindow(benchCagrW, ySpanCagr)
+  const profileLabel = safeString(modelPayload?.meta?.profile, "moderado");
+  const kpiProfile = normalizeRiskProfileForKpi(profileLabel);
+  /** Mesma regra que `/api/client/plan-decision-kpis` e o cartão no dashboard. */
+  const planPlafonado = kpiProfile === "conservador" || kpiProfile === "moderado";
+
+  const overlayModelCagrPct = capPctDisplay(cagrPctFromEquityWindow(ovrW, ySpanCagr));
+  const overlayBenchmarkCagrPct = capPctDisplay(cagrPctFromEquityWindow(benchW, ySpanCagr));
+
+  const { recommendedCagrPct: cagrFromModel } = await loadApprovalAlignedProposedTrades(projectRoot);
+  const freezeHero = readHeroKpiFreezeContext(projectRoot);
+  const embedModelKpis = await fetchPlafonadoKpisFromKpiServer(kpiProfile);
+
+  const cagrPct = capPctDisplay(
+    embedModelKpis?.cagrPct ??
+      readPlafonadoM100CagrDisplayPercent(projectRoot, kpiProfile) ??
+      cagrFromModel ??
+      overlayModelCagrPct,
   );
+
+  const benchmarkCagrPct =
+    freezeHero.benchmarkCagrPct != null
+      ? capPctDisplay(freezeHero.benchmarkCagrPct)
+      : overlayBenchmarkCagrPct;
+
   const totalReturnPct = cagrPct;
   const benchmarkTotalReturnPct = benchmarkCagrPct;
-  const outperformancePct = capPctDisplay(cagrPct - benchmarkCagrPct);
 
   const retsO = dailyReturnsFromEquity(ovrW);
   const retsB = dailyReturnsFromEquity(benchW);
-  const sharpe = sharpeFromDailyReturns(retsO);
+  let sharpe = sharpeFromDailyReturns(retsO);
   const benchmarkSharpe = sharpeFromDailyReturns(retsB);
-  const volatilityPct = capPctDisplay(annualizedVolFromDailyReturns(retsO));
+  let volatilityPct = capPctDisplay(annualizedVolFromDailyReturns(retsO));
   const benchmarkVolatilityPct = capPctDisplay(
     annualizedVolFromDailyReturns(retsB)
   );
-  const maxDrawdownPct = capPctDisplay(maxDrawdownFraction(ovrW) * 100);
+  let maxDrawdownPct = capPctDisplay(maxDrawdownFraction(ovrW) * 100);
   const benchmarkMaxDrawdownPct = capPctDisplay(
     maxDrawdownFraction(benchW) * 100
   );
 
+  if (planPlafonado && embedModelKpis) {
+    if (embedModelKpis.sharpe != null) sharpe = embedModelKpis.sharpe;
+    if (embedModelKpis.volAnnualPct != null) {
+      volatilityPct = capPctDisplay(embedModelKpis.volAnnualPct);
+    }
+    if (embedModelKpis.maxDrawdownPct != null) {
+      maxDrawdownPct = capPctDisplay(embedModelKpis.maxDrawdownPct);
+    }
+  }
+
   const displayHorizonLabel =
     n >= 50
-      ? `Últimos ${DISPLAY_HORIZON_YEARS} anos (histórico do modelo; ilustrativo)`
+      ? `Últimos ${DISPLAY_REPORT_YEARS} anos (histórico do modelo; ilustrativo)`
       : "Horizonte limitado pelos dados disponíveis";
-  const displayCagrLabel =
-    n >= 50
-      ? `CAGR anualizado dos últimos ${DISPLAY_CAGR_YEARS} anos`
-      : "CAGR anualizado no período disponível";
+  const cagrYearRangeInParens =
+    freezeHero.historyYearRangeLabel != null &&
+    String(freezeHero.historyYearRangeLabel).trim() !== ""
+      ? String(freezeHero.historyYearRangeLabel).trim()
+      : null;
+  const displayCagrModelSubLabel = cagrYearRangeInParens
+    ? `Retorno anualizado da carteira modelo (${cagrYearRangeInParens})`
+    : n >= 50
+      ? `CAGR anualizado da carteira modelo — últimos ${DISPLAY_REPORT_YEARS} anos`
+      : "CAGR anualizado da carteira modelo no período disponível";
+  const displayCagrBenchmarkSubLabel = cagrYearRangeInParens
+    ? `Retorno anualizado do benchmark (${cagrYearRangeInParens})`
+    : n >= 50
+      ? `CAGR anualizado do benchmark — últimos ${DISPLAY_REPORT_YEARS} anos`
+      : "CAGR anualizado do benchmark no período disponível";
 
   const series: SeriesPoint[] = [];
   const baseBench = benchmark[hStart] > 0 ? benchmark[hStart] : 1;
@@ -1156,21 +1602,39 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
   const currentValueEur =
     actualPositions.reduce((acc, p) => acc + p.value, 0) + cashEur;
 
-  const profileLabel = safeString(modelPayload?.meta?.profile, "moderado");
   const buyCount = proposedTrades.filter((t) => t.side === "BUY").length;
   const sellCount = proposedTrades.filter((t) => t.side === "SELL").length;
-  const turnoverAbs = proposedTrades.reduce(
-    (acc, t) => acc + Math.abs(t.deltaValueEst),
-    0
-  );
-  const turnoverPct =
+  const buyAbsPlan = proposedTrades
+    .filter((t) => t.side === "BUY")
+    .reduce((acc, t) => acc + Math.abs(t.deltaValueEst), 0);
+  const sellAbsPlan = proposedTrades
+    .filter((t) => t.side === "SELL")
+    .reduce((acc, t) => acc + Math.abs(t.deltaValueEst), 0);
+  /** Maior perna compra/venda — evita impacto % artificial >100% pela soma de todos os |Δ|. */
+  const turnoverAbs = Math.max(buyAbsPlan, sellAbsPlan);
+  const turnoverPctTechnical =
     navEur > 0 ? capPctDisplay((turnoverAbs / navEur) * 100) : 0;
+  /**
+   * Constituição inicial: sobretudo caixa → alvo; poucas vendas. A soma das compras em valor estimado pode
+   * exceder 100% do NAV de referência (USD+EUR+FX/MM); para o cliente, o que importa é alocar o património
+   * de referência (~100%), não a percentagem técnica bruta.
+   */
+  const initialConstitutionLikely =
+    navEur > 0 &&
+    sellAbsPlan / navEur < 0.06 &&
+    buyAbsPlan > navEur * 0.25;
+  const turnoverPct =
+    initialConstitutionLikely && turnoverPctTechnical > 100
+      ? capPctDisplay(100)
+      : turnoverPctTechnical;
 
   const planSummary = {
     strategyLabel: "Ações globais (modelo DECIDE)",
     riskLabel: profileRiskLabel(profileLabel),
     positionCount: recommendedPositions.length,
     turnoverPct,
+    turnoverPctTechnical,
+    initialConstitution: initialConstitutionLikely,
     buyCount,
     sellCount,
   };
@@ -1178,7 +1642,9 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     tradePlanRows.length > 0
       ? "Inclui ordens do plano IBKR e ajustes sintéticos para cobrir toda a carteira recomendada."
       : "Sem plano IBKR disponível: lista construída a partir da diferença entre carteira atual e recomendada.";
-  const modelDisplayName = "Modelo com Exposição máxima <= 100%";
+  const modelDisplayName = isCap15ModelMeta(modelPayload?.meta)
+    ? "Modelo CAP15"
+    : "Modelo com exposição máxima ≤ 100%";
 
   const feeSegment: "A" | "B" = navEur >= 50000 ? "B" : "A";
   const monthlyFixedFeeEur = feeSegment === "A" ? 20 : 0;
@@ -1206,11 +1672,11 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     profile: profileLabel,
     modelDisplayName,
     navEur,
+    accountBaseCurrency,
     cashEur,
     currentValueEur,
     totalReturnPct,
     benchmarkTotalReturnPct,
-    outperformancePct,
     cagrPct,
     benchmarkCagrPct,
     sharpe,
@@ -1220,7 +1686,8 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     maxDrawdownPct,
     benchmarkMaxDrawdownPct,
     displayHorizonLabel,
-    displayCagrLabel,
+    displayCagrModelSubLabel,
+    displayCagrBenchmarkSubLabel,
     planSummary,
     excludedTickersApplied,
     exclusionCandidates,
@@ -1238,6 +1705,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     estimatedAnnualManagementFeeEur,
     estimatedMonthlyManagementFeeEur,
     estimatedPerformanceFeeEur,
+    tbillProxyIbTicker: eurMmSym,
   };
 
   return {
@@ -1259,16 +1727,17 @@ function SummaryCard({
   return (
     <div
       style={{
-        background: "#111827",
-        border: "1px solid #1f2937",
+        background: DECIDE_DASHBOARD.clientPanelGradient,
+        border: DECIDE_DASHBOARD.panelBorder,
         borderRadius: 16,
         padding: 18,
+        boxShadow: DECIDE_DASHBOARD.clientPanelShadow,
       }}
     >
       <div style={{ color: "#9ca3af", fontSize: 13, marginBottom: 8 }}>{title}</div>
       <div style={{ color: "#ffffff", fontSize: 28, fontWeight: 700 }}>{value}</div>
       {sub ? (
-        <div style={{ color: "#94a3b8", fontSize: 13, marginTop: 8 }}>{sub}</div>
+        <div style={{ color: "#a1a1aa", fontSize: 13, marginTop: 8 }}>{sub}</div>
       ) : null}
     </div>
   );
@@ -1310,45 +1779,525 @@ function formatLeverageMultiple(ratio: number): string {
   return `${ratio.toFixed(1).replace(".", ",")}×`;
 }
 
+/** Linha devolvida por POST /api/flatten-paper-portfolio (ib_insync / IB Gateway ou TWS). */
+type FlattenCloseRow = {
+  ticker?: string;
+  status?: string;
+  requested_qty?: number;
+  filled?: number;
+};
+
+function categorizeFlattenCloseRow(r: FlattenCloseRow): "skipped" | "filled" | "pending" | "error" {
+  const st = String(r.status ?? "").toLowerCase();
+  if (st === "skipped") return "skipped";
+  if (st === "error") return "error";
+  const req = Number(r.requested_qty ?? 0);
+  const fil = Number(r.filled ?? 0);
+  if (req > 0 && fil >= req - 1e-6) return "filled";
+  if (st === "filled") return "filled";
+  if (
+    st === "cancelled" ||
+    st === "apicancelled" ||
+    (st.includes("cancel") && !st.includes("pending")) ||
+    st.includes("inactive") ||
+    st.includes("reject") ||
+    st.includes("fail")
+  ) {
+    return "error";
+  }
+  if (fil > 0 && req > 0 && fil < req) return "pending";
+  if (
+    st.includes("submit") ||
+    st.includes("pending") ||
+    st === "pendingsubmit" ||
+    st === "presubmitted" ||
+    st === "apisubmitted"
+  ) {
+    return "pending";
+  }
+  return "pending";
+}
+
+function summarizeFlattenCloses(closes: unknown[]) {
+  let skipped = 0;
+  let filled = 0;
+  let pending = 0;
+  let errors = 0;
+  for (const row of closes) {
+    if (!row || typeof row !== "object") continue;
+    const cat = categorizeFlattenCloseRow(row as FlattenCloseRow);
+    if (cat === "skipped") skipped += 1;
+    else if (cat === "filled") filled += 1;
+    else if (cat === "pending") pending += 1;
+    else errors += 1;
+  }
+  const attempted = filled + pending + errors;
+  return { skipped, filled, pending, errors, attempted, total: closes.length };
+}
+
+function formatFlattenPortfolioUserMessage(sum: ReturnType<typeof summarizeFlattenCloses>): string {
+  if (sum.attempted === 0 && sum.skipped > 0) {
+    return `Nenhuma ordem de mercado enviada (${sum.skipped} linha(s) ignoradas — p.ex. não-STK).`;
+  }
+  if (sum.errors === 0 && sum.pending === 0 && sum.filled === sum.attempted && sum.attempted > 0) {
+    return `Ordens de fecho executadas na corretora (${sum.filled}/${sum.attempted}). A carteira em baixo foi sincronizada com o snapshot IBKR — confirme no IB Gateway ou na TWS se quiser.`;
+  }
+  const bits: string[] = [
+    `Pedidos enviados à corretora: ${sum.attempted} linha(s) com ordem (` +
+      `executada(s): ${sum.filled}, em curso/parcial(is): ${sum.pending}, erro: ${sum.errors}` +
+      (sum.skipped ? `, ignoradas: ${sum.skipped}` : "") +
+      `).`,
+  ];
+  bits.push(
+    "Enviar não é o mesmo que executar: com mercado aberto ou latência, o IB Gateway ou a TWS pode ainda mostrar as posições até as ordens preencherem. A tabela só reflete o que o snapshot IBKR devolver — atualizámos agora e voltaremos a pedir dentro de segundos."
+  );
+  return bits.join(" ");
+}
+
+type CancelOpenRow = {
+  ticker?: string;
+  action?: string;
+  result?: string;
+  status_before?: string;
+  status_after?: string;
+  message?: string;
+  still_open?: boolean | null;
+  requested_qty?: number;
+};
+
+/** Linha da tabela de execução no Plano — partilhado entre helpers e estado do componente. */
+type ReportExecFillRow = {
+  ticker: string;
+  action: string;
+  requested_qty: number;
+  filled: number;
+  avg_fill_price?: number | null;
+  status: string;
+  message?: string | null;
+  executed_as?: string | null;
+  ib_order_id?: number | null;
+  ib_perm_id?: number | null;
+};
+
+type ReportExecSummaryRow = {
+  submitted: number;
+  filled: number;
+  partial: number;
+  failed: number;
+  total: number;
+};
+
+type SyncPaperExecMeta = {
+  fills_changed?: boolean;
+  sync_paper_exec_lines?: string;
+  ib_client_id?: number;
+};
+
+/** POST /api/sync-paper-exec-lines no browser — alinha a tabela de execução com ordens/execuções na IBKR. */
+async function postSyncPaperExecLinesBrowser(
+  fills: ReportExecFillRow[],
+): Promise<{ fills: ReportExecFillRow[]; meta?: SyncPaperExecMeta }> {
+  const res = await fetch(`${window.location.origin}/api/sync-paper-exec-lines`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paper_mode: true, fills }),
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  const raw = await res.text();
+  let data: {
+    status?: string;
+    error?: string;
+    fills?: ReportExecFillRow[];
+    meta?: SyncPaperExecMeta;
+  };
+  try {
+    data = JSON.parse(raw) as typeof data;
+  } catch {
+    throw new Error(raw.slice(0, 200) || `Resposta inválida (${res.status})`);
+  }
+  if (!res.ok || data.status !== "ok" || !Array.isArray(data.fills)) {
+    throw new Error(typeof data.error === "string" && data.error ? data.error : `Falha (${res.status})`);
+  }
+  return { fills: data.fills, meta: data.meta };
+}
+
+function formatCancelOpenOrdersUserMessage(rows: CancelOpenRow[]): string {
+  if (!rows.length) {
+    return "Nenhuma ordem em curso para cancelar (ou já estavam concluídas / inactivas na lista da IB).";
+  }
+  const n = rows.length;
+  const legacyOk = rows.filter((r) => r.result === "cancel_requested").length;
+  const globalOk = rows.filter((r) => r.result === "global_cancel_sent").length;
+  const err = rows.filter((r) => r.result === "error").length;
+  const stillOpen = rows.filter((r) => r.still_open === true).length;
+  const tickers = rows.map((r) => String(r.ticker || "").trim()).filter(Boolean);
+  const uniq = [...new Set(tickers)].slice(0, 10);
+  const bits: string[] = [];
+  if (globalOk > 0) {
+    bits.push(
+      `Foi enviado cancelamento global (reqGlobalCancel) à IB para ${n} ordem(ns) em aberto — inclui ordens criadas por outros clientes API ou pela TWS.`,
+    );
+    if (stillOpen > 0) {
+      bits.push(
+        `Ainda ${stillOpen} linha(s) aparecem abertas após ~3s — pode ser latência; actualize «Ordens» na TWS ou volte a tentar.`,
+      );
+    }
+  } else {
+    bits.push(
+      `Pedido de cancelamento enviado à corretora para ${legacyOk} ordem(ns)${err ? ` (${err} com erro)` : ""}. Confirme o estado na janela «Ordens» do IB Gateway ou da TWS.`,
+    );
+  }
+  if (uniq.length) bits.push(`Instrumentos: ${uniq.join(", ")}${tickers.length > 10 ? "…" : ""}.`);
+  return bits.join(" ");
+}
+
+/** Igualar símbolos IB (EUR.USD, EURUSD) para cruzar linhas do cancelamento com `execFills`. */
+function normalizeBrokerSymbolForCancelMerge(s: string): string {
+  return String(s || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\./g, "")
+    .replace(/\s+/g, "");
+}
+
+function fillLooksAwaitingBroker(f: {
+  status?: string;
+  requested_qty?: number;
+  filled?: number;
+}): boolean {
+  if (ibkrStatusIsTerminalCancelled(f.status ?? "")) return false;
+  const st = String(f.status || "").toLowerCase();
+  const req = Number(f.requested_qty ?? 0);
+  const fill = Number(f.filled ?? 0);
+  if (st.includes("filled") && req > 0 && fill >= req) return false;
+  if (st.includes("skip_fx")) return false;
+  if (st.includes("inactive")) return false;
+  if (
+    st.includes("not_qualified") ||
+    st.includes("qualify_error") ||
+    st.includes("place_error") ||
+    st.includes("reject") ||
+    (st.includes("error") && !st.includes("presubmitted"))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function buildExecSummaryFromFills(fills: ReportExecFillRow[]): ReportExecSummaryRow {
+  let submitted = 0;
+  let filled = 0;
+  let partial = 0;
+  let failed = 0;
+  for (const f of fills) {
+    const st = String(f.status || "").toLowerCase();
+    const reqQty = Number(f.requested_qty || 0);
+    const fillQty = Number(f.filled || 0);
+    if (ibkrStatusIsTerminalCancelled(f.status || "")) continue;
+    if (st.includes("inactive")) continue;
+    if (reqQty > 0 && fillQty + 1e-6 >= reqQty) {
+      filled += 1;
+    } else if (fillQty > 0 && fillQty < reqQty) {
+      partial += 1;
+    } else if (
+      st.includes("submitted") ||
+      st.includes("presubmitted") ||
+      st.includes("pending")
+    ) {
+      submitted += 1;
+    } else if (st.includes("skip_fx")) {
+      /* omitida por limite FX */
+    } else {
+      failed += 1;
+    }
+  }
+  return { submitted, filled, partial, failed, total: fills.length };
+}
+
+/** Ordens a enviar em «Completar ordens pendentes» — derivadas só do estado actual da tabela. */
+function buildIncompleteRetryOrdersFromFills(fills: ReportExecFillRow[]): Array<{
+  ticker: string;
+  side: string;
+  qty: number;
+}> {
+  return fills
+    .filter((f) => fillEligibleForCompletionRetry(f))
+    .map((f) => ({
+      ticker: String(f.ticker || "").trim(),
+      side: String(f.action || "BUY").toUpperCase(),
+      qty: Math.max(1, remainingOrderQty(f)),
+    }))
+    .filter((o) => o.ticker.length > 0 && o.qty > 0);
+}
+
+/**
+ * Após cancelamento paper na IB: actualiza o instantâneo local da tabela (antes só `send-orders` gravava aqui).
+ */
+function applyPaperCancelRowsToExecFills(
+  fills: ReportExecFillRow[],
+  rows: CancelOpenRow[],
+): ReportExecFillRow[] {
+  if (!fills.length) return fills;
+
+  const bySym = new Map<string, CancelOpenRow>();
+  for (const r of rows) {
+    const k = normalizeBrokerSymbolForCancelMerge(String(r.ticker || ""));
+    if (k) bySym.set(k, r);
+  }
+
+  const hadGlobal = rows.some((r) => r.result === "global_cancel_sent");
+  const anyStillOpen = rows.some((r) => r.still_open === true);
+
+  return fills.map((f) => {
+    if (!fillLooksAwaitingBroker(f)) return { ...f };
+
+    const symKeys = [
+      normalizeBrokerSymbolForCancelMerge(f.ticker),
+      normalizeBrokerSymbolForCancelMerge(String(f.executed_as || "")),
+    ].filter(Boolean);
+
+    let row: CancelOpenRow | undefined;
+    for (const k of symKeys) {
+      const hit = bySym.get(k);
+      if (hit) {
+        row = hit;
+        break;
+      }
+    }
+
+    if (rows.length === 0) {
+      return {
+        ...f,
+        status: "Cancelled",
+        message: [f.message, "Sincronizado após cancelamento: a corretora não reportou ordens abertas."]
+          .filter(Boolean)
+          .join(" "),
+      };
+    }
+
+    if (row) {
+      if (row.still_open === true) {
+        const after = String(row.status_after || f.status || "");
+        return {
+          ...f,
+          ...(after ? { status: after } : {}),
+          message: [f.message, "Cancelamento pedido — ainda visível como aberta na IB (latência)."]
+            .filter(Boolean)
+            .join(" "),
+        };
+      }
+      const after = String(row.status_after || "Cancelled");
+      return {
+        ...f,
+        status: after,
+        message: [f.message, "Ordem cancelada na corretora (Decide)."].filter(Boolean).join(" "),
+      };
+    }
+
+    if (hadGlobal && !anyStillOpen) {
+      return {
+        ...f,
+        status: "Cancelled",
+        message: [f.message, "Incluída no cancelamento global na corretora."].filter(Boolean).join(" "),
+      };
+    }
+
+    if (hadGlobal && anyStillOpen) {
+      return {
+        ...f,
+        message: [f.message, "Cancelamento global enviado — confirme estado na TWS / IB Gateway."]
+          .filter(Boolean)
+          .join(" "),
+      };
+    }
+
+    return { ...f };
+  });
+}
+
 /** Mantém o passo «Decisão final» (ex.: concluído / ver carteira) após refresh ou re-fetch da página. */
 const EXEC_STATE_STORAGE_KEY = "decide_report_exec_v1";
 
+/** Alinhado ao timeout do proxy `pages/api/send-orders.ts` (120s) + margem — evita UI presa em «A processar…». */
+const SEND_ORDERS_FETCH_MS = 125_000;
+
+/** Rótulo DECIDE/Yahoo: IB usa «BRK B»; alinhamos a BRK.B na UI. */
+function displayTickerLabel(ticker: string): string {
+  const t = ticker.trim().toUpperCase();
+  const c = t.replace(/\s+/g, "");
+  if (c === "BRKB" || c === "BRK-B" || c === "BRK.B" || t === "BRK B") return "BRK.B";
+  return ticker.trim();
+}
+
+/** Símbolo na URL do Yahoo (BRK.B → BRK-B). */
+function yahooQuotePathSymbol(ticker: string): string {
+  const compact = ticker.trim().toUpperCase().replace(/\s+/g, "");
+  if (compact === "BRKB" || compact === "BRK-B" || compact === "BRK.B") return "BRK-B";
+  return ticker.trim().toUpperCase().replace(/\s+/g, "").replace(/\./g, "-");
+}
+
+/** Yahoo Finance + pesquisa IB; exclui proxies DECIDE. Símbolo Yahoo: pontos → hífen (ex. BRK.B → BRK-B). */
+function reportPlanTickerLinks(ticker: string): { yf: string; ib: string } | null {
+  const t = ticker.trim().toUpperCase();
+  if (!t || t === "TBILL_PROXY" || t === "EUR_MM_PROXY" || t === "LIQUIDEZ") return null;
+  if (t === "EURUSD") {
+    return {
+      yf: "https://finance.yahoo.com/quote/EURUSD%3DX",
+      ib: "https://www.interactivebrokers.com/en/trading/products/forex.php",
+    };
+  }
+  const yfSym = yahooQuotePathSymbol(ticker);
+  const ibQ = displayTickerLabel(ticker);
+  return {
+    yf: `https://finance.yahoo.com/quote/${encodeURIComponent(yfSym)}`,
+    ib: `https://www.interactivebrokers.com/en/search/?q=${encodeURIComponent(ibQ)}`,
+  };
+}
+
+/** Alias para código ou merges que ainda chamam `tickerHref` (evita ReferenceError). */
+const tickerHref = reportPlanTickerLinks;
+
+function reportPlanTickerLinkPair(ticker: string, yfColor: string): ReactNode {
+  const href = reportPlanTickerLinks(ticker);
+  if (!href) return ticker;
+  const hoverUnderline = (e: MouseEvent<HTMLAnchorElement>, on: boolean) => {
+    e.currentTarget.style.textDecoration = on ? "underline" : "none";
+  };
+  return (
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      <a
+        href={href.yf}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Cotação no Yahoo Finance"
+        style={{ color: yfColor, textDecoration: "none", cursor: "pointer" }}
+        onClick={(e) => e.stopPropagation()}
+        onMouseEnter={(e) => hoverUnderline(e, true)}
+        onMouseLeave={(e) => hoverUnderline(e, false)}
+      >
+        {displayTickerLabel(ticker)}
+      </a>
+      <a
+        href={href.ib}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Pesquisar na Interactive Brokers"
+        style={{ color: "#71717a", textDecoration: "none", fontSize: 11, cursor: "pointer" }}
+        onClick={(e) => e.stopPropagation()}
+        onMouseEnter={(e) => hoverUnderline(e, true)}
+        onMouseLeave={(e) => hoverUnderline(e, false)}
+      >
+        IB
+      </a>
+    </span>
+  );
+}
+
 export default function ClientReportPage({ reportData }: PageProps) {
   const isClientB = reportData.feeSegment === "B";
+  const tbillIb = reportData.tbillProxyIbTicker;
   const excludedTickers = reportData.excludedTickersApplied || [];
   type PostApprovalStage = "idle" | "approved" | "ready" | "executing" | "done" | "failed";
-  type ExecSummary = {
-    submitted: number;
-    filled: number;
-    partial: number;
-    failed: number;
-    total: number;
-  } | null;
-  type ExecFill = {
-    ticker: string;
-    action: string;
-    requested_qty: number;
-    filled: number;
-    avg_fill_price?: number | null;
-    status: string;
-    message?: string | null;
-    /** IB symbol used when the request ticker is a proxy (e.g. TBILL_PROXY → BIL). */
-    executed_as?: string | null;
-  };
+  type ExecSummary = ReportExecSummaryRow | null;
+  type ExecFill = ReportExecFillRow;
   const [postApprovalStage, setPostApprovalStage] = useState<PostApprovalStage>("idle");
   const [executionMessage, setExecutionMessage] = useState<string>("");
   const [execSummary, setExecSummary] = useState<ExecSummary>(null);
   /** True quando esta corrida enviou só um subconjunto (ex.: completar falhadas) — não é o plano completo de uma só vez. */
   const [lastExecBatchResidual, setLastExecBatchResidual] = useState(false);
   const [execFills, setExecFills] = useState<ExecFill[]>([]);
+  const execFillsRef = useRef<ExecFill[]>([]);
+  /** useLayoutEffect: ref alinhada ao DOM antes do paint — evita clique em «Actualizar estado» com ref vazia. */
+  useLayoutEffect(() => {
+    execFillsRef.current = execFills;
+  }, [execFills]);
   const [liveActualPositions, setLiveActualPositions] = useState<ActualPosition[] | null>(null);
   const [liveIbkrStructure, setLiveIbkrStructure] = useState<LiveIbkrStructure | null>(null);
   const [liveSnapshotError, setLiveSnapshotError] = useState<string>("");
   const [portfolioRefreshing, setPortfolioRefreshing] = useState(false);
   const [flattenBusy, setFlattenBusy] = useState(false);
   const [flattenMessage, setFlattenMessage] = useState<string | null>(null);
+  const [cancelOpenBusy, setCancelOpenBusy] = useState(false);
+  const [cancelOpenMessage, setCancelOpenMessage] = useState<string | null>(null);
+  const [syncExecBusy, setSyncExecBusy] = useState(false);
+  /** Feedback imediato sob o botão «Actualizar estado (IBKR)» (a mensagem global fica longe no separador Execução). */
+  const [syncExecError, setSyncExecError] = useState<string | null>(null);
+  const [syncExecNote, setSyncExecNote] = useState<string | null>(null);
+  /** «Completar pendentes»: sincroniza com a IB antes de reenviar (evita 2ª ordem quando a 1ª já preencheu). */
+  const [completePendingBusy, setCompletePendingBusy] = useState(false);
+  /** Private: mostrar atalho explícito para o passo 6 (hedge) — o relatório não redirecciona sozinho. */
+  const [showHedgeOnboardingCta, setShowHedgeOnboardingCta] = useState(false);
+  /** Voltou de `/client/approve` — explicar ligação com a aprovação regulamentar. */
+  const [fromApproveNotice, setFromApproveNotice] = useState(false);
+  /** Voltou de `/client/fund-account` após «Já transferi fundos» — ligar financiamento à execução. */
+  const [fromFundingNotice, setFromFundingNotice] = useState(false);
   /** Botão «zerar posições» — definir NEXT_PUBLIC_SHOW_FLATTEN_BUTTON=0 para ocultar. */
   const showFlattenDevButton = process.env.NEXT_PUBLIC_SHOW_FLATTEN_BUTTON !== "0";
+  /** Enviar ordem FX EUR.USD (vender USD) no mesmo POST que as ações — backend `routers/send_orders`. */
+  const [coordinateFxWithEquity, setCoordinateFxWithEquity] = useState(
+    () => process.env.NEXT_PUBLIC_COORDINATE_FX_WITH_EQUITY !== "0",
+  );
+  /** Preferências de hedge após hidratação (useMemo [] falhava no SSR e fixava null). */
+  const [fxHedgePrefsClient, setFxHedgePrefsClient] = useState<ReturnType<typeof readFxHedgePrefs> | null>(null);
+  const [monthlyPdfBusy, setMonthlyPdfBusy] = useState(false);
+
+  type PlanPageTab = "resumo" | "alteracoes" | "execucao" | "documentos";
+  const [planTab, setPlanTab] = useState<PlanPageTab>("resumo");
+
+  /** Abort do fetch `/api/send-orders` — permite sair do estado «A processar…». */
+  const sendOrdersAbortRef = useRef<AbortController | null>(null);
+  /** Evita duplo envio se o utilizador carregar várias vezes em «Executar ordens» antes do re-render. */
+  const sendOrdersInFlightRef = useRef(false);
+  /** true só quando o utilizador carrega «Cancelar envio» (distingue de timeout automático). */
+  const executeCancelRequestedRef = useRef(false);
+
+  /** Com hedge EUR/USD activo no dashboard, enviar cobertura no mesmo POST que acções + TBILL_PROXY. */
+  useEffect(() => {
+    if (hedgePrefsImplyCoordinatedFx()) setCoordinateFxWithEquity(true);
+  }, []);
+
+  useEffect(() => {
+    try {
+      setFxHedgePrefsClient(readFxHedgePrefs());
+    } catch {
+      setFxHedgePrefsClient(null);
+    }
+  }, []);
+
+  /** Após hidratar preferências, activar cobertura FX no mesmo envio se o dashboard tiver hedge EUR/USD. */
+  useEffect(() => {
+    if (!fxHedgePrefsClient) return;
+    if (fxHedgePrefsClient.pct > 0 && fxHedgePrefsClient.pair === "EURUSD") {
+      setCoordinateFxWithEquity(true);
+    }
+  }, [fxHedgePrefsClient]);
+
+  useEffect(() => {
+    try {
+      setShowHedgeOnboardingCta(isFxHedgeOnboardingApplicable() && !isHedgeOnboardingDone());
+    } catch {
+      setShowHedgeOnboardingCta(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const from = params.get("from");
+      if (from === "approve") setFromApproveNotice(true);
+      else if (from === "funding") setFromFundingNotice(true);
+      if (from === "approve" || from === "funding") {
+        params.delete("from");
+        const q = params.toString();
+        const pathOnly = q ? `${window.location.pathname}?${q}` : window.location.pathname;
+        window.history.replaceState({}, "", pathOnly);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
@@ -1379,7 +2328,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
       if (stage === "executing") {
         stage = "ready";
         msg =
-          "A página foi recarregada durante o envio. Confirme na TWS se as ordens concluíram; pode usar «Executar ordens» se algo ficou incompleto.";
+          "A página foi recarregada durante o envio. Confirme no IB Gateway ou na TWS se as ordens concluíram; pode usar «Executar ordens» se algo ficou incompleto.";
       }
       setPostApprovalStage(stage);
       if (msg) setExecutionMessage(msg);
@@ -1435,37 +2384,59 @@ export default function ClientReportPage({ reportData }: PageProps) {
     return src;
   }, [liveActualPositions, reportData.actualPositions, liveIbkrStructure]);
 
+  /** Peso face à soma dos títulos (exclui caixa do denominador) — leitura mais próxima dos pesos do plano à direita. */
+  const portfolioDisplayRows = useMemo(() => {
+    const gross = portfolioTablePositions.reduce((a, p) => a + Math.abs(p.value), 0);
+    return portfolioTablePositions.map((p) => ({
+      ...p,
+      weightPctSecurities: gross > 1e-9 ? (Math.abs(p.value) / gross) * 100 : 0,
+    }));
+  }, [portfolioTablePositions]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const h = window.location.hash.replace(/^#/, "");
+    if (h === "alteracoes-propostas" || h === "carteira-atual" || h === "comparacao") {
+      setPlanTab("alteracoes");
+    } else if (h === "decisao-final" || h === "execucao") {
+      setPlanTab("execucao");
+    } else if (h === "resumo" || h === "relatorio-performance") {
+      setPlanTab("resumo");
+    } else if (h === "documentos") {
+      setPlanTab("documentos");
+    }
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const k = window.sessionStorage.getItem("decide_report_scroll");
     if (k !== "carteira-atual") return;
     window.sessionStorage.removeItem("decide_report_scroll");
+    setPlanTab("alteracoes");
     const t = window.setTimeout(() => {
       document.getElementById("carteira-atual")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 350);
     return () => window.clearTimeout(t);
   }, []);
 
-  const planExecutionAlignmentPct = useMemo(() => {
-    if (!execFills.length) return null as number | null;
-    let req = 0;
-    let fil = 0;
-    for (const f of execFills) {
-      const r = Number(f.requested_qty ?? 0);
-      const x = Number(f.filled ?? 0);
-      if (r > 0) {
-        req += r;
-        fil += Math.min(x, r);
-      }
-    }
-    if (req <= 0) return null;
-    return Math.min(100, Math.round((fil / req) * 1000) / 10);
-  }, [execFills]);
+  const incompleteRetryFromFills = useMemo(() => buildIncompleteRetryOrdersFromFills(execFills), [execFills]);
 
-  const incompleteRetryFromFills = useMemo(
+  /** Linhas inactive / erro / not qualified com qtd em falta — mesmo critério que «Executar falhadas novamente» em estado failed. */
+  const retryFailedOrInactiveFromFills = useMemo(
     () =>
       execFills
-        .filter((f) => fillEligibleForCompletionRetry(f))
+        .filter((f) => {
+          const st = String(f.status || "").toLowerCase();
+          const failedOnly =
+            st.includes("error") ||
+            st.includes("rejected") ||
+            st.includes("inactive") ||
+            st.includes("not_qualified") ||
+            st.includes("qualify_error") ||
+            st.includes("place_error") ||
+            st.includes("skip_zero");
+          return failedOnly && remainingOrderQty(f) > 0;
+        })
         .map((f) => ({
           ticker: f.ticker,
           side: String(f.action || "BUY").toUpperCase(),
@@ -1474,6 +2445,17 @@ export default function ClientReportPage({ reportData }: PageProps) {
     [execFills]
   );
 
+  /** Só «concluída» quando todas as linhas deste lote estão totalmente executadas (sem pendentes/parciais/falhas). */
+  const executionFullyComplete = useMemo(() => {
+    if (!execSummary || execSummary.total <= 0) return false;
+    return (
+      execSummary.filled === execSummary.total &&
+      execSummary.partial === 0 &&
+      execSummary.submitted === 0 &&
+      execSummary.failed === 0
+    );
+  }, [execSummary]);
+
   useEffect(() => {
     if (postApprovalStage !== "approved") return;
     const t = setTimeout(() => setPostApprovalStage("ready"), 2200);
@@ -1481,14 +2463,65 @@ export default function ClientReportPage({ reportData }: PageProps) {
   }, [postApprovalStage]);
 
   const scrollToOrders = () => {
-    const el = document.getElementById("alteracoes-propostas");
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    setPlanTab("alteracoes");
+    window.requestAnimationFrame(() => {
+      document.getElementById("alteracoes-propostas")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
-  const refreshIbkrPositionsFromIb = async () => {
+  /** Alterações → secção «Carteira actual» (id `carteira-atual`); delay para o conteúdo do tab existir no DOM. */
+  const scrollToCarteiraAtual = () => {
+    setPlanTab("alteracoes");
+    window.setTimeout(() => {
+      document.getElementById("carteira-atual")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 350);
+  };
+
+  /**
+   * Instantâneo do último POST /send-orders. Cancelamentos feitos **só** na TWS não actualizam esta tabela;
+   * o botão «Cancelar ordens não executadas (paper)» no Decide sincroniza linhas e resumo após a resposta da IB.
+   */
+  const clearExecutionRecordFromBroker = useCallback(() => {
+    setExecFills([]);
+    setExecSummary(null);
+    setLastExecBatchResidual(false);
+    setPostApprovalStage("ready");
+    setSyncExecError(null);
+    setSyncExecNote(null);
+    setExecutionMessage(
+      "Registo de execução nesta página foi limpo. Ordens canceladas ou concluídas na TWS / IB Gateway não actualizam esta tabela automaticamente — a corretora é a referência. Pode voltar a enviar o plano em «Alterações propostas» abaixo.",
+    );
+  }, []);
+
+  const refreshIbkrPositionsFromIb = async (opts?: { skipExecTableSync?: boolean }) => {
     setPortfolioRefreshing(true);
     setLiveSnapshotError("");
     try {
+      if (!opts?.skipExecTableSync) {
+        const fillsForSync = execFillsRef.current;
+        if (typeof window !== "undefined" && fillsForSync.length > 0) {
+          try {
+            const { fills: updated, meta: syncMeta } = await postSyncPaperExecLinesBrowser(fillsForSync);
+            setExecFills(updated);
+            setExecSummary(buildExecSummaryFromFills(updated));
+            recordExecutionSnapshotFromSyncedFills(updated);
+            const syncHint =
+              syncMeta?.fills_changed === false
+                ? " (nenhum campo alterado face à IB — confirme clientId da sessão de envio, conta paper e aguarde 2–3 s se acabou de executar na TWS)"
+                : "";
+            setExecutionMessage((prev) =>
+              [prev, `Tabela de ordens sincronizada com a IBKR (junto com a carteira).${syncHint}`]
+                .filter(Boolean)
+                .join(" "),
+            );
+          } catch (syncErr: unknown) {
+            const syncMsg = syncErr instanceof Error ? syncErr.message : String(syncErr);
+            setExecutionMessage((prev) =>
+              [prev, `Sincronização da tabela de ordens: ${syncMsg}`].filter(Boolean).join(" "),
+            );
+          }
+        }
+      }
       const apiUrl =
         typeof window !== "undefined"
           ? `${window.location.origin}/api/ibkr-snapshot`
@@ -1507,6 +2540,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
         detail?: unknown;
         positions?: Array<{
           ticker?: string;
+          name?: string;
+          sector?: string;
           qty?: number;
           market_price?: number;
           value?: number;
@@ -1544,8 +2579,13 @@ export default function ClientReportPage({ reportData }: PageProps) {
       const rows: ActualPosition[] = data.positions.map((p) => {
         const mpx = safeNumber(p.market_price, 0);
         const val = safeNumber(p.value, 0);
+        const tick = safeString(p.ticker, "").toUpperCase();
+        const nm = typeof p.name === "string" ? p.name.trim() : "";
+        const sec = typeof p.sector === "string" ? p.sector.trim() : "";
         return {
-          ticker: safeString(p.ticker, "").toUpperCase(),
+          ticker: tick,
+          nameShort: nm || displayTickerLabel(tick),
+          sector: sec,
           qty: safeNumber(p.qty, 0),
           marketPrice: mpx,
           closePrice: mpx > 0 ? mpx : null,
@@ -1567,6 +2607,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
         financingCcy = safeString(cl.currency, navCcy);
         rows.push({
           ticker: "LIQUIDEZ",
+          nameShort: "Caixa e equivalentes",
+          sector: "Liquidez",
           qty: 0,
           marketPrice: 0,
           closePrice: null,
@@ -1593,19 +2635,30 @@ export default function ClientReportPage({ reportData }: PageProps) {
       const raw = e instanceof Error ? e.message : "Não foi possível atualizar a carteira.";
       const msg =
         raw === "Failed to fetch" || raw === "Load failed" || raw === "NetworkError when attempting to fetch resource."
-          ? "Sem ligação ao servidor (Next/API). Confirme que o frontend está a correr (npm run dev), que abre a mesma origem (URL) e que a firewall não bloqueia. Se o erro persistir, reinicie o Next e o backend (uvicorn na porta de BACKEND_URL)."
+          ? "Sem ligação ao servidor (Next/API). Confirme que o frontend está a correr (npm run dev), que utiliza a mesma origem (URL) e que a firewall não bloqueia. Se o erro persistir, reinicie o Next e o backend (uvicorn na porta de BACKEND_URL)."
           : raw;
       setLiveSnapshotError(msg);
+      if (typeof window !== "undefined") {
+        window.requestAnimationFrame(() => {
+          document.getElementById("carteira-atual")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      }
     } finally {
       setPortfolioRefreshing(false);
     }
   };
 
+  /** Ao abrir o relatório, sincronizar saldo com a conta IBKR — o cartão de topo deixava de usar só tmp_diag (soube desactualizado). */
+  useEffect(() => {
+    void refreshIbkrPositionsFromIb();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- executar uma vez ao montar; a função fecha sobre o estado actual
+  }, []);
+
   const flattenPaperPortfolioAll = async () => {
     if (typeof window === "undefined") return;
     const ok = window.confirm(
-      "Conta IBKR paper (teste): enviar ordens de mercado para fechar TODAS as posições em ações do portfolio (incl. BIL / proxy T-Bills).\n\n" +
-        "A linha de caixa/margem (TotalCashValue) não é zerada por aqui — apenas títulos.\n\nContinuar?"
+      `Conta IBKR paper (teste): enviar ordens de mercado para fechar TODAS as posições em ações (incl. ${tbillIb} / proxy T-Bills) e posições Forex em pares (CASH / IDEALPRO), p.ex. EUR.USD — para poder recomprar o plano e executar hedge FX limpo.\n\n` +
+        "Saldo de caixa e linha de margem não são «zerados» — apenas fecho de títulos e FX.\n\nContinuar?"
     );
     if (!ok) return;
     setFlattenBusy(true);
@@ -1632,10 +2685,19 @@ export default function ClientReportPage({ reportData }: PageProps) {
             : `Falha ao fechar posições (${res.status})`
         );
       }
-      const n = Array.isArray(data.closes) ? data.closes.length : 0;
-      setFlattenMessage(`Pedidos enviados: ${n} linha(s). A sincronizar a carteira…`);
+      const closes = Array.isArray(data.closes) ? data.closes : [];
+      const sum = summarizeFlattenCloses(closes);
+      setFlattenMessage("A sincronizar a carteira com o IBKR…");
       await refreshIbkrPositionsFromIb();
-      setFlattenMessage(`Concluído: ${n} linha(s) processada(s). Confirme na TWS / tabela acima.`);
+      setFlattenMessage(formatFlattenPortfolioUserMessage(sum));
+      if (sum.pending > 0) {
+        window.setTimeout(() => {
+          void refreshIbkrPositionsFromIb();
+        }, 4000);
+        window.setTimeout(() => {
+          void refreshIbkrPositionsFromIb();
+        }, 9000);
+      }
     } catch (e: unknown) {
       setFlattenMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1643,24 +2705,168 @@ export default function ClientReportPage({ reportData }: PageProps) {
     }
   };
 
+  const cancelOpenOrdersPaper = async () => {
+    if (typeof window === "undefined") return;
+    const ok = window.confirm(
+      "Conta IBKR paper (teste): cancelar TODAS as ordens ainda não concluídas (submetidas / em fila / parciais) que a IB mostrar como abertas. Não fecha posições já executadas — use «Zerar posições» para isso.\n\nContinuar?"
+    );
+    if (!ok) return;
+    setCancelOpenBusy(true);
+    setCancelOpenMessage(null);
+    let cancelActivityRecorded = false;
+    try {
+      const res = await fetch(`${window.location.origin}/api/cancel-open-orders-paper`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paper_mode: true }),
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const raw = await res.text();
+      let data: { status?: string; error?: string; cancellations?: unknown[] };
+      try {
+        data = JSON.parse(raw) as typeof data;
+      } catch {
+        throw new Error(raw.slice(0, 200) || `Resposta inválida (${res.status})`);
+      }
+      if (!res.ok || data.status !== "ok") {
+        throw new Error(
+          typeof data.error === "string" && data.error
+            ? data.error
+            : `Falha ao cancelar ordens (${res.status})`
+        );
+      }
+      const rows = (Array.isArray(data.cancellations) ? data.cancellations : []) as CancelOpenRow[];
+      recordCancelOpenOrdersPaperResponse(rows);
+      cancelActivityRecorded = true;
+      setCancelOpenMessage(formatCancelOpenOrdersUserMessage(rows));
+      let mergedFills: ReportExecFillRow[] = [];
+      setExecFills((prev) => {
+        mergedFills = applyPaperCancelRowsToExecFills(prev, rows);
+        return mergedFills;
+      });
+      setExecSummary(mergedFills.length ? buildExecSummaryFromFills(mergedFills) : null);
+      setExecutionMessage((prev) =>
+        mergedFills.length
+          ? [prev, "Tabela de execução sincronizada com o cancelamento na corretora."]
+              .filter(Boolean)
+              .join(" ")
+          : prev
+      );
+      await refreshIbkrPositionsFromIb();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!cancelActivityRecorded) {
+        recordCancelOpenOrdersPaperResponse([], { error: msg });
+      }
+      setCancelOpenMessage(msg);
+    } finally {
+      setCancelOpenBusy(false);
+    }
+  };
+
+  const syncExecFillsFromIb = async (): Promise<ReportExecFillRow[] | null> => {
+    if (typeof window === "undefined") return null;
+    const rows =
+      execFillsRef.current.length > 0 ? execFillsRef.current : execFills;
+    if (!rows.length) {
+      setSyncExecError(
+        "Não há linhas para sincronizar. Se a tabela aparece acima, recarregue a página (F5) e tente de novo.",
+      );
+      setSyncExecNote(null);
+      return null;
+    }
+    setSyncExecError(null);
+    setSyncExecNote(null);
+    setSyncExecBusy(true);
+    try {
+      const { fills: updated, meta: syncMeta } = await postSyncPaperExecLinesBrowser(rows);
+      setExecFills(updated);
+      setExecSummary(buildExecSummaryFromFills(updated));
+      recordExecutionSnapshotFromSyncedFills(updated);
+      const syncHint =
+        syncMeta?.fills_changed === false
+          ? "Nenhuma linha foi alterada face à última leitura da IB — confirme o mesmo clientId que no envio (TWS_CLIENT_ID_SEND_ORDERS / TWS_CLIENT_ID_SYNC_EXEC), conta paper, BACKEND_URL + uvicorn, e volte a tentar após 2–3 s se acabou de executar na TWS."
+          : "Sincronização concluída — a tabela reflecte a última leitura da IB.";
+      setSyncExecNote(syncHint);
+      setExecutionMessage((prev) =>
+        [
+          prev,
+          `Tabela actualizada com o estado na IBKR (ordens abertas e execuções recentes).${
+            syncMeta?.fills_changed === false
+              ? " " +
+                "Nenhuma linha alterada — confirme clientId, conta paper e ligação ao backend."
+              : ""
+          }`,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+      await refreshIbkrPositionsFromIb({ skipExecTableSync: true });
+      return updated;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setSyncExecError(
+        msg.includes("fetch") || msg.includes("Load failed") || msg.includes("NetworkError")
+          ? "Sem ligação ao Next ou ao backend. Confirme npm run dev, uvicorn (BACKEND_URL no .env.local) e porta livre (ex. não repetir 8090 ocupada)."
+          : msg,
+      );
+      setSyncExecNote(null);
+      setExecutionMessage((prev) => [prev, `Sincronização IBKR: ${msg}`].filter(Boolean).join(" "));
+      return null;
+    } finally {
+      setSyncExecBusy(false);
+    }
+  };
+
+  /** Proxies: TBILL_PROXY → ETF USD; EUR_MM_PROXY → UCITS MM EUR (CSH2/XEON), nunca misturar com o sleeve T-Bills. */
+  const resolveIbkrSendTicker = (ticker: string) => {
+    const u = String(ticker || "").trim().toUpperCase();
+    if (u === "TBILL_PROXY") {
+      const sym = String(tbillIb || "SHV").trim().toUpperCase();
+      return sym.length > 0 ? sym : "SHV";
+    }
+    if (u === "EUR_MM_PROXY") {
+      return eurMmIbTicker();
+    }
+    const compact = u.replace(/\s+/g, "");
+    if (compact === "BRK.B" || compact === "BRK-B" || compact === "BRKB" || u === "BRK B") {
+      return "BRK B";
+    }
+    return u;
+  };
+
   const executeOrdersNow = async (ordersOverride?: Array<{ ticker: string; side: string; qty: number }>) => {
+    if (sendOrdersInFlightRef.current) return;
+    sendOrdersInFlightRef.current = true;
+    try {
     const override = Array.isArray(ordersOverride) ? ordersOverride : undefined;
     setLiveActualPositions(null);
     setLiveIbkrStructure(null);
     setLiveSnapshotError("");
     const rawOrders =
       override && override.length > 0
-        ? override
+        ? override.map((o) => ({
+            ...o,
+            ticker: resolveIbkrSendTicker(o.ticker),
+            side: String(o.side || "BUY").toUpperCase(),
+            qty: Math.max(0, Math.floor(Number(o.qty) || 0)),
+          }))
         : proposedTradesFiltered
-            .filter((t) => (t.side === "BUY" || t.side === "SELL") && t.absQty > 0)
+            .filter(
+              (t) =>
+                (t.side === "BUY" || t.side === "SELL") &&
+                t.absQty > 0 &&
+                String(t.ticker).toUpperCase() !== "EURUSD",
+            )
             .map((t) => ({
-              ticker: t.ticker,
+              ticker: resolveIbkrSendTicker(t.ticker),
               side: t.side,
               qty: Math.floor(t.absQty),
             }))
             .filter((o) => o.qty > 0);
 
-    // Contas com margem: TWS exige reduzir exposição antes de novas compras — SELL sempre antes de BUY.
+    // Contas com margem: IB Gateway/TWS exige reduzir exposição antes de novas compras — SELL sempre antes de BUY.
     const orders = [...rawOrders].sort((a, b) => {
       const pa = String(a.side).toUpperCase() === "SELL" ? 0 : 1;
       const pb = String(b.side).toUpperCase() === "SELL" ? 0 : 1;
@@ -1677,20 +2883,52 @@ export default function ClientReportPage({ reportData }: PageProps) {
     setLastExecBatchResidual(Boolean(override && override.length > 0));
 
     setExecSummary(null);
-    setExecutionMessage("A enviar ordens para a corretora...");
+    executeCancelRequestedRef.current = false;
+    setExecutionMessage("A enviar ordens para a corretora… (até ~2 min — IB Gateway/TWS + várias ordens + FX opcional)");
     setPostApprovalStage("executing");
 
+    const ac = new AbortController();
+    sendOrdersAbortRef.current = ac;
+    const abortTimer =
+      typeof window !== "undefined"
+        ? window.setTimeout(() => ac.abort(), SEND_ORDERS_FETCH_MS)
+        : undefined;
+
+    let sendOrdersPayload: { fills?: unknown[]; status?: string; error?: string } | null = null;
     try {
       const sendUrl =
         typeof window !== "undefined"
           ? `${window.location.origin}/api/send-orders`
           : "/api/send-orders";
+      const isFullPlanSend = !override || override.length === 0;
+      const prefs =
+        typeof window !== "undefined"
+          ? readFxHedgePrefs()
+          : null;
+      const fxHedgeUsdEstimate = isFullPlanSend
+        ? fxHedgeUsdNotionalForCoordinatedSend(proposedTradesFiltered, prefs)
+        : 0;
+      /**
+       * Envio completo do plano: pedir sempre `coordinate_fx_hedge` para o backend devolver uma linha EURUSD
+       * (executada, em curso ou skip_*). Assim a tabela nunca fica sem FX só porque a estimativa USD veio a 0 ou a
+       * caixa estava desmarcada. Envios residuais («completar falhadas») não repetem FX aqui.
+       */
+      const sendCoordinatedFx = isFullPlanSend;
+
       const res = await fetch(sendUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orders, paper_mode: true }),
+        body: JSON.stringify({
+          orders,
+          paper_mode: true,
+          coordinate_fx_hedge: sendCoordinatedFx,
+          /** Envio completo: hedge FX por compra (TWS-style); retries residuais não repetem. */
+          attach_fx_hedge_per_order: sendCoordinatedFx,
+          fx_hedge_usd_estimate: isFullPlanSend ? fxHedgeUsdEstimate : 0,
+        }),
         credentials: "same-origin",
         cache: "no-store",
+        signal: ac.signal,
       });
 
       const rawSend = await res.text();
@@ -1703,10 +2941,11 @@ export default function ClientReportPage({ reportData }: PageProps) {
             `Resposta inválida do proxy (${res.status}). Tente recarregar a página.`
         );
       }
+      sendOrdersPayload = payload;
       if (!res.ok || !payload || !Array.isArray(payload.fills)) {
         throw new Error(payload?.error || `Falha de execução (${res.status})`);
       }
-      // FastAPI devolve 200 com status "rejected" (ex.: TWS desligado, conta não paper).
+      // FastAPI devolve 200 com status "rejected" (ex.: IB Gateway/TWS desligado, conta não paper).
       if (payload.status === "rejected" || (payload.status && payload.status !== "ok")) {
         throw new Error(
           typeof payload.error === "string" && payload.error
@@ -1726,53 +2965,86 @@ export default function ClientReportPage({ reportData }: PageProps) {
         executed_as?: string;
       }>;
       setExecFills(fills as ExecFill[]);
-
-      let submitted = 0;
-      let filled = 0;
-      let partial = 0;
-      let failed = 0;
-
-      for (const f of fills) {
-        const st = String(f.status || "").toLowerCase();
-        const reqQty = Number(f.requested_qty || 0);
-        const fillQty = Number(f.filled || 0);
-        if (st.includes("filled") && fillQty >= reqQty && reqQty > 0) {
-          filled += 1;
-        } else if (fillQty > 0 && fillQty < reqQty) {
-          partial += 1;
-        } else if (
-          st.includes("submitted") ||
-          st.includes("presubmitted") ||
-          st.includes("pending")
-        ) {
-          submitted += 1;
-        } else {
-          failed += 1;
-        }
-      }
-
-      setExecSummary({
-        submitted,
-        filled,
-        partial,
-        failed,
-        total: fills.length,
-      });
-      setExecutionMessage("Execução concluída com retorno da corretora.");
+      const execSum = buildExecSummaryFromFills(fills as ReportExecFillRow[]);
+      setExecSummary(execSum);
+      const batchComplete =
+        fills.length > 0 &&
+        execSum.filled === fills.length &&
+        execSum.partial === 0 &&
+        execSum.submitted === 0 &&
+        execSum.failed === 0;
+      setExecutionMessage(
+        batchComplete
+          ? "Execução concluída com retorno da corretora."
+          : "Resposta da corretora recebida — execução ainda incompleta (ordens em curso, parciais ou falhadas)."
+      );
       setPostApprovalStage("done");
+      recordSendOrdersResponse(payload, { source: "Plano — DECISÃO FINAL" });
     } catch (e: any) {
+      if (executeCancelRequestedRef.current) {
+        executeCancelRequestedRef.current = false;
+        recordUserAbortedSendOrders();
+        setExecutionMessage(
+          "Envio cancelado. Pode voltar a carregar em «Executar ordens», ir ao dashboard ou fechar este separador."
+        );
+        setPostApprovalStage("ready");
+        return;
+      }
+      const isAbort =
+        e?.name === "AbortError" ||
+        (typeof e?.message === "string" && e.message.includes("aborted"));
       const raw = e instanceof Error ? e.message : String(e);
       const lower = raw.toLowerCase();
-      const msg =
-        lower === "failed to fetch" ||
-        lower === "fetch failed" ||
-        lower.includes("networkerror") ||
-        lower === "load failed"
+      const msg = isAbort
+        ? `Tempo limite (~${Math.round(SEND_ORDERS_FETCH_MS / 1000)}s) — o servidor não concluiu a tempo. Confirme: IB Gateway ou TWS ligado (paper, porta 7497), backend FastAPI a correr (BACKEND_URL no .env.local), e tente de novo. Se o IB Gateway ou a TWS estiver bloqueado num diálogo, feche-o e volte a executar.`
+        : lower === "failed to fetch" ||
+            lower === "fetch failed" ||
+            lower.includes("networkerror") ||
+            lower === "load failed"
           ? "Sem ligação ao Next ou ao backend. Confirme: (1) npm run dev na pasta frontend (porta 4701), (2) uvicorn na porta de BACKEND_URL no .env.local (ex. 8090), (3) firewall/antivírus a não bloquear localhost."
           : raw;
       setExecutionMessage(msg || "Falha ao enviar ordens para a corretora.");
       setPostApprovalStage("failed");
+      recordSendOrdersResponse(sendOrdersPayload, {
+        source: "Plano — DECISÃO FINAL",
+        batchError: msg || "Falha ao enviar ordens para a corretora.",
+      });
+    } finally {
+      if (typeof abortTimer === "number") window.clearTimeout(abortTimer);
+      sendOrdersAbortRef.current = null;
     }
+    } finally {
+      sendOrdersInFlightRef.current = false;
+    }
+  };
+
+  const handleCompletePendingOrders = async () => {
+    if (incompleteRetryFromFills.length === 0) return;
+    setCompletePendingBusy(true);
+    try {
+      const updated = await syncExecFillsFromIb();
+      if (!updated) return;
+      const retry = buildIncompleteRetryOrdersFromFills(updated);
+      if (retry.length === 0) {
+        setExecutionMessage((prev) =>
+          [
+            prev,
+            "Depois de sincronizar com a IBKR, as ordens já estavam concluídas — não foi enviada nova ordem (evita duplicar compras parciais).",
+          ]
+            .filter(Boolean)
+            .join(" "),
+        );
+        return;
+      }
+      await executeOrdersNow(retry);
+    } finally {
+      setCompletePendingBusy(false);
+    }
+  };
+
+  const cancelExecuteOrdersSend = () => {
+    executeCancelRequestedRef.current = true;
+    sendOrdersAbortRef.current?.abort();
   };
   const enforceMaxExclusions = (e: { currentTarget: HTMLInputElement }) => {
     const form = e.currentTarget.form;
@@ -1783,25 +3055,154 @@ export default function ClientReportPage({ reportData }: PageProps) {
     }
   };
 
-  const tickerHref = (ticker: string) => {
-    const t = ticker.trim().toUpperCase();
-    if (!t || t === "TBILL_PROXY" || t === "LIQUIDEZ") return null;
-    return {
-      yf: `https://finance.yahoo.com/quote/${encodeURIComponent(t)}`,
-      ib: `https://www.interactivebrokers.com/en/search/?q=${encodeURIComponent(t)}`,
-    };
-  };
   const recommendedFiltered = reportData.recommendedPositions || [];
   const proposedTradesFiltered = reportData.proposedTrades || [];
 
-  const tradeVolumeAbsEur = proposedTradesFiltered.reduce(
+  const handleDownloadMonthlyRecommendationPdf = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    setMonthlyPdfBusy(true);
+    try {
+      const { downloadMonthlyRecommendationPdf } = await import("../../lib/monthlyRecommendationPdf");
+      const sleeve = planLiquidezVsAccoesPctFromRecommended(recommendedFiltered);
+      const liquidezPct =
+        sleeve?.liquidezPct ?? safeNumber(reportData.tbillsProxyWeightPct, 0);
+      const acoesPct =
+        sleeve?.acoesPct ?? Math.max(0, Math.min(100, 100 - liquidezPct));
+
+      await downloadMonthlyRecommendationPdf({
+        logoUrl: `${window.location.origin}/images/imagem-final-logo-decide.png`,
+        generatedAtIso: reportData.generatedAt,
+        accountCode: reportData.accountCode,
+        profile: reportData.profile,
+        modelDisplayName: reportData.modelDisplayName,
+        closeAsOfDate: reportData.closeAsOfDate,
+        navFormatted: formatMoneyCompact(reportData.navEur, reportData.accountBaseCurrency),
+        proposedTradesCoverageNote: reportData.proposedTradesCoverageNote,
+        planSummary: reportData.planSummary,
+        liquidezPct,
+        acoesPct,
+        proposedTrades: proposedTradesFiltered.map((t) => ({
+          ticker: t.ticker,
+          side: t.side,
+          absQty: t.absQty,
+          nameShort: t.nameShort,
+          targetWeightPct: t.targetWeightPct,
+        })),
+        recommendedPositions: recommendedFiltered.map((p) => ({
+          ticker: p.ticker,
+          nameShort: p.nameShort,
+          weightPct: p.weightPct,
+          sector: p.sector,
+          industry: p.industry,
+          region: p.region,
+          excluded: p.excluded,
+        })),
+      });
+    } catch (err) {
+      console.error(err);
+      window.alert(
+        "Não foi possível gerar o PDF. Confirme o logótipo em /public/images/imagem-final-logo-decide.png e tente novamente.",
+      );
+    } finally {
+      setMonthlyPdfBusy(false);
+    }
+  }, [reportData, proposedTradesFiltered, recommendedFiltered]);
+
+  /** Soma dos pesos «Peso» no plano excluindo CSH2/MM, T-Bills proxy e EURUSD — base para «% só títulos (plano)». */
+  const recommendedEquitySleeveDenomPct = useMemo(() => {
+    let s = 0;
+    for (const p of recommendedFiltered) {
+      if (p.excluded) continue;
+      if (isRecommendedCashOrHedgeRowTicker(p.ticker)) continue;
+      s += safeNumber(p.weightPct, 0);
+    }
+    return s;
+  }, [recommendedFiltered]);
+
+  const portfolioVsPlanAlignmentPct = useMemo(
+    () => computePortfolioVsPlanCoveragePct(recommendedFiltered, portfolioTablePositions),
+    [recommendedFiltered, portfolioTablePositions],
+  );
+
+  /** Só as linhas da tabela de execução (útil em envio residual — não confundir com alinhamento da carteira). */
+  const execTableFillProgressPct = useMemo(() => {
+    if (!execFills.length) return null as number | null;
+    let req = 0;
+    let fil = 0;
+    for (const f of execFills) {
+      const r = Number(f.requested_qty ?? 0);
+      const x = Number(f.filled ?? 0);
+      if (r > 0) {
+        req += r;
+        fil += Math.min(x, r);
+      }
+    }
+    if (req <= 0) return null;
+    return Math.min(100, Math.round((fil / req) * 1000) / 10);
+  }, [execFills]);
+
+  const fxCoordinatedUsdEstimate = useMemo(
+    () => fxHedgeUsdNotionalForCoordinatedSend(proposedTradesFiltered, fxHedgePrefsClient),
+    [proposedTradesFiltered, fxHedgePrefsClient],
+  );
+
+  const planTradeCount = proposedTradesFiltered.length;
+  const execResponseLineCount = execFills.length;
+  const cashSleeveOrdersInProgress = useMemo(() => {
+    if (postApprovalStage !== "done") return false;
+    return execFills.some(
+      (f) =>
+        isDecideCashSleeveBrokerSymbol(String(f.ticker || "")) &&
+        execStatusDisplay(f) === "Em curso",
+    );
+  }, [postApprovalStage, execFills]);
+  const showPlanVsExecResponseMismatch =
+    postApprovalStage === "done" &&
+    !lastExecBatchResidual &&
+    planTradeCount > 0 &&
+    execResponseLineCount > 0 &&
+    execResponseLineCount !== planTradeCount;
+
+  const tradeVolumeGrossAbs = proposedTradesFiltered.reduce(
     (acc, t) => acc + Math.abs(t.deltaValueEst),
     0
   );
+  const buyNotionalAbs = proposedTradesFiltered
+    .filter((t) => t.side === "BUY")
+    .reduce((acc, t) => acc + Math.abs(t.deltaValueEst), 0);
+  const sellNotionalAbs = proposedTradesFiltered
+    .filter((t) => t.side === "SELL")
+    .reduce((acc, t) => acc + Math.abs(t.deltaValueEst), 0);
+  /** Alinhar com planSummary.turnoverPct: maior perna vs NAV (não soma de todas as linhas). */
+  const planTurnoverNotional = Math.max(buyNotionalAbs, sellNotionalAbs);
   const buyCountVisible = proposedTradesFiltered.filter((t) => t.side === "BUY").length;
   const sellCountVisible = proposedTradesFiltered.filter((t) => t.side === "SELL").length;
-  const turnoverPctVisible =
-    reportData.navEur > 0 ? (tradeVolumeAbsEur / reportData.navEur) * 100 : 0;
+  const turnoverPctRaw =
+    reportData.navEur > 0 ? (planTurnoverNotional / reportData.navEur) * 100 : 0;
+  const initialConstitutionClient =
+    reportData.navEur > 0 &&
+    sellNotionalAbs / reportData.navEur < 0.06 &&
+    buyNotionalAbs > reportData.navEur * 0.25;
+  const turnoverPctVisible = capPctDisplay(
+    initialConstitutionClient && turnoverPctRaw > 100 ? Math.min(100, turnoverPctRaw) : turnoverPctRaw,
+  );
+  const ccy = reportData.accountBaseCurrency || "EUR";
+  /** Património líquido / moeda: preferir snapshot IBKR em tempo real; o SSR usa ibkr_paper_smoke_test.json em tmp_diag. */
+  const summaryNavLiquidation = liveIbkrStructure?.netLiquidation ?? reportData.navEur;
+  const summaryNavCcy = liveIbkrStructure?.ccy ?? ccy;
+  const summaryCashSubtitle = (() => {
+    if (liveIbkrStructure && Math.abs(liveIbkrStructure.financing) > 1e-4) {
+      const neg = liveIbkrStructure.financing < 0;
+      return `${neg ? "Financiamento margem (IBKR)" : "Caixa à ordem (IBKR)"}: ${formatMoneyCompact(
+        liveIbkrStructure.financing,
+        liveIbkrStructure.financingCcy,
+      )}`;
+    }
+    if (liveIbkrStructure) {
+      return `Caixa (último plano): ${formatMoneyCompact(reportData.cashEur, summaryNavCcy)} · liquidez em «Carteira atual»`;
+    }
+    return `Cash (snapshot em tmp_diag): ${formatMoneyCompact(reportData.cashEur, ccy)}`;
+  })();
 
   const sectorWeights = (() => {
     const map = new Map<string, number>();
@@ -1821,20 +3222,61 @@ export default function ClientReportPage({ reportData }: PageProps) {
   return (
     <>
       <Head>
-        <title>DECIDE | Relatório do Cliente</title>
+        <title>DECIDE | Plano do Cliente</title>
       </Head>
 
       <div
         style={{
           minHeight: "100vh",
-          background: "#030712",
-          color: "#e5e7eb",
+          background: DECIDE_DASHBOARD.pageBg,
+          color: DECIDE_DASHBOARD.text,
           padding: "24px 24px 48px 24px",
-          fontFamily:
-            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          fontFamily: DECIDE_APP_FONT_FAMILY,
         }}
       >
         <div style={{ maxWidth: 1440, margin: "0 auto" }}>
+          {fromApproveNotice ? (
+            <div
+              style={{
+                marginBottom: 22,
+                padding: "16px 20px",
+                borderRadius: 16,
+                border: DECIDE_DASHBOARD.flowTealCardBorderStrong,
+                background: DECIDE_DASHBOARD.flowTealPanelGradientSoft,
+                color: "#ccfbf1",
+                fontSize: 14,
+                lineHeight: 1.6,
+                maxWidth: 900,
+              }}
+            >
+              <strong style={{ color: "#ffffff" }}>Continuação natural do passo «Aprovação de recomendações».</strong>{" "}
+              Nesta página usa-se o <strong style={{ color: "#e2e8f0" }}>mesmo plano</strong> (ficheiros em{" "}
+              <code style={{ color: DECIDE_DASHBOARD.accentSky }}>tmp_diag</code>) que acabou de aprovar. No separador{" "}
+              <strong style={{ color: "#e2e8f0" }}>Execução</strong> revê as ordens e pode enviá-las à corretora; o{" "}
+              <Link href="/client-dashboard" style={{ color: DECIDE_DASHBOARD.link, fontWeight: 700 }}>dashboard</Link>{" "}
+              resume a conta, não substitui este documento.
+            </div>
+          ) : null}
+          {fromFundingNotice ? (
+            <div
+              style={{
+                marginBottom: 22,
+                padding: "16px 20px",
+                borderRadius: 16,
+                border: DECIDE_DASHBOARD.flowTealCardBorderStrong,
+                background: DECIDE_DASHBOARD.flowTealPanelGradientSoft,
+                color: "#ccfbf1",
+                fontSize: 14,
+                lineHeight: 1.6,
+                maxWidth: 900,
+              }}
+            >
+              <strong style={{ color: "#ffffff" }}>Próximo passo após o financiamento.</strong> Quando os fundos estiverem
+              disponíveis na sua conta IBKR, abra o separador <strong style={{ color: "#e2e8f0" }}>Execução</strong> nesta
+              página para rever e enviar as ordens do plano. Se ainda não vê saldo suficiente, aguarde a liquidação da
+              transferência (normalmente 1–2 dias úteis).
+            </div>
+          ) : null}
           <div
             style={{
               display: "flex",
@@ -1846,7 +3288,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
             }}
           >
             <div>
-              <div style={{ color: "#60a5fa", fontSize: 14, fontWeight: 700, marginBottom: 8 }}>
+              <div style={{ color: DECIDE_DASHBOARD.accentSky, fontSize: 14, fontWeight: 700, marginBottom: 8 }}>
                 DECIDE AI
               </div>
               <h1
@@ -1857,9 +3299,9 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   color: "#ffffff",
                 }}
               >
-                Relatório do Cliente
+                Plano do Cliente
               </h1>
-              <div style={{ color: "#94a3b8", marginTop: 10, fontSize: 15 }}>
+              <div style={{ color: "#a1a1aa", marginTop: 10, fontSize: 15 }}>
                 Conta IBKR: {reportData.accountCode || "—"} · Perfil:{" "}
                 {reportData.profile || "moderado"} · {reportData.modelDisplayName} · Gerado em{" "}
                 {reportData.generatedAt.slice(0, 19).replace("T", " ")}
@@ -1877,9 +3319,9 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   alignItems: "center",
                   gap: 8,
                   borderRadius: 999,
-                  border: "1px solid #2563eb",
-                  background: "rgba(37,99,235,0.12)",
-                  color: "#bfdbfe",
+                  border: DECIDE_DASHBOARD.flowTealCardBorder,
+                  background: DECIDE_DASHBOARD.flowTealBadgeBg,
+                  color: "#99f6e4",
                   fontSize: 12,
                   fontWeight: 800,
                   padding: "6px 10px",
@@ -1903,6 +3345,85 @@ export default function ClientReportPage({ reportData }: PageProps) {
               }}
             >
               <ClientFlowDashboardButton />
+              {showHedgeOnboardingCta ? (
+                <Link
+                  href="/client/fx-hedge-onboarding"
+                  style={{
+                    background: DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+                    border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                    color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
+                    textDecoration: "none",
+                    borderRadius: 12,
+                    padding: "10px 18px",
+                    fontWeight: 800,
+                    fontSize: 14,
+                    whiteSpace: "nowrap",
+                    boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
+                  }}
+                >
+                  Hedge cambial (passo 6)
+                </Link>
+              ) : null}
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginBottom: 20,
+              padding: "14px 16px",
+              borderRadius: 14,
+              border: DECIDE_DASHBOARD.flowTealCardBorder,
+              background: DECIDE_DASHBOARD.flowTealPanelGradient,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 12,
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.5, maxWidth: 560 }}>
+              <strong style={{ color: "#ecfdf5" }}>Navegação do plano:</strong> use os separadores{" "}
+              <strong style={{ color: "#fff" }}>Resumo</strong>, <strong style={{ color: "#fff" }}>Alterações</strong>,{" "}
+              <strong style={{ color: "#fff" }}>Execução</strong> e <strong style={{ color: "#fff" }}>Documentos</strong>{" "}
+              abaixo — evita scroll longo e separa decisão, comparação, envio à corretora e arquivo formal do plano. A{" "}
+              <strong style={{ color: "#fff" }}>aprovação regulamentar</strong> continua na página dedicada.
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+              <button
+                type="button"
+                onClick={() => setPlanTab("alteracoes")}
+                style={{
+                  background: DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+                  color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
+                  borderRadius: 12,
+                  padding: "10px 16px",
+                  fontWeight: 800,
+                  fontSize: 13,
+                  border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                  whiteSpace: "nowrap",
+                  boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Ir para Alterações
+              </button>
+              <Link
+                href="/client/approve"
+                style={{
+                  background: "transparent",
+                  color: "#99f6e4",
+                  textDecoration: "none",
+                  borderRadius: 12,
+                  padding: "10px 16px",
+                  fontWeight: 800,
+                  fontSize: 13,
+                  border: DECIDE_DASHBOARD.flowTealCardBorderStrong,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Aprovar plano (regulamentar)
+              </Link>
             </div>
           </div>
 
@@ -1918,34 +3439,126 @@ export default function ClientReportPage({ reportData }: PageProps) {
             <Link
               href="/client/ibkr-prep"
               style={{
-                background: "#0b1120",
-                border: "1px solid #1d4ed8",
-                color: "#bfdbfe",
+                background: DECIDE_DASHBOARD.linkPillTeal,
+                border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                color: "#99f6e4",
                 textDecoration: "none",
                 borderRadius: 999,
                 padding: "10px 16px",
                 fontWeight: 600,
                 fontSize: 13,
+                boxShadow: `${DECIDE_DASHBOARD.buttonShadowSoft}, inset 0 1px 0 rgba(255,255,255,0.06)`,
               }}
             >
               Preparar abertura IBKR
             </Link>
+            {showHedgeOnboardingCta ? (
+              <Link
+                href="/client/fx-hedge-onboarding"
+                style={{
+                  background: "rgba(6, 78, 74, 0.28)",
+                  border: DECIDE_DASHBOARD.flowTealCardBorder,
+                  color: "#99f6e4",
+                  textDecoration: "none",
+                  borderRadius: 999,
+                  padding: "10px 16px",
+                  fontWeight: 600,
+                  fontSize: 13,
+                  boxShadow: `${DECIDE_DASHBOARD.buttonShadowSoft}, inset 0 1px 0 rgba(255,255,255,0.06)`,
+                }}
+              >
+                Preferências de hedge cambial
+              </Link>
+            ) : null}
           </div>
+          {showHedgeOnboardingCta ? (
+            <p style={{ margin: "0 0 20px 0", fontSize: 13, color: "#a1a1aa", lineHeight: 1.55, maxWidth: 720 }}>
+              Segmento <strong style={{ color: "#e2e8f0" }}>fee B</strong> (NAV ≥ 50k) ou{" "}
+              <strong style={{ color: "#e2e8f0" }}>Private</strong>: esta página não avança sozinha para o hedge.
+              Use o botão acima para o passo <strong style={{ color: DECIDE_DASHBOARD.link }}>Hedge cambial</strong> (KPIs com cobertura
+              FX no dashboard).
+            </p>
+          ) : null}
 
           <>
           <div
+            role="tablist"
+            aria-label="Secções do plano"
             style={{
-              background: "linear-gradient(145deg, #0c1629 0%, #0a0f1c 100%)",
-              border: "1px solid rgba(59,130,246,0.35)",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 8,
+              marginBottom: 24,
+              padding: 6,
+              borderRadius: 14,
+              background: "rgba(24,24,27,0.72)",
+              border: DECIDE_DASHBOARD.panelBorder,
+            }}
+          >
+            {(
+              [
+                { id: "resumo" as const, label: "Resumo" },
+                { id: "alteracoes" as const, label: "Alterações" },
+                { id: "execucao" as const, label: "Execução" },
+                { id: "documentos" as const, label: "Documentos" },
+              ] as const
+            ).map((t) => {
+              const active = planTab === t.id;
+              const execAttention =
+                t.id === "execucao" &&
+                (postApprovalStage === "ready" ||
+                  postApprovalStage === "executing" ||
+                  postApprovalStage === "failed" ||
+                  (postApprovalStage === "done" && !executionFullyComplete));
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setPlanTab(t.id)}
+                  style={{
+                    borderRadius: 10,
+                    padding: "10px 18px",
+                    fontWeight: 800,
+                    fontSize: 14,
+                    cursor: "pointer",
+                    border: active ? DECIDE_DASHBOARD.kpiMenuMainButtonBorder : "1px solid transparent",
+                    background: active ? DECIDE_DASHBOARD.kpiMenuMainButtonBackground : "transparent",
+                    color: active ? DECIDE_DASHBOARD.kpiMenuMainButtonColor : "#a1a1aa",
+                    boxShadow: active ? DECIDE_DASHBOARD.kpiMenuMainButtonShadow : undefined,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {t.label}
+                  {execAttention ? (
+                    <span
+                      style={{ marginLeft: 8, fontSize: 11, color: "#fbbf24", fontWeight: 700 }}
+                      title="Estado de execução em curso ou para rever"
+                    >
+                      ●
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+
+          {planTab === "resumo" ? (
+          <>
+          <div
+            style={{
+              background: DECIDE_DASHBOARD.clientPanelGradient,
+              border: DECIDE_DASHBOARD.panelBorder,
               borderRadius: 18,
               padding: "22px 24px",
               marginBottom: 28,
-              boxShadow: "0 0 0 1px rgba(15,23,42,0.8), 0 18px 40px rgba(0,0,0,0.35)",
+              boxShadow: DECIDE_DASHBOARD.clientPanelShadowMedium,
             }}
           >
             <div
               style={{
-                color: "#60a5fa",
+                color: DECIDE_DASHBOARD.accentSky,
                 fontSize: 12,
                 fontWeight: 800,
                 letterSpacing: "0.06em",
@@ -1966,33 +3579,44 @@ export default function ClientReportPage({ reportData }: PageProps) {
               }}
             >
               <div>
-                <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 4 }}>Estratégia</div>
+                <div style={{ color: "#a1a1aa", fontSize: 13, marginBottom: 4 }}>Estratégia</div>
                 <div style={{ fontWeight: 700, color: "#ffffff" }}>
                   {reportData.planSummary.strategyLabel}
                 </div>
               </div>
               <div>
-                <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 4 }}>Perfil de risco</div>
+                <div style={{ color: "#a1a1aa", fontSize: 13, marginBottom: 4 }}>Perfil de risco</div>
                 <div style={{ fontWeight: 700, color: "#ffffff" }}>
                   {reportData.planSummary.riskLabel}
                 </div>
               </div>
               <div>
-                <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 4 }}>Posições alvo</div>
+                <div style={{ color: "#a1a1aa", fontSize: 13, marginBottom: 4 }}>Posições alvo</div>
                 <div style={{ fontWeight: 700, color: "#ffffff" }}>
                   {reportData.planSummary.positionCount}
                 </div>
-                <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>
-                  T-Bills / Cash Sleeve: {formatPct(reportData.tbillsProxyWeightPct)}
+                <div style={{ color: "#a1a1aa", fontSize: 12, marginTop: 4 }}>
+                  Caixa / MM EUR ({reportData.tbillProxyIbTicker}): {formatPct(reportData.tbillsProxyWeightPct)}
                 </div>
               </div>
               <div>
-                <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 4 }}>Rotação proposta</div>
+                <div style={{ color: "#a1a1aa", fontSize: 13, marginBottom: 4 }}>Rotação proposta</div>
                 <div style={{ fontWeight: 700, color: "#ffffff" }}>
-                  ~{formatPct(reportData.planSummary.turnoverPct)} do valor da conta (estimativa)
+                  ~{formatPct(reportData.planSummary.turnoverPct)} do NAV de referência do plano (estimativa)
                 </div>
-                <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>
-                  Inclui reestruturação inicial da carteira.
+                <div style={{ color: "#a1a1aa", fontSize: 12, marginTop: 4, lineHeight: 1.45, maxWidth: 420 }}>
+                  {reportData.planSummary.initialConstitution &&
+                  (reportData.planSummary.turnoverPctTechnical ?? 0) > 100 ? (
+                    <>
+                      <strong style={{ color: "#cbd5e1" }}>Constituição inicial (a partir de caixa):</strong> o objectivo é
+                      alocar o património de referência do modelo (~100%). A percentagem técnica das ordens de compra
+                      (soma dos Δ, várias moedas e linhas) pode ultrapassar 100% — mostramos{" "}
+                      <strong style={{ color: "#e2e8f0" }}>até 100%</strong> aqui; o cálculo bruto seria ~
+                      {formatPct(reportData.planSummary.turnoverPctTechnical ?? 0)}.
+                    </>
+                  ) : (
+                    <>Inclui reestruturação inicial da carteira quando aplicável.</>
+                  )}
                 </div>
               </div>
             </div>
@@ -2007,23 +3631,19 @@ export default function ClientReportPage({ reportData }: PageProps) {
             }}
           >
             <SummaryCard
-              title="Valor atual da conta"
-              value={formatEuro(reportData.navEur)}
-              sub={`Cash disponível: ${formatEuro(reportData.cashEur)}`}
+              title={liveIbkrStructure ? "Valor atual da conta (IBKR)" : "Valor atual da conta"}
+              value={formatMoneyCompact(summaryNavLiquidation, summaryNavCcy)}
+              sub={summaryCashSubtitle}
             />
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <SummaryCard
-                title="CAGR do modelo"
-                value={formatPct(reportData.totalReturnPct)}
-                sub={`Benchmark: ${formatPct(
-                  reportData.benchmarkTotalReturnPct
-                )} · ${reportData.displayCagrLabel}`}
-              />
-            </div>
             <SummaryCard
-              title="Outperformance"
-              value={formatPct(reportData.outperformancePct)}
-              sub={`Spread CAGR vs benchmark · ${reportData.displayCagrLabel}`}
+              title="CAGR do modelo"
+              value={formatPct(reportData.totalReturnPct)}
+              sub={reportData.displayCagrModelSubLabel}
+            />
+            <SummaryCard
+              title="CAGR do benchmark"
+              value={formatPct(reportData.benchmarkCagrPct)}
+              sub={reportData.displayCagrBenchmarkSubLabel}
             />
             <SummaryCard
               title="Fee segment"
@@ -2037,19 +3657,20 @@ export default function ClientReportPage({ reportData }: PageProps) {
           </div>
 
           <div
-            id="alteracoes-propostas"
+            id="relatorio-performance"
             style={{
-              background: "#111827",
-              border: "1px solid #1f2937",
+              background: DECIDE_DASHBOARD.clientPanelGradient,
+              border: DECIDE_DASHBOARD.panelBorder,
               borderRadius: 18,
               padding: 20,
               marginBottom: 28,
+              boxShadow: DECIDE_DASHBOARD.clientPanelShadow,
             }}
           >
             <SectionTitle>Performance</SectionTitle>
             <p
               style={{
-                color: "#94a3b8",
+                color: "#a1a1aa",
                 fontSize: 14,
                 marginTop: -8,
                 marginBottom: 18,
@@ -2089,16 +3710,16 @@ export default function ClientReportPage({ reportData }: PageProps) {
               <ResponsiveContainer>
                 <LineChart data={reportData.series}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="date" stroke="#94a3b8" />
+                  <XAxis dataKey="date" stroke="#a1a1aa" />
                   <YAxis
-                    stroke="#94a3b8"
+                    stroke="#a1a1aa"
                     domain={["auto", "auto"]}
                     allowDataOverflow={false}
                     tickFormatter={(v) => `${Number(v).toFixed(0)}%`}
                   />
                   <Tooltip
                     contentStyle={{
-                      background: "#0f172a",
+                      background: DECIDE_DASHBOARD.clientChartTooltipBg,
                       border: "1px solid #334155",
                       borderRadius: 12,
                       color: "#ffffff",
@@ -2110,15 +3731,15 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     dataKey="benchmark"
                     name="Benchmark"
                     dot={false}
-                    stroke="#94a3b8"
+                    stroke="#a1a1aa"
                     strokeWidth={2}
                   />
                   <Line
                     type="monotone"
                     dataKey="overlayed"
-                    name="Modelo Overlayed"
+                    name={reportData.modelDisplayName}
                     dot={false}
-                    stroke="#22c55e"
+                    stroke={DECIDE_DASHBOARD.flowTealChartStroke}
                     strokeWidth={3}
                   />
                 </LineChart>
@@ -2126,6 +3747,62 @@ export default function ClientReportPage({ reportData }: PageProps) {
             </div>
           </div>
 
+          <div
+            style={{
+              marginTop: 4,
+              marginBottom: 0,
+              padding: "14px 18px",
+              borderRadius: 14,
+              border: DECIDE_DASHBOARD.flowTealCardBorder,
+              background: "rgba(6, 78, 74, 0.2)",
+              maxWidth: 720,
+            }}
+          >
+            <p style={{ margin: 0, fontSize: 14, color: "#cbd5e1", lineHeight: 1.55 }}>
+              <strong style={{ color: "#ecfdf5" }}>Próximo passo:</strong> comparar carteiras e trades no separador{" "}
+              <button
+                type="button"
+                onClick={() => setPlanTab("alteracoes")}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: DECIDE_DASHBOARD.accentSky,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  fontFamily: "inherit",
+                  fontSize: "inherit",
+                  padding: 0,
+                }}
+              >
+                Alterações
+              </button>
+              ; depois confirme e envie ordens em{" "}
+              <button
+                type="button"
+                onClick={() => setPlanTab("execucao")}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: DECIDE_DASHBOARD.accentSky,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  fontFamily: "inherit",
+                  fontSize: "inherit",
+                  padding: 0,
+                }}
+              >
+                Execução
+              </button>
+              .
+            </p>
+          </div>
+          </>
+          ) : null}
+
+          {planTab === "alteracoes" ? (
+          <>
           <div
             style={{
               display: "grid",
@@ -2137,11 +3814,12 @@ export default function ClientReportPage({ reportData }: PageProps) {
             <div
               id="carteira-atual"
               style={{
-                background: "#111827",
-                border: "1px solid #1f2937",
+                background: DECIDE_DASHBOARD.clientPanelGradient,
+                border: DECIDE_DASHBOARD.panelBorder,
                 borderRadius: 18,
                 padding: 20,
                 overflowX: "auto",
+                boxShadow: DECIDE_DASHBOARD.clientPanelShadow,
               }}
             >
               <h2
@@ -2155,14 +3833,16 @@ export default function ClientReportPage({ reportData }: PageProps) {
               >
                 Carteira atual (IBKR real)
               </h2>
-              <p style={{ margin: "0 0 14px 0", fontSize: 12, color: "#64748b", lineHeight: 1.5, maxWidth: 560 }}>
-                Por defeito mostra a última sincronização ao gerar o relatório (dados em{" "}
-                <code style={{ color: "#94a3b8" }}>tmp_diag</code>
-                ). Depois de executar ordens, use <strong style={{ color: "#94a3b8" }}>Ver carteira atualizada</strong>{" "}
-                no bloco final para <strong style={{ color: "#94a3b8" }}>ver a carteira atualizada em tempo real</strong>.
+              <p style={{ margin: "0 0 14px 0", fontSize: 12, color: "#71717a", lineHeight: 1.5, maxWidth: 560 }}>
+                Por defeito mostra a última sincronização ao gerar o plano (dados em{" "}
+                <code style={{ color: "#a1a1aa" }}>tmp_diag</code>
+                ). Depois de executar ordens, use <strong style={{ color: "#a1a1aa" }}>Ver carteira atualizada</strong>{" "}
+                no bloco de execução: leva a este separador <strong style={{ color: "#a1a1aa" }}>Alterações</strong> ·{" "}
+                <strong style={{ color: "#a1a1aa" }}>Carteira atual</strong>, sincroniza posições na IBKR e, se houver
+                linhas de execução nessa página, actualiza também «Em curso» / «Executada».
               </p>
               {liveActualPositions ? (
-                <p style={{ margin: "0 0 12px 0", fontSize: 12, color: "#86efac", fontWeight: 600 }}>
+                <p style={{ margin: "0 0 12px 0", fontSize: 12, color: DECIDE_DASHBOARD.accentSky, fontWeight: 600 }}>
                   A mostrar a carteira em tempo real (IBKR).
                 </p>
               ) : null}
@@ -2174,7 +3854,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   style={{
                     margin: "0 0 16px 0",
                     padding: "14px 16px",
-                    background: "linear-gradient(180deg, rgba(30,41,59,0.9) 0%, rgba(15,23,42,0.95) 100%)",
+                    background: "linear-gradient(180deg, rgba(39,39,42,0.9) 0%, rgba(24,24,27,0.95) 100%)",
                     border: "1px solid rgba(148,163,184,0.35)",
                     borderRadius: 14,
                     maxWidth: 560,
@@ -2185,96 +3865,115 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   </div>
                   <div style={{ display: "grid", gap: 10, fontSize: 13, color: "#cbd5e1" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-                      <span style={{ color: "#94a3b8" }}>Capital próprio (valor líquido)</span>
+                      <span style={{ color: "#a1a1aa" }}>Capital próprio (valor líquido)</span>
                       <strong style={{ color: "#f8fafc" }}>
                         {formatMoneyCompact(liveIbkrStructure.netLiquidation, liveIbkrStructure.ccy)}
                       </strong>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-                      <span style={{ color: "#94a3b8" }}>Exposição em títulos</span>
+                      <span style={{ color: "#a1a1aa" }}>Exposição em títulos</span>
                       <strong style={{ color: "#f8fafc" }}>
                         {formatMoneyCompact(liveIbkrStructure.grossPositionsValue, liveIbkrStructure.ccy)}
                       </strong>
                     </div>
                     {Math.abs(liveIbkrStructure.financing) > 1e-4 ? (
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-                        <span style={{ color: "#94a3b8" }}>
+                        <span style={{ color: "#a1a1aa" }}>
                           {liveIbkrStructure.financing < 0
                             ? "Financiamento via margem (IBKR)"
                             : "Saldo de caixa (IBKR, proxy T-Bills)"}
                         </span>
-                        <strong style={{ color: liveIbkrStructure.financing < 0 ? "#fca5a5" : "#86efac" }}>
+                        <strong style={{ color: liveIbkrStructure.financing < 0 ? "#fca5a5" : DECIDE_DASHBOARD.accentSky }}>
                           {formatMoneyCompact(liveIbkrStructure.financing, liveIbkrStructure.financingCcy)}
                         </strong>
                       </div>
                     ) : null}
                     {liveIbkrStructure.netLiquidation > 1e-6 && liveIbkrStructure.grossPositionsValue > 0 ? (
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-                        <span style={{ color: "#94a3b8" }}>Alavancagem implícita (exposição ÷ capital próprio)</span>
-                        <strong style={{ color: "#93c5fd" }}>
+                        <span style={{ color: "#a1a1aa" }}>Alavancagem implícita (exposição ÷ capital próprio)</span>
+                        <strong style={{ color: DECIDE_DASHBOARD.accentSky }}>
                           {formatLeverageMultiple(liveIbkrStructure.grossPositionsValue / liveIbkrStructure.netLiquidation)}
                         </strong>
                       </div>
                     ) : null}
                   </div>
                   {liveIbkrStructure.financing < -1e-4 ? (
-                    <p style={{ margin: "12px 0 0 0", fontSize: 12, color: "#94a3b8", lineHeight: 1.5 }}>
+                    <p style={{ margin: "12px 0 0 0", fontSize: 12, color: "#a1a1aa", lineHeight: 1.5 }}>
                       Valor negativo indica financiamento automático da corretora para suportar exposição superior ao
                       capital disponível. Não é uma posição vendida em T-Bills; o sleeve T-Bills do plano executa como ETF{" "}
-                      <strong style={{ color: "#cbd5e1" }}>BIL</strong> na ordem «TBILL_PROXY».
+                      <strong style={{ color: "#cbd5e1" }}>{tbillIb}</strong> na ordem «TBILL_PROXY».
                     </p>
                   ) : Math.abs(liveIbkrStructure.financing) > 1e-4 ? (
-                    <p style={{ margin: "12px 0 0 0", fontSize: 12, color: "#94a3b8", lineHeight: 1.5 }}>
-                      Saldo à ordem (IBKR <code style={{ color: "#94a3b8" }}>TotalCashValue</code>), não um título. O
-                      sleeve T-Bills do plano executa como ETF <strong style={{ color: "#cbd5e1" }}>BIL</strong> na ordem
+                    <p style={{ margin: "12px 0 0 0", fontSize: 12, color: "#a1a1aa", lineHeight: 1.5 }}>
+                      Saldo à ordem (IBKR <code style={{ color: "#a1a1aa" }}>TotalCashValue</code>), não um título. O
+                      sleeve T-Bills do plano executa como ETF <strong style={{ color: "#cbd5e1" }}>{tbillIb}</strong> na ordem
                       «TBILL_PROXY».
                     </p>
                   ) : null}
                 </div>
               ) : null}
               {liveIbkrStructure ? (
-                <p style={{ margin: "0 0 12px 0", fontSize: 11, color: "#64748b", lineHeight: 1.45, maxWidth: 560 }}>
-                  A tabela seguinte lista <strong style={{ color: "#94a3b8" }}>só títulos</strong>. Caixa e financiamento
+                <p style={{ margin: "0 0 12px 0", fontSize: 11, color: "#71717a", lineHeight: 1.45, maxWidth: 560 }}>
+                  A tabela seguinte lista <strong style={{ color: "#a1a1aa" }}>só títulos</strong>. Caixa e financiamento
                   via margem estão no bloco «Estrutura da carteira».
                 </p>
               ) : null}
+              <p style={{ margin: "0 0 12px 0", fontSize: 11, color: "#71717a", lineHeight: 1.45, maxWidth: 640 }}>
+                <strong style={{ color: "#a1a1aa" }}>Pesos:</strong> «% do capital» = valor da posição ÷ património
+                líquido total na IBKR (a caixa entra no denominador e dilui cada título). «% só títulos» = valor ÷ soma
+                dos títulos nesta tabela (sem caixa). Para comparar com o plano, use a coluna{" "}
+                <strong style={{ color: "#a1a1aa" }}>«% só títulos (plano)»</strong> à direita — o «Peso» do plano inclui
+                ainda <strong style={{ color: "#a1a1aa" }}>CSH2</strong> / caixa e o hedge <strong style={{ color: "#a1a1aa" }}>EURUSD</strong>, por isso sozinho parece mais baixo que «% só títulos» daqui.
+              </p>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                 <thead>
-                  <tr style={{ color: "#94a3b8", textAlign: "left" }}>
+                  <tr style={{ color: "#a1a1aa", textAlign: "left" }}>
                     <th style={{ padding: "10px 8px" }}>Ticker</th>
+                    <th style={{ padding: "10px 8px" }}>Empresa</th>
+                    <th style={{ padding: "10px 8px" }}>Sector</th>
                     <th style={{ padding: "10px 8px" }}>Qtd</th>
                     <th style={{ padding: "10px 8px" }}>Preço (close)</th>
                     <th style={{ padding: "10px 8px" }}>Valor</th>
-                    <th style={{ padding: "10px 8px" }}>Peso</th>
+                    <th style={{ padding: "10px 8px" }}>% do capital</th>
+                    <th style={{ padding: "10px 8px" }}>% só títulos</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {portfolioTablePositions.length === 0 ? (
+                  {portfolioDisplayRows.length === 0 ? (
                     <tr>
-                      <td colSpan={5} style={{ padding: 12, color: "#94a3b8" }}>
+                      <td colSpan={8} style={{ padding: 12, color: "#a1a1aa" }}>
                         Sem posições reais disponíveis.
                       </td>
                     </tr>
                   ) : (
-                    portfolioTablePositions.map((p, idx) => (
-                      <tr key={`${p.ticker}-${idx}`} style={{ borderTop: "1px solid #1f2937" }}>
+                    portfolioDisplayRows.map((p, idx) => (
+                      <tr key={`${p.ticker}-${idx}`} style={{ borderTop: DECIDE_DASHBOARD.panelBorder }}>
                         <td style={{ padding: "10px 8px", color: "#ffffff", fontWeight: 700 }}>
                           {(() => {
                             const label =
-                              p.ticker === "BIL"
-                                ? "BIL (T-Bills)"
+                              p.ticker === "BIL" ||
+                              p.ticker === "SHV" ||
+                              p.ticker === "SGOV" ||
+                              p.ticker === tbillIb
+                                ? `${displayTickerLabel(p.ticker)} (T-Bills)`
                                 : p.ticker === "LIQUIDEZ"
                                 ? liquidezCashLabel(Number(p.value))
-                                : p.ticker;
-                            const href = tickerHref(p.ticker);
+                                : displayTickerLabel(p.ticker);
+                            const href = reportPlanTickerLinks(p.ticker);
                             return href ? (
-                              <a href={href.yf} target="_blank" rel="noreferrer" style={{ color: "#93c5fd", textDecoration: "none" }}>
+                              <a href={href.yf} target="_blank" rel="noreferrer" style={{ color: DECIDE_DASHBOARD.accentSky, textDecoration: "none" }}>
                                 {label}
                               </a>
                             ) : (
                               label
                             );
                           })()}
+                        </td>
+                        <td style={{ padding: "10px 8px", color: "#d4d4d8", maxWidth: 220 }}>
+                          {p.ticker === "LIQUIDEZ" ? "—" : p.nameShort || "—"}
+                        </td>
+                        <td style={{ padding: "10px 8px", color: "#a1a1aa" }}>
+                          {p.ticker === "LIQUIDEZ" ? "—" : p.sector || "—"}
                         </td>
                         <td style={{ padding: "10px 8px" }}>
                           {p.ticker === "LIQUIDEZ" ? "—" : formatQty(p.qty)}
@@ -2289,6 +3988,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                         </td>
                         <td style={{ padding: "10px 8px" }}>{formatMoneyCompact(p.value, p.currency)}</td>
                         <td style={{ padding: "10px 8px" }}>{formatPct(p.weightPct)}</td>
+                        <td style={{ padding: "10px 8px" }}>{formatPct(p.weightPctSecurities)}</td>
                       </tr>
                     ))
                   )}
@@ -2309,31 +4009,87 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   </div>
                   <p style={{ margin: "0 0 10px 0", fontSize: 12, color: "#fca5a5", lineHeight: 1.45 }}>
                     Envia ordens de mercado para fechar <strong style={{ color: "#fef2f2" }}>todas</strong> as posições em
-                    ações (STK), incluindo BIL. Ordem na TWS: <strong style={{ color: "#fef2f2" }}>SELL</strong> (longos)
-                    primeiro; só depois <strong style={{ color: "#fef2f2" }}>BUY</strong> para cobrir shorts — assim a
-                    margem liberta antes de novas compras. Não “anula” sozinho o saldo de margem na corretora. Conta{" "}
+                    ações (STK), incluindo {tbillIb}, e depois posições <strong style={{ color: "#fef2f2" }}>Forex</strong>{" "}
+                    (EUR.USD, etc.) para ficar limpo a recomprar e executar o FX no mesmo envio. Ordem no IB Gateway ou na TWS:{" "}
+                    <strong style={{ color: "#fef2f2" }}>SELL</strong> (longos) primeiro; só depois{" "}
+                    <strong style={{ color: "#fef2f2" }}>BUY</strong> para shorts — depois pausa e fecho FX. A tabela
+                    só actualiza quando o snapshot IBKR mostrar quantidades a zero. O botão laranja pede à IB um{" "}
+                    <strong style={{ color: "#fef2f2" }}>cancelamento global</strong> de todas as ordens ainda abertas
+                    (inclui ordens criadas por outro cliente API ou na TWS). Conta{" "}
                     <strong style={{ color: "#fef2f2" }}>paper</strong> apenas.
                   </p>
-                  <button
-                    type="button"
-                    disabled={flattenBusy || portfolioRefreshing}
-                    onClick={() => void flattenPaperPortfolioAll()}
+                  <div
                     style={{
-                      background: flattenBusy ? "#7f1d1d" : "#b91c1c",
-                      border: "1px solid rgba(252,165,165,0.6)",
-                      color: "#fff7ed",
-                      borderRadius: 10,
-                      padding: "10px 14px",
-                      fontWeight: 800,
-                      fontSize: 13,
-                      cursor: flattenBusy || portfolioRefreshing ? "wait" : "pointer",
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 10,
+                      alignItems: "center",
                     }}
                   >
-                    {flattenBusy ? "A enviar ordens de fecho…" : "Zerar todas as posições (paper)"}
-                  </button>
+                    <button
+                      type="button"
+                      disabled={flattenBusy || cancelOpenBusy || portfolioRefreshing}
+                      onClick={() => void flattenPaperPortfolioAll()}
+                      style={{
+                        background: flattenBusy ? "#7f1d1d" : "#b91c1c",
+                        border: "1px solid rgba(252,165,165,0.6)",
+                        color: "#fff7ed",
+                        borderRadius: 10,
+                        padding: "10px 14px",
+                        fontWeight: 800,
+                        fontSize: 13,
+                        cursor: flattenBusy || cancelOpenBusy || portfolioRefreshing ? "wait" : "pointer",
+                      }}
+                    >
+                      {flattenBusy ? (
+                        <>
+                          A enviar ordens de fecho
+                          <InlineLoadingDots />
+                        </>
+                      ) : (
+                        "Zerar todas as posições (paper)"
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={flattenBusy || cancelOpenBusy || portfolioRefreshing}
+                      onClick={() => void cancelOpenOrdersPaper()}
+                      style={{
+                        background: cancelOpenBusy ? "rgba(154,52,18,0.5)" : "rgba(234,88,12,0.35)",
+                        border: "1px solid rgba(251,146,60,0.65)",
+                        color: "#ffedd5",
+                        borderRadius: 10,
+                        padding: "10px 14px",
+                        fontWeight: 800,
+                        fontSize: 13,
+                        cursor: flattenBusy || cancelOpenBusy || portfolioRefreshing ? "wait" : "pointer",
+                      }}
+                    >
+                      {cancelOpenBusy ? (
+                        <>
+                          A cancelar ordens
+                          <InlineLoadingDots />
+                        </>
+                      ) : (
+                        "Cancelar ordens não executadas (paper)"
+                      )}
+                    </button>
+                  </div>
                   {flattenMessage ? (
                     <p style={{ margin: "10px 0 0 0", fontSize: 12, color: "#fecaca", lineHeight: 1.45 }}>
                       {flattenMessage}
+                    </p>
+                  ) : null}
+                  {cancelOpenMessage ? (
+                    <p
+                      style={{
+                        margin: flattenMessage ? "8px 0 0 0" : "10px 0 0 0",
+                        fontSize: 12,
+                        color: "#fdba74",
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      {cancelOpenMessage}
                     </p>
                   ) : null}
                 </div>
@@ -2342,21 +4098,33 @@ export default function ClientReportPage({ reportData }: PageProps) {
 
             <div
               style={{
-                background: "#111827",
-                border: "1px solid #1f2937",
+                background: DECIDE_DASHBOARD.clientPanelGradient,
+                border: DECIDE_DASHBOARD.panelBorder,
                 borderRadius: 18,
                 padding: 20,
                 overflowX: "auto",
+                boxShadow: DECIDE_DASHBOARD.clientPanelShadow,
               }}
             >
               <SectionTitle>Carteira recomendada (DECIDE)</SectionTitle>
+              <p style={{ margin: "0 0 14px 0", fontSize: 12, color: "#71717a", lineHeight: 1.5, maxWidth: 720 }}>
+                Os pesos em <strong style={{ color: "#a1a1aa" }}>Peso</strong> são alvos do modelo sobre a{" "}
+                <strong style={{ color: "#a1a1aa" }}>carteira completa</strong> (acções + caixa/MM tipo{" "}
+                <strong style={{ color: "#a1a1aa" }}>CSH2</strong> + hedge <strong style={{ color: "#a1a1aa" }}>EURUSD</strong>{" "}
+                quando existir). A coluna <strong style={{ color: "#a1a1aa" }}>% só títulos (plano)</strong> volta a
+                dividir só pelas linhas de <em>risco</em> (exclui CSH2, T-Bills na corretora e EURUSD), para alinhar com
+                «% só títulos» na carteira IBKR à esquerda — aí as percentagens devem aproximar-se, salvo drift e títulos
+                que ainda não tem na conta.
+              </p>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                 <thead>
-                  <tr style={{ color: "#94a3b8", textAlign: "left" }}>
+                  <tr style={{ color: "#a1a1aa", textAlign: "left" }}>
                     <th style={{ padding: "10px 8px" }}>Ticker</th>
                     <th style={{ padding: "10px 8px" }}>Empresa</th>
                     <th style={{ padding: "10px 8px" }}>Peso</th>
+                    <th style={{ padding: "10px 8px" }}>% só títulos (plano)</th>
                     <th style={{ padding: "10px 8px" }}>Sector</th>
+                    <th style={{ padding: "10px 8px" }}>Indústria</th>
                     <th style={{ padding: "10px 8px" }}>Região</th>
                   </tr>
                 </thead>
@@ -2365,20 +4133,20 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     <tr
                       key={p.ticker}
                       style={{
-                        borderTop: "1px solid #1f2937",
+                        borderTop: DECIDE_DASHBOARD.panelBorder,
                         opacity: p.excluded ? 0.55 : 1,
                       }}
                     >
                       <td style={{ padding: "10px 8px", color: "#ffffff", fontWeight: 700 }}>
                         {(() => {
-                          const href = tickerHref(p.ticker);
-                          if (!href) return p.ticker;
+                          const href = reportPlanTickerLinks(p.ticker);
+                          if (!href) return displayTickerLabel(p.ticker);
                           return (
                             <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                              <a href={href.yf} target="_blank" rel="noreferrer" style={{ color: "#93c5fd", textDecoration: "none" }}>
-                                {p.ticker}
+                              <a href={href.yf} target="_blank" rel="noreferrer" style={{ color: DECIDE_DASHBOARD.accentSky, textDecoration: "none" }}>
+                                {displayTickerLabel(p.ticker)}
                               </a>
-                              <a href={href.ib} target="_blank" rel="noreferrer" style={{ color: "#64748b", textDecoration: "none", fontSize: 11 }}>
+                              <a href={href.ib} target="_blank" rel="noreferrer" style={{ color: "#71717a", textDecoration: "none", fontSize: 11 }}>
                                 IB
                               </a>
                             </span>
@@ -2405,30 +4173,50 @@ export default function ClientReportPage({ reportData }: PageProps) {
                       <td style={{ padding: "10px 8px" }}>
                         {formatPct(p.weightPct)}
                         {p.excluded && p.originalWeightPct > 0 ? (
-                          <span style={{ marginLeft: 6, fontSize: 11, color: "#94a3b8" }}>
+                          <span style={{ marginLeft: 6, fontSize: 11, color: "#a1a1aa" }}>
                             (antes {formatPct(p.originalWeightPct)})
                           </span>
                         ) : null}
                       </td>
+                      <td style={{ padding: "10px 8px", color: "#d4d4d8" }}>
+                        {isRecommendedCashOrHedgeRowTicker(p.ticker) ? (
+                          <span style={{ color: "#71717a" }} title="Fora do denominador (caixa, MM, T-Bills ou hedge FX)">
+                            —
+                          </span>
+                        ) : recommendedEquitySleeveDenomPct > 1e-6 ? (
+                          formatPct((safeNumber(p.weightPct, 0) / recommendedEquitySleeveDenomPct) * 100)
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                       <td style={{ padding: "10px 8px" }}>{p.sector || "—"}</td>
+                      <td style={{ padding: "10px 8px" }}>{p.industry || "—"}</td>
                       <td style={{ padding: "10px 8px" }}>{p.region || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              {recommendedFiltered.some((p) => String(p.ticker).toUpperCase() === "EURUSD") ? (
+                <p style={{ margin: "12px 0 0 0", fontSize: 12, color: "#71717a", lineHeight: 1.5, maxWidth: 720 }}>
+                  <strong style={{ color: "#a1a1aa" }}>EUR/USD:</strong> o peso mostrado é o montante de hedge estimado
+                  face ao património da conta (operacional), não uma alocação estratégica extra do modelo — a soma dos
+                  pesos na tabela pode ultrapassar 100%.
+                </p>
+              ) : null}
             </div>
 
             <div
               style={{
-                background: "#111827",
-                border: "1px solid #1f2937",
+                background: DECIDE_DASHBOARD.clientPanelGradient,
+                border: DECIDE_DASHBOARD.panelBorder,
                 borderRadius: 18,
                 padding: 20,
                 overflow: "hidden",
+                boxShadow: DECIDE_DASHBOARD.clientPanelShadow,
               }}
             >
               <SectionTitle>Pesos por sector (DECIDE)</SectionTitle>
-              <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>
+              <div style={{ color: "#a1a1aa", fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>
                 Top {sectorTop10.length} sectores por peso na carteira recomendada.
                 {excludedTickers.length > 0 ? " (recalculado após exclusões)." : ""}
               </div>
@@ -2438,7 +4226,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   gridTemplateColumns: "1.1fr 1.4fr auto",
                   gap: 12,
                   alignItems: "center",
-                  color: "#64748b",
+                  color: "#71717a",
                   fontSize: 11,
                   fontWeight: 700,
                   letterSpacing: "0.03em",
@@ -2453,7 +4241,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
 
               <div style={{ display: "grid", gap: 10 }}>
                 {sectorTop10.length === 0 ? (
-                  <div style={{ color: "#94a3b8", fontSize: 13 }}>Sem dados de sector.</div>
+                  <div style={{ color: "#a1a1aa", fontSize: 13 }}>Sem dados de sector.</div>
                 ) : (
                   sectorTop10.map((r) => {
                     const w = Math.max(0, Math.min(100, r.weightPct));
@@ -2462,8 +4250,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
                         <div style={{ color: "#ffffff", fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {r.sector}
                         </div>
-                        <div style={{ width: "100%", height: 10, borderRadius: 999, background: "#0f172a", border: "1px solid #1f2937", overflow: "hidden" }}>
-                          <div style={{ width: `${w}%`, height: "100%", background: "#3f73ff" }} />
+                        <div style={{ width: "100%", height: 10, borderRadius: 999, background: DECIDE_DASHBOARD.clientProgressTrackBg, border: DECIDE_DASHBOARD.panelBorder, overflow: "hidden" }}>
+                          <div style={{ width: `${w}%`, height: "100%", background: DECIDE_DASHBOARD.flowTealBarFill }} />
                         </div>
                         <div style={{ color: "#ffffff", fontWeight: 800, fontSize: 13 }}>
                           {formatPct(r.weightPct)}
@@ -2477,59 +4265,84 @@ export default function ClientReportPage({ reportData }: PageProps) {
           </div>
 
           <div
+            id="alteracoes-propostas"
             style={{
-              background: "#111827",
-              border: "1px solid #1f2937",
+              background: DECIDE_DASHBOARD.clientPanelGradient,
+              border: DECIDE_DASHBOARD.panelBorder,
               borderRadius: 18,
               padding: 20,
               overflowX: "auto",
               marginBottom: 28,
+              scrollMarginTop: 96,
+              boxShadow: DECIDE_DASHBOARD.clientPanelShadow,
             }}
           >
             <SectionTitle>Alterações propostas</SectionTitle>
             {isClientB ? (
               <div style={{ color: "#cbd5e1", fontSize: 13, marginBottom: 10 }}>
                 Cliente B: pode excluir até 5 títulos (caixa antes do ticker) e aplicar.
-                <span style={{ color: "#94a3b8" }}> Exclusões ativas: {excludedTickers.length}/5.</span>
-                <span style={{ color: "#94a3b8" }}> T-Bills não é excluível.</span>
+                <span style={{ color: "#a1a1aa" }}> Exclusões ativas: {excludedTickers.length}/5.</span>
+                <span style={{ color: "#a1a1aa" }}> T-Bills não é excluível.</span>
               </div>
             ) : null}
-            <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 10 }}>
+            <div style={{ color: "#a1a1aa", fontSize: 13, marginBottom: 10 }}>
               {reportData.proposedTradesCoverageNote}
             </div>
             {proposedTradesFiltered.length > 0 ? (
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 12,
-                  marginBottom: 16,
-                  padding: "14px 16px",
-                  background: "#0f172a",
-                  borderRadius: 14,
-                  border: "1px solid #1e293b",
-                  fontSize: 14,
-                }}
-              >
-                <span style={{ color: "#86efac", fontWeight: 700 }}>
-                  Compras: {buyCountVisible}
-                </span>
-                <span style={{ color: "#fca5a5", fontWeight: 700 }}>
-                  Vendas: {sellCountVisible}
-                </span>
-                <span style={{ color: "#cbd5e1" }}>
-                  Volume ajustado (soma dos impactos):{" "}
-                  <strong style={{ color: "#ffffff" }}>{formatEuro(tradeVolumeAbsEur)}</strong>
-                </span>
-                <span style={{ color: "#94a3b8" }}>
-                  ≈ {formatPct(turnoverPctVisible)} do valor da conta
-                </span>
-              </div>
+              <>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 12,
+                    marginBottom: 12,
+                    padding: "14px 16px",
+                    background: DECIDE_DASHBOARD.clientPanelGradient,
+                    borderRadius: 14,
+                    border: DECIDE_DASHBOARD.panelBorder,
+                    fontSize: 14,
+                  }}
+                >
+                  <span style={{ color: DECIDE_DASHBOARD.accentSky, fontWeight: 700 }}>
+                    Compras: {buyCountVisible}
+                  </span>
+                  <span style={{ color: "#fca5a5", fontWeight: 700 }}>
+                    Vendas: {sellCountVisible}
+                  </span>
+                  <span style={{ color: "#cbd5e1" }}>
+                    Rotação estimada (maior perna compra/venda):{" "}
+                    <strong style={{ color: "#ffffff" }}>
+                      {formatMoneyCompact(planTurnoverNotional, ccy)}
+                    </strong>
+                  </span>
+                  <span style={{ color: "#a1a1aa" }}>
+                    ≈ {formatPct(turnoverPctVisible)} do valor da conta · soma bruta |Δ| (todas as linhas):{" "}
+                    {formatMoneyCompact(tradeVolumeGrossAbs, ccy)}
+                  </span>
+                </div>
+                <p
+                  style={{
+                    margin: "0 0 16px 0",
+                    fontSize: 11,
+                    color: "#71717a",
+                    lineHeight: 1.55,
+                    maxWidth: 720,
+                  }}
+                >
+                  <strong style={{ color: "#a1a1aa" }}>NAV de referência do plano</strong> (
+                  {formatMoneyCompact(reportData.navEur, ccy)}) vem do último rebalance em{" "}
+                  <code style={{ color: "#a1a1aa" }}>tmp_diag</code>. A{" "}
+                  <strong style={{ color: "#a1a1aa" }}>soma das compras (Δ)</strong> é volume bruto de ordens de compra —
+                  pode ultrapassar esse NAV. O <strong style={{ color: "#a1a1aa" }}>património na IBKR</strong> é o valor
+                  real da conta; <strong style={{ color: "#a1a1aa" }}>não</strong> volta a coincidir com o NAV do plano só
+                  porque cancelou ordens — é preciso novo rebalance com o NAV que quiser como base.
+                </p>
+              </>
             ) : null}
             <form method="get" action="/client/report">
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
-                <tr style={{ color: "#94a3b8", textAlign: "left" }}>
+                <tr style={{ color: "#a1a1aa", textAlign: "left" }}>
                   {isClientB ? <th style={{ padding: "10px 8px" }}>Excluir</th> : null}
                   <th style={{ padding: "10px 8px" }}>Ação</th>
                   <th style={{ padding: "10px 8px" }}>Ticker</th>
@@ -2543,13 +4356,13 @@ export default function ClientReportPage({ reportData }: PageProps) {
               <tbody>
                 {proposedTradesFiltered.length === 0 ? (
                   <tr>
-                    <td colSpan={isClientB ? 8 : 7} style={{ padding: 12, color: "#94a3b8" }}>
+                    <td colSpan={isClientB ? 8 : 7} style={{ padding: 12, color: "#a1a1aa" }}>
                       Sem alterações propostas disponíveis.
                     </td>
                   </tr>
                 ) : (
                   proposedTradesFiltered.map((t, idx) => (
-                    <tr key={`${t.ticker}-${idx}`} style={{ borderTop: "1px solid #1f2937" }}>
+                    <tr key={`${t.ticker}-${idx}`} style={{ borderTop: DECIDE_DASHBOARD.panelBorder }}>
                       {isClientB ? (
                         <td style={{ padding: "10px 8px" }}>
                           {(t.side === "BUY" || t.side === "INACTIVE") &&
@@ -2576,10 +4389,10 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           padding: "10px 8px",
                           color:
                             t.side === "BUY"
-                              ? "#86efac"
+                              ? DECIDE_DASHBOARD.accentSky
                               : t.side === "SELL"
                               ? "#fca5a5"
-                              : "#94a3b8",
+                              : "#a1a1aa",
                           fontWeight: 700,
                         }}
                       >
@@ -2587,14 +4400,14 @@ export default function ClientReportPage({ reportData }: PageProps) {
                       </td>
                       <td style={{ padding: "10px 8px", color: "#ffffff", fontWeight: 700 }}>
                         {(() => {
-                          const href = tickerHref(t.ticker);
+                          const href = reportPlanTickerLinks(t.ticker);
                           if (!href) return t.ticker;
                           return (
                             <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                              <a href={href.yf} target="_blank" rel="noreferrer" style={{ color: "#93c5fd", textDecoration: "none" }}>
+                              <a href={href.yf} target="_blank" rel="noreferrer" style={{ color: DECIDE_DASHBOARD.accentSky, textDecoration: "none" }}>
                                 {t.ticker}
                               </a>
-                              <a href={href.ib} target="_blank" rel="noreferrer" style={{ color: "#64748b", textDecoration: "none", fontSize: 11 }}>
+                              <a href={href.ib} target="_blank" rel="noreferrer" style={{ color: "#71717a", textDecoration: "none", fontSize: 11 }}>
                                 IB
                               </a>
                             </span>
@@ -2608,7 +4421,9 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           ? t.closePrice.toFixed(2)
                           : "—"}
                       </td>
-                      <td style={{ padding: "10px 8px" }}>{formatEuro(Math.abs(t.deltaValueEst))}</td>
+                      <td style={{ padding: "10px 8px" }}>
+                        {formatMoneyCompact(Math.abs(t.deltaValueEst), ccy)}
+                      </td>
                       <td style={{ padding: "10px 8px" }}>{formatPct(t.targetWeightPct)}</td>
                     </tr>
                   ))
@@ -2620,19 +4435,20 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 <button
                   type="submit"
                   style={{
-                    background: "#1d4ed8",
-                    border: "1px solid #2563eb",
-                    color: "#ffffff",
+                    background: DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+                    border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                    color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
                     borderRadius: 10,
                     padding: "8px 12px",
                     fontSize: 12,
                     fontWeight: 700,
                     cursor: "pointer",
+                    boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
                   }}
                 >
                   Aplicar exclusões
                 </button>
-                <span style={{ color: "#94a3b8", fontSize: 12 }}>
+                <span style={{ color: "#a1a1aa", fontSize: 12 }}>
                   Exclusões ativas: {excludedTickers.length}/5
                 </span>
                 <button
@@ -2640,7 +4456,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   name="clear"
                   value="1"
                   style={{
-                    background: "#111827",
+                    background: DECIDE_DASHBOARD.clientChartTooltipBg,
                     border: "1px solid #475569",
                     color: "#cbd5e1",
                     borderRadius: 10,
@@ -2667,14 +4483,15 @@ export default function ClientReportPage({ reportData }: PageProps) {
           >
             <div
               style={{
-                background: "#111827",
-                border: "1px solid #1f2937",
+                background: DECIDE_DASHBOARD.clientPanelGradient,
+                border: DECIDE_DASHBOARD.panelBorder,
                 borderRadius: 18,
                 padding: 20,
+                boxShadow: DECIDE_DASHBOARD.clientPanelShadow,
               }}
             >
               <SectionTitle>Fees estimadas</SectionTitle>
-              <p style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.55, marginTop: -6, marginBottom: 14 }}>
+              <p style={{ color: "#a1a1aa", fontSize: 13, lineHeight: 1.55, marginTop: -6, marginBottom: 14 }}>
                 Valores indicativos com base no valor da conta e no segmento. Não substituem
                 contrato ou faturação real.
               </p>
@@ -2702,7 +4519,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   <strong style={{ color: "#ffffff" }}>Performance fee (estimativa anual):</strong>{" "}
                   {formatEuro(reportData.estimatedPerformanceFeeEur)}
                 </div>
-                <div style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.55 }}>
+                <div style={{ color: "#a1a1aa", fontSize: 13, lineHeight: 1.55 }}>
                   15% sobre o excesso de retorno anual do modelo face ao benchmark (regra
                   típica; aqui aproximada ao CAGR do horizonte mostrado). Teto de exibição
                   aplicado para evitar valores fora de contexto.
@@ -2712,13 +4529,14 @@ export default function ClientReportPage({ reportData }: PageProps) {
 
             <div
               style={{
-                background: "#111827",
-                border: "1px solid #1f2937",
+                background: DECIDE_DASHBOARD.clientPanelGradient,
+                border: DECIDE_DASHBOARD.panelBorder,
                 borderRadius: 18,
                 padding: 20,
+                boxShadow: DECIDE_DASHBOARD.clientPanelShadow,
               }}
             >
-              <SectionTitle>Como interpretar este relatório</SectionTitle>
+              <SectionTitle>Como interpretar este plano</SectionTitle>
               <div style={{ color: "#cbd5e1", fontSize: 15, lineHeight: 1.7 }}>
                 A carteira atual reflete as posições reais da conta paper IBKR. A carteira
                 recomendada mostra a alocação alvo do modelo DECIDE. As alterações propostas
@@ -2727,16 +4545,19 @@ export default function ClientReportPage({ reportData }: PageProps) {
               </div>
             </div>
           </div>
+          </>
+          ) : null}
 
+          {planTab === "execucao" ? (
           <div
+            id="decisao-final"
             style={{
               marginTop: 8,
               padding: "32px 28px 36px",
               borderRadius: 20,
-              background: "linear-gradient(180deg, #0f172a 0%, #020617 100%)",
-              border: "2px solid rgba(37,99,235,0.55)",
-              boxShadow:
-                "0 0 0 1px rgba(30,64,175,0.35), 0 24px 48px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)",
+              background: DECIDE_DASHBOARD.clientPanelGradientVertical,
+              border: DECIDE_DASHBOARD.panelBorder,
+              boxShadow: DECIDE_DASHBOARD.clientPanelShadowAccent,
             }}
           >
             <div
@@ -2745,7 +4566,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 fontWeight: 800,
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
-                color: "#60a5fa",
+                color: DECIDE_DASHBOARD.accentSky,
                 marginBottom: 12,
               }}
             >
@@ -2761,7 +4582,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
               }}
             >
               {postApprovalStage === "idle"
-                ? "Confirma o plano proposto?"
+                ? "Confirme o plano proposto?"
                 : postApprovalStage === "approved"
                 ? "Plano aprovado"
                 : postApprovalStage === "ready"
@@ -2770,8 +4591,39 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 ? "A executar ordens"
                 : postApprovalStage === "failed"
                 ? "Execução falhou"
+                : postApprovalStage === "done" && !executionFullyComplete
+                ? "Execução incompleta"
                 : "Execução concluída"}
             </h2>
+            {reportData.navEur < 500 && (
+              <div
+                style={{
+                  margin: "0 0 18px 0",
+                  padding: "14px 16px",
+                  borderRadius: 14,
+                  border: "1px solid rgba(251, 191, 36, 0.42)",
+                  background: "linear-gradient(145deg, rgba(120, 53, 15, 0.35) 0%, rgba(24, 24, 27, 0.75) 100%)",
+                  color: "#fde68a",
+                  fontSize: 14,
+                  lineHeight: 1.58,
+                  maxWidth: 760,
+                }}
+              >
+                <strong style={{ color: "#fffbeb" }}>
+                  Património líquido indicado: {formatMoneyCompact(reportData.navEur, ccy)}.
+                </strong>{" "}
+                Com saldo mínimo (ex.: ~1 USD) a corretora não consegue executar o plano de ações e T-Bills — é preciso
+                capital na conta IBKR. Na conta <strong style={{ color: "#fffbeb" }}>paper</strong>, confira no IB Gateway ou em TWS /
+                Account Management se o saldo virtual está correcto (por vezes é preciso ajustar ou depositar fundos de
+                teste).
+                <br />
+                <br />
+                <strong style={{ color: "#fffbeb" }}>Onde “comprar” na DECIDE:</strong> não é no dashboard de KPIs. Abra o{" "}
+                <strong style={{ color: "#fffbeb" }}>plano</strong> (esta página), secção{" "}
+                <strong style={{ color: "#fffbeb" }}>Decisão final</strong>: primeiro <strong>Aprovar plano</strong> →
+                depois o botão verde <strong>Executar ordens</strong> (envia ordens para o IB Gateway ou TWS). Só aparece após aprovar.
+              </div>
+            )}
             {postApprovalStage === "idle" ? (
               <>
                 <p style={{ color: "#cbd5e1", fontSize: 16, lineHeight: 1.65, margin: "0 0 20px 0", maxWidth: 720 }}>
@@ -2780,15 +4632,15 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 </p>
                 <p
                   style={{
-                    color: "#94a3b8",
+                    color: "#a1a1aa",
                     fontSize: 14,
                     lineHeight: 1.6,
                     margin: "0 0 14px 0",
                     maxWidth: 720,
                     padding: "12px 14px",
-                    background: "rgba(15,23,42,0.85)",
+                    background: "rgba(24,24,27,0.85)",
                     borderRadius: 12,
-                    border: "1px solid #1e293b",
+                    border: DECIDE_DASHBOARD.panelBorder,
                   }}
                 >
                   <strong style={{ color: "#e2e8f0" }}>Compreende as alterações propostas.</strong>
@@ -2806,7 +4658,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     maxWidth: 720,
                     padding: "8px 12px",
                     borderRadius: 10,
-                    background: "rgba(30,41,59,0.55)",
+                    background: "rgba(39,39,42,0.55)",
                     border: "1px solid #334155",
                   }}
                 >
@@ -2821,15 +4673,15 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     type="button"
                     onClick={() => setPostApprovalStage("approved")}
                     style={{
-                      background: "linear-gradient(180deg, #22c55e 0%, #16a34a 100%)",
-                      border: "1px solid rgba(34,197,94,0.5)",
-                      color: "#052e16",
+                      background: DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+                      border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                      color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
                       borderRadius: 14,
                       padding: "16px 28px",
                       fontWeight: 800,
                       fontSize: 16,
                       cursor: "pointer",
-                      boxShadow: "0 8px 24px rgba(22,163,74,0.35)",
+                      boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
                     }}
                   >
                     Aprovar plano
@@ -2840,7 +4692,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                       style={{
                         background: "transparent",
                         border: "1px solid #334155",
-                        color: "#94a3b8",
+                        color: "#a1a1aa",
                         borderRadius: 12,
                         padding: "12px 18px",
                         fontWeight: 600,
@@ -2852,7 +4704,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     </button>
                   </div>
                 </div>
-                <p style={{ color: "#94a3b8", fontSize: 13, margin: "10px 0 0 0" }}>
+                <p style={{ color: "#a1a1aa", fontSize: 13, margin: "10px 0 0 0" }}>
                   Preparar execução será o próximo passo.
                 </p>
               </>
@@ -2865,7 +4717,11 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     "As ordens foram preparadas, mas ainda não foram executadas. Nada é executado automaticamente."}
                   {postApprovalStage === "executing" && executionMessage}
                   {postApprovalStage === "done" &&
-                    "Ordens enviadas com sucesso. Use «Ver carteira atualizada» para ver a sua carteira em tempo real e completar ordens parciais ou em curso, quando fizer sentido."}
+                    (executionFullyComplete
+                      ? "Todas as ordens deste envio foram executadas na totalidade pedida. Pode usar «Ver carteira atualizada» para confirmar a carteira em tempo real."
+                      : incompleteRetryFromFills.length > 0
+                      ? "A corretora aceitou o envio, mas nem todas as ordens deste lote estão concluídas. Pode usar «Completar ordens pendentes» (só quando há quantidade em falta elegível para novo envio) ou «Ver carteira atualizada»."
+                      : `A corretora aceitou o envio, mas nem todas as ordens estão concluídas. Ordens «em curso» com 0% executado não são reenviadas aqui (evita duplicar no IB Gateway ou na TWS). Linhas «Inactive» ou com erro de qualificação (ex. TBILL_PROXY/${tbillIb}) têm de ser resolvidas no IB Gateway ou na TWS. Use «Ver carteira atualizada» para sincronizar.`)}
                   {postApprovalStage === "failed" && (
                     <>
                       Não foi possível executar as ordens. Pode rever ordens e tentar novamente.
@@ -2890,7 +4746,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   )}
                 </p>
                 <div style={{ display: "grid", gap: 8, marginBottom: 18, maxWidth: 520 }}>
-                  <div style={{ color: "#86efac" }}>✔ Plano aprovado</div>
+                  <div style={{ color: DECIDE_DASHBOARD.accentSky }}>✔ Plano aprovado</div>
                   <div
                     style={{
                       color:
@@ -2900,8 +4756,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
                             postApprovalStage === "executing" ||
                             postApprovalStage === "done" ||
                             postApprovalStage === "failed"
-                          ? "#86efac"
-                          : "#64748b",
+                          ? DECIDE_DASHBOARD.accentSky
+                          : "#71717a",
                     }}
                   >
                     {postApprovalStage === "approved" ? "⏳ Ordens preparadas" : "✔ Ordens preparadas"}
@@ -2915,8 +4771,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
                             postApprovalStage === "executing" ||
                             postApprovalStage === "done" ||
                             postApprovalStage === "failed"
-                          ? "#86efac"
-                          : "#64748b",
+                          ? DECIDE_DASHBOARD.accentSky
+                          : "#71717a",
                     }}
                   >
                     {postApprovalStage === "approved" ? "⏳ Conta verificada" : "✔ Conta verificada"}
@@ -2927,49 +4783,108 @@ export default function ClientReportPage({ reportData }: PageProps) {
                         postApprovalStage === "failed"
                           ? "#fca5a5"
                           : postApprovalStage === "done"
-                          ? "#86efac"
+                          ? executionFullyComplete
+                            ? DECIDE_DASHBOARD.accentSky
+                            : "#fbbf24"
                           : postApprovalStage === "ready" || postApprovalStage === "executing"
-                          ? "#86efac"
-                          : "#64748b",
+                          ? DECIDE_DASHBOARD.accentSky
+                          : "#71717a",
                     }}
                   >
                     {postApprovalStage === "failed"
                       ? "✖ Execução falhou"
                       : postApprovalStage === "done"
-                      ? "✔ Execução concluída"
+                      ? executionFullyComplete
+                        ? "✔ Execução concluída"
+                        : "⚠ Execução incompleta"
                       : "✔ Pronto para execução"}
                   </div>
                 </div>
-                {(postApprovalStage === "ready" || postApprovalStage === "done") && (
-                  <div style={{ color: "#94a3b8", fontSize: 14, marginBottom: 18 }}>
-                    Ordens preparadas: <strong style={{ color: "#ffffff" }}>{proposedTradesFiltered.length}</strong> ·
-                    Valor total estimado: <strong style={{ color: "#ffffff" }}> {formatEuro(tradeVolumeAbsEur)}</strong> ·
-                    Impacto na carteira: <strong style={{ color: "#ffffff" }}> {formatPct(turnoverPctVisible)}</strong> (inclui reestruturação inicial)
+                {postApprovalStage === "ready" && (
+                  <div style={{ color: "#a1a1aa", fontSize: 14, marginBottom: 18 }}>
+                    Ordens preparadas: <strong style={{ color: "#ffffff" }}>{planTradeCount}</strong> · Rotação estimada
+                    (maior perna): <strong style={{ color: "#ffffff" }}> {formatMoneyCompact(planTurnoverNotional, ccy)}</strong>{" "}
+                    · Impacto na carteira: <strong style={{ color: "#ffffff" }}> {formatPct(turnoverPctVisible)}</strong> (inclui
+                    reestruturação inicial)
                   </div>
                 )}
-                {postApprovalStage === "done" && execSummary && (
-                  <div style={{ color: "#94a3b8", fontSize: 14, marginBottom: 18 }}>
-                    <div style={{ color: "#cbd5e1", fontWeight: 700, marginBottom: 8 }}>
-                      Execução desta ação
-                      {lastExecBatchResidual ? (
-                        <span style={{ color: "#94a3b8", fontWeight: 600 }}> (residual)</span>
-                      ) : null}
-                    </div>
+                {postApprovalStage === "done" && (
+                  <div style={{ color: "#a1a1aa", fontSize: 14, marginBottom: 18 }}>
                     <div>
-                      Executadas: <strong style={{ color: "#86efac" }}>{execSummary.filled}</strong> · Parciais:{" "}
-                      <strong style={{ color: "#fbbf24" }}>{execSummary.partial}</strong> · Em curso:{" "}
-                      <strong style={{ color: "#93c5fd" }}>{execSummary.submitted}</strong> · Falhadas:{" "}
-                      <strong style={{ color: "#fca5a5" }}>{execSummary.failed}</strong> · Total:{" "}
-                      <strong style={{ color: "#ffffff" }}>{execSummary.total}</strong>
+                      Plano: <strong style={{ color: "#ffffff" }}>{planTradeCount}</strong> ordens · Rotação
+                      estimada (maior perna): <strong style={{ color: "#ffffff" }}>{formatMoneyCompact(planTurnoverNotional, ccy)}</strong>{" "}
+                      · Impacto: <strong style={{ color: "#ffffff" }}>{formatPct(turnoverPctVisible)}</strong>
                     </div>
-                    {lastExecBatchResidual ? (
-                      <p style={{ margin: "10px 0 0 0", fontSize: 12, color: "#64748b", lineHeight: 1.5, maxWidth: 560 }}>
-                        As restantes ordens do plano já foram executadas anteriormente.
+                    {execSummary ? (
+                      <div style={{ marginTop: 8 }}>
+                        Resposta da corretora neste envio:{" "}
+                        <strong style={{ color: "#ffffff" }}>{execResponseLineCount}</strong> linha
+                        {execResponseLineCount === 1 ? "" : "s"} (tabela abaixo)
+                        {lastExecBatchResidual ? (
+                          <span style={{ color: "#71717a" }}> — apenas ordens em falta nesta tentativa.</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {showPlanVsExecResponseMismatch ? (
+                      <p
+                        style={{
+                          margin: "10px 0 0 0",
+                          fontSize: 13,
+                          color: "#fcd34d",
+                          lineHeight: 1.55,
+                          maxWidth: 720,
+                        }}
+                      >
+                        O número de linhas acima não coincide com o plano completo: a tabela mostra só o que a API da
+                        corretora devolveu para <strong style={{ color: "#fef3c7" }}>este envio</strong>, não a lista
+                        inteira das {planTradeCount} ordens do plano. Ordens «em curso» ou inativas no IB Gateway ou na TWS podem
+                        aparecer aqui mesmo quando o resto do lote já foi tratado antes ou fica pendente.{" "}
+                        <strong style={{ color: "#e7e5e4" }}>Cancelar na TWS não actualiza esta página</strong> — use
+                        «Limpar tabela» abaixo se já tratou as ordens na corretora.
                       </p>
                     ) : null}
                   </div>
                 )}
-                {postApprovalStage === "done" && planExecutionAlignmentPct != null && (
+                {postApprovalStage === "done" && execSummary && (
+                  <div style={{ color: "#a1a1aa", fontSize: 14, marginBottom: 18 }}>
+                    <div style={{ color: "#cbd5e1", fontWeight: 700, marginBottom: 8 }}>
+                      Execução desta ação
+                      {lastExecBatchResidual ? (
+                        <span style={{ color: "#a1a1aa", fontWeight: 600 }}> (residual)</span>
+                      ) : null}
+                    </div>
+                    <div>
+                      Executadas: <strong style={{ color: DECIDE_DASHBOARD.accentSky }}>{execSummary.filled}</strong> · Parciais:{" "}
+                      <strong style={{ color: "#fbbf24" }}>{execSummary.partial}</strong> · Em curso:{" "}
+                      <strong style={{ color: DECIDE_DASHBOARD.accentSky }}>{execSummary.submitted}</strong> · Falhadas:{" "}
+                      <strong style={{ color: "#fca5a5" }}>{execSummary.failed}</strong> · Total:{" "}
+                      <strong style={{ color: "#ffffff" }}>{execSummary.total}</strong>
+                    </div>
+                    {lastExecBatchResidual ? (
+                      <p style={{ margin: "10px 0 0 0", fontSize: 12, color: "#71717a", lineHeight: 1.5, maxWidth: 560 }}>
+                        As restantes ordens do plano já foram executadas anteriormente.
+                      </p>
+                    ) : null}
+                    {cashSleeveOrdersInProgress ? (
+                      <p
+                        style={{
+                          margin: "10px 0 0 0",
+                          fontSize: 13,
+                          color: "#fcd34d",
+                          lineHeight: 1.55,
+                          maxWidth: 680,
+                        }}
+                      >
+                        Ordem(ns) do <strong style={{ color: "#fef3c7" }}>sleeve caixa / T-Bills</strong> ({tbillIb}){" "}
+                        <strong style={{ color: "#fef3c7" }}>em curso</strong>: na TWS pode aparecer como «Submetida» sem
+                        parecer «executada» — é habitual até ao horário de negociação do instrumento (ex. UCITS em Xetra)
+                        ou enquanto a corretora não preenche. A linha na tabela abaixo já está identificada como sleeve do
+                        plano.
+                      </p>
+                    ) : null}
+                  </div>
+                )}
+                {postApprovalStage === "done" && portfolioVsPlanAlignmentPct != null && (
                   <div
                     style={{
                       color: "#cbd5e1",
@@ -2978,18 +4893,47 @@ export default function ClientReportPage({ reportData }: PageProps) {
                       marginBottom: 14,
                     }}
                   >
-                    Carteira alinhada com o plano: ~{planExecutionAlignmentPct}%
-                    <span style={{ display: "block", fontWeight: 400, color: "#64748b", fontSize: 12, marginTop: 4 }}>
-                      Os valores podem variar ligeiramente face ao plano.
+                    Carteira próxima da alocação do plano: ~{portfolioVsPlanAlignmentPct}%
+                    <span style={{ display: "block", fontWeight: 400, color: "#71717a", fontSize: 12, marginTop: 4 }}>
+                      Compara os pesos da secção «Carteira actual» (IBKR ou último snapshot) aos pesos-alvo do plano, só
+                      para os tickers do plano. Não é o progresso das quantidades na tabela de execução acima.
+                      {lastExecBatchResidual && execTableFillProgressPct != null ? (
+                        <>
+                          {" "}
+                          Envio residual nesta página: ~{execTableFillProgressPct}% do pedido nas linhas mostradas.
+                        </>
+                      ) : null}
                     </span>
                   </div>
                 )}
+                {postApprovalStage === "done" &&
+                  portfolioVsPlanAlignmentPct == null &&
+                  execTableFillProgressPct != null &&
+                  execFills.length > 0 && (
+                    <div
+                      style={{
+                        color: "#cbd5e1",
+                        fontSize: 14,
+                        fontWeight: 600,
+                        marginBottom: 14,
+                      }}
+                    >
+                      Progresso das ordens nesta tabela: ~{execTableFillProgressPct}%
+                      <span style={{ display: "block", fontWeight: 400, color: "#71717a", fontSize: 12, marginTop: 4 }}>
+                        {lastExecBatchResidual
+                          ? "Com envio residual, este valor reflecte só as linhas visíveis — use «Ver carteira actualizada» para ver pesos reais."
+                          : showPlanVsExecResponseMismatch
+                          ? `A tabela pode ter menos linhas que as ${planTradeCount} ordens do plano completo.`
+                          : "Percentagem = quantidade executada / pedida nas linhas deste envio."}
+                      </span>
+                    </div>
+                  )}
                 {(postApprovalStage === "done" || postApprovalStage === "failed") &&
                   execFills.length > 0 && (
                     <div
                       style={{
                         marginBottom: 18,
-                        border: "1px solid #1e293b",
+                        border: DECIDE_DASHBOARD.panelBorder,
                         borderRadius: 12,
                         overflow: "hidden",
                         maxWidth: 720,
@@ -2998,60 +4942,253 @@ export default function ClientReportPage({ reportData }: PageProps) {
                       <div
                         style={{
                           padding: "10px 14px",
-                          background: "#0f172a",
+                          background: "#18181b",
                           color: "#cbd5e1",
                           fontSize: 13,
                           fontWeight: 700,
                         }}
                       >
-                        {lastExecBatchResidual ? "Detalhe desta execução" : "Detalhe das ordens executadas"}
+                        {lastExecBatchResidual
+                          ? "Detalhe desta execução"
+                          : showPlanVsExecResponseMismatch
+                          ? "Resposta da corretora (este envio — não é o plano completo)"
+                          : "Detalhe das ordens deste envio"}
                       </div>
                       <div style={{ overflowX: "auto" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                           <thead>
-                            <tr style={{ color: "#94a3b8", textAlign: "left" }}>
-                              <th style={{ padding: "8px 12px", borderBottom: "1px solid #1e293b" }}>Título</th>
-                              <th style={{ padding: "8px 12px", borderBottom: "1px solid #1e293b" }}>Lado</th>
-                              <th style={{ padding: "8px 12px", borderBottom: "1px solid #1e293b" }}>Qtd pedida</th>
-                              <th style={{ padding: "8px 12px", borderBottom: "1px solid #1e293b" }}>Executada</th>
-                              <th style={{ padding: "8px 12px", borderBottom: "1px solid #1e293b" }}>Preço médio</th>
-                              <th style={{ padding: "8px 12px", borderBottom: "1px solid #1e293b" }}>Estado</th>
+                            <tr style={{ color: "#a1a1aa", textAlign: "left" }}>
+                              <th style={{ padding: "8px 12px", borderBottom: DECIDE_DASHBOARD.panelBorder }}>Título</th>
+                              <th style={{ padding: "8px 12px", borderBottom: DECIDE_DASHBOARD.panelBorder }}>Lado</th>
+                              <th style={{ padding: "8px 12px", borderBottom: DECIDE_DASHBOARD.panelBorder }}>Qtd pedida</th>
+                              <th style={{ padding: "8px 12px", borderBottom: DECIDE_DASHBOARD.panelBorder }}>Executada</th>
+                              <th style={{ padding: "8px 12px", borderBottom: DECIDE_DASHBOARD.panelBorder }}>Preço médio</th>
+                              <th style={{ padding: "8px 12px", borderBottom: DECIDE_DASHBOARD.panelBorder }}>Estado</th>
                             </tr>
                           </thead>
                           <tbody>
                             {execFills.map((f, i) => (
                               <tr key={`${f.ticker}-${f.action}-${i}`} style={{ color: "#e2e8f0" }}>
-                                <td style={{ padding: "8px 12px", borderBottom: "1px solid #1e293b", verticalAlign: "top" }}>
-                                  <div style={{ fontWeight: 600 }}>{f.ticker}</div>
+                                <td style={{ padding: "8px 12px", borderBottom: DECIDE_DASHBOARD.panelBorder, verticalAlign: "top" }}>
+                                  <div style={{ fontWeight: 600 }}>
+                                    {(() => {
+                                      const tick = String(f.ticker || "");
+                                      const href = reportPlanTickerLinks(tick);
+                                      if (!href) return displayTickerLabel(f.ticker);
+                                      return (
+                                        <span
+                                          style={{
+                                            display: "inline-flex",
+                                            gap: 6,
+                                            alignItems: "center",
+                                            flexWrap: "wrap",
+                                          }}
+                                        >
+                                          <a
+                                            href={href.yf}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            style={{
+                                              color: DECIDE_DASHBOARD.accentSky,
+                                              textDecoration: "none",
+                                            }}
+                                          >
+                                            {displayTickerLabel(f.ticker)}
+                                          </a>
+                                          <a
+                                            href={href.ib}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            style={{ color: "#71717a", textDecoration: "none", fontSize: 11 }}
+                                          >
+                                            IB
+                                          </a>
+                                        </span>
+                                      );
+                                    })()}
+                                  </div>
+                                  {isDecideCashSleeveBrokerSymbol(String(f.ticker || "")) ? (
+                                    <div style={{ color: "#c4b5fd", fontSize: 11, marginTop: 3, fontWeight: 600 }}>
+                                      {cashSleevePlanUiSubtitle()}
+                                    </div>
+                                  ) : null}
                                   {f.executed_as && f.executed_as !== f.ticker ? (
-                                    <div style={{ color: "#64748b", fontSize: 11, marginTop: 2 }}>
+                                    <div style={{ color: "#71717a", fontSize: 11, marginTop: 2 }}>
                                       Executado como {f.executed_as}
                                     </div>
                                   ) : null}
                                 </td>
-                                <td style={{ padding: "8px 12px", borderBottom: "1px solid #1e293b" }}>
+                                <td style={{ padding: "8px 12px", borderBottom: DECIDE_DASHBOARD.panelBorder }}>
                                   {String(f.action || "—")}
                                 </td>
-                                <td style={{ padding: "8px 12px", borderBottom: "1px solid #1e293b" }}>
+                                <td style={{ padding: "8px 12px", borderBottom: DECIDE_DASHBOARD.panelBorder }}>
                                   {formatQty(Number(f.requested_qty || 0))}
                                 </td>
-                                <td style={{ padding: "8px 12px", borderBottom: "1px solid #1e293b" }}>
+                                <td style={{ padding: "8px 12px", borderBottom: DECIDE_DASHBOARD.panelBorder }}>
                                   {formatQty(Number(f.filled || 0))}
                                 </td>
-                                <td style={{ padding: "8px 12px", borderBottom: "1px solid #1e293b" }}>
-                                  {formatUsdPrice(f.avg_fill_price)}
+                                <td style={{ padding: "8px 12px", borderBottom: DECIDE_DASHBOARD.panelBorder }}>
+                                  {String(f.ticker).toUpperCase() === "EURUSD"
+                                    ? formatEurUsdRate(f.avg_fill_price)
+                                    : formatUsdPrice(f.avg_fill_price)}
                                 </td>
-                                <td style={{ padding: "8px 12px", borderBottom: "1px solid #1e293b" }}>
-                                  {execStatusDisplay(f)}
+                                <td style={{ padding: "8px 12px", borderBottom: DECIDE_DASHBOARD.panelBorder }}>
+                                  <div>{execStatusDisplay(f)}</div>
+                                  {typeof f.message === "string" && f.message.trim() ? (
+                                    <div
+                                      style={{
+                                        marginTop: 6,
+                                        fontSize: 11,
+                                        lineHeight: 1.4,
+                                        color: "#71717a",
+                                        maxWidth: 280,
+                                      }}
+                                    >
+                                      {f.message}
+                                    </div>
+                                  ) : null}
                                 </td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
                       </div>
-                      <p style={{ margin: 0, padding: "8px 14px 12px", color: "#64748b", fontSize: 11 }}>
-                        Preços em USD (mercado EUA). Algumas ordens ainda estão em execução — o preço final pode variar.
+                      <p style={{ margin: 0, padding: "8px 14px 12px", color: "#71717a", fontSize: 11, lineHeight: 1.45 }}>
+                        Preços: mercado EUA em USD; UCITS / ETF em EUR quando aplicável. Esta lista reflecte o último envio a
+                        partir do DECIDE; <strong style={{ color: "#a1a1aa" }}>«Cancelar ordens não executadas (paper)»</strong>{" "}
+                        actualiza estados aqui com a resposta da IB. Cancelamentos ou conclusões feitos{" "}
+                        <strong>só</strong> na TWS não actualizam a tabela — use «Limpar tabela» abaixo se quiser repor a vista.
                       </p>
+                      <p style={{ margin: 0, padding: "0 14px 12px", color: "#71717a", fontSize: 11, lineHeight: 1.45 }}>
+                        <strong style={{ color: "#a1a1aa" }}>TWS — «Transmitir» vs «Cancelar»:</strong>{" "}
+                        <strong style={{ color: "#cbd5e1" }}>Transmitir</strong> só aparece quando a ordem ainda{" "}
+                        <em>não</em> foi enviada ao sistema da corretora (rascunho / pendente de envio). Se vê{" "}
+                        <strong style={{ color: "#cbd5e1" }}>0/158</strong> e <strong>só «Cancelar»</strong>, a ordem{" "}
+                        <strong>já está activa</strong> na IB (submetida / à espera de execução) — não é um bug: a TWS não
+                        oferece «reenviar» para não duplicar. Pode estar à espera de{" "}
+                        <strong style={{ color: "#a1a1aa" }}>horário de mercado</strong> (ex.: UCITS CSH2 em IBIS/Xetra),{" "}
+                        liquidez, ou confirmação na janela de mensagens. O DECIDE também{" "}
+                        <strong>não</strong> volta a enviar linhas «em curso» com 0% executado por essa mesma razão; se
+                        cancelar na TWS, pode usar <strong style={{ color: "#a1a1aa" }}>«Repetir falhadas ou inactivas»</strong>{" "}
+                        ou um novo envio do plano. Linhas <strong>EUR.USD</strong> com ícone de aviso são frequentemente o{" "}
+                        hedge cambial associado — confira o texto ao passar o rato ou em Mensagens.
+                      </p>
+                      {postApprovalStage === "done" ? (
+                        <p style={{ margin: 0, padding: "0 14px 12px", color: "#71717a", fontSize: 11, lineHeight: 1.45 }}>
+                          <strong style={{ color: "#a1a1aa" }}>EUR/USD (hedge):</strong> num <strong>envio completo</strong> do
+                          plano, o pedido inclui sempre uma linha <strong>EURUSD</strong> na resposta (executada, em curso ou
+                          «não enviada» se o montante USD estimado for &lt; ~500). Envios residuais (ex.: completar uma
+                          falhada) não repetem o bloco FX aqui.{" "}
+                          <strong style={{ color: "#a1a1aa" }}>TWS / paper:</strong> o IBKR mostra{" "}
+                          <strong>vários</strong> avisos diferentes sobre Forex (alavancagem, confirmação de leitura, política
+                          de saldos em moeda, etc.): «não mostrar de novo» costuma aplicar-se{" "}
+                          <em>só àquele</em> texto — outro diálogo pode voltar a aparecer. Se surgir{" "}
+                          <strong>«Ordem rejeitada»</strong> em inglês sobre saldo negativo em moeda ou CFD, é uma{" "}
+                          <strong>regra da conta</strong> (paper/live), não do DECIDE: spot FX pode ser recusado até haver
+                          margem/USD compatível; confirme na TWS (Ordens / mensagens) e em Conta → permissões de trading. O
+                          IDEALPRO aparece no fim do lote — filtre <strong>Forex</strong> ou pesquise <strong>EUR.USD</strong> em{" "}
+                          <strong>Atividade → Ordens</strong> (TWS clássica). O módulo <strong>FXTrader</strong> pode mostrar
+                          «sem ordens» mesmo quando a API enviou FX — confirme sempre na grelha global de ordens e no registo
+                          de execução / mensagens; se a IB rejeitar o spot, não haverá linha activa em lado nenhum.
+                        </p>
+                      ) : null}
+                      <div style={{ padding: "0 14px 14px" }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                          <button
+                            type="button"
+                            onClick={() => void syncExecFillsFromIb()}
+                            disabled={syncExecBusy || cancelOpenBusy || execFills.length === 0}
+                            aria-busy={syncExecBusy}
+                            title={
+                              cancelOpenBusy
+                                ? "Aguarde a operação de cancelamento a terminar."
+                                : execFills.length === 0
+                                ? "Só disponível quando há linhas na tabela de resposta da corretora."
+                                : "Lê ordens abertas e execuções na IBKR (via backend FastAPI)."
+                            }
+                            style={{
+                              padding: "8px 14px",
+                              borderRadius: 10,
+                              fontSize: 13,
+                              fontWeight: 600,
+                              cursor:
+                                syncExecBusy || cancelOpenBusy || execFills.length === 0 ? "not-allowed" : "pointer",
+                              border: "1px solid rgba(94, 234, 212, 0.45)",
+                              background: syncExecBusy ? "rgba(6, 78, 74, 0.35)" : "rgba(6, 78, 74, 0.55)",
+                              color: "#ccfbf1",
+                              opacity: execFills.length === 0 ? 0.5 : 1,
+                            }}
+                          >
+                            {syncExecBusy ? (
+                              <>
+                                A sincronizar com a IBKR
+                                <InlineLoadingDots />
+                              </>
+                            ) : (
+                              "Actualizar estado (IBKR)"
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => clearExecutionRecordFromBroker()}
+                            style={{
+                              padding: "8px 14px",
+                              borderRadius: 10,
+                              fontSize: 13,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              border: "1px solid rgba(148, 163, 184, 0.45)",
+                              background: "rgba(39, 39, 42, 0.9)",
+                              color: "#e2e8f0",
+                            }}
+                          >
+                            Limpar tabela (já cancelei ou concluí na TWS)
+                          </button>
+                        </div>
+                        {syncExecError ? (
+                          <p
+                            role="alert"
+                            style={{
+                              margin: "10px 0 0",
+                              padding: "10px 12px",
+                              borderRadius: 10,
+                              fontSize: 12,
+                              lineHeight: 1.5,
+                              color: "#fecaca",
+                              background: "rgba(127, 29, 29, 0.35)",
+                              border: "1px solid rgba(248, 113, 113, 0.4)",
+                              maxWidth: 640,
+                            }}
+                          >
+                            {syncExecError}
+                          </p>
+                        ) : null}
+                        {syncExecNote && !syncExecError ? (
+                          <p
+                            style={{
+                              margin: "10px 0 0",
+                              padding: "8px 12px",
+                              borderRadius: 10,
+                              fontSize: 12,
+                              lineHeight: 1.5,
+                              color: "#a1a1aa",
+                              background: "rgba(39, 39, 42, 0.75)",
+                              border: "1px solid rgba(113, 113, 122, 0.45)",
+                              maxWidth: 640,
+                            }}
+                          >
+                            {syncExecNote}
+                          </p>
+                        ) : null}
+                        <p style={{ margin: "10px 0 0 0", fontSize: 11, color: "#71717a", lineHeight: 1.45, maxWidth: 620 }}>
+                          <strong style={{ color: "#94a3b8" }}>Actualizar estado:</strong> lê ordens abertas e execuções
+                          recentes na conta paper — útil quando já executou na TWS mas a tabela ainda mostra «Em curso».
+                          <span style={{ color: "#64748b" }}> </span>
+                          <strong style={{ color: "#94a3b8" }}>Limpar tabela:</strong> repõe o passo «Decisão final» para{" "}
+                          <strong style={{ color: "#a1a1aa" }}>pronto para execução</strong> e remove as linhas. Não envia
+                          ordens nem altera a TWS.
+                        </p>
+                      </div>
                     </div>
                   )}
                 {(postApprovalStage === "done" || postApprovalStage === "failed") &&
@@ -3061,12 +5198,12 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     return (
                       st.includes("error") ||
                       st.includes("rejected") ||
-                      st.includes("cancel") ||
+                      ibkrStatusIsTerminalCancelled(f.status || "") ||
                       st.includes("inactive") ||
                       st.includes("not_qualified")
                     );
                   }) && (
-                    <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 14 }}>
+                    <div style={{ color: "#a1a1aa", fontSize: 13, marginBottom: 14 }}>
                       {lastExecBatchResidual
                         ? "Detalhe desta execução — alertas: "
                         : "Detalhe das ordens executadas — alertas: "}
@@ -3076,7 +5213,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           return (
                             st.includes("error") ||
                             st.includes("rejected") ||
-                            st.includes("cancel") ||
+                            ibkrStatusIsTerminalCancelled(f.status || "") ||
                             st.includes("inactive") ||
                             st.includes("not_qualified")
                           );
@@ -3090,24 +5227,81 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   <p style={{ color: "#cbd5e1", fontSize: 14, margin: "0 0 14px 0", maxWidth: 760 }}>
                     As ordens serão enviadas para a corretora apenas após confirmação. Com margem elevada, o envio faz-se
                     por fases: <strong style={{ color: "#e2e8f0" }}>vendas (SELL) primeiro</strong>, breve pausa, depois{" "}
-                    <strong style={{ color: "#e2e8f0" }}>compras (BUY)</strong>, para a TWS aceitar o lote.
+                    <strong style={{ color: "#e2e8f0" }}>compras (BUY)</strong>, para o IB Gateway ou a TWS aceitar o lote. Linhas «
+                    <strong style={{ color: "#e2e8f0" }}>TBILL_PROXY</strong>» no plano são enviadas como ETF{" "}
+                    <strong style={{ color: "#e2e8f0" }}>{tbillIb}</strong> (sleeve T-Bills — contrato negociável na IBKR).
                   </p>
                 )}
-                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
                   {postApprovalStage === "ready" && (
                     <>
+                      <div
+                        style={{
+                          flexBasis: "100%",
+                          marginBottom: 4,
+                          maxWidth: 760,
+                          padding: "12px 14px",
+                          borderRadius: 12,
+                          border: DECIDE_DASHBOARD.flowTealCardBorder,
+                          background: "rgba(6, 78, 74, 0.26)",
+                        }}
+                      >
+                        <label
+                          style={{
+                            display: "flex",
+                            gap: 12,
+                            alignItems: "flex-start",
+                            cursor: "pointer",
+                            fontSize: 13,
+                            color: "#cbd5e1",
+                            lineHeight: 1.55,
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={coordinateFxWithEquity}
+                            onChange={(e) => setCoordinateFxWithEquity(e.target.checked)}
+                            style={{ marginTop: 4, width: 18, height: 18, flexShrink: 0 }}
+                          />
+                          <span>
+                            <strong style={{ color: "#ecfdf5" }}>Cobertura FX no mesmo envio:</strong> depois das ordens de
+                            acções e do proxy de T-Bills (<strong style={{ color: "#e2e8f0" }}>TBILL_PROXY</strong> → ETF),
+                            o backend pode submeter uma ordem à mercado em <strong style={{ color: DECIDE_DASHBOARD.accentSky }}>EUR.USD</strong>{" "}
+                            (comprar EUR, vender USD no IDEALPRO) com montante derivado da soma das{" "}
+                            <strong>compras</strong> em USD (qty × preço), incluindo esse sleeve. Se tiver{" "}
+                            <strong style={{ color: "#e2e8f0" }}>preferência de hedge EUR/USD</strong> no dashboard (50% ou
+                            100%), essa percentagem aplica-se ao montante das compras e a opção fica normalmente activada
+                            aqui. Outros pares no onboarding afectam só os KPIs ilustrativos; neste envio a ordem na IBKR é
+                            sempre <strong style={{ color: "#e2e8f0" }}>EUR.USD</strong>. Requer permissões FX e mercado
+                            aberto; mín. ~500 USD para a corretora aceitar a ordem. No <strong>envio completo</strong>, a
+                            linha EURUSD aparece na mesma na tabela (se abaixo do mínimo, verá o motivo «não enviada»).{" "}
+                            {fxCoordinatedUsdEstimate >= 500 ? (
+                              <span style={{ color: DECIDE_DASHBOARD.accentSky }}>
+                                Estimativa a cobrir: ~{formatUsdPrice(fxCoordinatedUsdEstimate)}.
+                              </span>
+                            ) : (
+                              <span style={{ color: "#fbbf24" }}>
+                                Estimativa &lt; 500 USD — a linha EURUSD aparece na mesma; a ordem pode não ser submetida na
+                                IBKR até o montante passar o mínimo.
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      </div>
                       <button
                         type="button"
                         onClick={() => void executeOrdersNow()}
+                        title="O envio fala com o IB Gateway ou a TWS e pode demorar até cerca de 2 minutos — aguarde a resposta."
                         style={{
-                          background: "linear-gradient(180deg, #22c55e 0%, #16a34a 100%)",
-                          border: "1px solid rgba(34,197,94,0.5)",
-                          color: "#052e16",
+                          background: DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+                          border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                          color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
                           borderRadius: 14,
                           padding: "14px 22px",
                           fontWeight: 800,
                           fontSize: 15,
                           cursor: "pointer",
+                          boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
                         }}
                       >
                         Executar ordens
@@ -3131,22 +5325,72 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     </>
                   )}
                   {postApprovalStage === "executing" && (
-                    <button
-                      type="button"
-                      style={{
-                        background: "transparent",
-                        border: "1px solid #334155",
-                        color: "#94a3b8",
-                        borderRadius: 12,
-                        padding: "12px 18px",
-                        fontWeight: 600,
-                        fontSize: 14,
-                        cursor: "not-allowed",
-                      }}
-                      disabled
-                    >
-                      A processar...
-                    </button>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-start" }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                        <button
+                          type="button"
+                          style={{
+                            background: "transparent",
+                            border: "1px solid #334155",
+                            color: "#a1a1aa",
+                            borderRadius: 12,
+                            padding: "12px 18px",
+                            fontWeight: 600,
+                            fontSize: 14,
+                            cursor: "not-allowed",
+                          }}
+                          disabled
+                          aria-busy
+                        >
+                          A processar
+                          <InlineLoadingDots />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => cancelExecuteOrdersSend()}
+                          style={{
+                            background: "rgba(127,29,29,0.45)",
+                            border: "1px solid rgba(248,113,113,0.55)",
+                            color: "#fecaca",
+                            borderRadius: 12,
+                            padding: "12px 18px",
+                            fontWeight: 700,
+                            fontSize: 14,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Cancelar envio
+                        </button>
+                        <Link
+                          href="/client-dashboard"
+                          style={{
+                            textDecoration: "none",
+                            border: "1px solid #475569",
+                            color: "#cbd5e1",
+                            borderRadius: 12,
+                            padding: "12px 18px",
+                            fontWeight: 600,
+                            fontSize: 14,
+                          }}
+                        >
+                          Ir ao dashboard
+                        </Link>
+                      </div>
+                      <p
+                        style={{
+                          margin: 0,
+                          maxWidth: 560,
+                          fontSize: 12,
+                          lineHeight: 1.5,
+                          color: "#71717a",
+                        }}
+                      >
+                        «Cancelar envio» interrompe o pedido nesta página (o backend pode ainda estar a falar com o IB Gateway ou a TWS —
+                        confirme no IB Gateway ou na TWS). O pedido corta sozinho ao fim de ~2 min se não houver resposta. Confirme IB Gateway ou TWS
+                        (paper, 7497) e <strong style={{ color: "#a1a1aa" }}>uvicorn</strong> na porta de
+                        BACKEND_URL.
+                      </p>
+                    </div>
                   )}
                   {postApprovalStage === "failed" && (
                     <>
@@ -3168,37 +5412,30 @@ export default function ClientReportPage({ reportData }: PageProps) {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          const retry = execFills
-                            .filter((f) => {
-                              const st = String(f.status || "").toLowerCase();
-                              const needs =
-                                st.includes("submitted") ||
-                                st.includes("presubmitted") ||
-                                st.includes("pending") ||
-                                st.includes("partial") ||
-                                st.includes("error") ||
-                                st.includes("rejected") ||
-                                st.includes("inactive") ||
-                                st.includes("not_qualified");
-                              return needs && remainingOrderQty(f) > 0;
-                            })
-                            .map((f) => ({
-                              ticker: f.ticker,
-                              side: String(f.action || "BUY").toUpperCase(),
-                              qty: Math.max(1, remainingOrderQty(f)),
-                            }));
-                          executeOrdersNow(retry);
-                        }}
+                        onClick={() => executeOrdersNow(retryFailedOrInactiveFromFills)}
+                        disabled={retryFailedOrInactiveFromFills.length === 0}
                         style={{
-                          background: "#1e3a8a",
-                          border: "1px solid #2563eb",
-                          color: "#ffffff",
+                          background:
+                            retryFailedOrInactiveFromFills.length === 0
+                              ? "#334155"
+                              : DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+                          border:
+                            retryFailedOrInactiveFromFills.length === 0
+                              ? "1px solid #475569"
+                              : DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                          color:
+                            retryFailedOrInactiveFromFills.length === 0
+                              ? "#e2e8f0"
+                              : DECIDE_DASHBOARD.kpiMenuMainButtonColor,
                           borderRadius: 12,
                           padding: "12px 18px",
                           fontWeight: 700,
                           fontSize: 14,
-                          cursor: "pointer",
+                          cursor: retryFailedOrInactiveFromFills.length === 0 ? "not-allowed" : "pointer",
+                          boxShadow:
+                            retryFailedOrInactiveFromFills.length === 0
+                              ? undefined
+                              : DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
                         }}
                       >
                         Executar falhadas novamente
@@ -3221,46 +5458,139 @@ export default function ClientReportPage({ reportData }: PageProps) {
                       </button>
                     </>
                   )}
+                  {postApprovalStage === "done" && liveSnapshotError ? (
+                    <p
+                      style={{
+                        margin: "0 0 14px 0",
+                        padding: "12px 14px",
+                        fontSize: 13,
+                        color: "#fecaca",
+                        lineHeight: 1.5,
+                        maxWidth: 720,
+                        borderRadius: 12,
+                        border: "1px solid rgba(248,113,113,0.45)",
+                        background: "rgba(127,29,29,0.35)",
+                      }}
+                    >
+                      <strong style={{ color: "#ffffff" }}>Carteira IBKR:</strong> {liveSnapshotError}
+                    </p>
+                  ) : null}
                   {postApprovalStage === "done" && (
                     <>
                       <button
                         type="button"
                         disabled={portfolioRefreshing}
-                        onClick={() => refreshIbkrPositionsFromIb()}
+                        onClick={() => {
+                          void refreshIbkrPositionsFromIb();
+                          scrollToCarteiraAtual();
+                        }}
                         style={{
-                          background: portfolioRefreshing ? "#334155" : "#2563eb",
-                          border: `1px solid ${portfolioRefreshing ? "#475569" : "#1d4ed8"}`,
-                          color: "#ffffff",
+                          background: portfolioRefreshing ? "#334155" : DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+                          border: portfolioRefreshing
+                            ? "1px solid #475569"
+                            : DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                          color: portfolioRefreshing ? "#e2e8f0" : DECIDE_DASHBOARD.kpiMenuMainButtonColor,
                           borderRadius: 12,
                           padding: "12px 18px",
                           fontWeight: 700,
                           fontSize: 14,
                           cursor: portfolioRefreshing ? "wait" : "pointer",
+                          boxShadow: portfolioRefreshing ? undefined : DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
                         }}
                       >
-                        {portfolioRefreshing ? "A atualizar a carteira…" : "Ver carteira atualizada"}
+                        {portfolioRefreshing ? (
+                          <>
+                            A atualizar a carteira
+                            <InlineLoadingDots />
+                          </>
+                        ) : (
+                          "Ver carteira atualizada"
+                        )}
                       </button>
                       {incompleteRetryFromFills.length > 0 && (
                         <button
                           type="button"
-                          disabled={portfolioRefreshing}
-                          onClick={() => executeOrdersNow(incompleteRetryFromFills)}
+                          disabled={portfolioRefreshing || syncExecBusy || completePendingBusy}
+                          onClick={() => void handleCompletePendingOrders()}
                           style={{
-                            background: portfolioRefreshing ? "#334155" : "#1e3a8a",
-                            border: `1px solid ${portfolioRefreshing ? "#475569" : "#2563eb"}`,
-                            color: "#ffffff",
+                            background:
+                              portfolioRefreshing || syncExecBusy || completePendingBusy
+                                ? "#334155"
+                                : DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+                            border:
+                              portfolioRefreshing || syncExecBusy || completePendingBusy
+                                ? "1px solid #475569"
+                                : DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                            color:
+                              portfolioRefreshing || syncExecBusy || completePendingBusy
+                                ? "#e2e8f0"
+                                : DECIDE_DASHBOARD.kpiMenuMainButtonColor,
+                            borderRadius: 12,
+                            padding: "12px 18px",
+                            fontWeight: 700,
+                            fontSize: 14,
+                            cursor:
+                              portfolioRefreshing || syncExecBusy || completePendingBusy
+                                ? "not-allowed"
+                                : "pointer",
+                            boxShadow:
+                              portfolioRefreshing || syncExecBusy || completePendingBusy
+                                ? undefined
+                                : DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
+                          }}
+                        >
+                          {completePendingBusy || syncExecBusy ? (
+                            <>
+                              A sincronizar com a IBKR
+                              <InlineLoadingDots />
+                            </>
+                          ) : (
+                            `Completar ordens pendentes (${incompleteRetryFromFills.length})`
+                          )}
+                        </button>
+                      )}
+                      {!executionFullyComplete && retryFailedOrInactiveFromFills.length > 0 && (
+                        <button
+                          type="button"
+                          disabled={portfolioRefreshing}
+                          onClick={() => executeOrdersNow(retryFailedOrInactiveFromFills)}
+                          style={{
+                            background: portfolioRefreshing ? "#334155" : DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+                            border: portfolioRefreshing
+                              ? "1px solid #475569"
+                              : DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                            color: portfolioRefreshing ? "#e2e8f0" : DECIDE_DASHBOARD.kpiMenuMainButtonColor,
                             borderRadius: 12,
                             padding: "12px 18px",
                             fontWeight: 700,
                             fontSize: 14,
                             cursor: portfolioRefreshing ? "not-allowed" : "pointer",
+                            boxShadow: portfolioRefreshing ? undefined : DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
                           }}
                         >
-                          Completar ordens pendentes ({incompleteRetryFromFills.length})
+                          Repetir falhadas ou inactivas ({retryFailedOrInactiveFromFills.length})
+                        </button>
+                      )}
+                      {!executionFullyComplete && (
+                        <button
+                          type="button"
+                          onClick={scrollToOrders}
+                          style={{
+                            background: "transparent",
+                            border: "1px solid #334155",
+                            color: "#cbd5e1",
+                            borderRadius: 12,
+                            padding: "12px 18px",
+                            fontWeight: 600,
+                            fontSize: 14,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Rever ordens do plano
                         </button>
                       )}
                       <Link
-                        href="/dashboard"
+                        href="/client-dashboard"
                         style={{
                           textDecoration: "none",
                           background: "transparent",
@@ -3277,9 +5607,13 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     </>
                   )}
                 </div>
-                <p style={{ color: "#94a3b8", fontSize: 13, margin: "12px 0 0 0" }}>
+                <p style={{ color: "#a1a1aa", fontSize: 13, margin: "12px 0 0 0" }}>
                   {postApprovalStage === "done"
-                    ? "Pode acompanhar a evolução da carteira no dashboard."
+                    ? executionFullyComplete
+                      ? "Pode acompanhar a evolução da carteira no dashboard."
+                      : incompleteRetryFromFills.length > 0 || retryFailedOrInactiveFromFills.length > 0
+                      ? "«Completar ordens pendentes» sincroniza primeiro com a IBKR e só reenvia o que ainda falta — evita uma 2ª ordem quando a 1ª já tinha continuado a preencher (ex.: GOLD 249 + 149). Use «Repetir falhadas» só para linhas inactivas/erro. Linhas «Em curso» com 0% executado não são reenviadas aqui."
+                      : "Sem reenvio automático para linhas já submetidas ou inactivas — confirme no IB Gateway ou na TWS e use «Ver carteira atualizada»."
                     : postApprovalStage === "failed"
                     ? "Pode tentar de novo ou rever as ordens antes de submeter."
                     : "Pode executar ou rever as ordens antes de decidir."}
@@ -3287,7 +5621,126 @@ export default function ClientReportPage({ reportData }: PageProps) {
               </>
             )}
           </div>
-            </>
+          ) : null}
+
+          {planTab === "documentos" ? (
+            <div
+              style={{
+                marginTop: 8,
+                display: "grid",
+                gap: 22,
+                maxWidth: 900,
+              }}
+            >
+              <div
+                style={{
+                  padding: "18px 20px",
+                  borderRadius: 16,
+                  border: DECIDE_DASHBOARD.flowTealCardBorder,
+                  background: DECIDE_DASHBOARD.flowTealPanelGradientSoft,
+                  color: "#cbd5e1",
+                  fontSize: 14,
+                  lineHeight: 1.65,
+                }}
+              >
+                <strong style={{ color: "#f8fafc" }}>Documentos do plano</strong> — camada transversal ao fluxo principal:
+                necessários para compliance e arquivo, sem ocupar o menu superior. A simulação e a recomendação continuam
+                no <strong style={{ color: "#e2e8f0" }}>Dashboard</strong> e nos separadores{" "}
+                <strong style={{ color: "#e2e8f0" }}>Resumo</strong> / <strong style={{ color: "#e2e8f0" }}>Alterações</strong>.
+              </div>
+
+              <div
+                style={{
+                  background: DECIDE_DASHBOARD.clientPanelGradient,
+                  border: DECIDE_DASHBOARD.panelBorder,
+                  borderRadius: 18,
+                  padding: 22,
+                  boxShadow: DECIDE_DASHBOARD.clientPanelShadowMedium,
+                }}
+              >
+                <SectionTitle>Relatório mensal</SectionTitle>
+                <p style={{ color: "#a1a1aa", fontSize: 14, lineHeight: 1.6, margin: "8px 0 16px 0" }}>
+                  PDF com o logótipo DECIDE, a justificação das alterações (contexto do plano + lista das operações propostas) e
+                  a tabela da carteira recomendada (pesos, sectores e regiões) conforme esta página.
+                </p>
+                <button
+                  type="button"
+                  disabled={monthlyPdfBusy}
+                  onClick={() => void handleDownloadMonthlyRecommendationPdf()}
+                  style={{
+                    background: monthlyPdfBusy ? "#334155" : DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+                    border: monthlyPdfBusy ? "1px solid #475569" : DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                    color: monthlyPdfBusy ? "#e2e8f0" : DECIDE_DASHBOARD.kpiMenuMainButtonColor,
+                    borderRadius: 12,
+                    padding: "12px 20px",
+                    fontWeight: 800,
+                    fontSize: 14,
+                    cursor: monthlyPdfBusy ? "wait" : "pointer",
+                    boxShadow: monthlyPdfBusy ? undefined : DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
+                  }}
+                >
+                  {monthlyPdfBusy ? (
+                    <>
+                      A gerar PDF
+                      <InlineLoadingDots />
+                    </>
+                  ) : (
+                    "Descarregar recomendação mensal (PDF)"
+                  )}
+                </button>
+              </div>
+
+              <div
+                style={{
+                  background: DECIDE_DASHBOARD.clientPanelGradient,
+                  border: DECIDE_DASHBOARD.panelBorder,
+                  borderRadius: 18,
+                  padding: 22,
+                  boxShadow: DECIDE_DASHBOARD.clientPanelShadowMedium,
+                }}
+              >
+                <SectionTitle>Adequação (suitability)</SectionTitle>
+                <p style={{ color: "#a1a1aa", fontSize: 14, lineHeight: 1.6, margin: "8px 0 16px 0" }}>
+                  Registo do perfil, avisos e aceitações associados à recomendação. O fluxo formal de aprovação mantém-se na
+                  página dedicada.
+                </p>
+                <Link
+                  href="/client/approve"
+                  style={{
+                    display: "inline-block",
+                    textDecoration: "none",
+                    background: DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+                    border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                    color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
+                    borderRadius: 12,
+                    padding: "12px 18px",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
+                  }}
+                >
+                  Abrir aprovação regulamentar
+                </Link>
+              </div>
+
+              <div
+                style={{
+                  background: DECIDE_DASHBOARD.clientPanelGradient,
+                  border: DECIDE_DASHBOARD.panelBorder,
+                  borderRadius: 18,
+                  padding: 22,
+                  boxShadow: DECIDE_DASHBOARD.clientPanelShadowMedium,
+                }}
+              >
+                <SectionTitle>PDFs e declarações</SectionTitle>
+                <p style={{ color: "#a1a1aa", fontSize: 14, lineHeight: 1.6, margin: "8px 0 0 0" }}>
+                  Contratos, informações pré-contratuais e extracts arquivados por data. Enquanto a API de ficheiros não
+                  estiver ligada, use o back-office ou o suporte para cópias oficiais.
+                </p>
+              </div>
+            </div>
+          ) : null}
+          </>
         </div>
       </div>
     </>

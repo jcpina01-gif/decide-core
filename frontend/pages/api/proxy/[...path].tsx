@@ -30,12 +30,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     res.send(buf);
   } catch (err: any) {
-    console.error("[api/proxy] fetch failed:", targetUrl, err?.message || err);
+    const msg = String(err?.message || err);
+    const causeCode = err?.cause?.code || err?.cause?.errno;
+    const unreachable =
+      /fetch failed/i.test(msg) ||
+      causeCode === "ECONNREFUSED" ||
+      causeCode === "ENOTFOUND" ||
+      causeCode === "ETIMEDOUT";
+    console.error("[api/proxy] fetch failed:", targetUrl, msg, causeCode || "");
     res.status(500).json({
       ok: false,
-      error: String(err?.message || err),
+      error: msg,
+      ...(unreachable
+        ? {
+            hint:
+              "O Next não conseguiu ligar ao FastAPI. Confirme que o backend está a correr na mesma URL que BACKEND_URL / DECIDE_BACKEND_URL (ex.: na pasta backend: py -3 -m uvicorn main:app --host 127.0.0.1 --port 8090). Reinicie o npm run dev após alterar .env.local.",
+          }
+        : {}),
       targetUrl: targetUrl || null,
-      backendBase: process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || null,
+      backendBase:
+        process.env.DECIDE_BACKEND_URL ||
+        process.env.NEXT_PUBLIC_DECIDE_BACKEND_URL ||
+        process.env.BACKEND_URL ||
+        process.env.NEXT_PUBLIC_BACKEND_URL ||
+        null,
     });
   }
 }

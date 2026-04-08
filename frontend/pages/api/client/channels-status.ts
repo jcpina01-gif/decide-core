@@ -12,10 +12,25 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     return res.status(405).json({ ok: false, error: "method_not_allowed" });
   }
 
+  const gmailUser = (process.env.GMAIL_USER || "").trim();
+  const gmailAppPassLen = (process.env.GMAIL_APP_PASSWORD || "").replace(/\s/g, "").length;
+  const prefer = (process.env.EMAIL_TRANSPORT || "").trim().toLowerCase();
+  const hasResend = !!process.env.RESEND_API_KEY;
+
   return res.status(200).json({
     ok: true,
     /** Envio de email (Gmail ou Resend) para confirmação / notificações */
     emailOutbound: hasOutboundEmailConfigured(),
+    /** Gmail: o processo vê user + password? (tamanho da app password deve ser 16 após remover espaços) */
+    gmailEnv: {
+      userSet: gmailUser.length > 0,
+      userLooksLikeEmail: /@/.test(gmailUser),
+      appPasswordLength: gmailAppPassLen,
+      appPasswordLengthOk: gmailAppPassLen === 16,
+    },
+    /** vazio = Gmail primeiro se GMAIL_* existir; senão Resend */
+    emailTransportPrefer: prefer || "(default: gmail if GMAIL_USER+GMAIL_APP_PASSWORD, else resend)",
+    resendApiKeySet: hasResend,
     /** SMS via Twilio (alertas + OTP registo se ALLOW_CLIENT_PHONE_VERIFY=1 ou DEV_SIGNUP_SMS_SIMULATE=1 em dev) */
     twilioSmsConfigured: isTwilioSmsConfigured(),
     notifyApiEnabled: process.env.ALLOW_CLIENT_NOTIFY_API === "1",

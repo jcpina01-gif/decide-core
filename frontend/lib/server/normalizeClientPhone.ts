@@ -11,5 +11,5 @@ export function normalizeClientPhoneE164(raw: string): { ok: true; e164: string 
   }
   if (/^9\d{8}$/.test(s)) return { ok: true, e164: `+351${s}` };
   if (/^3519\d{8}$/.test(s)) return { ok: true, e164: `+${s}` };
-  return { ok: false, error: "Indica o número com código do país, ex.: +351912345678 ou 912345678" };
+  return { ok: false, error: "Indique o número com código do país, ex.: +351912345678 ou 912345678" };
 }

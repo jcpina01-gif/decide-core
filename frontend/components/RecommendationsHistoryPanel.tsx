@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { formatPtDate } from "../lib/clientPortfolioSchedule";
+import { DECIDE_APP_FONT_FAMILY } from "../lib/decideClientTheme";
+import { yahooFinanceQuoteHref } from "../lib/yahooFinanceQuoteUrl";
 
 function formatMonthHeadingPt(ymd: string): string {
   const raw = String(ymd || "").slice(0, 10);
@@ -49,11 +51,6 @@ type HistMonth = {
   chronologicalIndex?: number;
 };
 
-function yahooQuoteHref(ticker: string): string {
-  const sym = ticker.trim().toUpperCase().replace(/\s+/g, "").replace(/\./g, "-");
-  return `https://finance.yahoo.com/quote/${encodeURIComponent(sym)}`;
-}
-
 function formatCompanyLine(r: FlowRow): string {
   const c = (r.company || "").trim();
   if (c && c !== r.ticker) return `${r.ticker} — ${c}`;
@@ -85,7 +82,7 @@ function PriorThreeMonthChart({ bars }: { bars: PriorMonthBar[] }) {
 
   return (
     <div style={{ marginTop: 10, marginBottom: 6 }}>
-      <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 700, marginBottom: 4 }}>
+      <div style={{ fontSize: 12, color: "#a1a1aa", fontWeight: 700, marginBottom: 4 }}>
         Retorno do modelo nos três meses anteriores a cada ajuste (indicativo)
       </div>
       <svg width={w} height={h} style={{ display: "block", maxWidth: "100%" }} aria-hidden>
@@ -103,7 +100,7 @@ function PriorThreeMonthChart({ bars }: { bars: PriorMonthBar[] }) {
           const x = padL + i * (bw + gap);
           const pos = v >= 0;
           const y = pos ? midY - hBar : midY;
-          const fill = v >= 0 ? "#4ade80" : "#f87171";
+          const fill = v >= 0 ? "#52525b" : "#a1a1aa";
           const empty = b.retPct == null || !isFinite(b.retPct);
           return (
             <g key={b.month}>
@@ -113,16 +110,16 @@ function PriorThreeMonthChart({ bars }: { bars: PriorMonthBar[] }) {
                 width={bw}
                 height={empty ? 2 : Math.max(hBar, 2)}
                 rx={3}
-                fill={empty ? "#475569" : fill}
+                fill={empty ? "#52525b" : fill}
                 opacity={empty ? 0.5 : 1}
               />
               <text
                 x={x + bw / 2}
                 y={h - 4}
                 textAnchor="middle"
-                fill="#94a3b8"
-                fontSize={9}
-                fontFamily="system-ui,sans-serif"
+                fill="#a1a1aa"
+                fontSize={11}
+                fontFamily={DECIDE_APP_FONT_FAMILY}
               >
                 {b.label}
               </text>
@@ -130,10 +127,10 @@ function PriorThreeMonthChart({ bars }: { bars: PriorMonthBar[] }) {
                 x={x + bw / 2}
                 y={pos ? y - 4 : y + hBar + 11}
                 textAnchor="middle"
-                fill={empty ? "#64748b" : "#e2e8f0"}
-                fontSize={9}
+                fill={empty ? "#71717a" : "#e2e8f0"}
+                fontSize={11}
                 fontWeight={700}
-                fontFamily="system-ui,sans-serif"
+                fontFamily={DECIDE_APP_FONT_FAMILY}
               >
                 {empty ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`}
               </text>
@@ -205,7 +202,7 @@ export default function RecommendationsHistoryPanel() {
 
   if (loading) {
     return (
-      <div style={{ padding: 24, color: "#94a3b8", fontSize: 14 }}>
+      <div style={{ padding: 24, color: "#a1a1aa", fontSize: 16 }}>
         A carregar o histórico da carteira…
       </div>
     );
@@ -221,12 +218,12 @@ export default function RecommendationsHistoryPanel() {
           background: "rgba(127,29,29,0.35)",
           border: "1px solid rgba(248,113,113,0.45)",
           color: "#fecaca",
-          fontSize: 13,
+          fontSize: 15,
           lineHeight: 1.5,
         }}
       >
         <strong>Não foi possível carregar o histórico.</strong> {err}
-        <div style={{ marginTop: 10, fontSize: 12, color: "#fcd34d" }}>
+        <div style={{ marginTop: 10, fontSize: 14, color: "#fcd34d" }}>
           Confirme que o servidor DECIDE está a correr e que os dados de carteira estão disponíveis. Se o problema
           persistir, contacte o suporte.
         </div>
@@ -236,7 +233,7 @@ export default function RecommendationsHistoryPanel() {
 
   if (!data?.months?.length) {
     return (
-      <div style={{ padding: 20, color: "#94a3b8" }}>Sem dados de histórico no servidor.</div>
+      <div style={{ padding: 20, color: "#a1a1aa", fontSize: 15 }}>Sem dados de histórico no servidor.</div>
     );
   }
 
@@ -244,21 +241,25 @@ export default function RecommendationsHistoryPanel() {
     <div
       style={{
         marginTop: 10,
-        background: "#12244d",
-        border: "1px solid rgba(255,255,255,0.08)",
+        background: "linear-gradient(180deg, rgba(39,39,42,0.98) 0%, rgba(24,24,27,0.98) 100%)",
+        border: "1px solid rgba(63,63,70,0.75)",
         borderRadius: 16,
         padding: "12px 14px 16px",
       }}
     >
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 15, fontWeight: 900, color: "#e2e8f0" }}>
+        <div style={{ fontSize: 18, fontWeight: 900, color: "#f4f4f5" }}>
           Histórico de decisões da carteira
         </div>
-        <div style={{ fontSize: 12, color: "#cbd5e1", marginTop: 6, lineHeight: 1.5, maxWidth: 560 }}>
+        <div style={{ fontSize: 14, color: "#a1a1aa", marginTop: 6, lineHeight: 1.5, maxWidth: 560 }}>
           Evolução mensal da composição da sua carteira ao longo do tempo.
         </div>
-        <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 8, lineHeight: 1.45, maxWidth: 560 }}>
-          A carteira é ajustada periodicamente para refletir as melhores oportunidades identificadas pelo modelo.
+        <div style={{ fontSize: 13, color: "#71717a", marginTop: 8, lineHeight: 1.45, maxWidth: 560 }}>
+          A carteira é ajustada periodicamente para refletir as melhores oportunidades identificadas pelo modelo.{" "}
+          <span style={{ color: "#52525b" }}>
+            Só entram datas até hoje: linhas de rebalance com data futura no CSV do modelo não são listadas como
+            histórico.
+          </span>
         </div>
         <input
           type="search"
@@ -270,12 +271,12 @@ export default function RecommendationsHistoryPanel() {
             width: "100%",
             maxWidth: 420,
             boxSizing: "border-box",
-            background: "rgba(15,23,42,0.65)",
-            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(9,9,11,0.75)",
+            border: "1px solid rgba(63,63,70,0.85)",
             borderRadius: 12,
-            padding: "10px 12px",
-            color: "#fff",
-            fontSize: 13,
+            padding: "11px 13px",
+            color: "#e4e4e7",
+            fontSize: 15,
           }}
         />
       </div>
@@ -286,14 +287,14 @@ export default function RecommendationsHistoryPanel() {
           flexDirection: "column",
           gap: 10,
           marginTop: 4,
-          borderLeft: "3px solid rgba(59,130,246,0.45)",
+          borderLeft: "3px solid rgba(113,113,122,0.65)",
           paddingLeft: 12,
         }}
       >
         {monthsFiltered.length === 0 ? (
-          <div style={{ color: "#94a3b8", fontSize: 13 }}>Nenhum mês corresponde ao filtro.</div>
+          <div style={{ color: "#a1a1aa", fontSize: 15 }}>Nenhum mês corresponde ao filtro.</div>
         ) : (
-          monthsFiltered.map((mo) => {
+          monthsFiltered.map((mo, idx) => {
             const sumW = mo.rows.reduce((s, r) => s + r.weight, 0);
             const hasFlow = mo.entries !== undefined && mo.exits !== undefined;
             const ent = mo.entries ?? [];
@@ -301,12 +302,13 @@ export default function RecommendationsHistoryPanel() {
             const chrono = mo.chronologicalIndex;
             const chartTooEarly = chrono != null && chrono < 2;
             const monthHeading = formatMonthHeadingPt(mo.date);
+            const stripeBg = idx % 2 === 0 ? "rgba(39,39,42,0.72)" : "rgba(63,63,70,0.38)";
             const sleeveLine =
               typeof mo.tbillsTotalPct === "number" && isFinite(mo.tbillsTotalPct) ? (
-                <span style={{ color: "#7dd3fc", fontWeight: 700 }}>
+                <span style={{ color: "#d4d4d8", fontWeight: 700 }}>
                   Liquidez {mo.tbillsTotalPct.toFixed(1)}%
                   {typeof mo.equitySleeveTotalPct === "number" && isFinite(mo.equitySleeveTotalPct)
-                    ? ` · Ações ${mo.equitySleeveTotalPct.toFixed(1)}%`
+                    ? ` · Acções ${mo.equitySleeveTotalPct.toFixed(1)}%`
                     : ""}
                 </span>
               ) : null;
@@ -315,8 +317,8 @@ export default function RecommendationsHistoryPanel() {
                 key={mo.date}
                 style={{
                   borderRadius: 12,
-                  background: "rgba(15,23,42,0.55)",
-                  border: "1px solid rgba(147,197,253,0.2)",
+                  background: stripeBg,
+                  border: "1px solid rgba(82,82,91,0.65)",
                 }}
               >
                 <summary
@@ -326,10 +328,10 @@ export default function RecommendationsHistoryPanel() {
                     listStyle: "none",
                   }}
                 >
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "#94a3b8", marginBottom: 4, letterSpacing: "0.02em" }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#a1a1aa", marginBottom: 4, letterSpacing: "0.02em" }}>
                     {monthHeading}
                   </div>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: "#e2e8f0", lineHeight: 1.35 }}>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: "#e4e4e7", lineHeight: 1.35 }}>
                     {formatPtDate(mo.date)}
                     {sleeveLine ? (
                       <>
@@ -338,10 +340,10 @@ export default function RecommendationsHistoryPanel() {
                       </>
                     ) : null}
                   </div>
-                  <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600, marginTop: 6 }}>
+                  <div style={{ fontSize: 14, color: "#71717a", fontWeight: 600, marginTop: 6 }}>
                     Carteira total: {(sumW * 100).toFixed(1)}% · {mo.rows.length} posições
                     {hasFlow ? (
-                      <span style={{ color: "#64748b" }}>
+                      <span style={{ color: "#71717a" }}>
                         {" "}
                         · +{ent.length} entradas / −{ex.length} saídas
                       </span>
@@ -352,15 +354,15 @@ export default function RecommendationsHistoryPanel() {
                   {mo.priorThreeMonthReturns && mo.priorThreeMonthReturns.length > 0 ? (
                     <PriorThreeMonthChart bars={mo.priorThreeMonthReturns} />
                   ) : chartTooEarly ? (
-                    <div style={{ fontSize: 10, color: "#64748b", marginTop: 8, marginBottom: 6 }}>
+                    <div style={{ fontSize: 12, color: "#71717a", marginTop: 8, marginBottom: 6 }}>
                       O gráfico dos três meses anteriores aparece a partir do terceiro mês da série.
                     </div>
                   ) : hasFlow ? (
-                    <div style={{ fontSize: 10, color: "#64748b", marginTop: 8, marginBottom: 6 }}>
+                    <div style={{ fontSize: 12, color: "#71717a", marginTop: 8, marginBottom: 6 }}>
                       Gráfico dos meses anteriores indisponível para este período.
                     </div>
                   ) : (
-                    <div style={{ fontSize: 10, color: "#64748b", marginTop: 8, marginBottom: 6 }}>
+                    <div style={{ fontSize: 12, color: "#71717a", marginTop: 8, marginBottom: 6 }}>
                       Gráfico dos meses anteriores disponível após os primeiros meses da série.
                     </div>
                   )}
@@ -378,22 +380,22 @@ export default function RecommendationsHistoryPanel() {
                       <div
                         style={{
                           borderRadius: 10,
-                          border: "1px solid rgba(34,197,94,0.35)",
-                          background: "rgba(22,101,52,0.2)",
+                          border: "1px solid rgba(113,113,122,0.65)",
+                          background: "rgba(63,63,70,0.35)",
                           padding: "8px 10px",
                         }}
                       >
-                        <div style={{ fontSize: 11, fontWeight: 800, color: "#86efac", marginBottom: 6 }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: "#d4d4d8", marginBottom: 6 }}>
                           Entradas ({ent.length})
                         </div>
                         {ent.length === 0 ? (
-                          <div style={{ fontSize: 10, color: "#64748b" }}>—</div>
+                          <div style={{ fontSize: 12, color: "#71717a" }}>—</div>
                         ) : (
-                          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 10, color: "#d1fae5", lineHeight: 1.45 }}>
+                          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 13, color: "#e4e4e7", lineHeight: 1.45 }}>
                             {ent.map((r) => (
                               <li
                                 key={`e-${mo.date}-${r.ticker}`}
-                                style={isCashSleeveTicker(r.ticker) ? { color: "#a5f3fc", fontWeight: 800 } : undefined}
+                                style={isCashSleeveTicker(r.ticker) ? { color: "#fafafa", fontWeight: 800 } : undefined}
                               >
                                 <strong>{formatCompanyLine(r)}</strong>
                                 {r.weightPct != null ? ` → ${r.weightPct.toFixed(2)}%` : ""}
@@ -406,22 +408,22 @@ export default function RecommendationsHistoryPanel() {
                       <div
                         style={{
                           borderRadius: 10,
-                          border: "1px solid rgba(248,113,113,0.35)",
-                          background: "rgba(127,29,29,0.2)",
+                          border: "1px solid rgba(82,82,91,0.85)",
+                          background: "rgba(24,24,27,0.65)",
                           padding: "8px 10px",
                         }}
                       >
-                        <div style={{ fontSize: 11, fontWeight: 800, color: "#fca5a5", marginBottom: 6 }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: "#a1a1aa", marginBottom: 6 }}>
                           Saídas ({ex.length})
                         </div>
                         {ex.length === 0 ? (
-                          <div style={{ fontSize: 10, color: "#64748b" }}>—</div>
+                          <div style={{ fontSize: 12, color: "#71717a" }}>—</div>
                         ) : (
-                          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 10, color: "#fecaca", lineHeight: 1.45 }}>
+                          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 13, color: "#d4d4d8", lineHeight: 1.45 }}>
                             {ex.map((r) => (
                               <li
                                 key={`x-${mo.date}-${r.ticker}`}
-                                style={isCashSleeveTicker(r.ticker) ? { color: "#a5f3fc", fontWeight: 800 } : undefined}
+                                style={isCashSleeveTicker(r.ticker) ? { color: "#fafafa", fontWeight: 800 } : undefined}
                               >
                                 <strong>{formatCompanyLine(r)}</strong>
                                 {r.weightPct != null ? ` (era ${r.weightPct.toFixed(2)}%)` : ""}
@@ -433,7 +435,7 @@ export default function RecommendationsHistoryPanel() {
                       </div>
                     </div>
                   ) : (
-                    <div style={{ fontSize: 10, color: "#64748b", marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, color: "#71717a", marginBottom: 10 }}>
                       Sem comparativo de entradas/saídas (primeira data do histórico ou um único mês).
                     </div>
                   )}
@@ -442,18 +444,18 @@ export default function RecommendationsHistoryPanel() {
                     style={{
                       width: "100%",
                       borderCollapse: "collapse",
-                      fontSize: 11,
-                      color: "#e2e8f0",
+                      fontSize: 14,
+                      color: "#e4e4e7",
                     }}
                   >
                     <thead>
-                      <tr style={{ borderBottom: "1px solid rgba(148,163,184,0.25)" }}>
-                        <th style={{ textAlign: "left", padding: "6px 8px", color: "#94a3b8" }}>#</th>
-                        <th style={{ textAlign: "left", padding: "6px 8px", color: "#94a3b8" }}>Ticker</th>
-                        <th style={{ textAlign: "left", padding: "6px 8px", color: "#94a3b8" }}>Empresa</th>
-                        <th style={{ textAlign: "right", padding: "6px 8px", color: "#94a3b8" }}>Peso %</th>
-                        <th style={{ textAlign: "right", padding: "6px 8px", color: "#94a3b8" }}>Score</th>
-                        <th style={{ textAlign: "left", padding: "6px 8px", color: "#94a3b8" }}>Sector</th>
+                      <tr style={{ borderBottom: "1px solid rgba(82,82,91,0.75)", background: "rgba(24,24,27,0.6)" }}>
+                        <th style={{ textAlign: "left", padding: "8px 10px", color: "#a1a1aa" }}>#</th>
+                        <th style={{ textAlign: "left", padding: "8px 10px", color: "#a1a1aa" }}>Ticker</th>
+                        <th style={{ textAlign: "left", padding: "8px 10px", color: "#a1a1aa" }}>Empresa</th>
+                        <th style={{ textAlign: "right", padding: "8px 10px", color: "#a1a1aa" }}>Peso %</th>
+                        <th style={{ textAlign: "right", padding: "8px 10px", color: "#a1a1aa" }}>Score</th>
+                        <th style={{ textAlign: "left", padding: "8px 10px", color: "#a1a1aa" }}>Sector</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -461,17 +463,21 @@ export default function RecommendationsHistoryPanel() {
                         <tr
                           key={`${mo.date}-${r.ticker}-${i}`}
                           style={{
-                            borderBottom: "1px solid rgba(30,41,59,0.9)",
-                            background: isCashSleeveTicker(r.ticker) ? "rgba(14, 165, 233, 0.08)" : undefined,
+                            borderBottom: "1px solid rgba(63,63,70,0.65)",
+                            background: isCashSleeveTicker(r.ticker)
+                              ? "rgba(82,82,91,0.35)"
+                              : i % 2 === 0
+                                ? "rgba(39,39,42,0.35)"
+                                : "rgba(63,63,70,0.22)",
                           }}
                         >
-                          <td style={{ padding: "5px 8px", color: "#64748b" }}>{r.rank ?? i + 1}</td>
-                          <td style={{ padding: "5px 8px", fontWeight: 800 }}>
+                          <td style={{ padding: "7px 10px", color: "#71717a" }}>{r.rank ?? i + 1}</td>
+                          <td style={{ padding: "7px 10px", fontWeight: 800 }}>
                             <a
-                              href={yahooQuoteHref(r.ticker)}
+                              href={yahooFinanceQuoteHref(r.ticker) ?? "#"}
                               target="_blank"
                               rel="noopener noreferrer"
-                              style={{ color: "#7dd3fc", textDecoration: "none" }}
+                              style={{ color: "#d4d4d8", textDecoration: "none" }}
                               onMouseEnter={(e) => {
                                 (e.currentTarget as HTMLAnchorElement).style.textDecoration = "underline";
                               }}
@@ -483,14 +489,14 @@ export default function RecommendationsHistoryPanel() {
                               {r.ticker}
                             </a>
                           </td>
-                          <td style={{ padding: "5px 8px", color: "#cbd5e1", maxWidth: 260 }} title={r.company || r.ticker}>
+                          <td style={{ padding: "7px 10px", color: "#a1a1aa", maxWidth: 260 }} title={r.company || r.ticker}>
                             {r.company?.trim() ? r.company.trim() : "—"}
                           </td>
-                          <td style={{ padding: "5px 8px", textAlign: "right" }}>{r.weightPct.toFixed(2)}%</td>
-                          <td style={{ padding: "5px 8px", textAlign: "right", color: "#94a3b8" }}>
+                          <td style={{ padding: "7px 10px", textAlign: "right" }}>{r.weightPct.toFixed(2)}%</td>
+                          <td style={{ padding: "7px 10px", textAlign: "right", color: "#a1a1aa" }}>
                             {r.score != null && isFinite(r.score) ? r.score.toFixed(4) : "—"}
                           </td>
-                          <td style={{ padding: "5px 8px", color: "#64748b" }}>{r.sector || "—"}</td>
+                          <td style={{ padding: "7px 10px", color: "#71717a" }}>{r.sector || "—"}</td>
                         </tr>
                       ))}
                     </tbody>

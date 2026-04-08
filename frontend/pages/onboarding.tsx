@@ -3,6 +3,13 @@ import type { GetServerSideProps } from "next";
 import OnboardingFlowBar, {
   ONBOARDING_STORAGE_KEYS,
 } from "../components/OnboardingFlowBar";
+import ThousandsNumberInput from "../components/ThousandsNumberInput";
+import {
+  DECIDE_APP_FONT_FAMILY,
+  DECIDE_DASHBOARD,
+  DECIDE_ONBOARDING,
+  ONBOARDING_SHELL_MAX_WIDTH_PX,
+} from "../lib/decideClientTheme";
 
 type InvestorProfile = "conservador" | "moderado" | "dinamico";
 
@@ -15,13 +22,13 @@ function KPIBox({ title, value }: { title: string; value: string }) {
   return (
     <div
       style={{
-        background: "#020b24",
-        border: "1px solid #15305b",
+        background: "rgba(24, 24, 27, 0.92)",
+        border: "1px solid rgba(63, 63, 70, 0.75)",
         borderRadius: 18,
         padding: 18,
       }}
     >
-      <div style={{ color: "#9fb3d1", fontSize: 14, marginBottom: 10 }}>{title}</div>
+      <div style={{ color: "#a1a1aa", fontSize: 14, marginBottom: 10 }}>{title}</div>
       <div style={{ color: "#fff", fontSize: 24, fontWeight: 800 }}>{value}</div>
     </div>
   );
@@ -29,7 +36,7 @@ function KPIBox({ title, value }: { title: string; value: string }) {
 
 function InputLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ color: "#9fb3d1", fontSize: 14, marginBottom: 8 }}>
+    <div style={{ color: "#a1a1aa", fontSize: 14, marginBottom: 8 }}>
       {children}
     </div>
   );
@@ -45,8 +52,8 @@ function Section({
   return (
     <div
       style={{
-        background: "#020b24",
-        border: "1px solid #15305b",
+        background: "rgba(24, 24, 27, 0.92)",
+        border: "1px solid rgba(63, 63, 70, 0.75)",
         borderRadius: 22,
         padding: 20,
       }}
@@ -62,9 +69,9 @@ function Section({
 function baseInputStyle(): React.CSSProperties {
   return {
     width: "100%",
-    background: "#020816",
+    background: "#27272a",
     color: "#fff",
-    border: "1px solid #15305b",
+    border: "1px solid rgba(63, 63, 70, 0.85)",
     borderRadius: 12,
     padding: 12,
     fontSize: 16,
@@ -96,13 +103,6 @@ export default function OnboardingPage() {
   const [precisaLiquidezCurtoPrazo, setPrecisaLiquidezCurtoPrazo] = useState("");
 
   const [confirmAttempted, setConfirmAttempted] = useState(false);
-
-  function parseRequiredNumber(next: string): number | "" {
-    const t = next.trim();
-    if (!t) return "";
-    const n = Number(t);
-    return Number.isFinite(n) ? n : "";
-  }
 
   function hasValueString(v: string): boolean {
     return v.trim().length > 0;
@@ -247,7 +247,7 @@ export default function OnboardingPage() {
     const err = confirmAttempted && missingSet.has(missingKey);
     return {
       ...baseInputStyle(),
-      border: err ? "1px solid #f87171" : "1px solid #15305b",
+      border: err ? "1px solid #f87171" : "1px solid rgba(63, 63, 70, 0.85)",
       boxShadow: err ? "0 0 0 3px rgba(248,113,113,0.14)" : "none",
     };
   }
@@ -267,15 +267,16 @@ export default function OnboardingPage() {
     <div
       style={{
         minHeight: "100vh",
-        background: "#000",
+        background: DECIDE_ONBOARDING.pageBackground,
         color: "#fff",
         padding: 32,
-        fontFamily: "Inter, Arial, sans-serif",
+        fontFamily: DECIDE_APP_FONT_FAMILY,
       }}
     >
+      <div style={{ maxWidth: ONBOARDING_SHELL_MAX_WIDTH_PX, margin: "0 auto", width: "100%" }}>
       <div style={{ marginBottom: 24 }}>
         <div style={{ fontSize: 40, fontWeight: 800 }}>DECIDE — Onboarding</div>
-        <div style={{ color: "#9fb3d1", fontSize: 18 }}>
+        <div style={{ color: "#a1a1aa", fontSize: 18 }}>
           Página comercial e regulamentar separada do core do modelo.
         </div>
       </div>
@@ -309,10 +310,13 @@ export default function OnboardingPage() {
               </div>
               <div>
                 <InputLabel>Idade</InputLabel>
-                <input
-                  type="number"
+                <ThousandsNumberInput
+                  allowEmpty
+                  min={0}
+                  max={120}
+                  maxDecimals={0}
                   value={idade}
-                  onChange={(e) => setIdade(parseRequiredNumber(e.target.value))}
+                  onChange={setIdade}
                   style={fieldStyleIfMissing("Idade")}
                 />
               </div>
@@ -332,19 +336,23 @@ export default function OnboardingPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <div>
                 <InputLabel>Património financeiro (€)</InputLabel>
-                <input
-                  type="number"
+                <ThousandsNumberInput
+                  allowEmpty
+                  min={0}
+                  maxDecimals={0}
                   value={patrimonioFinanceiro}
-                  onChange={(e) => setPatrimonioFinanceiro(parseRequiredNumber(e.target.value))}
+                  onChange={setPatrimonioFinanceiro}
                   style={fieldStyleIfMissing("Património financeiro (€)")}
                 />
               </div>
               <div>
                 <InputLabel>Montante a investir (€)</InputLabel>
-                <input
-                  type="number"
+                <ThousandsNumberInput
+                  allowEmpty
+                  min={0}
+                  maxDecimals={0}
                   value={montanteInvestir}
-                  onChange={(e) => setMontanteInvestir(parseRequiredNumber(e.target.value))}
+                  onChange={setMontanteInvestir}
                   style={fieldStyleIfMissing("Montante a investir (€)")}
                 />
               </div>
@@ -379,10 +387,12 @@ export default function OnboardingPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
               <div>
                 <InputLabel>Horizonte de investimento (anos)</InputLabel>
-                <input
-                  type="number"
+                <ThousandsNumberInput
+                  allowEmpty
+                  min={0}
+                  maxDecimals={1}
                   value={horizonteAnos}
-                  onChange={(e) => setHorizonteAnos(parseRequiredNumber(e.target.value))}
+                  onChange={setHorizonteAnos}
                   style={fieldStyleIfMissing("Horizonte de investimento (anos)")}
                 />
               </div>
@@ -437,10 +447,13 @@ export default function OnboardingPage() {
               </div>
               <div>
                 <InputLabel>Perda máxima aceitável (%)</InputLabel>
-                <input
-                  type="number"
+                <ThousandsNumberInput
+                  allowEmpty
+                  min={0}
+                  max={100}
+                  maxDecimals={1}
                   value={aceitaPerda}
-                  onChange={(e) => setAceitaPerda(parseRequiredNumber(e.target.value))}
+                  onChange={setAceitaPerda}
                   style={fieldStyleIfMissing("Perda máxima aceitável (%)")}
                 />
               </div>
@@ -506,8 +519,8 @@ export default function OnboardingPage() {
       <div
         style={{
           marginTop: 20,
-          background: "#020b24",
-          border: "1px solid #15305b",
+          background: "rgba(24, 24, 27, 0.92)",
+          border: "1px solid rgba(63, 63, 70, 0.85)",
           borderRadius: 22,
           padding: 20,
         }}
@@ -515,7 +528,7 @@ export default function OnboardingPage() {
         <div style={{ color: "#fff", fontSize: 22, fontWeight: 800, marginBottom: 10 }}>
           Confirmar Registo / Onboarding (Passo 1)
         </div>
-        <div style={{ color: "#9fb3d1", fontSize: 14, marginBottom: 16 }}>
+        <div style={{ color: "#a1a1aa", fontSize: 14, marginBottom: 16 }}>
           Preenche todos os campos obrigatórios e confirma para avançar para o Teste MiFID.
         </div>
 
@@ -539,9 +552,9 @@ export default function OnboardingPage() {
           onClick={confirmAndGoNext}
           disabled={!canConfirmOnboarding}
           style={{
-            background: canConfirmOnboarding ? "#3f73ff" : "#334155",
+            background: canConfirmOnboarding ? DECIDE_DASHBOARD.buttonRegister : DECIDE_ONBOARDING.buttonDisabled,
             color: "#fff",
-            border: "1px solid rgba(255,255,255,0.28)",
+            border: canConfirmOnboarding ? DECIDE_ONBOARDING.buttonPrimaryBorder : DECIDE_ONBOARDING.inputBorder,
             borderRadius: 14,
             padding: "12px 18px",
             fontSize: 15,
@@ -551,6 +564,7 @@ export default function OnboardingPage() {
         >
           Continuar
         </button>
+      </div>
       </div>
     </div>
   );

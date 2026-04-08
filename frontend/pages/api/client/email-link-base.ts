@@ -20,7 +20,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     linkBaseResolved,
     localhost,
     hint: localhost
-      ? "O telemóvel NÃO consegue abrir 127.0.0.1. Define EMAIL_LINK_BASE_URL=http://IP-DO-PC:4701 em frontend/.env.local, corre npm run dev:lan, reinicia o servidor e volta a enviar o email. Abre a firewall TCP 4701 no Windows se precisares."
-      : "Link base parece acessível na rede. Confirma que o telemóvel está na mesma Wi‑Fi e que corres npm run dev:lan.",
+      ? "O telemóvel NÃO consegue abrir 127.0.0.1. Abra o registo/dashboard no PC com http://<IP-LAN>:porta (npm run dev:lan); em dev o link no email segue esse Host. Opcional: EMAIL_LINK_BASE_URL + EMAIL_LINK_BASE_URL_STRICT=1."
+      : "Em dev, linkBaseResolved segue o Host do último pedido quando não utiliza modo estrito. Confirme Wi‑Fi e firewall na porta do Next.",
   });
 }

@@ -13,15 +13,15 @@ function LinkCard({ href, title, description }: LinkCardProps) {
       style={{
         display: "block",
         textDecoration: "none",
-        background: "#020b24",
-        border: "1px solid #15305b",
+        background: "rgba(24, 24, 27, 0.85)",
+        border: "1px solid rgba(63, 63, 70, 0.75)",
         borderRadius: 18,
         padding: 18,
         color: "#fff",
       }}
     >
       <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>{title}</div>
-      <div style={{ fontSize: 14, color: "#9fb3d1", lineHeight: 1.45 }}>{description}</div>
+      <div style={{ fontSize: 14, color: "#a1a1aa", lineHeight: 1.45 }}>{description}</div>
     </a>
   );
 }
@@ -30,8 +30,8 @@ export default function DashboardQuickLinks() {
   return (
     <div
       style={{
-        background: "#010816",
-        border: "1px solid #16315d",
+        background: "#18181b",
+        border: "1px solid rgba(63, 63, 70, 0.75)",
         borderRadius: 22,
         padding: 20,
         marginBottom: 24,
@@ -41,7 +41,7 @@ export default function DashboardQuickLinks() {
         Navegação rápida
       </div>
 
-      <div style={{ fontSize: 14, color: "#9fb3d1", marginBottom: 16 }}>
+      <div style={{ fontSize: 14, color: "#a1a1aa", marginBottom: 16 }}>
         Acesso direto às páginas comerciais e regulamentares, separadas do core do modelo.
       </div>
 
@@ -69,8 +69,8 @@ export default function DashboardQuickLinks() {
         />
         <LinkCard
           href="/client/approve"
-          title="Abrir/Enviar para TWS"
-          description="Aprova a recomendação e segue o plano para o TWS."
+          title="Abrir/Enviar para IB Gateway ou TWS"
+          description="Aprova a recomendação e segue o plano para o IB Gateway ou TWS."
         />
         <LinkCard
           href="/fees-client"

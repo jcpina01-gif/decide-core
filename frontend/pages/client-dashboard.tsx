@@ -1,14 +1,15 @@
 import Head from "next/head";
+import ClientPendingTextLink from "../components/ClientPendingTextLink";
 import { useRouter } from "next/router";
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CLIENT_SESSION_CHANGED_EVENT,
+  fetchProspectEmailVerifiedFromServer,
   getCurrentSessionUser,
   getCurrentSessionUserEmail,
   getCurrentSessionUserPhone,
   isClientLoggedIn,
   isSessionEmailVerified,
-  logoutClient,
   normalizeClientPhone,
   requestEmailVerificationProspectSend,
   requestEmailVerificationSend,
@@ -28,6 +29,22 @@ import {
   devConfirmationLinkUsesLoopback,
   devConfirmationLinkWrongPort,
 } from "../lib/emailConfirmationDevLink";
+import { DECIDE_APP_PAGE_BG, DECIDE_DASHBOARD } from "../lib/decideClientTheme";
+import CarteiraIbkrSummary from "../components/CarteiraIbkrSummary";
+import InlineLoadingDots from "../components/InlineLoadingDots";
+import ClientKpiEmbedWorkspace from "../components/ClientKpiEmbedWorkspace";
+import ClientKpiPageChrome from "../components/ClientKpiPageChrome";
+import { DECIDE_DASHBOARD_KPI_REFRESH_EVENT } from "../lib/decideDashboardEvents";
+import { ONBOARDING_LOCALSTORAGE_CHANGED_EVENT } from "../components/OnboardingFlowBar";
+import { useClientKpiEmbed } from "../hooks/useClientKpiEmbed";
+import { FLASK_KPI_EMBED_TABS, normalizeKpiEmbedTabId } from "../lib/kpiEmbedNav";
+import { useSyncedRiskProfileFromOnboarding } from "../hooks/useSyncedRiskProfileFromOnboarding";
+import { isFxHedgeOnboardingApplicable } from "../lib/clientSegment";
+import {
+  consumeSkipHedgeGateFromUrl,
+  isHedgeOnboardingDone,
+  shouldSkipHedgeGateRedirect,
+} from "../lib/fxHedgePrefs";
 type SeriesPoint = {
   dates?: string[];
   equity_raw?: number[];
@@ -42,27 +59,27 @@ type CoreOverlayedResp = {
   series?: SeriesPoint;
 };
 
-/** Separador activo no iframe Flask (kpi_server) — preservado ao mudar perfil. */
-const KPI_EMBED_TAB_STORAGE_KEY = "decide_kpi_embed_tab_v1";
-const ALLOWED_KPI_EMBED_TABS = new Set([
-  "overview",
-  "simulator",
-  "horizons",
-  "charts",
-  "portfolio",
-  "portfolio_history",
-  "faq",
-]);
+/** Alinhado a `ONBOARDING_STORAGE_KEYS.approve` — plano regulamentar aprovado no `/client/approve`. */
+const CLIENT_PLAN_APPROVED_LS_KEY = "decide_onboarding_step4_done";
 
-/** Base URL do KPI Flask em modo embed (porta 5000 em dev). Em produção define NEXT_PUBLIC_KPI_EMBED_BASE. */
-function getKpiEmbedBase(): string {
-  const fromEnv = String(process.env.NEXT_PUBLIC_KPI_EMBED_BASE || "").trim().replace(/\/+$/, "");
-  if (fromEnv) return fromEnv;
-  if (typeof window === "undefined") return "";
-  const h = window.location.hostname;
-  if (h === "localhost" || h === "127.0.0.1") return "http://127.0.0.1:5000";
-  return "";
-}
+/** CTA secção recomendações / plano — verde acinzentado (tema principal) */
+const PLAN_CTA_ORANGE: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "9px 14px",
+  borderRadius: 11,
+  border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+  background: DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+  color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
+  fontSize: 12,
+  fontWeight: 900,
+  textDecoration: "none",
+  textAlign: "center",
+  boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
+};
 
 function getOverlayFactor(resp: CoreOverlayedResp | null) {
   const d = (resp && resp.detail) || {};
@@ -84,12 +101,26 @@ function getOverlayFactor(resp: CoreOverlayedResp | null) {
 
 export default function ClientDashboardPage() {
   const router = useRouter();
-  const [profile, setProfile] = useState<"conservador" | "moderado" | "dinamico">("moderado");
+  const [planPageNavPending, setPlanPageNavPending] = useState(false);
+  const goToApprovePlan = useCallback(() => {
+    setPlanPageNavPending(true);
+    void router.push("/client/approve").catch(() => {
+      setPlanPageNavPending(false);
+    });
+  }, [router]);
+
+  useEffect(() => {
+    const onNavError = () => setPlanPageNavPending(false);
+    router.events?.on("routeChangeError", onNavError);
+    return () => router.events?.off("routeChangeError", onNavError);
+  }, [router]);
+  const { profile, setProfile } = useSyncedRiskProfileFromOnboarding();
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState<string>("");
   const [resp, setResp] = useState<CoreOverlayedResp | null>(null);
   const [iframeRefresh, setIframeRefresh] = useState(0);
-  const [kpiEmbedTab, setKpiEmbedTab] = useState<string>("simulator");
+  const [kpiToolbarRefreshBusy, setKpiToolbarRefreshBusy] = useState(false);
+  const kpiRefreshSafetyRef = useRef<number | undefined>(undefined);
   /** Força releitura do calendário de carteira após gravar no localStorage */
   const [portfolioScheduleRev, setPortfolioScheduleRev] = useState(0);
   const [notifyPhoneInput, setNotifyPhoneInput] = useState("");
@@ -102,10 +133,12 @@ export default function ClientDashboardPage() {
   const [prospectEmail, setProspectEmail] = useState("");
   const [prospectBusy, setProspectBusy] = useState(false);
   const [prospectErr, setProspectErr] = useState("");
-  const [prospectMsg, setProspectMsg] = useState("");
   const [prospectDevLink, setProspectDevLink] = useState<string | null>(null);
+  const [prospectListVerified, setProspectListVerified] = useState(false);
+  const [prospectListStatusLoading, setProspectListStatusLoading] = useState(false);
+  /** Email (normalizado) para o qual o último envio teve sucesso — mostra «link enviado» até confirmar ou mudar o email. */
+  const [prospectListLinkSentEmail, setProspectListLinkSentEmail] = useState<string | null>(null);
   const prospectSendInFlight = useRef(false);
-  const kpiIframeRef = useRef<HTMLIFrameElement | null>(null);
   /** Último mês do histórico de pesos (modelo) — T-Bills vs ações na “carteira actual” recomendada. */
   const [latestModelMonth, setLatestModelMonth] = useState<{
     date: string;
@@ -118,6 +151,15 @@ export default function ClientDashboardPage() {
   const [sessionUser, setSessionUser] = useState<string | null>(null);
   const [loggedIn, setLoggedIn] = useState(false);
 
+  const {
+    kpiEmbedTab,
+    applyKpiEmbedTab,
+    kpiViewMode,
+    setKpiViewMode,
+    kpiIframeSrc,
+    kpiIframeRef,
+  } = useClientKpiEmbed({ profile, loggedIn, iframeRefresh });
+
   const syncClientSession = useCallback(() => {
     try {
       if (typeof window === "undefined") return;
@@ -129,37 +171,26 @@ export default function ClientDashboardPage() {
     }
   }, []);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     setMounted(true);
     syncClientSession();
   }, [syncClientSession]);
 
-  useLayoutEffect(() => {
-    if (!mounted) return;
-    try {
-      const v = sessionStorage.getItem(KPI_EMBED_TAB_STORAGE_KEY);
-      if (v && ALLOWED_KPI_EMBED_TABS.has(v)) setKpiEmbedTab(v);
-    } catch {
-      // ignore
-    }
-  }, [mounted]);
+  useEffect(() => {
+    consumeSkipHedgeGateFromUrl();
+  }, []);
 
   useEffect(() => {
-    if (!mounted) return;
-    function onMsg(e: MessageEvent) {
-      const d = e.data as { type?: string; tab?: string } | null;
-      if (!d || d.type !== "decide-kpi-embed-tab" || typeof d.tab !== "string") return;
-      if (!ALLOWED_KPI_EMBED_TABS.has(d.tab)) return;
-      setKpiEmbedTab(d.tab);
-      try {
-        sessionStorage.setItem(KPI_EMBED_TAB_STORAGE_KEY, d.tab);
-      } catch {
-        // ignore
-      }
-    }
-    window.addEventListener("message", onMsg);
-    return () => window.removeEventListener("message", onMsg);
-  }, [mounted]);
+    if (!mounted || !loggedIn || !isFxHedgeOnboardingApplicable() || isHedgeOnboardingDone()) return;
+    if (shouldSkipHedgeGateRedirect()) return;
+    void router.replace("/client/fx-hedge-onboarding");
+  }, [mounted, loggedIn, router]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    document.documentElement.style.background = DECIDE_APP_PAGE_BG;
+    document.body.style.background = DECIDE_APP_PAGE_BG;
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -193,10 +224,50 @@ export default function ClientDashboardPage() {
     if (!prospectBusy) return;
     const t = window.setTimeout(() => {
       setProspectBusy(false);
-      setProspectErr((prev) => prev || "O pedido demorou demasiado. Recarrega a página e tenta outra vez.");
+      setProspectErr((prev) => prev || "O pedido demorou demasiado. Recarregue a página e tente outra vez.");
     }, 95_000);
     return () => window.clearTimeout(t);
   }, [prospectBusy]);
+
+  useEffect(() => {
+    if (!mounted || loggedIn) return;
+    const em = prospectEmail.trim().toLowerCase();
+    if (!em.includes("@")) {
+      setProspectListVerified(false);
+      setProspectListStatusLoading(false);
+      return;
+    }
+    setProspectListStatusLoading(true);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const v = await fetchProspectEmailVerifiedFromServer(em);
+          setProspectListVerified(v);
+          if (v) setProspectListLinkSentEmail(null);
+        } catch {
+          setProspectListVerified(false);
+        } finally {
+          setProspectListStatusLoading(false);
+        }
+      })();
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [mounted, loggedIn, prospectEmail]);
+
+  useEffect(() => {
+    if (!mounted || loggedIn) return;
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      const em = prospectEmail.trim().toLowerCase();
+      if (!em.includes("@")) return;
+      void fetchProspectEmailVerifiedFromServer(em).then((v) => {
+        setProspectListVerified(v);
+        if (v) setProspectListLinkSentEmail(null);
+      });
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [mounted, loggedIn, prospectEmail]);
 
   useEffect(() => {
     if (!mounted || !loggedIn) {
@@ -230,11 +301,10 @@ export default function ClientDashboardPage() {
   async function sendProspectListVerification() {
     if (prospectBusy || prospectSendInFlight.current) return;
     setProspectErr("");
-    setProspectMsg("");
     setProspectDevLink(null);
     const em = prospectEmail.trim();
     if (!em || !em.includes("@")) {
-      setProspectErr("Indica um email válido.");
+      setProspectErr("Indique um email válido.");
       return;
     }
     prospectSendInFlight.current = true;
@@ -242,20 +312,17 @@ export default function ClientDashboardPage() {
     try {
       const vr = await requestEmailVerificationProspectSend(em, { prospectSource: "dashboard" });
       setProspectBusy(false);
-      if (vr.link) {
+      if (vr.mode === "simulated" && vr.link) {
         setProspectDevLink(vr.link);
         void navigator.clipboard?.writeText(vr.link).catch(() => {});
-      }
-      if (vr.mode === "simulated" && vr.link) {
-        setProspectMsg(
-          "Sem envio configurado (Resend ou Gmail): usa o link na caixa azul abaixo. O email fica na lista de interessados só depois de clicares no link.",
-        );
+        setProspectListLinkSentEmail(em.toLowerCase());
       } else if (!vr.ok) {
         setProspectErr(vr.error || "Não foi possível enviar o email.");
+        setProspectListLinkSentEmail(null);
       } else {
-        setProspectMsg(
-          "Email enviado. Abre o link que recebeste para confirmares — só assim entras na lista para novidades. Se testas no telemóvel, o link tem de usar o IP do PC (EMAIL_LINK_BASE_URL + npm run dev:lan), como no registo.",
-        );
+        setProspectDevLink(null);
+        setProspectListLinkSentEmail(em.toLowerCase());
+        setProspectListVerified(false);
       }
     } catch {
       setProspectErr("Erro inesperado ao pedir o link.");
@@ -272,6 +339,23 @@ export default function ClientDashboardPage() {
     const sch = getPortfolioSchedule(sessionUser);
     return describeScheduleForUi(sch);
   }, [mounted, sessionUser, portfolioScheduleRev]);
+
+  /** Plano aprovado em `/client/approve` (localStorage). Enquanto `false`, mostramos CTA para constituir carteira. */
+  const clientPlanApproved = useMemo(() => {
+    if (!mounted || typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem(CLIENT_PLAN_APPROVED_LS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }, [mounted, portfolioScheduleRev]);
+
+  useEffect(() => {
+    if (!mounted || typeof window === "undefined") return;
+    const bump = () => setPortfolioScheduleRev((n) => n + 1);
+    window.addEventListener(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT, bump);
+    return () => window.removeEventListener(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT, bump);
+  }, [mounted]);
 
   /** Só ao mudar sessão — não depender de portfolioScheduleRev (senão apaga o número a meio da edição). */
   useEffect(() => {
@@ -313,19 +397,40 @@ export default function ClientDashboardPage() {
     setErrMsg("");
   }, []);
 
+  const clearKpiToolbarRefreshBusy = useCallback(() => {
+    if (kpiRefreshSafetyRef.current != null) {
+      window.clearTimeout(kpiRefreshSafetyRef.current);
+      kpiRefreshSafetyRef.current = undefined;
+    }
+    setKpiToolbarRefreshBusy(false);
+  }, []);
+
   /** Recarrega o iframe Flask (cache-bust). Útil se o :5000 acabou de arrancar ou queres forçar refresh. */
   function refreshKpiIframe() {
     setErrMsg("");
+    clearKpiToolbarRefreshBusy();
+    setKpiToolbarRefreshBusy(true);
     setIframeRefresh(Date.now());
+    try {
+      window.dispatchEvent(new Event(DECIDE_DASHBOARD_KPI_REFRESH_EVENT));
+    } catch {
+      /* ignore */
+    }
+    const expectsIframeReload =
+      Boolean(kpiIframeSrc) &&
+      (FLASK_KPI_EMBED_TABS.has(normalizeKpiEmbedTabId(kpiEmbedTab)) ||
+        normalizeKpiEmbedTabId(kpiEmbedTab) === "fees_intro" ||
+        normalizeKpiEmbedTabId(kpiEmbedTab) === "fees");
+    kpiRefreshSafetyRef.current = window.setTimeout(
+      () => clearKpiToolbarRefreshBusy(),
+      expectsIframeReload ? 55_000 : 2_500,
+    );
   }
 
-  /** Só abre o painel (carteira); os alertas são enviados automaticamente ao entrar no dia de ação. */
+  /** Carteira IBKR = página global «Carteira» (sub-menu local), não o embed do Dashboard. */
   function openPortfolioRecommendationsPanel() {
     if (!portfolioScheduleUi.actionRequired) return;
-    refreshKpiIframe();
-    setTimeout(() => {
-      kpiIframeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 200);
+    void router.push({ pathname: "/client/carteira", query: { embed_tab: "portfolio" } });
   }
 
   /** Envio automático 1× por dia (local), antes do cliente operar o rebalanceamento. */
@@ -335,13 +440,13 @@ export default function ClientDashboardPage() {
     const phone = (getCurrentSessionUserPhone() || getNotifyPhone(sessionUser)).trim();
     if (!email || !phone) {
       setPreadviceMsg(
-        "Completa email e telemóvel ao criar a conta (registo) para os alertas automáticos.",
+        "Complete email e telemóvel ao criar a conta (registo) para os alertas automáticos.",
       );
       return;
     }
     if (!isSessionEmailVerified()) {
       setPreadviceMsg(
-        "Confirma o email (link enviado no registo) para ativar alertas automáticos. Reenvia em /client/register se precisares.",
+        "Confirme o email (link enviado no registo) para ativar alertas automáticos. Reenvie em /client/register se precisar.",
       );
       return;
     }
@@ -351,6 +456,8 @@ export default function ClientDashboardPage() {
     const lsKey = `decide_preadvice_sent_v1_${sessionUser.toLowerCase()}_${dayKey}_${event}`;
     try {
       if (typeof window !== "undefined" && window.localStorage.getItem(lsKey) === "1") return;
+      /* Reserva o slot **antes** do await: evita duplicar SMS/email no React Strict Mode ou quando o efeito re-corre. */
+      if (typeof window !== "undefined") window.localStorage.setItem(lsKey, "1");
     } catch {
       return;
     }
@@ -377,26 +484,34 @@ export default function ClientDashboardPage() {
         };
         if (cancelled) return;
         if (r.ok && j.ok !== false) {
+          /* chave já estava a 1 — nada a fazer */
+        } else {
           try {
-            window.localStorage.setItem(lsKey, "1");
+            window.localStorage.removeItem(lsKey);
           } catch {
             // ignore
           }
-        } else if (r.status === 503) {
-          setPreadviceMsg("Alertas automáticos desligados no servidor (ALLOW_CLIENT_NOTIFY_API).");
-        } else {
-          let detail = j.message || "Não foi possível registar o alerta do dia.";
-          const parts: string[] = [];
-          if (j.email && j.email.sent === false && j.email.error && j.email.error !== "no_email") {
-            parts.push(`Email: ${j.email.error}`);
+          if (r.status === 503) {
+            setPreadviceMsg("Alertas automáticos desligados no servidor (ALLOW_CLIENT_NOTIFY_API).");
+          } else {
+            let detail = j.message || "Não foi possível registar o alerta do dia.";
+            const parts: string[] = [];
+            if (j.email && j.email.sent === false && j.email.error && j.email.error !== "no_email") {
+              parts.push(`Email: ${j.email.error}`);
+            }
+            if (j.sms && j.sms.sent === false && j.sms.error && j.sms.error !== "no_phone") {
+              parts.push(`SMS: ${j.sms.error}`);
+            }
+            if (parts.length) detail = `${detail} ${parts.join(" · ")}`;
+            setPreadviceMsg(detail);
           }
-          if (j.sms && j.sms.sent === false && j.sms.error && j.sms.error !== "no_phone") {
-            parts.push(`SMS: ${j.sms.error}`);
-          }
-          if (parts.length) detail = `${detail} ${parts.join(" · ")}`;
-          setPreadviceMsg(detail);
         }
       } catch {
+        try {
+          window.localStorage.removeItem(lsKey);
+        } catch {
+          // ignore
+        }
         if (!cancelled) {
           setPreadviceMsg("Sem ligação ao servidor Next — alerta automático não enviado.");
         }
@@ -411,6 +526,7 @@ export default function ClientDashboardPage() {
   const overlayFactor = useMemo(() => getOverlayFactor(resp), [resp]);
   const overlayActive = overlayFactor !== null ? Math.abs(overlayFactor - 1.0) > 1e-6 : false;
 
+  /* equity_raw: alinha ao cartão «Modelo teórico» no kpi_server (CSV model_equity_final_20y.csv / snapshot raw_kpis). */
   const chartData = useMemo(() => {
     const series = resp?.series || {};
     const dates = series.dates || [];
@@ -421,189 +537,261 @@ export default function ClientDashboardPage() {
         {
           name: "Benchmark",
           values: series.benchmark_equity || [],
-          color: "#38bdf8",
+          color: "#d4d4d4",
         },
         {
-          name: "Modelo base (técnico)",
+          name: "Modelo teórico (não investível)",
           values: series.equity_raw || [],
-          color: "#e879f9",
+          color: "#a3a3a3",
         },
         {
           name: "Estratégia cliente (overlay)",
           values: series.equity_overlayed || [],
-          color: "#4ade80",
+          color: "#fafafa",
         },
         {
           name: "Raw Vol-Matched",
           values: series.equity_raw_volmatched || [],
-          color: "#fb923c",
+          color: "#737373",
           visible: true,
         },
       ],
     };
   }, [resp]);
 
-  const flaskCap15Url = useMemo(() => {
-    const base = getKpiEmbedBase();
-    if (!base) return "";
-    const t = iframeRefresh ? `&t=${iframeRefresh}` : "";
-    const tab = `&embed_tab=${encodeURIComponent(kpiEmbedTab)}`;
-    return `${base}/?client_embed=1&profile=${encodeURIComponent(profile)}${tab}${t}`;
-  }, [profile, iframeRefresh, kpiEmbedTab]);
-
   return (
     <>
       <Head>
-        <title>Decide Cliente — Dashboard</title>
+        <title>Dashboard</title>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <style>{`
-          @keyframes decidePortfolioPulse {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.45); }
-            50% { box-shadow: 0 0 28px 6px rgba(249, 115, 22, 0.28); }
-          }
           details > summary { list-style: none; }
           details > summary::-webkit-details-marker { display: none; }
+          /* Fundo cinzento: decide-app-client + DECIDE_APP_PAGE_BG em globals / theme */
         `}</style>
       </Head>
 
       <div
         style={{
           minHeight: "100vh",
-          overflowX: "hidden",
           overflowY: "auto",
-          background: "#06163a",
-          color: "#ffffff",
-          padding: "8px 12px 20px",
-          fontFamily: "Nunito, Segoe UI, Arial, sans-serif",
+          background: DECIDE_DASHBOARD.pageBg,
+          color: DECIDE_DASHBOARD.text,
+          padding: "0 12px 32px",
+          fontFamily: DECIDE_DASHBOARD.fontFamily,
           boxSizing: "border-box",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 10,
-            flexWrap: "wrap",
-            flexShrink: 0,
-            marginBottom: 4,
-          }}
-        >
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 25, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15 }}>
-              Decide Cliente
+        {mounted && !loggedIn ? (
+          <>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 12,
+                alignItems: "center",
+                marginTop: 0,
+                marginBottom: 6,
+              }}
+            >
+              <input
+                type="email"
+                value={prospectEmail}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setProspectEmail(v);
+                  if (prospectErr) setProspectErr("");
+                  const norm = v.trim().toLowerCase();
+                  if (prospectListLinkSentEmail && norm !== prospectListLinkSentEmail) {
+                    setProspectListLinkSentEmail(null);
+                  }
+                }}
+                placeholder="nome@email.com"
+                autoComplete="email"
+                style={{
+                  flex: "1 1 200px",
+                  minWidth: 0,
+                  maxWidth: 340,
+                  background: "rgba(39,39,42,0.85)",
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  borderRadius: 12,
+                  padding: "10px 14px",
+                  color: "#fff",
+                  fontSize: 14,
+                }}
+              />
+              <button
+                type="button"
+                disabled={prospectBusy}
+                onClick={() => void sendProspectListVerification()}
+                style={{
+                  background: DECIDE_DASHBOARD.buttonTealCta,
+                  color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
+                  border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                  borderRadius: 12,
+                  padding: "10px 18px",
+                  fontSize: 13,
+                  fontWeight: 900,
+                  cursor: prospectBusy ? "wait" : "pointer",
+                  opacity: prospectBusy ? 0.8 : 1,
+                  boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
+                  flexShrink: 0,
+                }}
+              >
+                {prospectBusy ? (
+                  <>
+                    A enviar
+                    <InlineLoadingDots />
+                  </>
+                ) : (
+                  "Enviar link de confirmação"
+                )}
+              </button>
             </div>
-            <div style={{ color: "#94a3b8", marginTop: 2, fontSize: 11, lineHeight: 1.3 }}>
-              {mounted && loggedIn
-                ? "Sessão iniciada · simule o seu cenário abaixo · alertas e revisões de carteira"
-                : "Página pública · simule o seu cenário abaixo · login para alertas e revisões de carteira"}
+            <div
+              style={{
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: prospectErr
+                  ? "#fca5a5"
+                  : prospectBusy
+                    ? "#a1a1aa"
+                    : prospectListStatusLoading
+                      ? "#a1a1aa"
+                      : !prospectEmail.trim().includes("@")
+                        ? "#a1a1aa"
+                        : prospectListVerified
+                          ? DECIDE_DASHBOARD.accentSky
+                          : prospectDevLink
+                            ? "#fde68a"
+                            : prospectListLinkSentEmail === prospectEmail.trim().toLowerCase()
+                              ? "#fde68a"
+                              : "#a1a1aa",
+                marginBottom: prospectDevLink ? 8 : 10,
+                maxWidth: 640,
+              }}
+            >
+              {prospectErr
+                ? prospectErr
+                : prospectBusy ? (
+                  <>
+                    A enviar o link
+                    <InlineLoadingDots />
+                  </>
+                ) : prospectListStatusLoading ? (
+                  <>
+                    A verificar se o email já foi confirmado
+                    <InlineLoadingDots />
+                  </>
+                ) : !prospectEmail.trim().includes("@")
+                      ? "Indique o seu email e peça o link para confirmar a subscrição."
+                      : prospectListVerified
+                        ? "Email confirmado — estás na lista para novidades."
+                        : prospectDevLink
+                          ? "Sem envio real (desenvolvimento) — confirme com o link abaixo."
+                          : prospectListLinkSentEmail === prospectEmail.trim().toLowerCase()
+                            ? "Link enviado — abra o email e confirme para concluir."
+                            : "Ainda não confirmado — carregue em «Enviar link de confirmação»."}
             </div>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
-              alignItems: "center",
-              justifyContent: "flex-end",
-            }}
-          >
-            {loggedIn ? (
+            {prospectDevLink ? (
               <div
                 style={{
-                  background: "#12244d",
-                  border: "1px solid rgba(255,255,255,0.18)",
-                  borderRadius: 10,
-                  padding: "5px 10px",
+                  marginBottom: 12,
+                  background: "rgba(13, 148, 136, 0.14)",
+                  border: "1px solid rgba(45, 212, 191, 0.35)",
+                  borderRadius: 12,
+                  padding: 12,
                   fontSize: 11,
-                  fontWeight: 800,
-                  color: "#93c5fd",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  maxWidth: 220,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
+                  lineHeight: 1.45,
+                  maxWidth: 640,
                 }}
-                title={sessionUser || undefined}
               >
-                {sessionUser || "—"}
+                {devConfirmationLinkUsesLoopback(prospectDevLink) ? (
+                  <div
+                    style={{
+                      marginBottom: 10,
+                      padding: 8,
+                      borderRadius: 8,
+                      background: "rgba(127,29,29,0.35)",
+                      border: "1px solid rgba(248,113,113,0.45)",
+                      color: "#fecaca",
+                    }}
+                  >
+                    <strong>Telemóvel:</strong> link com <code style={{ color: "#fff" }}>127.0.0.1</code> não abre fora do PC —
+                    defina <code style={{ color: "#fff" }}>EMAIL_LINK_BASE_URL</code> e <code style={{ color: "#fde68a" }}>npm run dev:lan</code>.
+                  </div>
+                ) : null}
+                {!devConfirmationLinkUsesLoopback(prospectDevLink) && devConfirmationLinkWrongPort(prospectDevLink) ? (
+                  <div
+                    style={{
+                      marginBottom: 10,
+                      padding: 8,
+                      borderRadius: 8,
+                      background: "rgba(120,53,15,0.35)",
+                      border: "1px solid rgba(251,191,36,0.45)",
+                      color: "#fde68a",
+                    }}
+                  >
+                    Porta no link deve ser <code style={{ color: "#fff" }}>{DECIDE_NEXT_DEV_PORT}</code> — vê{" "}
+                    <code style={{ color: "#fff" }}>EMAIL_LINK_BASE_URL</code>.
+                  </div>
+                ) : null}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                  <button
+                    type="button"
+                    onClick={() => void navigator.clipboard.writeText(prospectDevLink)}
+                    style={{
+                      background: DECIDE_DASHBOARD.buttonTealCta,
+                      color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
+                      border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      fontSize: 12,
+                      boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
+                    }}
+                  >
+                    Copiar link
+                  </button>
+                  <span style={{ color: "#71717a", wordBreak: "break-all", flex: "1 1 200px" }}>{prospectDevLink}</span>
+                </div>
               </div>
             ) : null}
+          </>
+        ) : null}
 
-            <a
-              href={loggedIn ? "/client-montante" : "/client/register"}
-              style={{
-                background: "#3f73ff",
-                color: "#fff",
-                border: "1px solid rgba(255,255,255,0.28)",
-                borderRadius: 10,
-                padding: "7px 12px",
-                fontSize: 12,
-                fontWeight: 800,
-                textDecoration: "none",
-              }}
-            >
-              Registo
-            </a>
-
-            <a
-              href={loggedIn ? "/client-montante" : "/client/login"}
-              style={{
-                background: "#12244d",
-                color: "#fff",
-                border: "1px solid rgba(255,255,255,0.18)",
-                borderRadius: 10,
-                padding: "7px 12px",
-                fontSize: 12,
-                fontWeight: 800,
-                textDecoration: "none",
-              }}
-            >
-              Login
-            </a>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (!loggedIn) return;
-                logoutClient();
-                window.location.reload();
-              }}
-              disabled={!loggedIn}
-              style={{
-                background: "#0f172a",
-                color: "#fff",
-                border: "1px solid rgba(255,255,255,0.18)",
-                borderRadius: 10,
-                padding: "7px 12px",
-                fontSize: 12,
-                fontWeight: 800,
-                cursor: !loggedIn ? "not-allowed" : "pointer",
-                opacity: !loggedIn ? 0.6 : 1,
-              }}
-            >
-              Logout
-            </button>
+        {loggedIn && mounted && preadviceMsg ? (
+          <div
+            style={{
+              marginTop: 6,
+              marginBottom: 6,
+              fontSize: 11,
+              color: preadviceMsg.includes("desligados") || preadviceMsg.includes("Não foi") || preadviceMsg.includes("Sem ligação")
+                ? "#fca5a5"
+                : "#a1a1aa",
+              lineHeight: 1.4,
+              maxWidth: 720,
+            }}
+          >
+            {preadviceMsg}
           </div>
-          </div>
+        ) : null}
 
         {mounted && !loggedIn ? (
           <div
             role="status"
             style={{
-              marginTop: 18,
-              marginBottom: 4,
+              marginTop: 0,
+              marginBottom: 12,
               padding: "10px 14px",
               borderRadius: 14,
-              background: "rgba(37,99,235,0.12)",
-              border: "1px solid rgba(59,130,246,0.28)",
+              background: "rgba(13,148,136,0.14)",
+              border: "1px solid rgba(45,212,191,0.28)",
               fontSize: 12,
               lineHeight: 1.35,
-              color: "#cbd5e1",
+              color: "#d4d4d8",
               width: "100%",
               maxWidth: "100%",
               minWidth: 0,
@@ -626,208 +814,8 @@ export default function ClientDashboardPage() {
               <span aria-hidden style={{ marginRight: 6 }}>
                 💡
               </span>
-              <strong style={{ color: "#e2e8f0", whiteSpace: "nowrap" }}>Resumo:</strong> o histórico ilustrativo permite comparar a estratégia DECIDE com o mercado de referência ao longo do tempo — não é garantia de resultados futuros.
+              <strong style={{ color: "var(--text-primary)", whiteSpace: "nowrap" }}>Resumo:</strong> o histórico ilustrativo permite comparar a estratégia DECIDE com o mercado de referência ao longo do tempo — não é garantia de resultados futuros.
             </span>
-          </div>
-        ) : null}
-
-        {mounted && !loggedIn ? (
-          <div
-            style={{
-              marginTop: 8,
-              marginBottom: 2,
-              padding: "8px 12px",
-              borderRadius: 10,
-              background: "rgba(120,53,15,0.28)",
-              border: "1px solid rgba(251,191,36,0.38)",
-              fontSize: 11,
-              lineHeight: 1.45,
-              color: "#fcd34d",
-            }}
-          >
-            <strong>Sessão noutro endereço?</strong> Se já iniciaste sessão mas vês «página pública» e o bloco de email,
-            abre o dashboard no <strong>mesmo</strong> URL que usaste no login (<code style={{ fontSize: 10 }}>localhost</code>{" "}
-            <em>ou</em> <code style={{ fontSize: 10 }}>127.0.0.1</code>) — o browser guarda a sessão separadamente por
-            «origem».
-          </div>
-        ) : null}
-
-        {mounted && !loggedIn ? (
-          <div
-            style={{
-              marginTop: 10,
-              padding: "12px 14px",
-              borderRadius: 16,
-              background: "rgba(30,58,138,0.35)",
-              border: "1px solid rgba(147,197,253,0.25)",
-              flexShrink: 0,
-            }}
-          >
-            <div style={{ fontSize: 14, fontWeight: 900, color: "#e0e7ff", marginBottom: 6 }}>
-              Registar email no dashboard
-            </div>
-            <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.5, marginBottom: 10 }}>
-              <strong>Validação só por email</strong> — não pedimos telemóvel nem password. Processo: (1) indica o email
-              abaixo; (2) recebes um link; (3) clicas no link para confirmares. Só depois disso o endereço fica registado
-              para comunicações (lista de interessados, separada do registo de conta e da base formal de clientes).
-            </div>
-            <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.45, marginBottom: 10 }}>
-              <strong>Não é conta cliente</strong> — para operar carteira e alertas usa{" "}
-              <a href="/client/register" style={{ color: "#93c5fd", fontWeight: 800 }}>
-                Registo
-              </a>
-              .
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-              <input
-                type="email"
-                value={prospectEmail}
-                onChange={(e) => setProspectEmail(e.target.value)}
-                placeholder="o.teu@email.com"
-                autoComplete="email"
-                style={{
-                  flex: "1 1 220px",
-                  maxWidth: 320,
-                  background: "rgba(15,23,42,0.75)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: 12,
-                  padding: "10px 12px",
-                  color: "#fff",
-                  fontSize: 14,
-                }}
-              />
-              <button
-                type="button"
-                disabled={prospectBusy}
-                onClick={() => void sendProspectListVerification()}
-                style={{
-                  background: "#2563eb",
-                  color: "#fff",
-                  border: "1px solid rgba(255,255,255,0.2)",
-                  borderRadius: 12,
-                  padding: "10px 16px",
-                  fontSize: 13,
-                  fontWeight: 900,
-                  cursor: prospectBusy ? "wait" : "pointer",
-                  opacity: prospectBusy ? 0.8 : 1,
-                }}
-              >
-                {prospectBusy ? "A enviar…" : "Enviar link de confirmação"}
-              </button>
-            </div>
-            {prospectErr ? (
-              <div style={{ marginTop: 10, fontSize: 12, color: "#fca5a5" }}>{prospectErr}</div>
-            ) : null}
-            {prospectMsg ? (
-              <div style={{ marginTop: 10, fontSize: 12, color: "#86efac" }}>{prospectMsg}</div>
-            ) : null}
-            {prospectDevLink ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  background: "rgba(37, 99, 235, 0.15)",
-                  border: "1px solid rgba(147, 197, 253, 0.45)",
-                  borderRadius: 14,
-                  padding: 12,
-                  fontSize: 12,
-                  lineHeight: 1.45,
-                }}
-              >
-                <div style={{ fontWeight: 900, color: "#93c5fd", marginBottom: 8 }}>
-                  Modo desenvolvimento — email não foi enviado
-                </div>
-                <p style={{ margin: "0 0 12px", color: "#cbd5e1", fontSize: 12, lineHeight: 1.5 }}>
-                  Não há <strong>Resend</strong> nem <strong>Gmail</strong> configurados no servidor, por isso{" "}
-                  <strong>nenhuma mensagem foi enviada à caixa de entrada</strong>. O endereço abaixo é o mesmo que iria no
-                  email — serve só para testes locais. Toca no botão verde para abrir <strong>no mesmo separador</strong>{" "}
-                  (evita o menu «Abrir com…» no Android). Com envio real configurado, este bloco deixa de aparecer.
-                </p>
-                {devConfirmationLinkUsesLoopback(prospectDevLink) ? (
-                  <div
-                    style={{
-                      marginBottom: 12,
-                      padding: 10,
-                      borderRadius: 10,
-                      background: "rgba(127,29,29,0.35)",
-                      border: "1px solid rgba(248,113,113,0.45)",
-                      color: "#fecaca",
-                      fontSize: 11,
-                      lineHeight: 1.45,
-                    }}
-                  >
-                    <strong>Atenção (telemóvel):</strong> este link usa <code style={{ color: "#fff" }}>127.0.0.1</code> ou{" "}
-                    <code style={{ color: "#fff" }}>localhost</code> — no telemóvel isso <strong>não é o teu PC</strong> e o
-                    browser mostra erro de ligação. No <code style={{ color: "#fde68a" }}>frontend/.env.local</code> define{" "}
-                    <code style={{ color: "#fff" }}>EMAIL_LINK_BASE_URL=http://IP-DO-PC:4701</code>, corre{" "}
-                    <code style={{ color: "#fde68a" }}>npm run dev:lan</code> e volta a pedir o link.
-                  </div>
-                ) : null}
-                {!devConfirmationLinkUsesLoopback(prospectDevLink) && devConfirmationLinkWrongPort(prospectDevLink) ? (
-                  <div
-                    style={{
-                      marginBottom: 12,
-                      padding: 10,
-                      borderRadius: 10,
-                      background: "rgba(120,53,15,0.35)",
-                      border: "1px solid rgba(251,191,36,0.45)",
-                      color: "#fde68a",
-                      fontSize: 11,
-                      lineHeight: 1.45,
-                    }}
-                  >
-                    <strong>Porta errada no link:</strong> o Next deste projeto usa a porta{" "}
-                    <code style={{ color: "#fff" }}>{DECIDE_NEXT_DEV_PORT}</code> (<code style={{ color: "#fde68a" }}>npm run dev:lan</code>
-                    ). Se o link mostra outra porta (ex. <strong>4000</strong>), o telemóvel abre um servidor que{" "}
-                    <strong>não existe</strong> → página de erro.                     Abre o dashboard em{" "}
-                    <code style={{ color: "#fff" }}>{`http://<IP-LAN>:${DECIDE_NEXT_DEV_PORT}`}</code>, volta a enviar o link, ou
-                    corrige <code style={{ color: "#fff" }}>EMAIL_LINK_BASE_URL</code> para essa porta.
-                  </div>
-                ) : null}
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {/*
-                    Sem target="_blank": no Android evita o menu «Abrir com…» (Chrome/Firefox/etc.) e mantém a navegação
-                    na mesma app (email ou browser) onde o utilizador já está.
-                  */}
-                  <a
-                    href={prospectDevLink}
-                    style={{
-                      display: "block",
-                      textAlign: "center",
-                      boxSizing: "border-box",
-                      padding: "14px 18px",
-                      borderRadius: 12,
-                      background: "linear-gradient(180deg, #22c55e 0%, #16a34a 100%)",
-                      color: "#fff",
-                      fontWeight: 900,
-                      fontSize: 15,
-                      textDecoration: "none",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                    }}
-                  >
-                    Abrir página de confirmação
-                  </a>
-                  <div style={{ fontSize: 10, color: "#64748b", lineHeight: 1.35, marginTop: -4 }}>
-                    Abre <strong>no mesmo separador</strong> — no telemóvel não pede para escolheres outro browser.
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void navigator.clipboard.writeText(prospectDevLink).then(() => setProspectMsg("Link copiado."))}
-                    style={{
-                      background: "#1d4ed8",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: 10,
-                      padding: "10px 14px",
-                      fontWeight: 800,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Copiar link
-                  </button>
-                </div>
-                <div style={{ marginTop: 10, fontSize: 10, color: "#64748b", wordBreak: "break-all" }}>{prospectDevLink}</div>
-              </div>
-            ) : null}
           </div>
         ) : null}
 
@@ -845,15 +833,15 @@ export default function ClientDashboardPage() {
               flexShrink: 0,
             }}
           >
-            <strong>Confirma o email</strong> para ativares os alertas automáticos por email. Abre o link do último email que
+            <strong>Confirme o email</strong> para ativar os alertas automáticos por email. Abra o link do último email que
             enviámos ou{" "}
             <a href="/client/register" style={{ color: "#fff", fontWeight: 800 }}>
-              vai à página de registo
+              vá à página de registo
             </a>
             .
             <div style={{ marginTop: 8, fontSize: 11, color: "#fcd34d", lineHeight: 1.45 }}>
-              <strong>Reenviar email de confirmação</strong> manda <em>outro</em> email com o mesmo tipo de link (útil se não
-              encontraste o primeiro ou expirou). Sem clicar nesse link, o servidor continua a tratar o email como não
+              <strong>Reenviar email de confirmação</strong> envia <em>outro</em> email com o mesmo tipo de link (útil caso não
+              tenha encontrado o primeiro ou o link tenha expirado). Sem clicar nesse link, o servidor continua a tratar o email como não
               confirmado.
             </div>
             <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
@@ -864,7 +852,7 @@ export default function ClientDashboardPage() {
                   const u = sessionUser;
                   const em = (getCurrentSessionUserEmail() || "").trim();
                   if (!u || !em.includes("@")) {
-                    setVerifyBannerNote("Preenche o email na conta (registo).");
+                    setVerifyBannerNote("Preencha o email na conta (registo).");
                     return;
                   }
                   setVerifyResendBusy(true);
@@ -877,7 +865,7 @@ export default function ClientDashboardPage() {
                       } else if (!vr.ok) {
                         setVerifyBannerNote(vr.error || "Falha ao reenviar.");
                       } else {
-                        setVerifyBannerNote("Enviámos outro email. Verifica a caixa de entrada.");
+                        setVerifyBannerNote("Enviámos outro email. Verifique a caixa de entrada.");
                       }
                     } finally {
                       setVerifyResendBusy(false);
@@ -885,175 +873,171 @@ export default function ClientDashboardPage() {
                   })();
                 }}
                 style={{
-                  background: "#ca8a04",
-                  color: "#0f172a",
-                  border: "none",
+                  background: DECIDE_DASHBOARD.buttonAmberCta,
+                  color: "#18181b",
+                  border: "1px solid rgba(255,255,255,0.22)",
                   borderRadius: 12,
                   padding: "8px 14px",
                   fontSize: 12,
                   fontWeight: 900,
                   cursor: verifyResendBusy ? "wait" : "pointer",
                   opacity: verifyResendBusy ? 0.75 : 1,
+                  boxShadow: DECIDE_DASHBOARD.buttonShadowSoft,
                 }}
               >
-                {verifyResendBusy ? "A enviar…" : "Reenviar email de confirmação"}
+                {verifyResendBusy ? (
+                  <>
+                    A enviar
+                    <InlineLoadingDots />
+                  </>
+                ) : (
+                  "Reenviar email de confirmação"
+                )}
               </button>
               {verifyBannerNote ? <span style={{ fontSize: 12, color: "#fef9c3" }}>{verifyBannerNote}</span> : null}
             </div>
           </div>
         ) : null}
 
-        {loggedIn && mounted ? (
-          <div
-            style={{
-              marginTop: 8,
-              flexShrink: 0,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "stretch",
-              gap: 8,
-              width: "100%",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "row",
-                flexWrap: "wrap",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                width: "100%",
-              }}
-            >
-              <div
-                role="status"
-                style={{
-                  margin: 0,
-                  padding: "10px 14px",
-                  borderRadius: 14,
-                  background: "rgba(37,99,235,0.12)",
-                  border: "1px solid rgba(59,130,246,0.28)",
-                  fontSize: 12,
-                  lineHeight: 1.35,
-                  color: "#cbd5e1",
-                  flex: "1 1 200px",
-                  minWidth: 0,
-                  maxWidth: "100%",
-                  boxSizing: "border-box",
-                  overflowX: "auto",
-                  overflowY: "hidden",
-                  WebkitOverflowScrolling: "touch",
-                  scrollbarWidth: "thin",
-                }}
-              >
-                <span
-                  style={{
-                    display: "inline-block",
-                    whiteSpace: "nowrap",
-                    width: "max-content",
-                    maxWidth: "none",
-                    wordBreak: "normal",
-                  }}
-                >
-                  <span aria-hidden style={{ marginRight: 6 }}>
-                    💡
-                  </span>
-                  <strong style={{ color: "#e2e8f0", whiteSpace: "nowrap" }}>Resumo:</strong> o histórico ilustrativo permite comparar a estratégia DECIDE com o mercado de referência ao longo do tempo — não é garantia de resultados futuros.
-                </span>
-              </div>
-              <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
-                {portfolioScheduleUi.actionRequired ? (
-                  <button
-                    type="button"
-                    onClick={openPortfolioRecommendationsPanel}
-                    style={{
-                      width: "auto",
-                      maxWidth: "min(100%, 320px)",
-                      boxSizing: "border-box",
-                      padding: "8px 16px",
-                      borderRadius: 12,
-                      border: "2px solid rgba(249,115,22,0.9)",
-                      background: "linear-gradient(180deg, #fb923c 0%, #ea580c 100%)",
-                      color: "#0f172a",
-                      fontSize: 13,
-                      fontWeight: 900,
-                      fontFamily: "inherit",
-                      lineHeight: 1.25,
-                      textAlign: "center",
-                      cursor: "pointer",
-                      animation: "decidePortfolioPulse 2.2s ease-in-out infinite",
-                    }}
-                  >
-                    {!portfolioScheduleUi.hasOnboarding
-                      ? "Ver o que fazer agora (constituir carteira)"
-                      : "Ver o que fazer agora (revisão mensal)"}
-                  </button>
-                ) : (
-                  <div
-                    role="status"
-                    style={{
-                      maxWidth: "min(100%, 380px)",
-                      padding: "6px 12px",
-                      borderRadius: 10,
-                      background: "rgba(30, 41, 59, 0.92)",
-                      border: "1px solid rgba(148, 163, 184, 0.5)",
-                      boxShadow: "0 1px 0 rgba(255,255,255,0.06) inset",
-                      color: "#f1f5f9",
-                      fontSize: 12,
-                      fontWeight: 800,
-                      fontFamily: "inherit",
-                      lineHeight: 1.35,
-                      textAlign: "right",
-                    }}
-                  >
-                    Sem ação urgente — próxima revisão:{" "}
-                    <span style={{ color: "#bae6fd", fontWeight: 900 }}>
-                      {portfolioScheduleUi.nextReviewPt || "—"}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-            {preadviceMsg ? (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: preadviceMsg.includes("desligados") || preadviceMsg.includes("Não foi") || preadviceMsg.includes("Sem ligação")
-                    ? "#fca5a5"
-                    : "#94a3b8",
-                  lineHeight: 1.4,
-                }}
-              >
-                {preadviceMsg}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
         <div
           style={{
-            marginTop: 10,
+            marginTop: 0,
             width: "100%",
+            display: "flex",
+            flexDirection: "column",
           }}
         >
           {loggedIn ? (
             <div
               style={{
-                background: "#12244d",
+                background: DECIDE_DASHBOARD.headerPanel,
                 border: "1px solid rgba(255,255,255,0.08)",
                 borderRadius: 16,
                 padding: "10px 12px 12px",
                 display: "flex",
                 flexDirection: "column",
                 gap: 8,
+                order: 2,
+                marginTop: mounted ? 6 : 0,
               }}
             >
+              {sessionUser && (!portfolioScheduleUi.hasOnboarding || !clientPlanApproved) ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {!portfolioScheduleUi.hasOnboarding ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        padding: "12px 14px",
+                        borderRadius: 12,
+                        background: "linear-gradient(135deg, rgba(48,48,50,0.65) 0%, rgba(24,24,27,0.96) 100%)",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
+                      }}
+                    >
+                      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                        <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.06em", color: "#d4d4d4" }}>
+                          CALENDÁRIO — CONSTITUIÇÃO INICIAL
+                        </div>
+                        <p style={{ margin: "6px 0 0", fontSize: 12, lineHeight: 1.45, color: "#e4e4e7" }}>
+                          Marque o dia em que começa a seguir o plano (hoje). Isto regista o calendário de revisões mensais —{" "}
+                          <strong style={{ color: "#d4d4d8" }}>não substitui</strong> aprovar o plano nem executar ordens. Pode
+                          utilizar os atalhos para o plano e revisões na página Plano e no fluxo de aprovação quando estiverem
+                          disponíveis.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const u = sessionUser || getCurrentSessionUser();
+                          if (!u) return;
+                          setOnboardingSnapshotNow(u, profile);
+                          setPortfolioScheduleRev((n) => n + 1);
+                        }}
+                        style={{
+                          flex: "0 0 auto",
+                          background: DECIDE_DASHBOARD.buttonRegister,
+                          color: "#fde68a",
+                          border: "1px solid rgba(251,191,36,0.55)",
+                          borderRadius: 12,
+                          padding: "10px 18px",
+                          fontSize: 13,
+                          fontWeight: 900,
+                          cursor: "pointer",
+                          boxShadow: `${DECIDE_DASHBOARD.buttonShadowSoft}, 0 4px 20px rgba(251,191,36,0.15)`,
+                        }}
+                      >
+                        Marcar início (hoje)
+                      </button>
+                    </div>
+                  ) : null}
+                  {!clientPlanApproved ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        padding: "12px 14px",
+                        borderRadius: 12,
+                        background: "linear-gradient(135deg, rgba(120,53,15,0.35) 0%, rgba(24,24,27,0.96) 100%)",
+                        border: "1px solid rgba(251,191,36,0.42)",
+                        boxShadow: "0 4px 24px rgba(0,0,0,0.35)",
+                      }}
+                    >
+                      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                        <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.06em", color: "#fde68a" }}>
+                          CONSTITUIR CARTEIRA (PLANO)
+                        </div>
+                        <p style={{ margin: "6px 0 0", fontSize: 12, lineHeight: 1.45, color: "#e4e4e7" }}>
+                          Enquanto o plano não for <strong style={{ color: "#d4d4d8" }}>aprovado</strong> neste fluxo, a carteira
+                          não fica constituída ao nível regulamentar. Abra a página do plano recomendado para rever e confirmar —
+                          não depende do dia de revisão mensal.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        aria-busy={planPageNavPending}
+                        disabled={planPageNavPending}
+                        onClick={goToApprovePlan}
+                        style={{
+                          ...PLAN_CTA_ORANGE,
+                          flex: "0 0 auto",
+                          width: "auto",
+                          padding: "10px 18px",
+                          fontSize: 13,
+                          border: "none",
+                          fontFamily: "inherit",
+                          cursor: planPageNavPending ? "wait" : "pointer",
+                          opacity: planPageNavPending ? 0.9 : 1,
+                        }}
+                      >
+                        {planPageNavPending ? (
+                          <>
+                            A abrir
+                            <InlineLoadingDots />
+                          </>
+                        ) : (
+                          "Ver plano para a sua carteira"
+                        )}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {(() => {
+                const t = normalizeKpiEmbedTabId(kpiEmbedTab);
+                if (t === "charts" || t === "simulator") return null;
+                return (
               <details
                 style={{
                   borderRadius: 12,
-                  background: "rgba(15,23,42,0.45)",
-                  border: "1px solid rgba(147,197,253,0.22)",
+                  background: "rgba(39,39,42,0.5)",
+                  border: "1px solid rgba(255,255,255,0.08)",
                 }}
               >
                 <summary
@@ -1061,17 +1045,19 @@ export default function ClientDashboardPage() {
                     padding: "8px 10px",
                     fontSize: 12,
                     fontWeight: 900,
-                    color: "#93c5fd",
+                    color: "#d4d4d4",
                     cursor: "pointer",
                     listStyle: "none",
                   }}
                 >
-                  Recomendações de carteira (expandir)
+                  {portfolioScheduleUi.hasOnboarding
+                    ? "Recomendações de carteira (expandir)"
+                    : "Recomendações de carteira (telemóvel, alertas — expandir)"}
                 </summary>
                 <div style={{ padding: "0 10px 10px" }}>
-                <div style={{ fontSize: 11, color: "#cbd5e1", lineHeight: 1.45, marginBottom: 10 }}>
-                  {portfolioScheduleUi.ruleSummary} Usa o separador <strong>Carteira</strong> no painel abaixo para a
-                  composição sugerida.
+                <div style={{ fontSize: 11, color: "#d4d4d8", lineHeight: 1.45, marginBottom: 10 }}>
+                  {portfolioScheduleUi.ruleSummary} Abra a página <strong>Carteira</strong> no menu superior (vista IBKR
+                  e composição sugerida).
                 </div>
                 {latestModelMonth &&
                 typeof latestModelMonth.tbillsTotalPct === "number" &&
@@ -1081,24 +1067,24 @@ export default function ClientDashboardPage() {
                       marginBottom: 12,
                       padding: "10px 12px",
                       borderRadius: 12,
-                      background: "rgba(14, 165, 233, 0.12)",
-                      border: "1px solid rgba(56, 189, 248, 0.35)",
+                      background: "rgba(39, 39, 42, 0.55)",
+                      border: "1px solid rgba(255, 255, 255, 0.08)",
                       fontSize: 12,
                       lineHeight: 1.5,
-                      color: "#e0f2fe",
+                      color: "#e4e4e7",
                     }}
                   >
-                    <strong style={{ color: "#7dd3fc" }}>Carteira modelo (última data)</strong>{" "}
-                    <span style={{ color: "#94a3b8" }}>({formatPtDate(latestModelMonth.date)})</span>
+                    <strong style={{ color: "#d4d4d4" }}>Carteira modelo (última data)</strong>{" "}
+                    <span style={{ color: "#a1a1aa" }}>({formatPtDate(latestModelMonth.date)})</span>
                     <div style={{ marginTop: 6 }}>
-                      <span style={{ fontWeight: 900, color: "#38bdf8" }}>
+                      <span style={{ fontWeight: 900, color: "#c4c4c4" }}>
                         T-Bills {latestModelMonth.tbillsTotalPct.toFixed(1)}%
                       </span>
                       {typeof latestModelMonth.equitySleeveTotalPct === "number" &&
                       isFinite(latestModelMonth.equitySleeveTotalPct) ? (
-                        <span style={{ fontWeight: 700, color: "#cbd5e1" }}>
+                        <span style={{ fontWeight: 700, color: "#d4d4d8" }}>
                           {" "}
-                          · Ações {latestModelMonth.equitySleeveTotalPct.toFixed(1)}%
+                          · Acções {latestModelMonth.equitySleeveTotalPct.toFixed(1)}%
                         </span>
                       ) : null}
                     </div>
@@ -1106,7 +1092,7 @@ export default function ClientDashboardPage() {
                 ) : null}
                 <div style={{ marginBottom: 10, display: "flex", flexDirection: "column", gap: 6 }}>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                    <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700 }}>Telemóvel (conta)</span>
+                    <span style={{ fontSize: 11, color: "#a1a1aa", fontWeight: 700 }}>Telemóvel (conta)</span>
                     <input
                       type="tel"
                       inputMode="tel"
@@ -1130,7 +1116,7 @@ export default function ClientDashboardPage() {
                       style={{
                         flex: "1 1 200px",
                         maxWidth: 280,
-                        background: "rgba(15,23,42,0.6)",
+                        background: "rgba(24,24,27,0.75)",
                         border: "1px solid rgba(255,255,255,0.12)",
                         borderRadius: 10,
                         padding: "6px 10px",
@@ -1142,14 +1128,15 @@ export default function ClientDashboardPage() {
                       type="button"
                       onClick={() => persistNotifyPhone()}
                       style={{
-                        background: "#334155",
-                        color: "#e2e8f0",
-                        border: "1px solid rgba(255,255,255,0.18)",
+                        background: DECIDE_DASHBOARD.buttonSlateCta,
+                        color: "var(--text-primary)",
+                        border: "1px solid rgba(255,255,255,0.22)",
                         borderRadius: 10,
                         padding: "6px 14px",
                         fontSize: 12,
                         fontWeight: 800,
                         cursor: "pointer",
+                        boxShadow: DECIDE_DASHBOARD.buttonShadowSoft,
                       }}
                     >
                       Guardar telemóvel
@@ -1160,7 +1147,9 @@ export default function ClientDashboardPage() {
                       style={{
                         fontSize: 11,
                         fontWeight: 700,
-                        color: notifyPhoneSaveFeedback.startsWith("Telemóvel guardado") ? "#86efac" : "#fca5a5",
+                        color: notifyPhoneSaveFeedback.startsWith("Telemóvel guardado")
+                          ? DECIDE_DASHBOARD.accentSky
+                          : "#fca5a5",
                         maxWidth: 420,
                         lineHeight: 1.4,
                       }}
@@ -1168,39 +1157,13 @@ export default function ClientDashboardPage() {
                       {notifyPhoneSaveFeedback}
                     </div>
                   ) : null}
-                  <span style={{ fontSize: 10, color: "#64748b" }}>
-                    Email na conta: {getCurrentSessionUserEmail() || "—"} · no telemóvel usa «Guardar» ou Enter (só sair do
+                  <span style={{ fontSize: 10, color: "#71717a" }}>
+                    Email na conta: {getCurrentSessionUserEmail() || "—"} · no telemóvel utilize «Guardar» ou Enter (só sair do
                     campo por vezes não grava)
                   </span>
                 </div>
-                {!portfolioScheduleUi.hasOnboarding ? (
-                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 11, color: "#94a3b8" }}>
-                      Ainda não marcaste a <strong>constituição inicial</strong>. Faz-o no dia em que começares a operar.
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!sessionUser) return;
-                        setOnboardingSnapshotNow(sessionUser, profile);
-                        setPortfolioScheduleRev((n) => n + 1);
-                      }}
-                      style={{
-                        background: "#2563eb",
-                        color: "#fff",
-                        border: "1px solid rgba(255,255,255,0.2)",
-                        borderRadius: 12,
-                        padding: "8px 14px",
-                        fontSize: 12,
-                        fontWeight: 800,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Marcar constituição inicial (hoje)
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 12, color: "#e2e8f0", lineHeight: 1.55 }}>
+                {portfolioScheduleUi.hasOnboarding ? (
+                  <div style={{ fontSize: 12, color: "var(--text-primary)", lineHeight: 1.55 }}>
                     <div>
                       <strong>Constituição inicial:</strong>{" "}
                       {portfolioScheduleUi.onboardingYmd ? formatPtDate(portfolioScheduleUi.onboardingYmd) : "—"}
@@ -1215,17 +1178,51 @@ export default function ClientDashboardPage() {
                           marginTop: 8,
                           padding: "8px 10px",
                           borderRadius: 10,
-                          background: "rgba(34,197,94,0.15)",
-                          border: "1px solid rgba(34,197,94,0.45)",
-                          color: "#bbf7d0",
+                          background: "rgba(39, 39, 42, 0.75)",
+                          border: "1px solid rgba(255, 255, 255, 0.1)",
+                          color: "#e4e4e7",
                           fontSize: 11,
                           fontWeight: 700,
                         }}
                       >
-                        Hoje coincide com o dia de revisão mensal — consulta a carteira recomendada no iframe e ajusta
-                        encomendas conforme o teu perfil ({profile}).
+                        Hoje coincide com o dia de revisão mensal — consulte a carteira recomendada no iframe e ajuste
+                        encomendas conforme o seu perfil ({profile}).
                       </div>
                     ) : null}
+                    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8, maxWidth: 520 }}>
+                      <button
+                        type="button"
+                        aria-busy={planPageNavPending}
+                        disabled={planPageNavPending}
+                        onClick={goToApprovePlan}
+                        style={{
+                          ...PLAN_CTA_ORANGE,
+                          alignSelf: "flex-start",
+                          width: "auto",
+                          padding: "10px 18px",
+                          fontSize: 13,
+                          border: "none",
+                          fontFamily: "inherit",
+                          cursor: planPageNavPending ? "wait" : "pointer",
+                          opacity: planPageNavPending ? 0.9 : 1,
+                        }}
+                      >
+                        {planPageNavPending ? (
+                          <>
+                            A abrir
+                            <InlineLoadingDots />
+                          </>
+                        ) : (
+                          "Ver proposta de investimento (regulamentar)"
+                        )}
+                      </button>
+                      <p style={{ margin: 0, fontSize: 10, color: "#a1a1aa", lineHeight: 1.45 }}>
+                        <strong>Onde aprovar:</strong> a confirmação regulamentar das ordens do último rebalance faz-se nesta página
+                        (mesmos dados que o plano e o ficheiro <code style={{ color: "var(--text-primary)" }}>decide_trade_plan_ibkr.csv</code>
+                        ). O botão «Confirmar revisão mensal aplicada / lida» abaixo é só um registo opcional de que viste a
+                        recomendação no dashboard — não substitui a aprovação do plano.
+                      </p>
+                    </div>
                     <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                       <button
                         type="button"
@@ -1235,183 +1232,193 @@ export default function ClientDashboardPage() {
                           setPortfolioScheduleRev((n) => n + 1);
                         }}
                         style={{
-                          background: "transparent",
-                          color: "#93c5fd",
-                          border: "1px solid rgba(147,197,253,0.4)",
+                          background:
+                            "linear-gradient(165deg, rgba(63,63,70,0.5) 0%, rgba(39,39,42,0.9) 100%)",
+                          color: "#d4d4d4",
+                          border: "1px solid rgba(255,255,255,0.12)",
                           borderRadius: 10,
                           padding: "6px 12px",
                           fontSize: 11,
                           fontWeight: 700,
                           cursor: "pointer",
+                          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 8px rgba(0,0,0,0.35)",
                         }}
                       >
                         Confirmar revisão mensal aplicada / lida
                       </button>
-                      <span style={{ fontSize: 10, color: "#64748b" }}>
+                      <span style={{ fontSize: 10, color: "#71717a" }}>
                         (Registo opcional; não altera as datas do ciclo global.)
                       </span>
                     </div>
                   </div>
+                ) : (
+                  <p style={{ margin: "10px 0 0", fontSize: 11, color: "#71717a", lineHeight: 1.45 }}>
+                    {clientPlanApproved ? (
+                      <>
+                        A <strong style={{ color: "#a1a1aa" }}>constituição inicial</strong> marca-se com o botão acima («Marcar
+                        início») — não precisas de abrir esta secção para isso.
+                      </>
+                    ) : (
+                      <>
+                        Se já marcaste o início no calendário, falta <strong style={{ color: "#a1a1aa" }}>constituir a carteira</strong>{" "}
+                        (aprovar o plano em{" "}
+                        <button
+                          type="button"
+                          disabled={planPageNavPending}
+                          onClick={goToApprovePlan}
+                          style={{
+                            color: "#fb923c",
+                            fontWeight: 800,
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            cursor: planPageNavPending ? "wait" : "pointer",
+                            textDecoration: "underline",
+                            fontSize: "inherit",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          {planPageNavPending ? (
+                            <>
+                              A abrir
+                              <InlineLoadingDots />
+                            </>
+                          ) : (
+                            "Ver proposta de investimento"
+                          )}
+                        </button>
+                        ).
+                      </>
+                    )}
+                  </p>
                 )}
                 </div>
               </details>
+                );
+              })()}
             </div>
           ) : null}
 
           {mounted ? (
             <div
               style={{
-                background: "#12244d",
-                border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: 16,
-                padding: "10px 12px 12px",
                 display: "flex",
                 flexDirection: "column",
-                gap: 8,
-                marginTop: loggedIn ? 10 : 0,
+                gap: 0,
+                marginTop: 0,
+                order: 1,
               }}
             >
-              <div style={{ marginBottom: 10, flexShrink: 0, textAlign: "center", width: "100%" }}>
-                <div style={{ fontSize: 15, fontWeight: 900, color: "#f8fafc", letterSpacing: "-0.02em" }}>
-                  Simule o seu capital
-                </div>
-                <div
-                  style={{
-                    color: "#94a3b8",
-                    marginTop: 4,
-                    fontSize: 12,
-                    lineHeight: 1.45,
-                    maxWidth: 520,
-                    marginLeft: "auto",
-                    marginRight: "auto",
-                  }}
-                >
-                  Um único foco: quanto o histórico ilustrativo sugere para o seu perfil e volatilidade alvo.
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 12,
-                    marginTop: 14,
-                  }}
-                >
-                  <label
-                    htmlFor="client-dash-profile"
-                    style={{ color: "#b7c3e0", fontSize: 14, fontWeight: 800, letterSpacing: "0.02em" }}
-                  >
-                    Perfil de risco
-                  </label>
-                  <select
-                    id="client-dash-profile"
-                    value={profile}
-                    onChange={(e) => setProfile(e.target.value as any)}
-                    style={{
-                      background: "rgba(15,23,42,0.75)",
-                      color: "#fff",
-                      border: "1px solid rgba(255,255,255,0.2)",
-                      borderRadius: 14,
-                      padding: "12px 18px",
-                      fontWeight: 900,
-                      fontSize: 16,
-                      minWidth: 220,
-                      cursor: "pointer",
-                      boxShadow: "0 1px 0 rgba(255,255,255,0.06) inset",
-                    }}
-                  >
-                    <option value="conservador">Conservador</option>
-                    <option value="moderado">Moderado</option>
-                    <option value="dinamico">Dinâmico</option>
-                  </select>
-                  <button
-                    type="button"
-                    onClick={refreshKpiIframe}
-                    title="Recarregar a análise no ecrã"
-                    style={{
-                      background: "#1e4a8c",
-                      color: "#e2e8f0",
-                      border: "1px solid rgba(255,255,255,0.22)",
-                      borderRadius: 12,
-                      padding: "10px 16px",
-                      fontSize: 13,
-                      fontWeight: 800,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Atualizar
-                  </button>
-                </div>
-              </div>
-
-              {errMsg ? (
-                <div
-                  style={{
-                    marginBottom: 8,
-                    background: "#2a0f12",
-                    border: "1px solid #7f1d1d",
-                    borderRadius: 12,
-                    padding: 10,
-                    fontSize: 13,
-                    flexShrink: 0,
-                  }}
-                >
-                  <b>Erro:</b> {errMsg}
-                </div>
-              ) : null}
-
-              {/*
-                Altura ~viewport: gráficos no Flask (modo embed) em grelha 2×2 compacta; evita iframe de 3600px.
-              */}
-              {flaskCap15Url ? (
-                <iframe
-                  ref={kpiIframeRef}
-                  src={flaskCap15Url}
-                  title="KPIs DECIDE (Flask)"
-                  allowFullScreen
-                  style={{
-                    width: "100%",
-                    display: "block",
-                    minHeight: 720,
-                    height: "min(1240px, calc(100vh - 220px))",
-                    border: 0,
-                    borderRadius: 12,
-                    background: "#020b24",
-                  }}
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+              <p
+                style={{
+                  fontSize: 12,
+                  color: "#71717a",
+                  margin: "0 0 10px",
+                  lineHeight: 1.45,
+                  maxWidth: 800,
+                }}
+              >
+                Este serviço gera recomendações. A execução depende sempre da sua aprovação.{" "}
+                <ClientPendingTextLink href="/client/como-funciona" style={{ color: "#a1a1aa", fontWeight: 700 }}>
+                  Como funciona
+                </ClientPendingTextLink>
+              </p>
+              <ClientKpiPageChrome
+                as="div"
+                title="Dashboard"
+                toolbar={
+                  <>
+                    <label
+                      htmlFor={loggedIn ? "client-dash-profile" : "client-dash-profile-guest"}
+                      style={{ color: "#a1a1aa", fontSize: 12, fontWeight: 700 }}
+                    >
+                      Perfil de risco
+                    </label>
+                    <select
+                      id={loggedIn ? "client-dash-profile" : "client-dash-profile-guest"}
+                      value={profile}
+                      onChange={(e) => setProfile(e.target.value as "conservador" | "moderado" | "dinamico")}
+                      style={{
+                        background: "rgba(39,39,42,0.85)",
+                        color: "#fff",
+                        border: "1px solid rgba(255,255,255,0.2)",
+                        borderRadius: 12,
+                        padding: "8px 14px",
+                        fontWeight: 800,
+                        fontSize: 14,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <option value="conservador">Conservador</option>
+                      <option value="moderado">Moderado</option>
+                      <option value="dinamico">Dinâmico</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={refreshKpiIframe}
+                      disabled={kpiToolbarRefreshBusy}
+                      aria-busy={kpiToolbarRefreshBusy}
+                      title="Atualizar recomendação e indicadores do simulador (o iframe KPI pode demorar a responder)"
+                      style={{
+                        background: DECIDE_DASHBOARD.refreshButton,
+                        color: DECIDE_DASHBOARD.refreshText,
+                        border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                        borderRadius: 12,
+                        padding: "8px 14px",
+                        fontSize: 13,
+                        fontWeight: 800,
+                        cursor: kpiToolbarRefreshBusy ? "wait" : "pointer",
+                        opacity: kpiToolbarRefreshBusy ? 0.88 : 1,
+                        boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
+                      }}
+                    >
+                      {kpiToolbarRefreshBusy ? (
+                        <>
+                          A atualizar
+                          <InlineLoadingDots />
+                        </>
+                      ) : (
+                        "Atualizar recomendação"
+                      )}
+                    </button>
+                  </>
+                }
+                toolbarFooter={
+                  errMsg ? (
+                    <div
+                      style={{
+                        background: "#2a0f12",
+                        border: "1px solid #7f1d1d",
+                        borderRadius: 12,
+                        padding: 10,
+                        fontSize: 13,
+                        maxWidth: "min(100%, 720px)",
+                        marginLeft: "auto",
+                      }}
+                    >
+                      <b>Erro:</b> {errMsg}
+                    </div>
+                  ) : undefined
+                }
+              >
+                <ClientKpiEmbedWorkspace
+                  chrome="navLinked"
+                  riskProfile={profile}
+                  kpiEmbedTab={kpiEmbedTab}
+                  applyKpiEmbedTab={applyKpiEmbedTab}
+                  kpiViewMode={kpiViewMode}
+                  setKpiViewMode={setKpiViewMode}
+                  kpiIframeSrc={kpiIframeSrc}
+                  kpiIframeRef={kpiIframeRef}
+                  onKpiIframeReady={clearKpiToolbarRefreshBusy}
+                  kpiConnectivityBump={iframeRefresh}
+                  mainTopSlot={
+                    normalizeKpiEmbedTabId(kpiEmbedTab) === "overview" ? (
+                      <CarteiraIbkrSummary refreshToken={iframeRefresh} embeddedInMainColumn />
+                    ) : undefined
+                  }
                 />
-              ) : (
-                <div
-                  style={{
-                    minHeight: 320,
-                    borderRadius: 12,
-                    border: "1px solid rgba(148,163,184,0.25)",
-                    background: "rgba(15,23,42,0.6)",
-                    padding: "20px 18px",
-                    color: "#cbd5e1",
-                    fontSize: 13,
-                    lineHeight: 1.55,
-                  }}
-                >
-                  <div style={{ fontWeight: 800, color: "#f8fafc", marginBottom: 8 }}>Simulador (KPI) não configurado em produção</div>
-                  <p style={{ margin: "0 0 10px" }}>
-                    O painel grande usa um serviço <strong>Flask</strong> separado (não é o mesmo que o backend FastAPI no
-                    Render). Em localhost usa <code style={{ color: "#93c5fd" }}>127.0.0.1:5000</code>; no site público é
-                    preciso URL desse serviço.
-                  </p>
-                  <p style={{ margin: "0 0 10px" }}>
-                    Na <strong>Vercel</strong> (Production), define{" "}
-                    <code style={{ color: "#fde68a" }}>NEXT_PUBLIC_KPI_EMBED_BASE</code> com o URL público do Flask (ex.:{" "}
-                    <code style={{ color: "#a5b4fc" }}>https://kpi-o-teu-dominio.onrender.com</code>) e faz{" "}
-                    <strong>redeploy</strong>.
-                  </p>
-                  <p style={{ margin: 0, color: "#94a3b8", fontSize: 12 }}>
-                    O <code style={{ color: "#94a3b8" }}>BACKEND_URL</code> que já configuraste é para a API; o simulador
-                    visual é outro processo.
-                  </p>
-                </div>
-              )}
+              </ClientKpiPageChrome>
             </div>
           ) : null}
         </div>
@@ -1421,23 +1428,23 @@ export default function ClientDashboardPage() {
             style={{
               marginTop: 12,
               flexShrink: 0,
-              background: "rgba(15,23,42,0.55)",
+              background: "rgba(24,24,27,0.65)",
               border: "1px solid rgba(148,163,184,0.2)",
               borderRadius: 16,
               padding: "12px 14px",
             }}
           >
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#e2e8f0" }}>Funcionalidades com conta</div>
-            <div style={{ color: "#94a3b8", marginTop: 6, fontSize: 12, lineHeight: 1.45 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)" }}>Funcionalidades com conta</div>
+            <div style={{ color: "#a1a1aa", marginTop: 6, fontSize: 12, lineHeight: 1.45 }}>
               A análise acima é pública. Com{" "}
-              <a href="/client/login" style={{ color: "#93c5fd", fontWeight: 800 }}>
+              <a href="/client/login" style={{ color: "#d4d4d4", fontWeight: 800 }}>
                 login
               </a>{" "}
               ou{" "}
-              <a href="/client/register" style={{ color: "#93c5fd", fontWeight: 800 }}>
+              <a href="/client/register" style={{ color: "#d4d4d4", fontWeight: 800 }}>
                 registo
               </a>{" "}
-              podes receber alertas, gerir revisões de carteira e gravar contactos.
+              pode receber alertas, gerir revisões de carteira e gravar contactos.
             </div>
           </div>
         ) : null}

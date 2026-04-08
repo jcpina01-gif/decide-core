@@ -1,8 +1,12 @@
 import Head from "next/head";
 import Link from "next/link";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { DecideLogoLockupEmbeddedRecolor, decideHeaderNavLinkStyle } from "../components/DecideLogoHeader";
 import { DECIDE_DEFAULT_INVEST_EUR, DECIDE_MIN_INVEST_EUR } from "../lib/decideInvestPrefill";
+import ThousandsNumberInput, { asThousandsNumberChange } from "../components/ThousandsNumberInput";
+import { onThousandsFieldRowPointerDownCapture } from "../lib/thousandsFieldRowFocus";
 import { buildSimulatorSeries, TRADING_DAYS_PER_YEAR } from "../lib/decideSimulator";
+import { DECIDE_APP_FONT_FAMILY, DECIDE_DASHBOARD } from "../lib/decideClientTheme";
 
 /** Valores iniciais do exemplo (50k · 20a) — alinhados ao simulador do dashboard. */
 const LANDING_SIM_CAPITAL_EUR = DECIDE_DEFAULT_INVEST_EUR;
@@ -139,7 +143,7 @@ function monthlyWinStats(dates: string[], modelEq: number[], benchEq: number[]):
 
 /**
  * Vol anual do modelo → igual à do benchmark: multiplica cada retorno diário por (σ_bench / σ_modelo).
- * Alinha a vol realizada do modelo à do benchmark (como moderado no kpi_server após escala 1× bench).
+ * Alinha a vol realizada do modelo à do benchmark quando o payload não vem já final (fallback).
  */
 function scaleModelEquityToBenchVol(modelEq: number[], benchEq: number[]): number[] {
   const n = Math.min(modelEq.length, benchEq.length);
@@ -239,7 +243,7 @@ function LandingChart({
   const sM = seriesOf("Modelo");
   const all = [...sB, ...sM].filter((x) => x > 0);
   if (!all.length) {
-    return <div style={{ fontSize: 14, color: "#94a3b8" }}>Sem dados para o gráfico.</div>;
+    return <div style={{ fontSize: 14, color: "#a1a1aa" }}>Sem dados para o gráfico.</div>;
   }
   const minY = Math.max(Math.min(...all), 1e-9);
   const maxY = Math.max(...all);
@@ -311,7 +315,7 @@ function LandingChart({
       <svg
         width="100%"
         viewBox={`0 0 ${width} ${height}`}
-        style={{ display: "block", background: "rgba(15,23,42,0.6)", borderRadius: 16, border: "1px solid rgba(148,163,184,0.2)" }}
+        style={{ display: "block", background: "rgba(24,24,27,0.75)", borderRadius: 16, border: "1px solid rgba(255,255,255,0.1)" }}
       >
         {yearTicks.map((yt, i) => (
           <line
@@ -320,7 +324,7 @@ function LandingChart({
             y1={padTop}
             x2={yt.x}
             y2={padTop + plotH}
-            stroke="rgba(148,163,184,0.08)"
+            stroke="rgba(255,255,255,0.06)"
             strokeWidth={1}
           />
         ))}
@@ -331,31 +335,31 @@ function LandingChart({
               y1={gl.y}
               x2={width - padX}
               y2={gl.y}
-              stroke="rgba(148,163,184,0.12)"
+              stroke="rgba(255,255,255,0.1)"
               strokeDasharray="4 6"
             />
             <text
               x={padX + 4}
               y={Math.max(gl.y - 4, padTop + 10)}
-              fill="rgba(148,163,184,0.55)"
+              fill="rgba(161,161,170,0.65)"
               fontSize={10}
-              fontFamily="system-ui, sans-serif"
+              fontFamily={DECIDE_APP_FONT_FAMILY}
             >
               {gl.label}
             </text>
           </g>
         ))}
-        <path d={toPath("Benchmark")} stroke="#93c5fd" strokeWidth="2" fill="none" opacity="0.9" />
-        <path d={toPath("Modelo")} stroke="#4ade80" strokeWidth="2.5" fill="none" opacity="0.95" />
+        <path d={toPath("Benchmark")} stroke="#d4d4d4" strokeWidth="2" fill="none" opacity="0.9" />
+        <path d={toPath("Modelo")} stroke="#a3a3a3" strokeWidth="2.5" fill="none" opacity="0.95" />
         {yearTicks.map((yt, i) => (
           <text
             key={`yl-${yt.year}-${i}`}
             x={yt.x}
             y={height - 12}
             textAnchor="middle"
-            fill="rgba(148,163,184,0.75)"
+            fill="rgba(212,212,216,0.85)"
             fontSize={10}
-            fontFamily="system-ui, sans-serif"
+            fontFamily={DECIDE_APP_FONT_FAMILY}
           >
             {yt.year}
           </text>
@@ -364,19 +368,19 @@ function LandingChart({
           x={width - padX}
           y={padTop + 12}
           textAnchor="end"
-          fill="rgba(148,163,184,0.55)"
+          fill="rgba(161,161,170,0.65)"
           fontSize={10}
-          fontFamily="system-ui, sans-serif"
+          fontFamily={DECIDE_APP_FONT_FAMILY}
         >
           Base 100 · longo prazo
         </text>
       </svg>
-      <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 12, color: "#94a3b8", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 12, color: "#a1a1aa", flexWrap: "wrap" }}>
         <span>
-          <span style={{ color: "#4ade80", fontWeight: 800 }}>●</span> Modelo plafonado
+          <span style={{ color: "#a3a3a3", fontWeight: 800 }}>●</span> Modelo CAP15
         </span>
         <span>
-          <span style={{ color: "#93c5fd", fontWeight: 800 }}>●</span> Mercado de referência
+          <span style={{ color: "#d4d4d4", fontWeight: 800 }}>●</span> Mercado de referência
         </span>
       </div>
     </div>
@@ -396,17 +400,17 @@ function KpiCard({
     <div
       style={{
         background: "rgba(15,23,42,0.75)",
-        border: "1px solid rgba(147,197,253,0.18)",
+        border: "1px solid rgba(45,212,191,0.18)",
         borderRadius: 16,
         padding: "18px 20px",
         minHeight: 120,
       }}
     >
-      <div style={{ fontSize: 11, fontWeight: 800, color: "#93c5fd", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: "#d4d4d4", letterSpacing: "0.04em", textTransform: "uppercase" }}>
         {title}
       </div>
       {subtitle ? (
-        <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, lineHeight: 1.35 }}>{subtitle}</div>
+        <div style={{ fontSize: 11, color: "#71717a", marginTop: 4, lineHeight: 1.35 }}>{subtitle}</div>
       ) : null}
       <div style={{ marginTop: 12 }}>{children}</div>
     </div>
@@ -447,7 +451,7 @@ export default function DecideLandingPage() {
           raw_volmatch_k_min: 0.0,
           raw_volmatch_k_max: 4.0,
         };
-        // 1) Freeze modelo plafonado (≤100% NV) — alinhado ao cartão plafonado no kpi_server (:5000)
+        // 1) Freeze Modelo CAP15 (≤100% NV) — alinhado ao cartão no kpi_server (:5000)
         let r = await fetch("/api/landing/freeze-cap15-backtest", { method: "GET" });
         let j = (await r.json()) as CoreOverlayResp;
         if (cancelled) return;
@@ -481,8 +485,8 @@ export default function DecideLandingPage() {
   }, []);
 
   /**
-   * Modelo plafonado: KPIs = série já vol-ajustada no freeze API (perfil moderado = vol do benchmark).
-   * Fallback core-overlayed: aplicar aqui o mesmo ajuste.
+   * Modelo CAP15: KPIs = série final do freeze API (moderado = vol do modelo; sem segundo filtro se `vol_matched_for_landing`).
+   * Fallback core-overlayed: aplicar ajuste de vol ao benchmark se necessário.
    */
   const displaySeries = useMemo((): SeriesPack | undefined => {
     const s = resp?.series;
@@ -525,10 +529,8 @@ export default function DecideLandingPage() {
 
   const landingDeltaLine = useMemo(() => {
     if (!simResult.ok) return null;
-    const d = simResult.modelEnd - simResult.benchEnd;
-    const sign = d >= 0 ? "+" : "−";
-    return `${sign}${fmtEur0(Math.abs(d))} face ao mercado no mesmo período`;
-  }, [simResult]);
+    return "Diferença ilustrativa face ao mercado no mesmo período. Os montantes finais estão nos cartões acima.";
+  }, [simResult.ok]);
 
   const registerWithExampleHref = useMemo(
     () =>
@@ -649,19 +651,19 @@ export default function DecideLandingPage() {
       isFinite(kpis.benchCagr)
     ) {
       const sign = kpis.modelCagr >= 0 ? "+" : "";
-      document.title = `DECIDE — ${sign}${fmtPctPt(kpis.modelCagr, 1)}% vs ${fmtPctPt(kpis.benchCagr, 1)}% · plafonado (ilustrativo)`;
+      document.title = `DECIDE — ${sign}${fmtPctPt(kpis.modelCagr, 1)}% vs ${fmtPctPt(kpis.benchCagr, 1)}% · Modelo CAP15 (ilustrativo)`;
     } else if (!loading) {
-      document.title = "DECIDE — modelo plafonado vs benchmark (ilustrativo)";
+      document.title = "DECIDE — Modelo CAP15 vs benchmark (ilustrativo)";
     }
   }, [kpis, loading]);
 
   return (
     <>
       <Head>
-        <title>DECIDE — modelo plafonado vs benchmark (histórico ilustrativo)</title>
+        <title>DECIDE — Modelo CAP15 vs benchmark (histórico ilustrativo)</title>
         <meta
           name="description"
-          content="DECIDE: histórico ilustrativo do modelo plafonado (≤100% NAV) vs benchmark, vol alinhada ao mercado de referência (moderado). Recomendações com a sua aprovação."
+          content="DECIDE: histórico ilustrativo do Modelo CAP15 (≤100% NAV) vs benchmark; no perfil moderado a vol segue o modelo. Recomendações com a sua aprovação."
         />
         <style
           dangerouslySetInnerHTML={{
@@ -681,7 +683,7 @@ export default function DecideLandingPage() {
 .landing-hero-cta {
   display: inline-block;
   background: linear-gradient(180deg, #fdba74 0%, #f97316 42%, #ea580c 100%);
-  color: #0f172a;
+  color: #1c1917;
   font-weight: 900;
   font-size: clamp(16px, 2.1vw, 18px);
   padding: 17px 40px;
@@ -726,7 +728,7 @@ export default function DecideLandingPage() {
     filter: drop-shadow(0 0 0 rgba(249,115,22,0)) drop-shadow(0 -6px 36px rgba(249,115,22,0.38));
   }
   40% {
-    filter: drop-shadow(0 0 22px rgba(56,189,248,0.22)) drop-shadow(0 -4px 48px rgba(249,115,22,0.28));
+    filter: drop-shadow(0 0 22px rgba(45,212,191,0.18)) drop-shadow(0 -4px 48px rgba(249,115,22,0.28));
   }
   100% {
     filter: drop-shadow(0 0 0 rgba(0,0,0,0));
@@ -745,45 +747,75 @@ export default function DecideLandingPage() {
           minHeight: "100vh",
           width: "100%",
           overflowX: "hidden",
-          background: "linear-gradient(165deg, #020617 0%, #0f172a 45%, #06163a 100%)",
-          color: "#f1f5f9",
-          fontFamily: "Nunito, Segoe UI, system-ui, sans-serif",
+          background: "var(--page-gradient)",
+          color: "var(--text-primary)",
+          fontFamily: DECIDE_APP_FONT_FAMILY,
         }}
       >
         <header
+          className="decide-top-header decide-top-header--landing"
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 14,
-            padding: "16px clamp(16px, 4vw, 40px)",
-            borderBottom: "1px solid rgba(148,163,184,0.12)",
-            maxWidth: LANDING_MAIN_MAX_WIDTH,
-            margin: "0 auto",
+            position: "relative",
             width: "100%",
             boxSizing: "border-box",
+            background: "transparent",
+            backgroundColor: "rgba(0,0,0,0)",
           }}
         >
-          <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: "-0.03em" }}>DECIDE</div>
-          <nav style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <Link
-              href="/client/login"
+          <div
+            style={{
+              position: "relative",
+              width: "100%",
+              margin: "0 auto",
+              padding: "8px clamp(12px, 2.8vw, 24px) 8px",
+              boxSizing: "border-box",
+            }}
+          >
+            <nav
               style={{
-                display: "inline-block",
-                background: "rgba(147, 197, 253, 0.14)",
-                color: "#bfdbfe",
-                fontWeight: 700,
-                fontSize: 14,
-                padding: "10px 18px",
-                borderRadius: 12,
-                textDecoration: "none",
-                border: "1px solid rgba(147, 197, 253, 0.35)",
+                position: "absolute",
+                top: 4,
+                right: "clamp(12px, 2.8vw, 24px)",
+                zIndex: 2,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
               }}
             >
-              Entrar
-            </Link>
-          </nav>
+              <Link href="/client/register" style={decideHeaderNavLinkStyle}>
+                Registo
+              </Link>
+              <Link href="/client/login" style={{ ...decideHeaderNavLinkStyle, fontWeight: 700 }}>
+                Login
+              </Link>
+            </nav>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                width: "100%",
+              }}
+            >
+              <Link
+                href="/"
+                style={{
+                  display: "inline-flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  lineHeight: 0,
+                }}
+                aria-label="DECIDE — Powered by AI — início"
+              >
+                <DecideLogoLockupEmbeddedRecolor
+                  priority
+                  sizes="(max-width: 1600px) 99vw, 1600px"
+                  variant="landing"
+                />
+              </Link>
+            </div>
+          </div>
         </header>
 
         <main
@@ -822,7 +854,7 @@ export default function DecideLandingPage() {
                 fontWeight: 900,
                 margin: "0 0 14px",
                 letterSpacing: "-0.02em",
-                color: "#e2e8f0",
+                color: "var(--text-primary)",
               }}
             >
               <span
@@ -831,17 +863,17 @@ export default function DecideLandingPage() {
                   fontSize: "0.42em",
                   fontWeight: 800,
                   letterSpacing: "0.1em",
-                  color: "#64748b",
+                  color: "#71717a",
                   marginBottom: 10,
                   textTransform: "uppercase",
                 }}
               >
-                Histórico ilustrativo · modelo plafonado vs mercado de referência
+                Histórico ilustrativo · Modelo CAP15 vs mercado de referência
               </span>
-              <span style={{ fontSize: "0.42em", fontWeight: 700, color: "#94a3b8", display: "block", marginBottom: 6 }}>
-                CAGR indicativo (vol do modelo = vol do benchmark, moderado)
+              <span style={{ fontSize: "0.42em", fontWeight: 700, color: "#a1a1aa", display: "block", marginBottom: 6 }}>
+                CAGR indicativo (moderado: vol do modelo, sem igualar ao benchmark)
               </span>
-              <span style={{ color: "#86efac", fontSize: "0.5em", fontWeight: 700 }}>Modelo plafonado </span>
+              <span style={{ color: "#86efac", fontSize: "0.5em", fontWeight: 700 }}>Modelo CAP15 </span>
               <span style={{ color: "#4ade80" }}>
                 {kpis?.modelCagr != null && isFinite(kpis.modelCagr)
                   ? `${kpis.modelCagr >= 0 ? "+" : ""}${fmtPctPt(kpis.modelCagr, 1)}%`
@@ -849,12 +881,12 @@ export default function DecideLandingPage() {
                     ? "…"
                     : "—"}
               </span>
-              <span style={{ color: "#64748b", fontWeight: 700, fontSize: "0.85em" }}> vs </span>
-              <span style={{ color: "#93c5fd", fontSize: "0.5em", fontWeight: 700 }}>Mercado ref. </span>
-              <span style={{ color: "#93c5fd" }}>
+              <span style={{ color: "#71717a", fontWeight: 700, fontSize: "0.85em" }}> vs </span>
+              <span style={{ color: "#d4d4d4", fontSize: "0.5em", fontWeight: 700 }}>Mercado ref. </span>
+              <span style={{ color: "#d4d4d4" }}>
                 {kpis?.benchCagr != null && isFinite(kpis.benchCagr) ? `${fmtPctPt(kpis.benchCagr, 1)}%` : loading ? "…" : "—"}
               </span>
-              <span style={{ fontWeight: 600, fontSize: "0.5em", display: "block", marginTop: 10, color: "#64748b", lineHeight: 1.45 }}>
+              <span style={{ fontWeight: 600, fontSize: "0.5em", display: "block", marginTop: 10, color: "#71717a", lineHeight: 1.45 }}>
                 Exposição a risco ≤100% do NAV (freeze MAX100EXP). Indicativo — não é promessa de resultados futuros.
               </span>
             </p>
@@ -876,7 +908,7 @@ export default function DecideLandingPage() {
                   margin: 0,
                   fontSize: 13,
                   fontWeight: 600,
-                  color: "#94a3b8",
+                  color: "#a1a1aa",
                   letterSpacing: "0.02em",
                   textAlign: "center",
                   maxWidth: 360,
@@ -890,7 +922,7 @@ export default function DecideLandingPage() {
                   margin: 0,
                   fontSize: 12,
                   fontWeight: 600,
-                  color: "#64748b",
+                  color: "#71717a",
                   letterSpacing: "0.01em",
                   textAlign: "center",
                   maxWidth: 400,
@@ -920,9 +952,9 @@ export default function DecideLandingPage() {
                     linear-gradient(180deg, rgba(249,115,22,0.16) 0%, rgba(249,115,22,0.04) 14%, transparent 38%),
                     linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(15,23,42,0.86) 50%, rgba(30,41,59,0.65) 100%)
                   `,
-                  border: "1px solid rgba(56,189,248,0.14)",
+                  border: "1px solid rgba(45,212,191,0.14)",
                   boxShadow:
-                    "0 -20px 48px -28px rgba(249,115,22,0.22), 0 20px 56px rgba(0,0,0,0.42), 0 0 80px rgba(37,99,235,0.06)",
+                    "0 -20px 48px -28px rgba(249,115,22,0.22), 0 20px 56px rgba(0,0,0,0.42), 0 0 80px rgba(15,118,110,0.06)",
                   overflow: "visible",
                 }}
               >
@@ -931,7 +963,7 @@ export default function DecideLandingPage() {
                     fontSize: 11,
                     fontWeight: 800,
                     letterSpacing: "0.08em",
-                    color: "#64748b",
+                    color: "#71717a",
                     textTransform: "uppercase",
                     marginBottom: 14,
                     textAlign: "center",
@@ -949,7 +981,7 @@ export default function DecideLandingPage() {
                   <p
                     style={{
                       margin: 0,
-                      color: "#bfdbfe",
+                      color: "#ccfbf1",
                       fontSize: "clamp(13px, 1.5vw, 15px)",
                       fontWeight: 700,
                       textAlign: "center",
@@ -957,9 +989,9 @@ export default function DecideLandingPage() {
                     }}
                   >
                     <strong style={{ color: "#fff" }}>Exemplo para começar:</strong>{" "}
-                    <strong style={{ color: "#e0f2fe" }}>{fmtEur0(LANDING_SIM_CAPITAL_EUR)}</strong> durante{" "}
-                    <strong style={{ color: "#e0f2fe" }}>~{LANDING_SIM_YEARS_DEFAULT} anos</strong>. Ajuste abaixo e carregue em{" "}
-                    <strong style={{ color: "#e0f2fe" }}>Ver resultado</strong>.
+                    <strong style={{ color: "#ecfdf5" }}>{fmtEur0(LANDING_SIM_CAPITAL_EUR)}</strong> durante{" "}
+                    <strong style={{ color: "#ecfdf5" }}>~{LANDING_SIM_YEARS_DEFAULT} anos</strong>. Ajuste abaixo e carregue em{" "}
+                    <strong style={{ color: "#ecfdf5" }}>Ver resultado</strong>.
                   </p>
                 </div>
 
@@ -998,7 +1030,7 @@ export default function DecideLandingPage() {
                         marginTop: 8,
                         fontSize: "clamp(0.98rem, 2vw, 1.15rem)",
                         fontWeight: 700,
-                        color: "#7dd3fc",
+                        color: "#d4d4d4",
                         lineHeight: 1.35,
                       }}
                     >
@@ -1007,6 +1039,7 @@ export default function DecideLandingPage() {
                   </div>
 
                   <div
+                    onPointerDownCapture={onThousandsFieldRowPointerDownCapture}
                     style={{
                       display: "flex",
                       flexWrap: "wrap",
@@ -1027,7 +1060,7 @@ export default function DecideLandingPage() {
                       display: "flex",
                       flexDirection: "column",
                       gap: 8,
-                      color: "#cbd5e1",
+                      color: "#d4d4d8",
                       fontSize: 14,
                       fontWeight: 800,
                       letterSpacing: "-0.01em",
@@ -1038,12 +1071,11 @@ export default function DecideLandingPage() {
                     }}
                   >
                     Capital inicial (€)
-                    <input
-                      type="number"
+                    <ThousandsNumberInput
                       min={DECIDE_MIN_INVEST_EUR}
-                      step={100}
+                      maxDecimals={0}
                       value={simDraftCapital}
-                      onChange={(e) => setSimDraftCapital(Number(e.target.value))}
+                      onChange={asThousandsNumberChange(setSimDraftCapital)}
                       onKeyDown={onSimInputKeyDown}
                       style={{
                         width: "100%",
@@ -1051,7 +1083,7 @@ export default function DecideLandingPage() {
                         minHeight: 56,
                         lineHeight: "52px",
                         background: "rgba(2,8,22,0.94)",
-                        border: "2px solid rgba(96,165,250,0.65)",
+                        border: "2px solid rgba(45,212,191,0.55)",
                         borderRadius: 12,
                         padding: "0 16px",
                         margin: 0,
@@ -1060,7 +1092,7 @@ export default function DecideLandingPage() {
                         fontWeight: 900,
                         letterSpacing: "-0.02em",
                         boxSizing: "border-box",
-                        boxShadow: "0 4px 24px rgba(37,99,235,0.12)",
+                        boxShadow: "0 4px 24px rgba(15,118,110,0.12)",
                         verticalAlign: "middle",
                       }}
                     />
@@ -1081,13 +1113,12 @@ export default function DecideLandingPage() {
                     }}
                   >
                     Anos
-                    <input
-                      type="number"
+                    <ThousandsNumberInput
                       min={0.5}
-                      step={0.5}
                       max={maxSimYears}
+                      maxDecimals={1}
                       value={simDraftYears}
-                      onChange={(e) => setSimDraftYears(Number(e.target.value))}
+                      onChange={asThousandsNumberChange(setSimDraftYears)}
                       onKeyDown={onSimInputKeyDown}
                       style={{
                         width: "100%",
@@ -1095,7 +1126,7 @@ export default function DecideLandingPage() {
                         minHeight: 56,
                         lineHeight: "52px",
                         background: "rgba(8,15,35,0.92)",
-                        border: "2px solid rgba(96,165,250,0.5)",
+                        border: "2px solid rgba(45,212,191,0.45)",
                         borderRadius: 12,
                         padding: "0 16px",
                         margin: 0,
@@ -1104,7 +1135,7 @@ export default function DecideLandingPage() {
                         fontWeight: 900,
                         letterSpacing: "-0.02em",
                         boxSizing: "border-box",
-                        boxShadow: "0 4px 20px rgba(37,99,235,0.1)",
+                        boxShadow: "0 4px 20px rgba(15,118,110,0.1)",
                         verticalAlign: "middle",
                       }}
                     />
@@ -1118,7 +1149,7 @@ export default function DecideLandingPage() {
                       display: "inline-flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      background: "linear-gradient(180deg, #3b82f6 0%, #2563eb 100%)",
+                      background: DECIDE_DASHBOARD.buttonRegister,
                       color: "#fff",
                       fontWeight: 900,
                       fontSize: "clamp(14px, 1.35vw, 16px)",
@@ -1127,9 +1158,9 @@ export default function DecideLandingPage() {
                       margin: 0,
                       marginLeft: 12,
                       borderRadius: 12,
-                      border: "1px solid rgba(147,197,253,0.35)",
+                      border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
                       cursor: "pointer",
-                      boxShadow: "0 10px 32px rgba(37,99,235,0.28)",
+                      boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
                       whiteSpace: "nowrap",
                       flex: "0 0 clamp(168px, 22vw, 215px)",
                       minWidth: 168,
@@ -1157,7 +1188,7 @@ export default function DecideLandingPage() {
                   }}
                 >
                   {loading ? (
-                    <p style={{ margin: "0 0 12px", fontSize: 12, color: "#64748b", textAlign: "center" }}>…</p>
+                    <p style={{ margin: "0 0 12px", fontSize: 12, color: "#71717a", textAlign: "center" }}>…</p>
                   ) : !simResult.ok ? (
                     <p style={{ margin: "0 0 12px", fontSize: 12, color: "#f87171", textAlign: "center", lineHeight: 1.45 }}>
                       {simResult.message}
@@ -1199,7 +1230,7 @@ export default function DecideLandingPage() {
                           textTransform: "uppercase",
                         }}
                       >
-                        Modelo DECIDE (plafonado)
+                        Modelo CAP15
                       </div>
                       <div
                         style={{
@@ -1214,7 +1245,7 @@ export default function DecideLandingPage() {
                       >
                         {fmtEur0(simResult.modelEnd)}
                       </div>
-                      <div style={{ fontSize: 11, color: "#64748b", marginTop: 12 }}>Vol ≈ referência</div>
+                      <div style={{ fontSize: 11, color: "#71717a", marginTop: 12 }}>Vol ≈ referência</div>
                     </div>
                     <div
                       style={{
@@ -1231,7 +1262,7 @@ export default function DecideLandingPage() {
                         style={{
                           fontSize: "clamp(10px, 1vw, 11px)",
                           fontWeight: 700,
-                          color: "#64748b",
+                          color: "#71717a",
                           letterSpacing: "0.06em",
                           marginBottom: 10,
                           textTransform: "uppercase",
@@ -1243,35 +1274,33 @@ export default function DecideLandingPage() {
                         style={{
                           fontSize: "clamp(1.2rem, 3.2vw, 1.72rem)",
                           fontWeight: 800,
-                          color: "#94a3b8",
+                          color: "#a1a1aa",
                           letterSpacing: "-0.025em",
                           lineHeight: 1.12,
                         }}
                       >
                         {fmtEur0(simResult.benchEnd)}
                       </div>
-                      <div style={{ fontSize: 10, color: "#64748b", marginTop: 10 }}>Mesmo período</div>
+                      <div style={{ fontSize: 10, color: "#71717a", marginTop: 10 }}>Mesmo período</div>
                     </div>
                   </div>
                   {landingDeltaLine ? (
                     <div
                       style={{
                         textAlign: "center",
-                        fontSize: "clamp(1.12rem, 2.6vw, 1.35rem)",
-                        fontWeight: 900,
-                        color: "#bbf7d0",
-                        padding: "clamp(16px, 2vw, 22px) clamp(18px, 3vw, 32px)",
-                        borderRadius: 16,
+                        fontSize: "clamp(0.82rem, 1.9vw, 0.92rem)",
+                        fontWeight: 500,
+                        color: "#94a3b8",
+                        padding: "12px 14px",
+                        borderRadius: 12,
                         marginBottom: 6,
                         maxWidth: "none",
                         width: "100%",
                         boxSizing: "border-box",
-                        background: "linear-gradient(180deg, rgba(22,163,74,0.32), rgba(22,163,74,0.1))",
-                        border: "none",
-                        lineHeight: 1.35,
-                        letterSpacing: "-0.02em",
-                        boxShadow: "0 0 0 1px rgba(74,222,128,0.1), 0 10px 40px rgba(34,197,94,0.15)",
-                        textShadow: "0 0 28px rgba(74,222,128,0.5), 0 0 48px rgba(34,197,94,0.22)",
+                        background: "rgba(24,24,27,0.55)",
+                        border: "1px solid rgba(63,63,70,0.4)",
+                        lineHeight: 1.5,
+                        letterSpacing: "0",
                       }}
                     >
                       {landingDeltaLine}
@@ -1292,7 +1321,7 @@ export default function DecideLandingPage() {
                   </p>
 
                   <p
-                    style={{ margin: "14px 0 6px", fontSize: 12, color: "#64748b", textAlign: "center", lineHeight: 1.45 }}
+                    style={{ margin: "14px 0 6px", fontSize: 12, color: "#71717a", textAlign: "center", lineHeight: 1.45 }}
                   >
                     {simResult.windowLabel}
                   </p>
@@ -1314,15 +1343,15 @@ export default function DecideLandingPage() {
                       margin: "0 0 4px",
                       fontSize: 11,
                       fontWeight: 600,
-                      color: "#64748b",
+                      color: "#71717a",
                       textAlign: "center",
                       lineHeight: 1.45,
                     }}
                   >
                     Com{" "}
-                    <span style={{ color: "#94a3b8" }}>{fmtEur0(simDraftCapital)}</span>
+                    <span style={{ color: "#a1a1aa" }}>{fmtEur0(simDraftCapital)}</span>
                     {" · "}
-                    <span style={{ color: "#94a3b8" }}>
+                    <span style={{ color: "#a1a1aa" }}>
                       ~{simDraftYears} {simDraftYears === 1 ? "ano" : "anos"}
                     </span>
                     {" · "}
@@ -1335,15 +1364,15 @@ export default function DecideLandingPage() {
                     style={{
                       margin: "0 0 8px",
                       fontSize: 11,
-                      color: "#64748b",
+                      color: "#71717a",
                       textAlign: "center",
                       lineHeight: 1.45,
                     }}
                   >
                     Horizonte máximo nesta série: ~{maxSimYears.toFixed(1)} anos ({simSeriesDates.length} dias úteis).
                   </p>
-                  <p style={{ margin: 0, fontSize: 13, color: "#94a3b8", textAlign: "center", lineHeight: 1.5 }}>
-                    <Link href="/client-dashboard" style={{ color: "#93c5fd", fontWeight: 800 }}>
+                  <p style={{ margin: 0, fontSize: 13, color: "#a1a1aa", textAlign: "center", lineHeight: 1.5 }}>
+                    <Link href="/client-dashboard" style={{ color: "#d4d4d4", fontWeight: 800 }}>
                       Ver análise completa no dashboard
                     </Link>
                   </p>
@@ -1355,7 +1384,7 @@ export default function DecideLandingPage() {
                     padding: "0 8px",
                   }}
                 >
-                  <p style={{ margin: "0 0 8px", fontSize: 14, color: "#cbd5e1", lineHeight: 1.55, textAlign: "center" }}>
+                  <p style={{ margin: "0 0 8px", fontSize: 14, color: "#d4d4d8", lineHeight: 1.55, textAlign: "center" }}>
                     Crescimento composto ao longo do tempo, com risco alinhado ao mercado de referência.
                   </p>
                   <p
@@ -1363,7 +1392,7 @@ export default function DecideLandingPage() {
                       margin: "0 0 10px",
                       fontSize: 13,
                       fontWeight: 700,
-                      color: "#94a3b8",
+                      color: "#a1a1aa",
                       lineHeight: 1.45,
                       textAlign: "center",
                       fontStyle: "italic",
@@ -1371,7 +1400,7 @@ export default function DecideLandingPage() {
                   >
                     Uma diferença que só o tempo e a disciplina revelam.
                   </p>
-                  <p style={{ margin: 0, fontSize: 10, color: "#64748b", lineHeight: 1.45, textAlign: "center", opacity: 0.88 }}>
+                  <p style={{ margin: 0, fontSize: 10, color: "#71717a", lineHeight: 1.45, textAlign: "center", opacity: 0.88 }}>
                     Indicativo — não é aconselhamento. Leia a informação regulamentar antes de investir.
                   </p>
                 </div>
@@ -1383,7 +1412,7 @@ export default function DecideLandingPage() {
                   padding: "28px 20px",
                   borderRadius: 20,
                   textAlign: "center",
-                  color: "#94a3b8",
+                  color: "#a1a1aa",
                   fontSize: 15,
                   fontWeight: 600,
                   border: "1px solid rgba(148,163,184,0.2)",
@@ -1398,7 +1427,7 @@ export default function DecideLandingPage() {
             <p
               style={{
                 fontSize: 16,
-                color: "#94a3b8",
+                color: "#a1a1aa",
                 lineHeight: 1.6,
                 margin: "0 auto 26px",
                 maxWidth: 520,
@@ -1412,7 +1441,7 @@ export default function DecideLandingPage() {
                 style={{
                   margin: 0,
                   fontSize: 13,
-                  color: "#cbd5e1",
+                  color: "#d4d4d8",
                   fontWeight: 600,
                   lineHeight: 1.45,
                   textAlign: "center",
@@ -1420,14 +1449,14 @@ export default function DecideLandingPage() {
                 }}
               >
                 Investimento mínimo{" "}
-                <strong style={{ color: "#e2e8f0" }}>{DECIDE_MIN_INVEST_EUR.toLocaleString("pt-PT")} €</strong>.
+                <strong style={{ color: "var(--text-primary)" }}>{DECIDE_MIN_INVEST_EUR.toLocaleString("pt-PT")} €</strong>.
               </p>
               <Link
                 href={registerWithExampleHref}
                 style={{
                   display: "inline-block",
                   background: "linear-gradient(180deg, #fdba74 0%, #f97316 45%, #ea580c 100%)",
-                  color: "#0f172a",
+                  color: "#1c1917",
                   fontWeight: 900,
                   fontSize: 17,
                   padding: "16px 36px",
@@ -1445,15 +1474,15 @@ export default function DecideLandingPage() {
               >
                 Começar com este valor
               </Link>
-              <p style={{ margin: 0, fontSize: 12, color: "#94a3b8", fontWeight: 600, letterSpacing: "0.01em" }}>
+              <p style={{ margin: 0, fontSize: 12, color: "#a1a1aa", fontWeight: 600, letterSpacing: "0.01em" }}>
                 Pode começar em poucos minutos.
               </p>
-              <p style={{ margin: 0, fontSize: 12, color: "#94a3b8", fontWeight: 600, letterSpacing: "0.01em" }}>
+              <p style={{ margin: 0, fontSize: 12, color: "#a1a1aa", fontWeight: 600, letterSpacing: "0.01em" }}>
                 Comece hoje — decide sempre.
               </p>
               <Link
                 href="/client/login"
-                style={{ color: "#93c5fd", fontWeight: 700, fontSize: 14, textDecoration: "underline", textUnderlineOffset: 4 }}
+                style={{ color: "#d4d4d4", fontWeight: 700, fontSize: 14, textDecoration: "underline", textUnderlineOffset: 4 }}
               >
                 Já tenho conta - Entrar
               </Link>
@@ -1466,7 +1495,7 @@ export default function DecideLandingPage() {
               padding: "24px 22px",
               borderRadius: 18,
               background: "rgba(15,23,42,0.65)",
-              border: "1px solid rgba(147,197,253,0.2)",
+              border: "1px solid rgba(45,212,191,0.2)",
             }}
           >
             <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 900, color: "#f1f5f9", textAlign: "center" }}>
@@ -1493,18 +1522,18 @@ export default function DecideLandingPage() {
                       margin: "0 auto 10px",
                       borderRadius: "50%",
                       background: "rgba(63,115,255,0.35)",
-                      border: "1px solid rgba(147,197,253,0.4)",
+                      border: "1px solid rgba(45,212,191,0.4)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       fontWeight: 900,
-                      color: "#93c5fd",
+                      color: "#d4d4d4",
                     }}
                   >
                     {step.n}
                   </div>
-                  <div style={{ fontWeight: 800, fontSize: 15, color: "#e2e8f0", marginBottom: 6 }}>{step.t}</div>
-                  <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>{step.d}</div>
+                  <div style={{ fontWeight: 800, fontSize: 15, color: "var(--text-primary)", marginBottom: 6 }}>{step.t}</div>
+                  <div style={{ fontSize: 13, color: "#a1a1aa", lineHeight: 1.5 }}>{step.d}</div>
                 </div>
               ))}
             </div>
@@ -1517,7 +1546,7 @@ export default function DecideLandingPage() {
                 gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
                 gap: 12,
                 fontSize: 13,
-                color: "#cbd5e1",
+                color: "#d4d4d8",
                 lineHeight: 1.5,
               }}
             >
@@ -1537,7 +1566,7 @@ export default function DecideLandingPage() {
                 style={{
                   display: "inline-block",
                   background: "linear-gradient(180deg, #fb923c 0%, #ea580c 100%)",
-                  color: "#0f172a",
+                  color: "#1c1917",
                   fontWeight: 900,
                   fontSize: 17,
                   padding: "16px 36px",
@@ -1554,37 +1583,38 @@ export default function DecideLandingPage() {
           </section>
 
           <section style={{ marginBottom: 36 }}>
-            <h2 style={{ fontSize: 13, fontWeight: 800, color: "#93c5fd", letterSpacing: "0.06em", margin: "0 0 8px" }}>
+            <h2 style={{ fontSize: 13, fontWeight: 800, color: "#d4d4d4", letterSpacing: "0.06em", margin: "0 0 8px" }}>
               NÚMEROS DE REFERÊNCIA
             </h2>
             <p
               style={{
                 fontSize: 15,
-                color: "#cbd5e1",
+                color: "#d4d4d8",
                 margin: "0 0 8px",
                 lineHeight: 1.55,
                 maxWidth: 680,
               }}
             >
-              ~20 anos, <strong>modelo plafonado</strong> (≤100% do NAV no freeze MAX100EXP). Volatilidade da série do modelo
-              <strong> alinhada à do benchmark</strong> (moderado), como no cartão plafonado do painel KPI. Indicativo.
+              ~20 anos, <strong>Modelo CAP15</strong> (≤100% do NAV, freeze V2.3 smooth). No <strong>moderado</strong>, a
+              volatilidade da série segue o <strong>próprio modelo</strong> (sem reescala ao benchmark), alinhado ao painel KPI.
+              Indicativo.
             </p>
-            <details style={{ marginBottom: 18, fontSize: 11, color: "#64748b" }}>
+            <details style={{ marginBottom: 18, fontSize: 11, color: "#71717a" }}>
               <summary
                 style={{
                   cursor: "pointer",
-                  color: "#64748b",
+                  color: "#71717a",
                   fontWeight: 500,
                   listStyle: "none",
                 }}
               >
                 Detalhes técnicos (opcional)
               </summary>
-              <p style={{ marginTop: 10, lineHeight: 1.55, color: "#64748b" }}>
+              <p style={{ marginTop: 10, lineHeight: 1.55, color: "#71717a" }}>
                 Base: freeze ~20Y{" "}
-                <code style={{ color: "#787f8a" }}>DECIDE_MODEL_V5_OVERLAY_CAP15_MAX100EXP</code> (plafonado). A API da landing
-                aplica <strong style={{ color: "#94a3b8" }}>vol = vol do benchmark (moderado)</strong> antes de calcular CAGR e
-                gráficos. No painel KPI (:5000): CAP15 com risco nativo e plafonado com vol por perfil. Métricas avançadas na{" "}
+                <code style={{ color: "#787f8a" }}>DECIDE_MODEL_V5_V2_3_SMOOTH</code>. A API da landing
+                no <strong style={{ color: "#a1a1aa" }}>moderado</strong> usa a vol do modelo (sem igualar ao benchmark) para CAGR e
+                gráficos. No painel KPI (:5000): moderado com vol do modelo; conservador/dinâmico com alvo vs benchmark. Métricas avançadas na{" "}
                 <Link href="/client-dashboard" style={{ color: "#787f8a", textDecoration: "underline", textUnderlineOffset: 2 }}>
                   área de cliente
                 </Link>
@@ -1598,10 +1628,10 @@ export default function DecideLandingPage() {
                 gap: 14,
               }}
             >
-              <KpiCard title="Modelo plafonado" subtitle="≤100% NAV · vol = benchmark (moderado)">
+              <KpiCard title="Modelo CAP15" subtitle="≤100% NAV · moderado: vol do modelo">
                 <div style={{ fontSize: 26, fontWeight: 900, color: "#fff" }}>{fmtPct(kpis?.modelCagr, 1)}</div>
-                <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>Crescimento anualizado (indicativo)</div>
-                <div style={{ fontSize: 14, color: "#cbd5e1", marginTop: 10, lineHeight: 1.55 }}>
+                <div style={{ fontSize: 12, color: "#a1a1aa", marginTop: 4 }}>Crescimento anualizado (indicativo)</div>
+                <div style={{ fontSize: 14, color: "#d4d4d8", marginTop: 10, lineHeight: 1.55 }}>
                   Oscilação ≈ {fmtPct(kpis?.modelVol, 1)} · Queda máx. ≈ {fmtPct(kpis?.modelMaxDd, 1)}
                   <br />
                   Qualidade risco/retorno ≈ {fmtSharpe(kpis?.modelSharpe)}
@@ -1609,39 +1639,39 @@ export default function DecideLandingPage() {
                   Meses a subir: {fmtRatePct(kpis?.pctMonthsPositiveModel)}
                   <br />
                   Meses a ganhar ao mercado: {fmtRatePct(kpis?.pctMonthsAboveBench)}
-                  <span style={{ color: "#64748b", fontSize: 11 }}>
+                  <span style={{ color: "#71717a", fontSize: 11 }}>
                     {kpis?.nMonths != null ? ` · ${kpis.nMonths} meses` : ""}
                   </span>
                 </div>
               </KpiCard>
               <KpiCard title="Mercado de referência" subtitle="Mesma linha temporal">
-                <div style={{ fontSize: 26, fontWeight: 900, color: "#93c5fd" }}>{fmtPct(kpis?.benchCagr, 1)}</div>
-                <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>Crescimento anualizado (indicativo)</div>
-                <div style={{ fontSize: 14, color: "#cbd5e1", marginTop: 10, lineHeight: 1.55 }}>
+                <div style={{ fontSize: 26, fontWeight: 900, color: "#d4d4d4" }}>{fmtPct(kpis?.benchCagr, 1)}</div>
+                <div style={{ fontSize: 12, color: "#a1a1aa", marginTop: 4 }}>Crescimento anualizado (indicativo)</div>
+                <div style={{ fontSize: 14, color: "#d4d4d8", marginTop: 10, lineHeight: 1.55 }}>
                   Oscilação ≈ {fmtPct(kpis?.benchVol, 1)} · Queda máx. ≈ {fmtPct(kpis?.benchMaxDd, 1)}
                   <br />
                   Qualidade risco/retorno ≈ {fmtSharpe(kpis?.benchSharpe)}
                 </div>
               </KpiCard>
               <KpiCard title="No seu dashboard" subtitle="Depois de entrar">
-                <div style={{ fontSize: 15, color: "#e2e8f0", lineHeight: 1.55 }}>
+                <div style={{ fontSize: 15, color: "var(--text-primary)", lineHeight: 1.55 }}>
                   Gráficos completos, carteira sugerida e cenários com <strong>limites de exposição</strong> ao capital — para
                   alinhar o modelo à sua realidade.
                 </div>
               </KpiCard>
             </div>
             {loading ? (
-              <p style={{ marginTop: 14, fontSize: 13, color: "#64748b" }}>A carregar indicadores…</p>
+              <p style={{ marginTop: 14, fontSize: 13, color: "#71717a" }}>A carregar indicadores…</p>
             ) : loadErr ? (
               <p style={{ marginTop: 14, fontSize: 13, color: "#fca5a5" }}>
-                Não foi possível carregar os dados agora. Podes mesmo assim{" "}
+                Não foi possível carregar os dados agora. Pode mesmo assim{" "}
                 <Link href={registerWithExampleHref} style={{ color: "#fca5a5", fontWeight: 700 }}>
                   criar conta
                 </Link>
                 . <span style={{ opacity: 0.85 }}>({loadErr})</span>
               </p>
             ) : kpis ? (
-              <p style={{ marginTop: 12, fontSize: 12, color: "#64748b" }}>
+              <p style={{ marginTop: 12, fontSize: 12, color: "#71717a" }}>
                 Amostra: ~{kpis.n} dias úteis. Gráfico abaixo: evolução indexada (base 100).
               </p>
             ) : null}
@@ -1650,7 +1680,7 @@ export default function DecideLandingPage() {
           <section
             style={{
               background: "rgba(30,58,138,0.2)",
-              border: "1px solid rgba(147,197,253,0.2)",
+              border: "1px solid rgba(45,212,191,0.2)",
               borderRadius: 20,
               padding: "22px 22px 26px",
               marginBottom: 40,
@@ -1661,7 +1691,7 @@ export default function DecideLandingPage() {
               style={{
                 margin: "0 0 18px",
                 fontSize: 15,
-                color: "#94a3b8",
+                color: "#a1a1aa",
                 lineHeight: 1.55,
                 maxWidth: 720,
               }}
@@ -1671,7 +1701,7 @@ export default function DecideLandingPage() {
             {chartData.length > 0 ? (
               <LandingChart data={chartData} />
             ) : (
-              <div style={{ padding: 40, textAlign: "center", color: "#64748b", fontSize: 14 }}>
+              <div style={{ padding: 40, textAlign: "center", color: "#71717a", fontSize: 14 }}>
                 {loading ? "A carregar gráfico…" : "Gráfico indisponível sem dados do motor."}
               </div>
             )}
@@ -1683,19 +1713,19 @@ export default function DecideLandingPage() {
               padding: "40px 24px",
               borderRadius: 20,
               background: "linear-gradient(145deg, rgba(22,163,74,0.22) 0%, rgba(30,58,138,0.45) 45%, rgba(15,23,42,0.95) 100%)",
-              border: "1px solid rgba(147,197,253,0.4)",
+              border: "1px solid rgba(45,212,191,0.4)",
             }}
           >
             <h2 style={{ margin: "0 0 14px", fontSize: "clamp(1.35rem, 3.5vw, 1.75rem)", fontWeight: 900, color: "#fff" }}>
               Começar é simples
             </h2>
-            <p style={{ margin: "0 auto 26px", maxWidth: 520, fontSize: 16, color: "#e2e8f0", lineHeight: 1.65 }}>
+            <p style={{ margin: "0 auto 26px", maxWidth: 520, fontSize: 16, color: "var(--text-primary)", lineHeight: 1.65 }}>
               Crie a sua conta e comece a receber decisões claras, com total controlo — da verificação à corretora.
             </p>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-              <p style={{ margin: 0, fontSize: 13, color: "#cbd5e1", fontWeight: 600, lineHeight: 1.45, textAlign: "center" }}>
+              <p style={{ margin: 0, fontSize: 13, color: "#d4d4d8", fontWeight: 600, lineHeight: 1.45, textAlign: "center" }}>
                 Investimento mínimo{" "}
-                <strong style={{ color: "#e2e8f0" }}>{DECIDE_MIN_INVEST_EUR.toLocaleString("pt-PT")} €</strong>.
+                <strong style={{ color: "var(--text-primary)" }}>{DECIDE_MIN_INVEST_EUR.toLocaleString("pt-PT")} €</strong>.
               </p>
               <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap", alignItems: "center" }}>
                 <Link
@@ -1703,7 +1733,7 @@ export default function DecideLandingPage() {
                   style={{
                     display: "inline-block",
                     background: "linear-gradient(180deg, #fdba74 0%, #f97316 45%, #ea580c 100%)",
-                    color: "#0f172a",
+                    color: "#1c1917",
                     fontWeight: 900,
                     fontSize: 17,
                     padding: "16px 36px",
@@ -1718,16 +1748,16 @@ export default function DecideLandingPage() {
                   Começar com este valor
                 </Link>
               </div>
-              <p style={{ margin: 0, fontSize: 12, color: "#94a3b8", fontWeight: 600 }}>
+              <p style={{ margin: 0, fontSize: 12, color: "#a1a1aa", fontWeight: 600 }}>
                 Pode começar em poucos minutos.
               </p>
-              <p style={{ margin: 0, fontSize: 12, color: "#94a3b8", fontWeight: 600 }}>
+              <p style={{ margin: 0, fontSize: 12, color: "#a1a1aa", fontWeight: 600 }}>
                 Comece hoje — decide sempre.
               </p>
             </div>
           </section>
 
-          <footer style={{ marginTop: 48, paddingTop: 24, borderTop: "1px solid rgba(148,163,184,0.12)", fontSize: 12, color: "#64748b" }}>
+          <footer style={{ marginTop: 48, paddingTop: 24, borderTop: "1px solid rgba(255,255,255,0.08)", fontSize: 12, color: "#71717a" }}>
             <p style={{ margin: 0, lineHeight: 1.6 }}>
               DECIDE — informação meramente indicativa. Investimentos envolvem risco de perda. Leia a documentação
               contratual e regulamentar antes de subscrever qualquer serviço.

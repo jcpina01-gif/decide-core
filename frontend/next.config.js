@@ -42,6 +42,13 @@ const nextConfig = {
   reactStrictMode: false,
   pageExtensions: ["tsx", "ts", "jsx", "js"],
 
+  /**
+   * Rotas tipadas geram `.next/types/routes.d.ts`. Em Windows com pasta em OneDrive/`Documents`,
+   * esse ficheiro falha frequentemente com EPERM → `next dev` rebenta. Desligar evita o problema;
+   * perde-se apenas autocomplete em `<Link href={...}>` — aceitável neste repo.
+   */
+  typedRoutes: false,
+
   /** Garante que os CSV/JSON da landing entram no bundle serverless (fs em /api/landing/*). */
   outputFileTracingIncludes: {
     "/api/landing/freeze-cap15-backtest": ["./data/landing/**/*"],
@@ -67,6 +74,13 @@ const nextConfig = {
   },
 
   /**
+   * O browser pede /favicon.ico por defeito. Rewrite serve o SVG na mesma resposta — evita 404 na consola.
+   */
+  async rewrites() {
+    return [{ source: "/favicon.ico", destination: "/favicon.svg" }];
+  },
+
+  /**
    * Páginas /embed/* são iframed pelo kpi_server (Flask :5000). Garantir que podem ser embebidas
    * (alguns proxies / futuras políticas podem restringir; frame-ancestors * = qualquer origem pai).
    */
@@ -78,6 +92,20 @@ const nextConfig = {
           {
             key: "Content-Security-Policy",
             value: "frame-ancestors *",
+          },
+        ],
+      },
+      /**
+       * Persona Embedded Flow: o documento pai não deve negar câmara/microfone a origens Persona.
+       * Inclui `self` para não restringir o próprio site. Ver documentação Persona (embedded-flow-security).
+       */
+      {
+        source: "/persona-onboarding",
+        headers: [
+          {
+            key: "Permissions-Policy",
+            value:
+              'camera=(self "https://inquiry.withpersona.com" "https://inquiry.withpersona-staging.com" "https://canary.withpersona.com" "https://withpersona.com"); microphone=(self "https://inquiry.withpersona.com" "https://inquiry.withpersona-staging.com" "https://canary.withpersona.com" "https://withpersona.com")',
           },
         ],
       },

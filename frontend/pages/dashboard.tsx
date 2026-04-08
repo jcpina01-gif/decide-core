@@ -1,11 +1,14 @@
 import Head from "next/head";
 import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
-import { buildSimulatorSeries } from "../lib/decideSimulator";
+import ThousandsNumberInput, { asThousandsNumberChange } from "../components/ThousandsNumberInput";
+import { onThousandsFieldRowPointerDownCapture } from "../lib/thousandsFieldRowFocus";
+import { buildSimulatorSeries, TRADING_DAYS_PER_YEAR } from "../lib/decideSimulator";
 import { DECIDE_DEFAULT_INVEST_EUR, DECIDE_MIN_INVEST_EUR } from "../lib/decideInvestPrefill";
 import EquityCurvesChart from "../components/EquityCurvesChart";
 import DashboardQuickLinks from "../components/DashboardQuickLinks";
 import DecideFaqPanel from "../components/DecideFaqPanel";
+import { DECIDE_APP_FONT_FAMILY } from "../lib/decideClientTheme";
 
 type Holding = {
   ticker?: string;
@@ -126,10 +129,10 @@ type RiskProfileKey = "conservador" | "moderado" | "dinamico";
 type PortfolioViewKey = "original" | "constrained";
 
 const COLORS = {
-  bg: "#06163a",
-  panel: "#12244d",
+  bg: "#09090b",
+  panel: "#18181b",
   panel2: "#1a2d59",
-  line: "#3f73ff",
+  line: "#d4d4d4",
   text: "#ffffff",
   muted: "#b7c3e0",
   border: "rgba(255,255,255,0.08)",
@@ -226,7 +229,7 @@ const pageStyle: React.CSSProperties = {
   background: COLORS.bg,
   color: COLORS.text,
   padding: "20px 20px 30px 20px",
-  fontFamily: "Nunito, Segoe UI, Arial, sans-serif",
+  fontFamily: DECIDE_APP_FONT_FAMILY,
 };
 
 const panelStyle: React.CSSProperties = {
@@ -328,7 +331,7 @@ function TabButton({
         fontSize: 14,
         fontWeight: 800,
         cursor: "pointer",
-        fontFamily: "Nunito, Segoe UI, Arial, sans-serif",
+        fontFamily: DECIDE_APP_FONT_FAMILY,
       }}
     >
       {children}
@@ -496,7 +499,7 @@ export default function DashboardPage() {
     return {
       dates,
       lines: [
-        { name: "Benchmark", values: bench, color: "#38bdf8" },
+        { name: "Benchmark", values: bench, color: "#d4d4d4" },
         { name: "Overlayed Original", values: model, color: "#4ade80" },
         ...(hasConstrainedSeries ? [{ name: "Overlayed Constraints", values: con, color: "#c084fc" }] : []),
         { name: "Raw Vol-Matched", values: vm, color: "#fb923c" },
@@ -520,6 +523,12 @@ export default function DashboardPage() {
     [simDates, modelSeriesForSim, benchSeriesForSim, simYears, simCapital],
   );
 
+  const maxSimYears = useMemo(() => {
+    const n = simDates.length;
+    if (n < 2) return 100;
+    return (n - 1) / TRADING_DAYS_PER_YEAR;
+  }, [simDates]);
+
   const simModelLabel = hasConstrained ? "Modelo DECIDE (constraints)" : "Modelo DECIDE (overlay)";
 
   const simRegisterHref = useMemo(() => {
@@ -529,10 +538,8 @@ export default function DashboardPage() {
 
   const simDeltaLine = useMemo(() => {
     if (!simResult.ok) return null;
-    const d = simResult.modelEnd - simResult.benchEnd;
-    const sign = d >= 0 ? "+" : "−";
-    return `${sign}${fmtEur0(Math.abs(d))} face ao mercado no mesmo período`;
-  }, [simResult]);
+    return "Diferença ilustrativa face ao mercado no mesmo período. Os montantes finais estão nos cartões acima.";
+  }, [simResult.ok]);
 
   const portfolioOriginalRows = safeArray<Holding>(payload?.latest_holdings_detailed);
   const portfolioConstrainedRows = safeArray<Holding>(payload?.latest_holdings_detailed_constrained);
@@ -613,9 +620,6 @@ export default function DashboardPage() {
         <title>DECIDE Dashboard</title>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
       </Head>
 
       <div style={pageStyle}>
@@ -639,7 +643,7 @@ export default function DashboardPage() {
                 fontSize: 15,
                 fontWeight: 800,
                 cursor: "pointer",
-                fontFamily: "Nunito, Segoe UI, Arial, sans-serif",
+                fontFamily: DECIDE_APP_FONT_FAMILY,
               }}
             >
               {loading ? "A atualizar..." : "Atualizar"}
@@ -685,7 +689,7 @@ export default function DashboardPage() {
                 outline: "none",
                 fontSize: 14,
                 fontWeight: 800,
-                fontFamily: "Nunito, Segoe UI, Arial, sans-serif",
+                fontFamily: DECIDE_APP_FONT_FAMILY,
                 cursor: "pointer",
               }}
             >
@@ -720,7 +724,7 @@ export default function DashboardPage() {
                   outline: "none",
                   fontSize: 14,
                   fontWeight: 800,
-                  fontFamily: "Nunito, Segoe UI, Arial, sans-serif",
+                  fontFamily: DECIDE_APP_FONT_FAMILY,
                   cursor: hasConstrained ? "pointer" : "not-allowed",
                 }}
               >
@@ -823,7 +827,7 @@ export default function DashboardPage() {
               >
                 Ajuste o valor e veja o impacto.
                 <span
-                  title="Valores baseados em histórico. O nível de risco no topo recarrega o modelo (vol ≈ 0,75× / 1× / 1,25× vs benchmark). A curva segue o overlay dos KPIs. Os valores atualizam ao alterar os campos."
+                  title="Valores baseados em histórico. O nível de risco no topo recarrega o modelo (moderado: vol do modelo; conservador/dinâmico: alvo vs benchmark). A curva segue o overlay dos KPIs. Os valores atualizam ao alterar os campos."
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -834,8 +838,8 @@ export default function DashboardPage() {
                     borderRadius: 999,
                     fontSize: 11,
                     fontWeight: 900,
-                    color: "#0f172a",
-                    background: "rgba(147,197,253,0.9)",
+                    color: "#042f2e",
+                    background: "rgba(45,212,191,0.85)",
                     cursor: "help",
                     verticalAlign: "middle",
                   }}
@@ -848,30 +852,32 @@ export default function DashboardPage() {
                   marginTop: 0,
                   padding: "12px 16px",
                   borderRadius: 12,
-                  background: "rgba(59,130,246,0.22)",
-                  border: "1px solid rgba(147,197,253,0.38)",
-                  color: "#bfdbfe",
+                  background: "rgba(39, 39, 42, 0.65)",
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                  color: "#d4d4d8",
                   fontSize: 14,
                   fontWeight: 700,
-                  boxShadow: "0 4px 20px rgba(37,99,235,0.12)",
+                  boxShadow: "0 2px 10px rgba(0, 0, 0, 0.35)",
                 }}
               >
-                <strong style={{ color: "#fff" }}>Exemplo pré-preenchido:</strong>{" "}
-                <strong style={{ color: "#e0f2fe" }}>
+                <strong style={{ color: "#f4f4f5" }}>Exemplo pré-preenchido:</strong>{" "}
+                <strong style={{ color: "#e4e4e7" }}>
                   {DECIDE_DEFAULT_INVEST_EUR.toLocaleString("pt-PT")} €
                 </strong>{" "}
                 durante{" "}
-                <strong style={{ color: "#e0f2fe" }}>20 anos</strong>. Pode alterar os campos abaixo.
+                <strong style={{ color: "#e4e4e7" }}>20 anos</strong>. Pode alterar os campos abaixo.
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 16, alignItems: "flex-end" }}>
+              <div
+                onPointerDownCapture={onThousandsFieldRowPointerDownCapture}
+                style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 16, alignItems: "flex-end" }}
+              >
                 <label style={{ display: "flex", flexDirection: "column", gap: 6, color: COLORS.muted, fontSize: 12, fontWeight: 700 }}>
                   Capital inicial (€) — mín. 5 000 €
-                  <input
-                    type="number"
+                  <ThousandsNumberInput
                     min={SIM_MIN_CAPITAL_EUR}
-                    step={100}
+                    maxDecimals={0}
                     value={simCapital}
-                    onChange={(e) => setSimCapital(Number(e.target.value))}
+                    onChange={asThousandsNumberChange(setSimCapital)}
                     style={{
                       background: COLORS.panel2,
                       border: `1px solid ${COLORS.border}`,
@@ -886,12 +892,12 @@ export default function DashboardPage() {
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: 6, color: COLORS.muted, fontSize: 12, fontWeight: 700 }}>
                   Anos (desde o investimento)
-                  <input
-                    type="number"
+                  <ThousandsNumberInput
                     min={0.5}
-                    step={0.5}
+                    max={maxSimYears}
+                    maxDecimals={1}
                     value={simYears}
-                    onChange={(e) => setSimYears(Number(e.target.value))}
+                    onChange={asThousandsNumberChange(setSimYears)}
                     style={{
                       background: COLORS.panel2,
                       border: `1px solid ${COLORS.border}`,
@@ -919,9 +925,9 @@ export default function DashboardPage() {
                     style={{
                       ...panelStyle,
                       textAlign: "center",
-                      border: "1px solid rgba(74,222,128,0.55)",
-                      background: "linear-gradient(165deg, rgba(34,197,94,0.24), rgba(18,36,77,0.96))",
-                      boxShadow: "0 0 48px rgba(34,197,94,0.2), 0 0 0 1px rgba(74,222,128,0.12)",
+                      border: "1px solid rgba(82, 82, 91, 0.55)",
+                      background: "linear-gradient(165deg, rgba(42, 42, 44, 0.95), rgba(24, 24, 27, 0.98))",
+                      boxShadow: "0 2px 14px rgba(0, 0, 0, 0.4)",
                     }}
                   >
                     <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>{simModelLabel} — valor final</div>
@@ -931,8 +937,8 @@ export default function DashboardPage() {
                         fontSize: "clamp(1.5rem, 4.2vw, 2.15rem)",
                         fontWeight: 900,
                         letterSpacing: "-0.03em",
-                        color: "#d1fae5",
-                        textShadow: "0 0 32px rgba(74,222,128,0.45), 0 0 56px rgba(34,197,94,0.15)",
+                        color: "#e4e4e7",
+                        textShadow: "none",
                       }}
                     >
                       {fmtEur0(simResult.modelEnd)}
@@ -943,8 +949,8 @@ export default function DashboardPage() {
                     style={{
                       ...panelStyle,
                       textAlign: "center",
-                      border: "1px solid rgba(56,189,248,0.35)",
-                      background: "rgba(26,45,89,0.6)",
+                      border: "1px solid rgba(82, 82, 91, 0.5)",
+                      background: "linear-gradient(180deg, rgba(39,39,42,0.9) 0%, rgba(24,24,27,0.95) 100%)",
                     }}
                   >
                     <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>Benchmark — valor final</div>
@@ -954,8 +960,8 @@ export default function DashboardPage() {
                         fontSize: "clamp(1.35rem, 3.8vw, 1.95rem)",
                         fontWeight: 900,
                         letterSpacing: "-0.03em",
-                        color: "#7dd3fc",
-                        textShadow: "0 0 20px rgba(56,189,248,0.18)",
+                        color: "#d4d4d4",
+                        textShadow: "none",
                       }}
                     >
                       {fmtEur0(simResult.benchEnd)}
@@ -967,14 +973,14 @@ export default function DashboardPage() {
                   <div
                     style={{
                       textAlign: "center",
-                      fontSize: 17,
-                      fontWeight: 800,
-                      color: "#86efac",
-                      padding: "12px 16px",
-                      borderRadius: 14,
-                      background: "rgba(22,163,74,0.14)",
-                      border: "1px solid rgba(74,222,128,0.28)",
-                      lineHeight: 1.4,
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: "#94a3b8",
+                      padding: "10px 14px",
+                      borderRadius: 12,
+                      background: "rgba(24, 24, 27, 0.55)",
+                      border: "1px solid rgba(63, 63, 70, 0.4)",
+                      lineHeight: 1.5,
                     }}
                   >
                     {simDeltaLine}
@@ -1015,23 +1021,22 @@ export default function DashboardPage() {
                     style={{
                       display: "inline-block",
                       background: "linear-gradient(180deg, #fdba74 0%, #f97316 45%, #ea580c 100%)",
-                      color: "#0f172a",
+                      color: "#1c1917",
                       fontWeight: 900,
                       fontSize: 15,
                       padding: "14px 28px",
                       borderRadius: 14,
                       textDecoration: "none",
-                      border: "1px solid rgba(255,237,213,0.55)",
-                      boxShadow:
-                        "0 0 0 1px rgba(251,146,60,0.4), 0 0 28px rgba(249,115,22,0.4), 0 14px 36px rgba(234,88,12,0.35)",
+                      border: "1px solid rgba(255,237,213,0.45)",
+                      boxShadow: "0 2px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)",
                     }}
                   >
                     Começar com este valor
                   </Link>
-                  <p style={{ margin: "12px 0 0", fontSize: 13, color: "#94a3b8", fontWeight: 600, lineHeight: 1.5 }}>
+                  <p style={{ margin: "12px 0 0", fontSize: 13, color: "#a1a1aa", fontWeight: 600, lineHeight: 1.5 }}>
                     Pode começar em poucos minutos.
                   </p>
-                  <p style={{ margin: "4px 0 0", fontSize: 13, color: "#94a3b8", fontWeight: 600, lineHeight: 1.5 }}>
+                  <p style={{ margin: "4px 0 0", fontSize: 13, color: "#a1a1aa", fontWeight: 600, lineHeight: 1.5 }}>
                     Comece hoje — decide sempre.
                   </p>
                 </div>
@@ -1042,7 +1047,7 @@ export default function DashboardPage() {
                       dates={simResult.sliceDates}
                       series={[
                         { name: simModelLabel, values: simResult.modelVal, color: "#4ade80" },
-                        { name: "Benchmark", values: simResult.benchVal, color: "#38bdf8" },
+                        { name: "Benchmark", values: simResult.benchVal, color: "#d4d4d4" },
                       ]}
                       logScale={true}
                     />

@@ -23,38 +23,38 @@ export function formatTwilioSmsError(j: TwilioErrJson, httpStatus: number): stri
 
   if (httpStatus === 401) {
     return (
-      "Twilio: autenticação recusada (401). Confirma TWILIO_ACCOUNT_SID e TWILIO_AUTH_TOKEN no .env.local (token completo, sem espaços ou aspas a mais) e reinicia npm run dev." +
+      "Twilio: autenticação recusada (401). Confirme TWILIO_ACCOUNT_SID e TWILIO_AUTH_TOKEN no .env.local (token completo, sem espaços ou aspas a mais) e reinicie npm run dev." +
       (msg ? ` — ${msg}` : "")
     );
   }
 
   if (httpStatus === 403) {
     const base =
-      "Twilio recusou o pedido (403 Forbidden). Isto é quase sempre configuração da conta, não do código. Verifica por esta ordem: " +
+      "Twilio recusou o pedido (403 Forbidden). Isto é quase sempre configuração da conta, não do código. Verifique por esta ordem: " +
       "(1) Consola Twilio → Messaging → Settings → Geo permissions → activa Portugal (+351) para SMS de saída; " +
-      "(2) Se estás em trial: Phone Numbers → Manage → Verified caller IDs → adiciona o número de destino +351… e confirma-o; " +
-      "(3) TWILIO_FROM_NUMBER tem de ser um número SMS teu na Twilio (ex. +1… que eles te deram) ou um Messaging Service SID (MG…); " +
+      "(2) Se estiver em trial: Phone Numbers → Manage → Verified caller IDs → adicione o número de destino +351… e confirme-o; " +
+      "(3) TWILIO_FROM_NUMBER tem de ser um número SMS seu na Twilio (ex. +1… que a Twilio atribuiu) ou um Messaging Service SID (MG…); " +
       "(4) Monitor → Logs → Messaging na Twilio mostra o motivo exacto do 403.";
     const devSkip =
       process.env.NODE_ENV === "development"
-        ? " — Enquanto resolves isto: em `frontend/.env.local` podes definir `ALLOW_SIGNUP_WITHOUT_PHONE_SMS=1` (só desenvolvimento) para concluir o registo sem SMS."
+        ? " — Para contornar em desenvolvimento: em `frontend/.env.local` pode definir `ALLOW_SIGNUP_WITHOUT_PHONE_SMS=1` e concluir o registo sem SMS."
         : "";
     return (msg ? `${base} Mensagem da API: ${msg}` : base) + devSkip;
   }
 
   const hint =
     code === 21608 || /unverified numbers only/i.test(msg)
-      ? "Conta Twilio em trial: só recebes SMS em números que adicionaste em Phone Numbers → Manage → Verified Caller IDs (ou passa a conta paga)."
+      ? "Conta Twilio em trial: só recebe SMS em números que adicionou em Phone Numbers → Manage → Verified Caller IDs (ou passe a conta paga)."
       : code === 21408 || /permission.*geo|not authorized.*country/i.test(msg)
         ? "Na Twilio: Messaging → Settings → Geo permissions — activa o país do número de destino (ex. Portugal +351)."
         : code === 21211 || /not a valid phone number|invalid.*to/i.test(msg)
-          ? "Número de destino inválido. Usa formato internacional no registo, ex. +351912345678."
+          ? "Número de destino inválido. Utilize formato internacional no registo, ex. +351912345678."
           : code === 21614 || /'from'.*not valid/i.test(msg)
-            ? "TWILIO_FROM_NUMBER inválido: tem de ser o número ou Messaging Service SID que a Twilio te atribuiu (E.164 ou MG…)."
+            ? "TWILIO_FROM_NUMBER inválido: tem de ser o número ou Messaging Service SID que a Twilio atribuiu (E.164 ou MG…)."
             : code === 20003 || /authenticate/i.test(msg)
-              ? "Credenciais Twilio inválidas: verifica TWILIO_ACCOUNT_SID e TWILIO_AUTH_TOKEN no .env.local e reinicia o servidor."
+              ? "Credenciais Twilio inválidas: verifique TWILIO_ACCOUNT_SID e TWILIO_AUTH_TOKEN no .env.local e reinicie o servidor."
               : code === 20404 || /resource not found/i.test(msg)
-                ? "Conta Twilio / SID incorrecto — confirma TWILIO_ACCOUNT_SID no console."
+                ? "Conta Twilio / SID incorrecto — confirme TWILIO_ACCOUNT_SID no console."
                 : null;
 
   const tail = msg ? ` Twilio: ${msg}` : "";

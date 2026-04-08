@@ -1,6 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
+import { DECIDE_APP_FONT_FAMILY, DECIDE_DASHBOARD, DECIDE_ONBOARDING } from "../lib/decideClientTheme";
 
 const API_BASE = "http://127.0.0.1:8101";
 
@@ -18,8 +19,8 @@ type PersonaRecord = {
 
 function cardStyle(): React.CSSProperties {
   return {
-    background: "#020b24",
-    border: "1px solid #15305b",
+    background: "rgba(24, 24, 27, 0.92)",
+    border: "1px solid rgba(63, 63, 70, 0.75)",
     borderRadius: 22,
     padding: 20,
     boxShadow: "0 8px 30px rgba(0,0,0,0.18)",
@@ -29,9 +30,9 @@ function cardStyle(): React.CSSProperties {
 function inputStyle(): React.CSSProperties {
   return {
     width: "100%",
-    background: "#020816",
+    background: "#27272a",
     color: "#fff",
-    border: "1px solid #15305b",
+    border: "1px solid rgba(63, 63, 70, 0.85)",
     borderRadius: 12,
     padding: 12,
     fontSize: 16,
@@ -40,7 +41,7 @@ function inputStyle(): React.CSSProperties {
 }
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <div style={{ color: "#9fb3d1", fontSize: 14, marginBottom: 8 }}>{children}</div>;
+  return <div style={{ color: "#a1a1aa", fontSize: 14, marginBottom: 8 }}>{children}</div>;
 }
 
 function Button({
@@ -57,9 +58,9 @@ function Button({
       onClick={onClick}
       disabled={disabled}
       style={{
-        background: disabled ? "#334155" : "#3f73ff",
+        background: disabled ? DECIDE_ONBOARDING.buttonDisabled : DECIDE_DASHBOARD.buttonRegister,
         color: "#fff",
-        border: "1px solid rgba(255,255,255,0.28)",
+        border: disabled ? DECIDE_ONBOARDING.inputBorder : DECIDE_ONBOARDING.buttonPrimaryBorder,
         borderRadius: 14,
         padding: "12px 18px",
         fontSize: 15,
@@ -96,13 +97,13 @@ export default function PersonaAdminPage() {
 
   async function lookupStatus() {
     if (!externalUserId.trim()) {
-      setError("Indica um reference_id (ou externalUserId usado como referenceId).");
+      setError("Indique um reference_id (ou externalUserId usado como referenceId).");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      const url = `${API_BASE}/api/persona/status?reference_id=${encodeURIComponent(externalUserId.trim())}`;
+      const url = `/api/persona/status?reference_id=${encodeURIComponent(externalUserId.trim())}`;
       const res = await fetch(url);
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
@@ -137,18 +138,18 @@ export default function PersonaAdminPage() {
           background: "#000",
           color: "#fff",
           padding: 32,
-          fontFamily: "Inter, Arial, sans-serif",
+          fontFamily: DECIDE_APP_FONT_FAMILY,
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", gap: 20, marginBottom: 24, flexWrap: "wrap" }}>
           <div>
             <div style={{ fontSize: 40, fontWeight: 800 }}>DECIDE — Persona Admin</div>
-            <div style={{ color: "#9fb3d1", fontSize: 18 }}>Consulta de estado e histórico local</div>
+            <div style={{ color: "#a1a1aa", fontSize: 18 }}>Consulta de estado e histórico local</div>
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <Link href="/persona-onboarding" style={{ color: "#93c5fd", fontSize: 16 }}>Onboarding Persona</Link>
-            <a href="http://localhost:5000/" style={{ color: "#93c5fd", fontSize: 16 }}>Dashboard</a>
-            <Link href="/client-montante" style={{ color: "#93c5fd", fontSize: 16 }}>Onboarding interno</Link>
+            <Link href="/persona-onboarding" style={{ color: "#d4d4d4", fontSize: 16 }}>Onboarding Persona</Link>
+            <a href="http://localhost:5000/" style={{ color: "#d4d4d4", fontSize: 16 }}>Dashboard</a>
+            <Link href="/client-montante" style={{ color: "#d4d4d4", fontSize: 16 }}>Onboarding interno</Link>
           </div>
         </div>
 
@@ -183,13 +184,13 @@ export default function PersonaAdminPage() {
 
           <div style={cardStyle()}>
             <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Applicants recentes</div>
-            <div style={{ color: "#9fb3d1", marginBottom: 14, marginTop: 2 }}>
-              Histórico local em `backend/data/persona_state.json`.
+            <div style={{ color: "#a1a1aa", marginBottom: 14, marginTop: 2 }}>
+              Em dev: `.data/persona_state.json` no projeto. Produção: Neon via `POSTGRES_URL` / `DATABASE_URL`.
             </div>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                 <thead>
-                  <tr style={{ textAlign: "left", borderBottom: "1px solid #15305b" }}>
+                  <tr style={{ textAlign: "left", borderBottom: "1px solid rgba(63, 63, 70, 0.75)" }}>
                     <th style={{ padding: "12px 10px" }}>reference_id</th>
                     <th style={{ padding: "12px 10px" }}>inquiryId</th>
                     <th style={{ padding: "12px 10px" }}>status</th>
@@ -209,7 +210,7 @@ export default function PersonaAdminPage() {
                   ))}
                   {!records.length ? (
                     <tr>
-                      <td colSpan={5} style={{ padding: 18, color: "#9fb3d1" }}>
+                      <td colSpan={5} style={{ padding: 18, color: "#a1a1aa" }}>
                         Ainda não há records guardados.
                       </td>
                     </tr>

@@ -8,6 +8,8 @@ import fs from "fs";
 import path from "path";
 import type { NextApiRequest, NextApiResponse } from "next";
 
+import { FREEZE_PLAFONADO_MODEL_DIR } from "../../../lib/freezePlafonadoDir";
+
 export type FlowRow = {
   ticker: string;
   company?: string;
@@ -35,9 +37,9 @@ export type RecommendationMonth = {
   rows: RecommendationRow[];
   turnover?: number;
   grossExposurePct?: number;
-  /** Soma dos pesos T-Bills / cash sleeve (TBILL_PROXY, BIL, SHV), em % do NAV modelo. */
+  /** Soma dos pesos T-Bills / cash sleeve (TBILL_PROXY, BIL, SHV), em % do NAV modelo (sempre que há linhas). */
   tbillsTotalPct?: number;
-  /** Restante carteira (≈ ações), em %. */
+  /** Restante carteira (≈ acções), em % — inclui meses só com sleeve de risco normalizada a 100%. */
   equitySleeveTotalPct?: number;
   entries?: FlowRow[];
   exits?: FlowRow[];
@@ -50,7 +52,10 @@ export type RecommendationMonth = {
  * Ordem: **primeiro ficheiro com dados para uma dada data ganha** (pesos alinhados ao que publicas como CAP15).
  * Depois, ficheiros seguintes só acrescentam **meses em falta** (ex. `weights_by_rebalance_full.csv` até ao último pregão).
  */
+const WEIGHTS_PLAFONADO_FREEZE = `freeze/${FREEZE_PLAFONADO_MODEL_DIR}/model_outputs/weights_by_rebalance.csv`;
+
 const CANDIDATE_FILES = [
+  WEIGHTS_PLAFONADO_FREEZE,
   "freeze/DECIDE_MODEL_V5_OVERLAY_CAP15/model_outputs/weights_by_rebalance.csv",
   "backend/data/weights_by_rebalance_full.csv",
   "backend/data/weights_by_rebalance.csv",
@@ -65,7 +70,7 @@ const CANDIDATE_FILES = [
   "freeze/DECIDE_MODEL_V2_CANDIDATE/model_outputs/weights_by_rebalance.csv",
 ] as const;
 
-const DEFAULT_MODEL_EQUITY_REL = "freeze/DECIDE_MODEL_V5_OVERLAY_CAP15/model_outputs/model_equity_final_20y.csv";
+const DEFAULT_MODEL_EQUITY_REL = `freeze/${FREEZE_PLAFONADO_MODEL_DIR}/model_outputs/model_equity_final_20y.csv`;
 
 const COMPANY_META_FILES = [
   "backend/data/company_meta_global_enriched.csv",
@@ -218,6 +223,34 @@ function sumCashSleeveWeight(rows: RecommendationRow[]): number {
   }, 0);
 }
 
+function sumNonCashSleeveWeight(rows: RecommendationRow[]): number {
+  return rows.reduce((s, x) => {
+    const t = x.ticker.trim().toUpperCase();
+    if (CASH_SLEEVE_TICKERS.has(t)) return s;
+    const w = typeof x.weight === "number" && isFinite(x.weight) ? x.weight : 0;
+    return s + w;
+  }, 0);
+}
+
+/**
+ * Liquidez vs acções para **todos** os meses com linhas: com TBILL no CSV/overlay, ou só sleeve de acções
+ * normalizada a 100% (histórico antigo sem linha de caixa → 0% / 100%).
+ */
+function computeSleeveDisplayPct(rowsOut: RecommendationRow[]): {
+  tbillsTotalPct: number;
+  equitySleeveTotalPct: number;
+} | null {
+  if (!rowsOut.length) return null;
+  const cashW = sumCashSleeveWeight(rowsOut);
+  const equityW = sumNonCashSleeveWeight(rowsOut);
+  const totalW = cashW + equityW;
+  if (totalW <= 1e-9) return null;
+  return {
+    tbillsTotalPct: (cashW / totalW) * 100,
+    equitySleeveTotalPct: (equityW / totalW) * 100,
+  };
+}
+
 function parseEquityCsv(text: string): { dates: string[]; equity: number[] } {
   const dates: string[] = [];
   const equity: number[] = [];
@@ -321,7 +354,8 @@ function loadCashSleeveDailySorted(root: string): CashDailyPoint[] | null {
 function cashSleeveOnOrBefore(sorted: CashDailyPoint[], ymd: string): number | null {
   const t = normalizeDate(ymd).slice(0, 10);
   if (t.length < 10 || !sorted.length) return null;
-  if (t < sorted[0]!.d) return sorted[0]!.v;
+  /** Antes devolvíamos `sorted[0].v` — projectava o cash do 1.º dia da série para **todos** os rebalances anteriores. */
+  if (t < sorted[0]!.d) return null;
   const last = sorted[sorted.length - 1]!;
   if (t > last.d) return last.v;
   let lo = 0;
@@ -337,19 +371,43 @@ function cashSleeveOnOrBefore(sorted: CashDailyPoint[], ymd: string): number | n
   return ans >= 0 ? sorted[ans]!.v : null;
 }
 
-/** Fallback se não existir `cash_sleeve_daily.csv` (último mês ≈ aba Carteira). */
-function loadV5LatestNavCash(root: string): number | null {
+/**
+ * Lê `v5_kpis.json`: `latest_cash_sleeve` e, quando existir (motor V5 recente),
+ * `cash_sleeve_at_rebalance` — fração de caixa **por data de rebalance** (histórico sem CSV diário).
+ */
+function loadV5KpisCashFields(root: string): {
+  latestNavCash: number | null;
+  cashAtRebalanceByDate: Map<string, number> | null;
+} {
   const dirParts = DEFAULT_MODEL_EQUITY_REL.split("/").slice(0, -1);
   const kpisPath = path.join(root, ...dirParts, "v5_kpis.json");
-  if (!fs.existsSync(kpisPath)) return null;
+  if (!fs.existsSync(kpisPath)) {
+    return { latestNavCash: null, cashAtRebalanceByDate: null };
+  }
   try {
     const raw = fs.readFileSync(kpisPath, "utf8");
-    const j = JSON.parse(raw) as { latest_cash_sleeve?: number };
+    const j = JSON.parse(raw) as {
+      latest_cash_sleeve?: number;
+      cash_sleeve_at_rebalance?: Record<string, number>;
+    };
     const latest = Number(j.latest_cash_sleeve);
-    if (!isFinite(latest) || latest < 0 || latest > 1) return null;
-    return latest;
+    const latestNavCash =
+      isFinite(latest) && latest >= 0 && latest <= 1 ? latest : null;
+
+    let cashAtRebalanceByDate: Map<string, number> | null = null;
+    const cr = j.cash_sleeve_at_rebalance;
+    if (cr && typeof cr === "object" && !Array.isArray(cr)) {
+      const m = new Map<string, number>();
+      for (const [k, v] of Object.entries(cr)) {
+        const d = normalizeDate(k).slice(0, 10);
+        const n = Number(v);
+        if (d.length >= 10 && isFinite(n)) m.set(d, clamp01(n));
+      }
+      if (m.size > 0) cashAtRebalanceByDate = m;
+    }
+    return { latestNavCash, cashAtRebalanceByDate };
   } catch {
-    return null;
+    return { latestNavCash: null, cashAtRebalanceByDate: null };
   }
 }
 
@@ -535,7 +593,8 @@ function buildMonthsFromMerged(
 ): RecommendationMonth[] {
   const months: RecommendationMonth[] = [];
   const cashDailySorted = loadCashSleeveDailySorted(root);
-  const v5LatestNavCash = loadV5LatestNavCash(root);
+  const { latestNavCash: v5LatestNavCash, cashAtRebalanceByDate: rebalanceCashMap } =
+    loadV5KpisCashFields(root);
   const sortedDates = Array.from(byDate.keys()).sort();
   const maxRebalanceDate = sortedDates.length ? sortedDates[sortedDates.length - 1]! : "";
 
@@ -547,12 +606,18 @@ function buildMonthsFromMerged(
     const tol = 0.002;
     let rowsOut: RecommendationRow[];
     const hasExplicitCash = listHasExplicitCashSleeve(list);
-    const isLatestRebalance = date === maxRebalanceDate;
 
     if (!hasExplicitCash) {
       let navRaw: number | null =
         cashDailySorted && cashDailySorted.length > 0 ? cashSleeveOnOrBefore(cashDailySorted, date) : null;
-      if (navRaw == null && isLatestRebalance && v5LatestNavCash != null) navRaw = v5LatestNavCash;
+      if (navRaw === null && rebalanceCashMap !== null) {
+        const dk = normalizeDate(date).slice(0, 10);
+        const hit = rebalanceCashMap.get(dk);
+        if (hit !== undefined) navRaw = hit;
+      }
+      if (navRaw === null && date === maxRebalanceDate && v5LatestNavCash !== null) {
+        navRaw = v5LatestNavCash;
+      }
 
       if (navRaw != null && isFinite(navRaw)) {
         const navCashFrac = clamp01(navRaw);
@@ -568,8 +633,26 @@ function buildMonthsFromMerged(
           rowsOut = applyV5NavCashOverlay(list, navCashFrac, lookup);
         }
       } else {
+        /** Sem overlay V5/diário: caixa implícita se Σpesos < 1; «buraco» pequeno (≥92%) → só normalizar acções. */
         if (sumW <= 1e-9) {
           rowsOut = list;
+        } else if (sumW < 1 - tol) {
+          grossExposurePct = sumW * 100;
+          if (sumW >= 0.92) {
+            rowsOut = list.map((row) => {
+              const nw = row.weight / sumW;
+              return enrichRow({ ...row, weight: nw, weightPct: nw * 100 }, lookup);
+            });
+          } else {
+            const cashW = 1 - sumW;
+            const cashRow: RecommendationRow = {
+              ticker: "TBILL_PROXY",
+              weight: cashW,
+              weightPct: cashW * 100,
+              score: 0,
+            };
+            rowsOut = [...list, enrichRow(cashRow, lookup)].sort((a, b) => (b.weight || 0) - (a.weight || 0));
+          }
         } else if (sumW > 1 + tol) {
           const renorm = list.map((row) => {
             const nw = row.weight / sumW;
@@ -610,19 +693,18 @@ function buildMonthsFromMerged(
     } else {
       rowsOut = list;
     }
-    const cashW = sumCashSleeveWeight(rowsOut);
-    const hasCashTickerRow = rowsOut.some((r) => CASH_SLEEVE_TICKERS.has(r.ticker.trim().toUpperCase()));
-    /** Só mostramos % T-Bills / % ações no NAV quando há linha de caixa (último mês com v5 ou CSV explícito / legado). */
-    const tbillsTotalPct = hasCashTickerRow ? cashW * 100 : undefined;
-    const equitySleeveTotalPct = hasCashTickerRow
-      ? Math.max(0, Math.min(100, (1 - cashW) * 100))
-      : undefined;
+    const sleevePcts = computeSleeveDisplayPct(rowsOut);
     months.push({
       date,
       rows: rowsOut,
       turnover,
       grossExposurePct,
-      ...(hasCashTickerRow ? { tbillsTotalPct, equitySleeveTotalPct } : {}),
+      ...(sleevePcts
+        ? {
+            tbillsTotalPct: sleevePcts.tbillsTotalPct,
+            equitySleeveTotalPct: sleevePcts.equitySleeveTotalPct,
+          }
+        : {}),
     });
   }
 
@@ -699,6 +781,20 @@ function buildMonthsFromMerged(
   return asc;
 }
 
+/** ISO YYYY-MM-DD (UTC) — comparação lexicográfica com `rebalance_date` do CSV. */
+function utcTodayYmd(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Remove rebalanceamentos com data estritamente futura (o CSV pode incluir linhas “planeadas” além do último pregão). */
+function filterMonthsThroughToday(months: RecommendationMonth[]): RecommendationMonth[] {
+  const today = utcTodayYmd();
+  return months.filter((m) => {
+    const d = String(m.date || "").slice(0, 10);
+    return d.length === 10 && d <= today;
+  });
+}
+
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
@@ -717,7 +813,11 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     });
   }
 
-  const months = buildMonthsFromMerged(pack.merged, pack.turnoverByDate, lookup, root);
+  const monthsRaw = buildMonthsFromMerged(pack.merged, pack.turnoverByDate, lookup, root);
+  const months = filterMonthsThroughToday(monthsRaw);
+  months.forEach((m, i) => {
+    m.chronologicalIndex = i;
+  });
   const sourcePath =
     pack.sourcesUsed.length === 1
       ? pack.sourcesUsed[0]!

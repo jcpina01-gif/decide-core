@@ -5,8 +5,9 @@ export default function Document() {
     <Html lang="pt">
       <Head>
         <meta charSet="utf-8" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
       </Head>
-      <body>
+      <body style={{ margin: 0, background: "transparent", color: "var(--text-primary)" }}>
         <Main />
         <NextScript />
       </body>

@@ -66,7 +66,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   if (!sent.ok) {
     return res.status(502).json({
       ok: false,
-      error: sent.error || "Falha ao contactar a Twilio. Confirma as chaves e vê o terminal onde corre npm run dev.",
+      error: sent.error || "Falha ao contactar a Twilio. Confirme as chaves e veja o terminal onde corre npm run dev.",
     });
   }
 

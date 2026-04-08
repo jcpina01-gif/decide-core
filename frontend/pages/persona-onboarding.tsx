@@ -1,12 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import type { GetServerSideProps } from "next";
 import Head from "next/head";
 import OnboardingFlowBar, {
   ONBOARDING_LOCALSTORAGE_CHANGED_EVENT,
   ONBOARDING_STORAGE_KEYS,
 } from "../components/OnboardingFlowBar";
 import { getCurrentSessionUser, getCurrentSessionUserEmail, getCurrentSessionUserPhone } from "../lib/clientAuth";
-import { getResolvedPersonaEnvironmentId, getResolvedPersonaTemplateId } from "../lib/personaPublicEnv";
+import {
+  getResolvedPersonaEnvironmentId,
+  getResolvedPersonaTemplateId,
+  normalizeNextPublicPersonaHostForSdk,
+  sanitizePersonaPublicId,
+} from "../lib/personaPublicEnv";
 import { buildReferenceIdFromUserAndEmail } from "../lib/personaReference";
+import {
+  DECIDE_ONBOARDING,
+  ONBOARDING_PRIMARY_CTA_MAX_WIDTH_PX,
+  ONBOARDING_SHELL_MAX_WIDTH_PX,
+} from "../lib/decideClientTheme";
 
 function bumpOnboardingFlowBarFromLocalStorage() {
   try {
@@ -16,6 +27,16 @@ function bumpOnboardingFlowBarFromLocalStorage() {
   } catch {
     // ignore
   }
+}
+
+function formatPersonaSaveError(e: unknown): string {
+  if (e instanceof Error && e.message.trim()) return e.message.trim();
+  if (typeof e === "string" && e.trim()) return e.trim();
+  if (e && typeof e === "object" && "message" in e) {
+    const m = (e as { message?: unknown }).message;
+    if (typeof m === "string" && m.trim()) return m.trim();
+  }
+  return "Erro desconhecido. Abra F12 → Rede → POST /api/persona/record, ou veja o terminal onde corre npm run dev.";
 }
 
 type PersonaCompletePayload = {
@@ -34,20 +55,20 @@ type LastPersonaComplete = {
 
 function cardStyle(): React.CSSProperties {
   return {
-    background: "#020b24",
-    border: "1px solid #15305b",
-    borderRadius: 22,
-    padding: 20,
-    boxShadow: "0 8px 30px rgba(0,0,0,0.18)",
+    background: DECIDE_ONBOARDING.cardBg,
+    border: DECIDE_ONBOARDING.cardBorder,
+    borderRadius: 18,
+    padding: 14,
+    boxShadow: DECIDE_ONBOARDING.cardShadow,
   };
 }
 
 function inputStyle(): React.CSSProperties {
   return {
     width: "100%",
-    background: "#020816",
-    color: "#fff",
-    border: "1px solid #15305b",
+    background: DECIDE_ONBOARDING.inputBg,
+    color: DECIDE_ONBOARDING.text,
+    border: DECIDE_ONBOARDING.inputBorder,
     borderRadius: 12,
     padding: 12,
     fontSize: 16,
@@ -56,7 +77,7 @@ function inputStyle(): React.CSSProperties {
 }
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <div style={{ color: "#9fb3d1", fontSize: 14, marginBottom: 8 }}>{children}</div>;
+  return <div style={{ color: DECIDE_ONBOARDING.textLabel, fontSize: 14, marginBottom: 8 }}>{children}</div>;
 }
 
 function Button({
@@ -72,12 +93,17 @@ function Button({
     <button
       onClick={onClick}
       disabled={disabled}
+      type="button"
       style={{
-        background: disabled ? "#334155" : "#3f73ff",
-        color: "#fff",
-        border: "1px solid rgba(255,255,255,0.28)",
+        alignSelf: "flex-start",
+        width: "auto",
+        maxWidth: "min(100%, 280px)",
+        background: disabled ? DECIDE_ONBOARDING.buttonDisabled : DECIDE_ONBOARDING.buttonPrimaryGradient,
+        color: disabled ? "rgba(230, 237, 243, 0.75)" : DECIDE_ONBOARDING.text,
+        border: disabled ? DECIDE_ONBOARDING.inputBorder : DECIDE_ONBOARDING.buttonPrimaryBorder,
+        boxShadow: disabled ? undefined : "var(--shadow-button-primary-glow, 0 0 20px rgba(47, 191, 159, 0.25)), 0 4px 14px rgba(0, 0, 0, 0.28)",
         borderRadius: 14,
-        padding: "12px 18px",
+        padding: "11px 16px",
         fontSize: 15,
         fontWeight: 800,
         cursor: disabled ? "not-allowed" : "pointer",
@@ -205,7 +231,34 @@ function validatePersonaPublicIds(templateId: string, environmentId: string, tem
   return null;
 }
 
-export default function PersonaOnboardingPage() {
+export type PersonaOnboardingPageProps = {
+  personaTemplateId: string;
+  personaEnvironmentId: string;
+  personaTemplateVersionId: string;
+};
+
+/**
+ * Injeta NEXT_PUBLIC_PERSONA_* no HTML em cada pedido. O bundle cliente embute essas variáveis na build;
+ * se o ambiente só as definir em runtime (Docker, variáveis mudadas sem rebuild), sem isto o SDK Persona
+ * recebia template/environment vazios → «template-id is blank» / misconfigured.
+ */
+export const getServerSideProps: GetServerSideProps<PersonaOnboardingPageProps> = async () => {
+  return {
+    props: {
+      personaTemplateId: sanitizePersonaPublicId(getResolvedPersonaTemplateId()),
+      personaEnvironmentId: sanitizePersonaPublicId(getResolvedPersonaEnvironmentId()),
+      personaTemplateVersionId: sanitizePersonaPublicId(
+        String(process.env.NEXT_PUBLIC_PERSONA_TEMPLATE_VERSION_ID || "").trim(),
+      ),
+    },
+  };
+};
+
+export default function PersonaOnboardingPage({
+  personaTemplateId,
+  personaEnvironmentId,
+  personaTemplateVersionId,
+}: PersonaOnboardingPageProps) {
   const [externalUserId, setExternalUserId] = useState("");
   const [email, setEmail] = useState("");
   /** Nome extraído automaticamente do callback Persona (pode ficar vazio se `fields` vier {}). */
@@ -215,14 +268,16 @@ export default function PersonaOnboardingPage() {
   /** Só quando já há nome da Persona: correção opcional (deixe vazio se o capturado estiver certo). */
   const [optionalNameCorrection, setOptionalNameCorrection] = useState("");
 
-  // From Persona dashboard (inquiry template + environment)
-  const [templateId, setTemplateId] = useState(getResolvedPersonaTemplateId());
-  const [templateVersionId, setTemplateVersionId] = useState(process.env.NEXT_PUBLIC_PERSONA_TEMPLATE_VERSION_ID || "");
-  const [environmentId, setEnvironmentId] = useState(getResolvedPersonaEnvironmentId());
+  // From Persona dashboard (inquiry template + environment) — valores vindos do servidor em cada pedido (ver getServerSideProps).
+  const [templateId, setTemplateId] = useState(personaTemplateId);
+  const [templateVersionId, setTemplateVersionId] = useState(personaTemplateVersionId);
+  const [environmentId, setEnvironmentId] = useState(personaEnvironmentId);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [recordSaveWarning, setRecordSaveWarning] = useState("");
+  /** Motivo técnico separado (evita depender de `\n` no texto — o detalhe mostra-se sempre). */
+  const [recordSaveDetail, setRecordSaveDetail] = useState("");
   const [statusResult, setStatusResult] = useState<Record<string, any> | null>(null);
   /** Só true após `/api/persona/record` OK — única fonte para desbloquear IBKR e stepper. */
   const [backendSaveConfirmed, setBackendSaveConfirmed] = useState(false);
@@ -254,6 +309,7 @@ export default function PersonaOnboardingPage() {
       setManualFullName("");
       setOptionalNameCorrection("");
       setRecordSaveWarning("");
+      setRecordSaveDetail("");
       const sessionEmail = getCurrentSessionUserEmail();
       setEmail(sessionEmail || "");
 
@@ -275,18 +331,7 @@ export default function PersonaOnboardingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Para evitar mismatches de origem (127.0.0.1 vs localhost) no embedded flow:
-  // se o utilizador abriu a página via 127.0.0.1, redireciona para localhost.
-  useEffect(() => {
-    try {
-      if (typeof window === "undefined") return;
-      if (window.location.hostname === "127.0.0.1") {
-        window.location.replace(window.location.href.replace("127.0.0.1", "localhost"));
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
+  // Não redireccionar localhost → 127.0.0.1: o Domain Manager da Persona aceita «localhost» mas rejeita «127.0.0.1».
 
   // KYC no localStorage só passa a "1" após gravação bem-sucedida no backend (onComplete).
   // Ao entrar: repor aprovação IBKR; não limpar kyc aqui (permite refresh após sucesso).
@@ -307,11 +352,14 @@ export default function PersonaOnboardingPage() {
     fields?: Record<string, any>;
     nameOverride?: string;
   }) {
-    const res = await fetch("/api/persona/record", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        reference_id: payload.reference_id,
+    const ref = (payload.reference_id || "").trim();
+    if (!ref) {
+      throw new Error("Sem reference_id — inicie sessão de novo e volte a este passo.");
+    }
+    let bodyJson: string;
+    try {
+      bodyJson = JSON.stringify({
+        reference_id: ref,
         external_user_id: externalUserId || referenceId,
         name: (payload.nameOverride ?? effectiveFullName) || undefined,
         email: email || getCurrentSessionUserEmail() || undefined,
@@ -319,12 +367,30 @@ export default function PersonaOnboardingPage() {
         inquiry_id: payload.inquiry_id,
         status: payload.status,
         fields: payload.fields || {},
-      }),
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "JSON inválido";
+      throw new Error(`Dados demasiado grandes ou inválidos para guardar (${msg}).`);
+    }
+    const res = await fetch("/api/persona/record", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: bodyJson,
     });
-    const json = await res.json().catch(() => ({}));
+    const text = await res.text();
+    let json: { ok?: boolean; error?: string; hint?: string } = {};
+    try {
+      json = text ? (JSON.parse(text) as typeof json) : {};
+    } catch {
+      const snippet = text.replace(/\s+/g, " ").trim().slice(0, 240);
+      throw new Error(
+        snippet ? `Resposta do servidor (${res.status}): ${snippet}` : `Resposta inválida (HTTP ${res.status}).`,
+      );
+    }
     if (!res.ok || !json.ok) {
       const parts = [typeof json?.error === "string" ? json.error : null, typeof json?.hint === "string" ? json.hint : null].filter(
-        Boolean
+        Boolean,
       ) as string[];
       throw new Error(parts.length ? parts.join(" — ") : `HTTP ${res.status}`);
     }
@@ -332,10 +398,24 @@ export default function PersonaOnboardingPage() {
   }
 
   async function retryPersistPersonaComplete() {
+    const headline =
+      "A verificação foi concluída, mas não conseguimos guardar a confirmação no sistema. Tente novamente — sem esta confirmação não pode avançar para o passo seguinte.";
+    if (!referenceId.trim()) {
+      setRecordSaveWarning(headline);
+      setRecordSaveDetail("Falta sessão / reference_id — inicie sessão e volte a este passo.");
+      return;
+    }
     const last = lastPersonaCompleteRef.current;
-    if (!last || !referenceId) return;
+    if (!last) {
+      setRecordSaveWarning(headline);
+      setRecordSaveDetail(
+        "Não há dados do último Persona em memória — conclua outra vez o fluxo no ecrã (ou recarregue a página).",
+      );
+      return;
+    }
     setPersistInFlight(true);
     setRecordSaveWarning("");
+    setRecordSaveDetail("");
     try {
       await savePersonaRecord({
         reference_id: referenceId,
@@ -360,7 +440,9 @@ export default function PersonaOnboardingPage() {
         fields: last.fields,
         verifiedFullName: verifiedFullName.trim() || manualFullName.trim() || last.fullName,
       });
-    } catch {
+      setRecordSaveDetail("");
+    } catch (e) {
+      if (process.env.NODE_ENV === "development") console.error("[Persona] retry save", e);
       setBackendSaveConfirmed(false);
       try {
         window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.kyc, "0");
@@ -368,9 +450,8 @@ export default function PersonaOnboardingPage() {
       } catch {
         // ignore
       }
-      setRecordSaveWarning(
-        "A verificação foi concluída, mas não conseguimos guardar a confirmação no sistema. Tente novamente — sem esta confirmação não pode avançar para o passo seguinte.",
-      );
+      setRecordSaveWarning(headline);
+      setRecordSaveDetail(formatPersonaSaveError(e));
       setStatusResult((prev) => ({
         ...(prev || {}),
         ok: false,
@@ -388,6 +469,7 @@ export default function PersonaOnboardingPage() {
     if (!referenceId) return;
     setManualBypassInFlight(true);
     setRecordSaveWarning("");
+    setRecordSaveDetail("");
     try {
       // Keep onboarding unblocked even if backend is temporarily unavailable.
       window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.kyc, "1");
@@ -435,13 +517,36 @@ export default function PersonaOnboardingPage() {
       referenceId,
     });
 
-    if (!templateId.trim()) {
+    let tid = sanitizePersonaPublicId(templateId);
+    let eid = sanitizePersonaPublicId(environmentId);
+    let tvid = sanitizePersonaPublicId(templateVersionId);
+    try {
+      if (!tid && typeof window !== "undefined") {
+        tid = sanitizePersonaPublicId(window.localStorage.getItem("persona_templateId") || "");
+      }
+      if (!eid && typeof window !== "undefined") {
+        eid = sanitizePersonaPublicId(window.localStorage.getItem("persona_environmentId") || "");
+      }
+      if (!tvid && typeof window !== "undefined") {
+        tvid = sanitizePersonaPublicId(window.localStorage.getItem("persona_templateVersionId") || "");
+      }
+    } catch {
+      // ignore
+    }
+    if (!tid) {
+      tid = sanitizePersonaPublicId(getResolvedPersonaTemplateId());
+    }
+    if (!eid) {
+      eid = sanitizePersonaPublicId(getResolvedPersonaEnvironmentId());
+    }
+
+    if (!tid.trim()) {
       setError("Não foi possível iniciar a verificação. Tente mais tarde ou contacte o suporte.");
       if (process.env.NODE_ENV === "development") console.warn("[Persona] Falta templateId em ENV");
       setStatusResult({ ok: false, stage: "missing-templateId", referenceId });
       return;
     }
-    if (!environmentId.trim()) {
+    if (!eid.trim()) {
       setError("Não foi possível iniciar a verificação. Tente mais tarde ou contacte o suporte.");
       if (process.env.NODE_ENV === "development") console.warn("[Persona] Falta environmentId em ENV");
       setStatusResult({ ok: false, stage: "missing-environmentId", referenceId });
@@ -452,14 +557,14 @@ export default function PersonaOnboardingPage() {
       setStatusResult({ ok: false, stage: "missing-referenceId", referenceId });
       return;
     }
-    if (templateVersionId.trim() && !templateVersionId.trim().startsWith("itmplv_")) {
+    if (tvid.trim() && !tvid.trim().startsWith("itmplv_")) {
       setError("Não foi possível iniciar a verificação. Tente mais tarde ou contacte o suporte.");
       if (process.env.NODE_ENV === "development") console.warn("[Persona] templateVersionId inválido");
       setStatusResult({ ok: false, stage: "invalid-templateVersionId", referenceId });
       return;
     }
 
-    const idErr = validatePersonaPublicIds(templateId, environmentId, templateVersionId);
+    const idErr = validatePersonaPublicIds(tid, eid, tvid);
     if (idErr) {
       setError("Não foi possível iniciar a verificação. Tente mais tarde ou contacte o suporte.");
       if (process.env.NODE_ENV === "development") console.warn("[Persona]", idErr);
@@ -496,19 +601,15 @@ export default function PersonaOnboardingPage() {
 
       let client: any;
 
-      const personaHostRaw = (process.env.NEXT_PUBLIC_PERSONA_HOST || "").trim().toLowerCase();
+      const personaHostRaw = (process.env.NEXT_PUBLIC_PERSONA_HOST || "").trim();
       const pageHostname = typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "";
-      const isLocalPage = pageHostname === "localhost" || pageHostname === "127.0.0.1";
-      const parsedHost =
-        personaHostRaw === "development" ||
-        personaHostRaw === "staging" ||
-        personaHostRaw === "canary" ||
-        personaHostRaw === "production"
-          ? (personaHostRaw as "development" | "staging" | "canary" | "production")
-          : personaHostRaw
-            ? personaHostRaw
-            : undefined;
-      // Safety: outside localhost, never force host overrides from env.
+      const isLocalPage =
+        pageHostname === "localhost" ||
+        pageHostname === "127.0.0.1" ||
+        pageHostname === "[::1]" ||
+        pageHostname === "::1";
+      const parsedHost = normalizeNextPublicPersonaHostForSdk(personaHostRaw);
+      // Fora de origem local, não forçar `host` a partir do env (o SDK usa production por omissão).
       const personaHostOpt = isLocalPage ? parsedHost : undefined;
 
       /** O SDK Persona cria um overlay fullscreen; não aninhar dentro de #persona-flow-container (overflow:hidden / caixa pequena) — o modal ficava invisível ou sem «open». */
@@ -537,9 +638,9 @@ export default function PersonaOnboardingPage() {
       const personaOrigin = pageOrigin;
 
       client = new Persona.Client({
-        templateId,
-        ...(templateVersionId.trim() ? { templateVersionId: templateVersionId.trim() } : {}),
-        environmentId,
+        templateId: tid,
+        ...(tvid.trim() ? { templateVersionId: tvid.trim() } : {}),
+        environmentId: eid,
         referenceId,
         fields,
         ...(personaHostOpt ? { host: personaHostOpt } : {}),
@@ -575,7 +676,12 @@ export default function PersonaOnboardingPage() {
         },
         onComplete: async (payload: PersonaCompletePayload) => {
           const inquiryId = payload?.inquiryId || "";
-          const status = payload?.status || "completed";
+          const status =
+            typeof payload?.status === "string" && payload.status.trim()
+              ? payload.status.trim()
+              : payload?.status != null && payload.status !== ""
+                ? String(payload.status).trim()
+                : "completed";
           const fieldsOut = payload?.fields || {};
 
           let fullName = "";
@@ -589,6 +695,7 @@ export default function PersonaOnboardingPage() {
           setManualFullName("");
           setOptionalNameCorrection("");
           setRecordSaveWarning("");
+          setRecordSaveDetail("");
           setBackendSaveConfirmed(false);
           lastPersonaCompleteRef.current = {
             inquiryId,
@@ -631,7 +738,9 @@ export default function PersonaOnboardingPage() {
               fields: fieldsOut,
               verifiedFullName: fullName,
             });
-          } catch {
+            setRecordSaveDetail("");
+          } catch (e) {
+            if (process.env.NODE_ENV === "development") console.error("[Persona] onComplete save", e);
             setBackendSaveConfirmed(false);
             try {
               window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.kyc, "0");
@@ -642,6 +751,7 @@ export default function PersonaOnboardingPage() {
             setRecordSaveWarning(
               "A verificação foi concluída, mas não conseguimos guardar a confirmação no sistema. Tente novamente — sem esta confirmação não pode avançar para o passo seguinte.",
             );
+            setRecordSaveDetail(formatPersonaSaveError(e));
             setStatusResult({
               ok: false,
               stage: "persona-save-failed",
@@ -789,16 +899,19 @@ export default function PersonaOnboardingPage() {
     ? "Verificação indisponível neste momento"
     : verificationStateLabel;
 
+  const estadoDisplay =
+    typeof estadoPrincipal === "string" ? estadoPrincipal : String(estadoPrincipal ?? "");
+
   const linkSecondary: React.CSSProperties = {
     display: "inline-block",
     padding: "11px 18px",
     fontSize: 14,
     fontWeight: 700,
-    color: "#cbd5e1",
-    border: "1px solid rgba(148,163,184,0.45)",
+    color: DECIDE_ONBOARDING.textLabel,
+    border: DECIDE_ONBOARDING.inputBorder,
     borderRadius: 14,
     textDecoration: "none",
-    background: "rgba(148,163,184,0.08)",
+    background: "rgba(63, 63, 70, 0.35)",
   };
 
   const canContinueToIbkr = backendSaveConfirmed && canConfirmKyc;
@@ -814,15 +927,23 @@ export default function PersonaOnboardingPage() {
         }
       }}
       style={{
-        display: "inline-block",
-        background: "#3f73ff",
-        color: "#fff",
-        border: "1px solid rgba(255,255,255,0.28)",
+        display: "block",
+        marginLeft: "auto",
+        marginRight: "auto",
+        maxWidth: `min(100%, ${ONBOARDING_PRIMARY_CTA_MAX_WIDTH_PX}px)`,
+        width: "100%",
+        boxSizing: "border-box",
+        background: DECIDE_ONBOARDING.buttonPrimaryGradient,
+        color: DECIDE_ONBOARDING.text,
+        border: DECIDE_ONBOARDING.buttonPrimaryBorder,
+        boxShadow:
+          "var(--shadow-button-primary-glow, 0 0 20px rgba(47, 191, 159, 0.25)), 0 4px 14px rgba(0, 0, 0, 0.28)",
         borderRadius: 14,
-        padding: "12px 18px",
+        padding: "11px 16px",
         fontSize: 15,
         fontWeight: 800,
         textDecoration: "none",
+        textAlign: "center",
       }}
     >
       Continuar para o passo seguinte
@@ -832,7 +953,7 @@ export default function PersonaOnboardingPage() {
       style={{
         display: "inline-block",
         background: "#334155",
-        color: "#94a3b8",
+        color: "#a1a1aa",
         border: "1px solid rgba(255,255,255,0.12)",
         borderRadius: 14,
         padding: "12px 18px",
@@ -876,28 +997,47 @@ export default function PersonaOnboardingPage() {
       <div
         style={{
           minHeight: "100vh",
-          background: "#000",
-          color: "#fff",
-          padding: "32px max(20px, 4vw)",
-          fontFamily: "Inter, Arial, sans-serif",
+          background: DECIDE_ONBOARDING.pageBackground,
+          color: DECIDE_ONBOARDING.text,
+          padding: "14px max(16px, 3vw) 20px",
+          fontFamily: DECIDE_ONBOARDING.fontFamily,
+          boxSizing: "border-box",
         }}
       >
-        <div style={{ maxWidth: 720, margin: "0 auto 24px" }}>
-          <div style={{ fontSize: "clamp(28px, 4vw, 36px)", fontWeight: 800, lineHeight: 1.15 }}>Verificação de identidade</div>
-          <div style={{ color: "#94a3b8", fontSize: 16, marginTop: 10, maxWidth: 560, lineHeight: 1.55 }}>
-            Para continuar, precisamos de confirmar a sua identidade. O processo demora apenas alguns minutos.
+        <header
+          style={{
+            maxWidth: ONBOARDING_SHELL_MAX_WIDTH_PX,
+            margin: "0 auto 8px",
+            width: "100%",
+            paddingBottom: 10,
+            borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+          }}
+        >
+          <div style={{ fontSize: "clamp(20px, 3vw, 28px)", fontWeight: 800, lineHeight: 1.2 }}>
+            Verificação de identidade
           </div>
-        </div>
+          <div
+            style={{
+              color: DECIDE_ONBOARDING.textMuted,
+              fontSize: 14,
+              marginTop: 4,
+              maxWidth: 560,
+              lineHeight: 1.4,
+            }}
+          >
+            Confirme a sua identidade para avançar — processo rápido.
+          </div>
+        </header>
 
-        <div style={{ maxWidth: 900, margin: "0 auto" }}>
-          <OnboardingFlowBar currentStepId="kyc" authStepHref="/client/login" />
+        <div style={{ maxWidth: ONBOARDING_SHELL_MAX_WIDTH_PX, margin: "0 auto 8px", width: "100%" }}>
+          <OnboardingFlowBar currentStepId="kyc" authStepHref="/client/login" compact />
         </div>
 
         {error ? (
           <div
             style={{
               ...cardStyle(),
-              maxWidth: 720,
+              maxWidth: ONBOARDING_SHELL_MAX_WIDTH_PX,
               margin: "0 auto 16px",
               color: "#fecaca",
               borderColor: "#7f1d1d",
@@ -907,15 +1047,78 @@ export default function PersonaOnboardingPage() {
           </div>
         ) : null}
 
-        <div style={{ maxWidth: 720, margin: "0 auto", display: "grid", gap: 20 }}>
+        <div style={{ maxWidth: ONBOARDING_SHELL_MAX_WIDTH_PX, margin: "0 auto", display: "grid", gap: 10, width: "100%" }}>
           <div style={cardStyle()}>
-            <div style={{ color: "#64748b", fontSize: 12, fontWeight: 800, marginBottom: 8 }}>ESTADO</div>
-            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>{estadoPrincipal}</div>
+            <div style={{ marginBottom: 10, display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px 12px" }}>
+              <span style={{ color: DECIDE_ONBOARDING.textMuted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em" }}>
+                ESTADO
+              </span>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 12px",
+                  borderRadius: 999,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  lineHeight: 1.3,
+                  maxWidth: "100%",
+                  border: "1px solid rgba(255, 255, 255, 0.12)",
+                  background:
+                    estadoDisplay.includes("verificad") || estadoDisplay.includes("confirmad")
+                      ? "rgba(47, 191, 159, 0.12)"
+                      : estadoDisplay.includes("indisponível") || estadoDisplay.includes("Não foi possível")
+                        ? "rgba(251, 191, 36, 0.1)"
+                        : "rgba(230, 237, 243, 0.07)",
+                  color:
+                    estadoDisplay.includes("verificad") || estadoDisplay.includes("confirmad")
+                      ? "#a7f3d0"
+                      : estadoDisplay.includes("indisponível") || estadoDisplay.includes("Não foi possível")
+                        ? "#fde68a"
+                        : "var(--text-primary, #e6edf3)",
+                  boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.06)",
+                }}
+              >
+                <span aria-hidden style={{ opacity: 0.9 }}>
+                  {estadoDisplay.includes("verificad") ? "✓" : "●"}
+                </span>
+                {estadoDisplay}
+              </span>
+            </div>
 
-            <ul style={{ color: "#94a3b8", fontSize: 14, lineHeight: 1.65, margin: "0 0 20px", paddingLeft: 20 }}>
-              <li>Documento de identificação válido</li>
-              <li>Câmara do telemóvel ou computador</li>
-            </ul>
+            <div style={{ margin: "0 0 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
+                  color: "#d4d4d8",
+                  fontSize: 13,
+                  lineHeight: 1.4,
+                }}
+              >
+                <span aria-hidden style={{ flexShrink: 0, fontSize: 16, lineHeight: 1.2 }}>
+                  📄
+                </span>
+                <span>Documento de identificação válido</span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
+                  color: "#d4d4d8",
+                  fontSize: 13,
+                  lineHeight: 1.4,
+                }}
+              >
+                <span aria-hidden style={{ flexShrink: 0, fontSize: 16, lineHeight: 1.2 }}>
+                  📷
+                </span>
+                <span>Câmara do telemóvel ou computador ativa</span>
+              </div>
+            </div>
 
             {!personaConfigOk ? (
               <div
@@ -965,8 +1168,16 @@ export default function PersonaOnboardingPage() {
                       ) : null}
                     </ul>
                     <p style={{ margin: 0, color: "#a8a29e", fontSize: 12, lineHeight: 1.5 }}>
-                      Copie os IDs em dashboard.withpersona.com → Inquiry template / API. Se o modal Persona disser «Could not
-                      load template», publique uma versão do template e opcionalmente defina{" "}
+                      Copie os IDs em dashboard.withpersona.com → Inquiry template / API. Se aparecer «This application is
+                      misconfigured» / «template-id is blank»: confirme variáveis na Vercel (ou no servidor) e faça{" "}
+                      <strong>redeploy</strong>; em fluxo embebido, na Persona (Domain Manager) use o campo <strong>só com
+                      hostname</strong>, p.ex. <code style={{ color: "#d6d3d1" }}>localhost</code> — sem{" "}
+                      <code style={{ color: "#d6d3d1" }}>http://</code> nem path. Abra a app em{" "}
+                      <code style={{ color: "#d6d3d1" }}>http://localhost:4701</code> para coincidir com essa entrada; o painel
+                      costuma <strong>rejeitar</strong> <code style={{ color: "#d6d3d1" }}>127.0.0.1</code> como domínio.
+                      Se usou <code style={{ color: "#d6d3d1" }}>NEXT_PUBLIC_PERSONA_HOST=staging</code>, o{" "}
+                      <code style={{ color: "#d6d3d1" }}>NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID</code> tem de ser válido nesse
+                      ambiente. Para «Could not load template», publique uma versão do template e, se necessário, defina{" "}
                       <code style={{ color: "#d6d3d1" }}>NEXT_PUBLIC_PERSONA_TEMPLATE_VERSION_ID</code>.
                     </p>
                   </>
@@ -1009,7 +1220,7 @@ export default function PersonaOnboardingPage() {
                       : "1px solid rgba(251, 191, 36, 0.45)",
                 }}
               >
-                {stageStr === "persona-save-failed" && recordSaveWarning ? (
+                {stageStr === "persona-save-failed" ? (
                   <div
                     style={{
                       marginBottom: 14,
@@ -1020,10 +1231,32 @@ export default function PersonaOnboardingPage() {
                       color: "#fecaca",
                       fontSize: 14,
                       lineHeight: 1.55,
+                      wordBreak: "break-word",
                     }}
                   >
-                    {recordSaveWarning}
-                    <div style={{ marginTop: 12 }}>
+                    <p style={{ margin: "0 0 10px" }}>
+                      {recordSaveWarning.trim() ||
+                        "A confirmação não foi gravada no servidor. Utilize o botão abaixo para tentar de novo."}
+                    </p>
+                    {recordSaveDetail.trim() ? (
+                      <div
+                        style={{
+                          marginBottom: 12,
+                          padding: 10,
+                          borderRadius: 10,
+                          background: "rgba(0,0,0,0.25)",
+                          border: "1px solid rgba(248, 113, 113, 0.25)",
+                        }}
+                      >
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "#fda4af", marginBottom: 6 }}>
+                          Detalhe técnico
+                        </div>
+                        <div style={{ fontSize: 13, color: "#fecdd3", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                          {recordSaveDetail}
+                        </div>
+                      </div>
+                    ) : null}
+                    <div style={{ marginTop: 4 }}>
                       <Button onClick={() => retryPersistPersonaComplete()} disabled={persistInFlight}>
                         {persistInFlight ? "A guardar…" : "Tentar guardar confirmação"}
                       </Button>
@@ -1037,7 +1270,7 @@ export default function PersonaOnboardingPage() {
                   <>
                     <div style={{ color: "#fff", fontSize: 22, fontWeight: 800, lineHeight: 1.3 }}>{effectiveFullName}</div>
                     {stageStr === "persona-complete-saved" ? (
-                      <p style={{ margin: "10px 0 0", color: "#94a3b8", fontSize: 13, lineHeight: 1.5 }}>
+                      <p style={{ margin: "10px 0 0", color: "#a1a1aa", fontSize: 13, lineHeight: 1.5 }}>
                         Este nome foi registado na verificação e no sistema. Não precisa de alterar nada se corresponder ao seu
                         documento; se estiver incorreto, contacte o suporte antes de continuar.
                       </p>
@@ -1045,7 +1278,7 @@ export default function PersonaOnboardingPage() {
                     {stageStr === "persona-save-failed" ? (
                       <div style={{ marginTop: 14 }}>
                         <Label>Corrigir nome (opcional)</Label>
-                        <div style={{ color: "#94a3b8", fontSize: 12, marginBottom: 8, lineHeight: 1.45 }}>
+                        <div style={{ color: "#a1a1aa", fontSize: 12, marginBottom: 8, lineHeight: 1.45 }}>
                           Só preencha se o nome capturado estiver errado. Depois utilize «Tentar guardar confirmação» acima.
                         </div>
                         <input
@@ -1079,12 +1312,12 @@ export default function PersonaOnboardingPage() {
                   </div>
                 ) : null}
                 {backendSaveConfirmed && !canConfirmKyc ? (
-                  <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 10 }}>Indique o nome completo para continuar.</div>
+                  <div style={{ color: "#a1a1aa", fontSize: 12, marginTop: 10 }}>Indique o nome completo para continuar.</div>
                 ) : null}
               </div>
             ) : null}
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12, alignItems: "center" }}>
               {!personaConfigOk ? (
                 <>
                   <div
@@ -1092,7 +1325,7 @@ export default function PersonaOnboardingPage() {
                       display: "inline-block",
                       alignSelf: "flex-start",
                       background: "#334155",
-                      color: "#94a3b8",
+                      color: "#a1a1aa",
                       border: "1px solid rgba(255,255,255,0.12)",
                       borderRadius: 14,
                       padding: "12px 18px",
@@ -1105,33 +1338,45 @@ export default function PersonaOnboardingPage() {
                   >
                     Não foi possível iniciar a verificação
                   </div>
-                  <p style={{ margin: 0, color: "#64748b", fontSize: 13, lineHeight: 1.5 }}>
+                  <p style={{ margin: 0, color: "#71717a", fontSize: 13, lineHeight: 1.5 }}>
                     Use os botões acima para voltar ao perfil ou atualizar a página — o botão só fica disponível quando tudo
                     estiver pronto.
                   </p>
                 </>
               ) : hideIniciarButton ? (
                 backendSaveConfirmed ? (
-                  <p style={{ margin: 0, color: "#64748b", fontSize: 13, lineHeight: 1.5 }}>
+                  <p style={{ margin: 0, color: "#71717a", fontSize: 13, lineHeight: 1.5 }}>
                     A sua identidade foi verificada e confirmada. Pode continuar.
                   </p>
                 ) : persistInFlight || stageStr === "persona-validating" ? (
-                  <p style={{ margin: 0, color: "#94a3b8", fontSize: 13, lineHeight: 1.5 }}>
+                  <p style={{ margin: 0, color: "#a1a1aa", fontSize: 13, lineHeight: 1.5 }}>
                     Aguarde enquanto guardamos a confirmação no sistema…
                   </p>
                 ) : stageStr === "persona-save-failed" ? (
-                  <p style={{ margin: 0, color: "#94a3b8", fontSize: 13, lineHeight: 1.5 }}>
+                  <p style={{ margin: 0, color: "#a1a1aa", fontSize: 13, lineHeight: 1.5 }}>
                     Utilize «Tentar guardar confirmação» na caixa acima para concluir este passo.
                   </p>
                 ) : loading ? (
-                  <p style={{ margin: 0, color: "#94a3b8", fontSize: 13, lineHeight: 1.5 }}>
+                  <p style={{ margin: 0, color: "#a1a1aa", fontSize: 13, lineHeight: 1.5 }}>
                     A abrir o assistente de verificação…
                   </p>
                 ) : null
               ) : (
-                <Button onClick={startFlow} disabled={loading}>
-                  {loading ? "A abrir…" : "Iniciar verificação"}
-                </Button>
+                <>
+                  <div style={{ textAlign: "center", width: "100%", marginBottom: 2 }}>
+                    <div style={{ color: "#a1a1aa", fontSize: 12, fontWeight: 600, lineHeight: 1.35 }}>
+                      Este passo demora ~2 minutos
+                    </div>
+                    <div style={{ color: "#d97706", fontSize: 11, fontWeight: 800, marginTop: 3, letterSpacing: "0.02em" }}>
+                      Obrigatório para continuar
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "center", width: "100%" }}>
+                    <Button onClick={startFlow} disabled={loading}>
+                      {loading ? "A abrir…" : "Iniciar verificação"}
+                    </Button>
+                  </div>
+                </>
               )}
               {!backendSaveConfirmed && !manualFallbackActive ? (
                 <button
@@ -1140,15 +1385,19 @@ export default function PersonaOnboardingPage() {
                   disabled={manualBypassInFlight || persistInFlight}
                   style={{
                     display: "inline-block",
-                    alignSelf: "flex-start",
-                    background: manualBypassInFlight ? "#334155" : "rgba(245, 158, 11, 0.15)",
-                    color: manualBypassInFlight ? "#94a3b8" : "#fef3c7",
-                    border: "1px solid rgba(245, 158, 11, 0.45)",
-                    borderRadius: 14,
-                    padding: "10px 16px",
-                    fontSize: 14,
-                    fontWeight: 800,
+                    background: "transparent",
+                    border: "none",
+                    color: manualBypassInFlight ? "#57534e" : "#71717a",
+                    fontSize: 12,
+                    fontWeight: 500,
                     cursor: manualBypassInFlight ? "not-allowed" : "pointer",
+                    textDecoration: manualBypassInFlight ? "none" : "underline",
+                    textUnderlineOffset: 3,
+                    padding: "4px 6px",
+                    marginTop: 2,
+                    fontFamily: "inherit",
+                    lineHeight: 1.35,
+                    maxWidth: "100%",
                   }}
                 >
                   {manualBypassInFlight
@@ -1159,41 +1408,52 @@ export default function PersonaOnboardingPage() {
             </div>
 
             {showPostPersonaPanel ? (
-              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>{confirmKycButton}</div>
+              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10, alignItems: "center", width: "100%" }}>
+                {confirmKycButton}
+              </div>
             ) : null}
 
             {manualFallbackActive ? (
-              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10, alignItems: "center", width: "100%" }}>
                 <a
                   href="/client/ibkr-prep"
                   style={{
-                    display: "inline-block",
-                    background: "#f59e0b",
-                    color: "#111827",
-                    border: "1px solid rgba(255,255,255,0.2)",
+                    display: "block",
+                    marginLeft: "auto",
+                    marginRight: "auto",
+                    maxWidth: `min(100%, ${ONBOARDING_PRIMARY_CTA_MAX_WIDTH_PX}px)`,
+                    width: "100%",
+                    boxSizing: "border-box",
+                    background: DECIDE_ONBOARDING.buttonPrimaryGradient,
+                    color: DECIDE_ONBOARDING.text,
+                    border: DECIDE_ONBOARDING.buttonPrimaryBorder,
+                    boxShadow:
+                      "var(--shadow-button-primary-glow, 0 0 20px rgba(47, 191, 159, 0.25)), 0 4px 14px rgba(0, 0, 0, 0.28)",
                     borderRadius: 14,
-                    padding: "12px 18px",
+                    padding: "11px 16px",
                     fontSize: 15,
                     fontWeight: 800,
                     textDecoration: "none",
+                    textAlign: "center",
                   }}
                 >
                   Continuar (validação manual pendente)
                 </a>
-                <div style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.5 }}>
+                <div style={{ color: "#a1a1aa", fontSize: 12, lineHeight: 1.5 }}>
                   O pedido ficou marcado para revisão manual. A aprovação final da identidade será confirmada pela equipa.
                 </div>
               </div>
             ) : null}
 
             {!backendSaveConfirmed ? (
-              <div style={{ color: "#64748b", fontSize: 12, lineHeight: 1.5, marginTop: 16 }}>
+              <div style={{ color: "#71717a", fontSize: 11, lineHeight: 1.45, marginTop: 10 }}>
                 O assistente abre como <strong>janela escura em ecrã completo</strong> (não só na caixa abaixo) — verifique se não ficou atrás do browser ou se o bloqueador não impediu o iframe.
                 <div style={{ marginTop: 10, color: "#57534e", fontSize: 11 }}>
                   Se ficar em branco: o template na Persona precisa de <strong>versão publicada</strong> (na lista de templates,
-                  «Last published» não pode estar vazio). A 3.ª variável <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_TEMPLATE_VERSION_ID</code>{" "}
-                  é opcional; em sandbox, se a Persona o pedir, defina também{" "}
-                  <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_HOST=development</code> na Vercel e redeploy.
+                  «Last published» não pode estar vazio). A variável <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_TEMPLATE_VERSION_ID</code>{" "}
+                  é opcional. <strong>Não</strong> use <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_HOST=development</code>: no SDK isso aponta o
+                  iframe para <code style={{ color: "#a8a29e" }}>localhost:3000</code> (interno Persona). Sandbox usa <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID</code>{" "}
+                  e, se precisar, <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_HOST=production</code> ou omita (omissão = production).
                 </div>
                 {stageStr === "persona-iframe-mounted" ? (
                   <div
@@ -1203,16 +1463,27 @@ export default function PersonaOnboardingPage() {
                       borderRadius: 12,
                       background: "rgba(14, 165, 233, 0.1)",
                       border: "1px solid rgba(56, 189, 248, 0.35)",
-                      color: "#bae6fd",
+                      color: "#99f6e4",
                       fontSize: 12,
                       lineHeight: 1.55,
                     }}
                   >
                     <strong>Diagnóstico:</strong> o iframe da Persona está montado na página. Se a área escura continua vazia,
-                    trate de configuração na consola Persona (template publicado, mesmo ambiente que o{" "}
-                    <code style={{ color: "#7dd3fc" }}>NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID</code>) e, em Sandbox,{" "}
-                    <code style={{ color: "#7dd3fc" }}>NEXT_PUBLIC_PERSONA_HOST=development</code> + redeploy. Confirme também no
-                    DevTools → Rede se há pedidos bloqueados.
+                    confira na consola Persona o template publicado e o mesmo ambiente que{" "}
+                    <code style={{ color: "#d4d4d4" }}>NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID</code>.
+                    {" "}Se a mensagem for <strong>«localhost recusou-se a ligar»</strong>, não use{" "}
+                    <code style={{ color: "#d4d4d4" }}>NEXT_PUBLIC_PERSONA_HOST=development</code> (o SDK usa{" "}
+                    <code style={{ color: "#d4d4d4" }}>localhost:3000</code>). Se o Next só ouvir em{" "}
+                    <code style={{ color: "#d4d4d4" }}>127.0.0.1</code> mas a Persona só permitir{" "}
+                    <code style={{ color: "#d4d4d4" }}>localhost</code>, use <code style={{ color: "#d4d4d4" }}>npm run dev:lan</code>{" "}
+                    (<code style={{ color: "#d4d4d4" }}>0.0.0.0</code>) ou abra <code style={{ color: "#d4d4d4" }}>http://localhost:4701</code>.
+                    {" "}Se for <strong>«inquiry.withpersona.com recusou-se a ligar»</strong> (ou erro de ligação semelhante), o browser não está a conseguir HTTPS até aos servidores Persona: teste abrir{" "}
+                    <a href="https://inquiry.withpersona.com/" target="_blank" rel="noopener noreferrer" style={{ color: "#7dd3fc" }}>
+                      inquiry.withpersona.com
+                    </a>{" "}
+                    noutro separador; desative temporariamente bloqueadores, VPN ou inspecção HTTPS do antivírus; experimente outra rede ou{" "}
+                    <code style={{ color: "#d4d4d4" }}>NEXT_PUBLIC_PERSONA_HOST=staging</code> em <code style={{ color: "#d4d4d4" }}>.env.local</code> (reinicie o Next). No Windows, falhas de verificação de revogação de certificado (proxy offline) também bloqueiam ligações TLS.
+                    {" "}No DevTools → Rede, confirme se o pedido ao domínio Persona falha antes da resposta.
                   </div>
                 ) : null}
                 {embedBlockedByPersona && !manualFallbackActive ? (
@@ -1239,10 +1510,11 @@ export default function PersonaOnboardingPage() {
           <div
             style={{
               position: "relative",
-              border: "1px solid #1e3a5f",
+              border: "1px solid rgba(63, 63, 70, 0.65)",
               borderRadius: 16,
               overflow: "hidden",
-              background: "linear-gradient(180deg, #0c1929 0%, #061126 100%)",
+              background: "linear-gradient(180deg, var(--bg-card) 0%, var(--bg-main) 100%)",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
               minHeight: 480,
             }}
           >

@@ -24,7 +24,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   if (!isPhoneVerificationApiEnabled()) {
     return res.status(503).json({
       ok: false,
-      error: "Verificação SMS desligada no servidor (reinicia o Next após .env.local).",
+      error: "Verificação SMS desligada no servidor (reinicie o Next após .env.local).",
     });
   }
 
@@ -42,7 +42,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     }
     const code = sanitizeOtpDigits(body.code);
     if (!/^\d{4,8}$/.test(code)) {
-      return res.status(400).json({ ok: false, error: "Código inválido — usa só os algarismos (4 a 8 dígitos)." });
+      return res.status(400).json({ ok: false, error: "Código inválido — utilize só os algarismos (4 a 8 dígitos)." });
     }
 
     const proofRaw = typeof body.otpProof === "string" ? body.otpProof.trim() : "";
@@ -53,7 +53,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       return res.status(400).json({
         ok: false,
         error:
-          "Código incorreto ou expirado (10 min). Se mudaste VERIFY_EMAIL_SECRET na Vercel, pede um SMS novo. Em produção serverless é normal precisares do último SMS após cada deploy.",
+          "Código incorreto ou expirado (10 min). Se alterou VERIFY_EMAIL_SECRET na Vercel, solicite um SMS novo. Em produção serverless é normal precisar do último SMS após cada deploy.",
       });
     }
 
@@ -62,6 +62,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   } catch (e) {
     const msg = e instanceof Error ? e.message : "verify_failed";
     console.error("[phone-verification/verify]", msg);
-    return res.status(500).json({ ok: false, error: "Erro interno ao validar. Tenta de novo ou pede novo SMS." });
+    return res.status(500).json({ ok: false, error: "Erro interno ao validar. Tente de novo ou solicite novo SMS." });
   }
 }

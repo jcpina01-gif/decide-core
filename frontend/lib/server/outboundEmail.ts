@@ -2,7 +2,7 @@
  * Envio transaccional: Resend (API) ou Gmail (SMTP com App Password).
  *
  * Gmail (.env.local):
- *   GMAIL_USER=teu.email@gmail.com
+ *   GMAIL_USER=exemplo@gmail.com
  *   GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx   # Conta Google → Segurança → palavras-passe de app
  *
  * Resend (opcional):
@@ -25,18 +25,18 @@ export function hintForResendMessage(message: string): string | undefined {
   if (!m) return undefined;
   if (m.includes("only send") || m.includes("testing emails") || m.includes("verify a domain")) {
     return (
-      "Resend em modo de testes: com onboarding@resend.dev só podes enviar para o email da tua conta Resend. " +
-      "Alternativa: configura GMAIL_USER + GMAIL_APP_PASSWORD para enviar pelo teu Gmail."
+      "Resend em modo de testes: com onboarding@resend.dev só pode enviar para o email da sua conta Resend. " +
+      "Alternativa: configure GMAIL_USER + GMAIL_APP_PASSWORD para enviar pelo Gmail."
     );
   }
   if (m.includes("domain") && (m.includes("not verified") || m.includes("verify"))) {
-    return "Verifica o domínio do remetente na Resend ou usa Gmail (GMAIL_USER + GMAIL_APP_PASSWORD).";
+    return "Verifique o domínio do remetente na Resend ou utilize Gmail (GMAIL_USER + GMAIL_APP_PASSWORD).";
   }
   if (m.includes("invalid") && m.includes("from")) {
-    return "NOTIFY_FROM_EMAIL inválido para a Resend — corrige ou usa Gmail.";
+    return "NOTIFY_FROM_EMAIL inválido para a Resend — corrija ou utilize Gmail.";
   }
   if (m.includes("api key") || m.includes("unauthorized") || m.includes("401")) {
-    return "RESEND_API_KEY inválida — ou remove-a e usa Gmail (GMAIL_USER + GMAIL_APP_PASSWORD).";
+    return "RESEND_API_KEY inválida — remova-a ou utilize Gmail (GMAIL_USER + GMAIL_APP_PASSWORD).";
   }
   return undefined;
 }
@@ -89,6 +89,7 @@ async function sendViaGmail(
   html?: string,
 ): Promise<OutboundEmailResult> {
   const user = (process.env.GMAIL_USER || "").trim();
+  /** Espaços removidos (a Google mostra a palavra-passe de app em grupos separados por espaço). */
   const appPass = (process.env.GMAIL_APP_PASSWORD || "").replace(/\s/g, "");
   if (!user || !appPass) {
     return { ok: false, error: "missing_gmail", hint: "Define GMAIL_USER e GMAIL_APP_PASSWORD em .env.local (palavra-passe de app Google)." };
@@ -100,10 +101,9 @@ async function sendViaGmail(
   const tlsRejectUnauthorized = process.env.GMAIL_TLS_REJECT_UNAUTHORIZED !== "0";
 
   try {
+    /** `service: "gmail"` usa a config SMTP oficial do Nodemailer (menos frágil que host/port manual). */
     const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
+      service: "gmail",
       auth: { user, pass: appPass },
       tls: { rejectUnauthorized: tlsRejectUnauthorized },
     });

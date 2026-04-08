@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import { DECIDE_DASHBOARD } from "../lib/decideClientTheme";
 import {
   LineChart,
   Line,
@@ -93,28 +94,28 @@ export default function EquityChart({
       >
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 16, right: 20, left: 8, bottom: 16 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#24324f" />
-            <XAxis dataKey="date" minTickGap={40} stroke="#94a3b8" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" />
+            <XAxis dataKey="date" minTickGap={40} stroke="#a1a1aa" />
             <YAxis
               scale="log"
               domain={["dataMin", "dataMax"]}
-              stroke="#94a3b8"
+              stroke="#a1a1aa"
               tickFormatter={(v) => fmtVal(v)}
             />
             <Tooltip
               contentStyle={{
-                backgroundColor: "#020817",
-                border: "1px solid #334155",
+                backgroundColor: "#18181b",
+                border: "1px solid #3f3f46",
                 borderRadius: 16,
                 color: "#fff",
               }}
               formatter={(value: any, name: any) => [fmtVal(value), String(name)]}
             />
             <Legend />
-            <Line type="monotone" dataKey="benchmark" name="Benchmark" dot={false} strokeWidth={2} stroke="#94a3b8" />
-            <Line type="monotone" dataKey="overlayed" name="Overlayed" dot={false} strokeWidth={2.5} stroke="#22c55e" />
-            <Line type="monotone" dataKey="raw" name="Raw" dot={false} strokeWidth={2.5} stroke="#f59e0b" />
-            <Line type="monotone" dataKey="rawVolMatched" name="Raw Vol Matched" dot={false} strokeWidth={2.5} stroke="#38bdf8" />
+            <Line type="monotone" dataKey="benchmark" name="Benchmark" dot={false} strokeWidth={2} stroke="#d4d4d4" />
+            <Line type="monotone" dataKey="overlayed" name="Overlayed" dot={false} strokeWidth={2.5} stroke={DECIDE_DASHBOARD.flowTealChartStroke} />
+            <Line type="monotone" dataKey="raw" name="Raw" dot={false} strokeWidth={2.5} stroke="#737373" />
+            <Line type="monotone" dataKey="rawVolMatched" name="Raw Vol Matched" dot={false} strokeWidth={2.5} stroke="#a3a3a3" />
           </LineChart>
         </ResponsiveContainer>
       </div>

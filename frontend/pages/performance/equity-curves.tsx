@@ -1,6 +1,7 @@
 import dynamic from "next/dynamic";
 import Head from "next/head";
 import { useEffect, useMemo, useState } from "react";
+import { DECIDE_DASHBOARD } from "../../lib/decideClientTheme";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -279,7 +280,7 @@ export default function EquityCurvesPage() {
             <div style={{ color: "#9ca3af", marginTop: 8 }}>
               {dataset === "backtest15y" ? "Backtest 15Y" : "Live Track"}
             </div>
-            <div style={{ color: "#94a3b8", marginTop: 8 }}>
+            <div style={{ color: "#a1a1aa", marginTop: 8 }}>
               Intervalo real: {realStart} → {realEnd} {yearsCovered !== null ? `(${yearsCovered} anos)` : ""}
             </div>
           </div>
@@ -300,8 +301,8 @@ export default function EquityCurvesPage() {
               style={{
                 padding: "10px 14px",
                 borderRadius: 10,
-                border: dataset === "backtest15y" ? "1px solid #60a5fa" : "1px solid #374151",
-                background: dataset === "backtest15y" ? "#1d4ed8" : "#111827",
+                border: dataset === "backtest15y" ? "1px solid rgba(94, 234, 212, 0.4)" : "1px solid #374151",
+                background: dataset === "backtest15y" ? "#2d6d66" : DECIDE_DASHBOARD.clientProgressTrackBg,
                 color: "#f9fafb",
                 cursor: "pointer",
                 fontWeight: 600,
@@ -318,8 +319,8 @@ export default function EquityCurvesPage() {
               style={{
                 padding: "10px 14px",
                 borderRadius: 10,
-                border: dataset === "live" ? "1px solid #60a5fa" : "1px solid #374151",
-                background: dataset === "live" ? "#1d4ed8" : "#111827",
+                border: dataset === "live" ? "1px solid rgba(94, 234, 212, 0.4)" : "1px solid #374151",
+                background: dataset === "live" ? "#2d6d66" : DECIDE_DASHBOARD.clientProgressTrackBg,
                 color: "#f9fafb",
                 cursor: "pointer",
                 fontWeight: 600,
@@ -349,8 +350,8 @@ export default function EquityCurvesPage() {
                   style={{
                     padding: "10px 14px",
                     borderRadius: 10,
-                    border: active ? "1px solid #60a5fa" : "1px solid #374151",
-                    background: active ? "#1d4ed8" : "#111827",
+                    border: active ? "1px solid rgba(94, 234, 212, 0.4)" : "1px solid #374151",
+                    background: active ? "#2d6d66" : DECIDE_DASHBOARD.clientProgressTrackBg,
                     color: enabled ? "#f9fafb" : "#6b7280",
                     cursor: enabled ? "pointer" : "not-allowed",
                     fontWeight: 600,
@@ -366,11 +367,12 @@ export default function EquityCurvesPage() {
 
           <div
             style={{
-              background: "#111827",
-              border: "1px solid #1f2937",
+              background: DECIDE_DASHBOARD.clientPanelGradient,
+              border: DECIDE_DASHBOARD.panelBorder,
               borderRadius: 12,
               padding: 16,
               marginBottom: 20,
+              boxShadow: DECIDE_DASHBOARD.clientPanelShadow,
             }}
           >
             {loading && <div>A carregar gráfico...</div>}
@@ -387,8 +389,8 @@ export default function EquityCurvesPage() {
                 layout={{
                   autosize: true,
                   height: 620,
-                  paper_bgcolor: "#111827",
-                  plot_bgcolor: "#111827",
+                  paper_bgcolor: DECIDE_DASHBOARD.clientChartTooltipBg,
+                  plot_bgcolor: DECIDE_DASHBOARD.clientChartTooltipBg,
                   font: { color: "#f9fafb" },
                   legend: { orientation: "h" },
                   margin: { l: 60, r: 20, t: 20, b: 60 },
@@ -431,7 +433,7 @@ export default function EquityCurvesPage() {
 
               <div
                 style={{
-                  color: "#94a3b8",
+                  color: "#a1a1aa",
                   marginBottom: 16,
                   fontSize: 13,
                 }}

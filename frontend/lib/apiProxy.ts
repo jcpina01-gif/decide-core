@@ -6,6 +6,8 @@ import type { NextApiRequest } from "next";
  */
 export function getBackendBase(): string {
   const v =
+    process.env.DECIDE_BACKEND_URL ||
+    process.env.NEXT_PUBLIC_DECIDE_BACKEND_URL ||
     process.env.BACKEND_URL ||
     process.env.NEXT_PUBLIC_BACKEND_URL ||
     "http://127.0.0.1:8090";

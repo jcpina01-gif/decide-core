@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import json, math, hashlib
@@ -55,6 +55,17 @@ def _download_prices(tickers):
         return df
     except Exception:
         return pd.DataFrame()
+
+@app.head("/")
+def root_head():
+    """Render e proxies costumam fazer HEAD / — sem isto devolve 404."""
+    return Response()
+
+
+@app.get("/")
+def root_get():
+    return {"ok": True, "app": "DecideAI Backend", "health": "/api/health"}
+
 
 @app.get("/api/health")
 def api_health():

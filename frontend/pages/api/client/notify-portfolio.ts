@@ -37,7 +37,7 @@ function buildCopy(event: "constitution" | "monthly_review", clientLabel: string
       subject: `DECIDE — Constituição da carteira${who}`,
       text:
         `Olá,\n\n` +
-        `Tens uma ação de constituição da carteira DECIDE pendente. Consulta o dashboard cliente e o separador Carteira no painel de KPIs para a composição sugerida.\n\n` +
+        `Tem uma ação de constituição da carteira DECIDE pendente. Consulte o dashboard cliente e o separador Carteira no painel de KPIs para a composição sugerida.\n\n` +
         `Este alerta foi gerado a partir do botão de notificação do dashboard.\n`,
     };
   }
@@ -45,7 +45,7 @@ function buildCopy(event: "constitution" | "monthly_review", clientLabel: string
     subject: `DECIDE — Revisão mensal / rebalance${who}`,
     text:
       `Olá,\n\n` +
-      `Hoje é dia de revisão mensal (ciclo global) da estratégia DECIDE. Consulta o separador Carteira no painel de KPIs e ajusta as tuas ordens conforme o perfil.\n\n` +
+      `Hoje é dia de revisão mensal (ciclo global) da estratégia DECIDE. Consulte o separador Carteira no painel de KPIs e ajuste as suas ordens conforme o perfil.\n\n` +
       `Este alerta foi gerado a partir do botão de notificação do dashboard.\n`,
   };
 }
@@ -61,7 +61,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       ok: false,
       mode: "simulated",
       message:
-        "API desligada. Define ALLOW_CLIENT_NOTIFY_API=1 em frontend/.env.local (e Gmail ou Resend + Twilio para envio real).",
+        "API desligada. Defina ALLOW_CLIENT_NOTIFY_API=1 em frontend/.env.local (e Gmail ou Resend + Twilio para envio real).",
     });
   }
 
@@ -97,7 +97,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(400).json({
       ok: false,
       mode: out.mode,
-      message: "Indica pelo menos email (registo) ou telemóvel no dashboard.",
+      message: "Indique pelo menos email (registo) ou telemóvel no dashboard.",
     });
   }
 
@@ -138,7 +138,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   const smsFail = needSms && !out.sms?.sent;
   if (emailFail || smsFail) {
     out.ok = false;
-    out.message = "Envio parcial ou falhou — vê detalhes (email/sms).";
+    out.message = "Envio parcial ou falhou — veja os detalhes (email/sms).";
     return res.status(502).json(out);
   }
 

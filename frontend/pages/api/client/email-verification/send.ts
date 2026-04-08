@@ -57,7 +57,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(503).json({
       ok: false,
       error: "verify_secret_missing",
-      hint: "Define VERIFY_EMAIL_SECRET com pelo menos 16 caracteres aleatórios.",
+      hint: "Defina VERIFY_EMAIL_SECRET com pelo menos 16 caracteres aleatórios.",
     });
   }
 
@@ -74,15 +74,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const linkBase = resolveEmailLinkBaseUrl(req);
   const link = `${linkBase}/client/verify-email?token=${encodeURIComponent(token)}`;
   const subject = prospectOnly
-    ? "DECIDE — Confirma o email para receberes novidades"
-    : "DECIDE — Confirma o teu email";
+    ? "DECIDE — Confirme o email para receber novidades"
+    : "DECIDE — Confirme o email";
   const textBase = prospectOnly
-    ? `Olá,\n\nClica no botão no email (versão HTML) ou abre o link abaixo para confirmares que queres receber comunicações da DECIDE (sem criar conta):\n\n${link}\n\n` +
-      `O link expira em 48 horas. Se mais tarde criares conta, o registo continua independente desta lista.\n`
+    ? `Olá,\n\nClique no botão no email (versão HTML) ou abra o link abaixo para confirmar que deseja receber comunicações da DECIDE (sem criar conta):\n\n${link}\n\n` +
+      `O link expira em 48 horas. Se mais tarde criar conta, o registo continua independente desta lista.\n`
     : signupOnly
-      ? `Olá,\n\nClica no botão no email (versão HTML) ou abre o link abaixo para confirmares o teu endereço de email antes de concluíres o registo DECIDE:\n\n${link}\n\n` +
+      ? `Olá,\n\nClique no botão no email (versão HTML) ou abra o link abaixo para confirmar o seu endereço de email antes de concluir o registo DECIDE:\n\n${link}\n\n` +
         `O link expira em 48 horas.\n`
-      : `Olá,\n\nClica no botão no email (versão HTML) ou abre o link abaixo para confirmares o email da tua conta DECIDE (user: ${username}):\n\n${link}\n\n` +
+      : `Olá,\n\nClique no botão no email (versão HTML) ou abra o link abaixo para confirmar o email da sua conta DECIDE (user: ${username}):\n\n${link}\n\n` +
         `O link expira em 48 horas.\n`;
   const text = textBase + buildVerificationEmailTextAppendix(link);
 

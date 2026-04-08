@@ -1,11 +1,14 @@
-import React, { useEffect, useMemo, useState } from "react";
-import type { GetServerSideProps } from "next";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import Head from "next/head";
-import path from "path";
-import fs from "fs";
 import Link from "next/link";
-import OnboardingFlowBar, { ONBOARDING_STORAGE_KEYS } from "../../components/OnboardingFlowBar";
+import OnboardingFlowBar, {
+  ONBOARDING_LOCALSTORAGE_CHANGED_EVENT,
+  ONBOARDING_STORAGE_KEYS,
+} from "../../components/OnboardingFlowBar";
 import { buildPersonaReferenceIdFromSession } from "../../lib/personaReference";
+import { extractDisplayNameFromPersonaRecord } from "../../lib/personaDisplayName";
+import { isFxHedgeOnboardingApplicable } from "../../lib/clientSegment";
+import { isHedgeOnboardingDone } from "../../lib/fxHedgePrefs";
 
 function safeNumber(x: unknown, fallback = 0): number {
   if (typeof x === "number") return Number.isFinite(x) ? x : fallback;
@@ -13,18 +16,19 @@ function safeNumber(x: unknown, fallback = 0): number {
   return Number.isFinite(v) ? v : fallback;
 }
 
-function safeString(x: unknown, fallback = ""): string {
-  if (typeof x === "string") return x;
-  if (typeof x === "number" && Number.isFinite(x)) return String(x);
-  return fallback;
+function normalizeCcy(ccy: string): string {
+  const u = (ccy || "USD").toUpperCase();
+  if (u === "BASE") return "EUR";
+  return u;
 }
 
-function formatEuro(v: number): string {
-  return new Intl.NumberFormat("pt-PT", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(v);
+function formatMoney(v: number, ccy: string): string {
+  const c = normalizeCcy(ccy);
+  try {
+    return new Intl.NumberFormat("pt-PT", { style: "currency", currency: c, maximumFractionDigits: 2 }).format(v);
+  } catch {
+    return `${v.toFixed(2)} ${c}`;
+  }
 }
 
 function formatPtDateTime(iso: string | null): string {
@@ -41,97 +45,199 @@ function formatPtDateTime(iso: string | null): string {
   }
 }
 
-type PageProps = {
-  navEur: number;
-  ibkrOk: boolean;
-  cashEur: number;
-  accountCode: string;
-  ibkrPort: number;
-  diagUpdatedAt: string | null;
-};
-
-export const getServerSideProps: GetServerSideProps<PageProps> = async () => {
-  const frontRoot = process.cwd();
-  const projectRoot = path.resolve(frontRoot, "..");
-  const tmpDir = path.join(projectRoot, "tmp_diag");
-
-  const smokePath = path.join(tmpDir, "ibkr_paper_smoke_test.json");
-
-  const smokeJson = fs.existsSync(smokePath) ? JSON.parse(fs.readFileSync(smokePath, "utf-8")) : null;
-
-  const navEur = safeNumber(smokeJson?.selected?.netLiquidation?.value ?? smokeJson?.attempts?.[0]?.netLiquidation?.value);
-  const ibkrOk = Boolean(smokeJson?.selected?.ok);
-  const cashEur = safeNumber(smokeJson?.selected?.cash?.value ?? smokeJson?.attempts?.[0]?.cash?.value, 0);
-  const accountCode = safeString(
-    smokeJson?.selected?.accountCode ?? smokeJson?.attempts?.[0]?.accountCode,
-    "",
-  );
-  const ibkrPort = safeNumber(smokeJson?.selected?.port ?? smokeJson?.attempts?.[0]?.port, 0);
-
-  let diagUpdatedAt: string | null = null;
-  try {
-    if (fs.existsSync(smokePath)) {
-      const st = fs.statSync(smokePath);
-      diagUpdatedAt = st.mtime.toISOString();
-    }
-  } catch {
-    diagUpdatedAt = null;
-  }
-
-  return {
-    props: {
-      navEur,
-      ibkrOk,
-      cashEur,
-      accountCode,
-      ibkrPort,
-      diagUpdatedAt,
-    },
-  };
-};
-
-const IBKR_PREP_DONE_KEY = "decide_onboarding_ibkr_prep_done_v1";
-
-/** Inferência discreta do tipo de conta (sem detalhes técnicos na UI). */
-function accountTypeLabel(port: number): string {
-  if (port === 7497) return "Conta de demonstração";
-  if (port === 7496) return "Conta real (confirme na corretora se tiver dúvida)";
-  if (port > 0) return "Conta ligada";
+/** Tipo de conta a partir do código IB (ex.: DU… = paper). */
+function accountTypeLabelFromCode(accountCode: string): string {
+  const a = accountCode.trim().toUpperCase();
+  if (a.startsWith("DU")) return "Conta de demonstração (paper)";
+  if (a.length > 0) return "Conta ligada";
   return "Indisponível";
 }
 
-export default function IbkrPrepPage({ navEur, ibkrOk, cashEur, accountCode, ibkrPort, diagUpdatedAt }: PageProps) {
+const IBKR_PREP_DONE_KEY = "decide_onboarding_ibkr_prep_done_v1";
+
+type IbkrLiveState = {
+  loading: boolean;
+  error: string;
+  ok: boolean;
+  nav: number;
+  navCcy: string;
+  cash: number;
+  cashCcy: string;
+  accountCode: string;
+  updatedAt: string | null;
+};
+
+const initialLive: IbkrLiveState = {
+  loading: true,
+  error: "",
+  ok: false,
+  nav: 0,
+  navCcy: "EUR",
+  cash: 0,
+  cashCcy: "EUR",
+  accountCode: "",
+  updatedAt: null,
+};
+
+/** Atualizar leitura IBKR — estilo técnico / secundário (sem competir com o CTA principal). */
+function ibkrRefreshButtonStyle(loading: boolean): React.CSSProperties {
+  return {
+    display: "inline-block",
+    marginTop: 10,
+    padding: "6px 12px",
+    fontSize: 11,
+    lineHeight: 1.35,
+    fontWeight: 600,
+    fontFamily: "inherit",
+    color: "#a1a1aa",
+    background: "rgba(24, 24, 27, 0.75)",
+    border: "1px solid rgba(63, 63, 70, 0.85)",
+    borderRadius: 8,
+    cursor: loading ? "wait" : "pointer",
+    opacity: loading ? 0.7 : 1,
+    boxSizing: "border-box",
+    WebkitAppearance: "none",
+  };
+}
+
+export default function IbkrPrepPage() {
   const [mifidDone, setMifidDone] = useState(false);
   const [kycDone, setKycDone] = useState(false);
+  /** Passos posteriores no funil implicam MiFID percorrido — alinha com `OnboardingFlowBar` quando `step2` falha no LS. */
+  const [approveDone, setApproveDone] = useState(false);
   /** null = a verificar no backend; só true se existir registo Persona com status completed. */
   const [serverKycOk, setServerKycOk] = useState<boolean | null>(null);
   /** Nome no registo de identidade (servidor DECIDE), quando existir. */
   const [personaNameOnRecord, setPersonaNameOnRecord] = useState<string | null>(null);
   const [ibkrPrepDone, setIbkrPrepDone] = useState(false);
+  /** Hedge (0/50/100%) antes da corretora — segmentos elegíveis. */
+  const [hedgeGateOk, setHedgeGateOk] = useState(false);
   const [preparing, setPreparing] = useState(false);
+  const [ibkrLive, setIbkrLive] = useState<IbkrLiveState>(initialLive);
 
-  useEffect(() => {
+  const refreshOnboardingFlagsFromLs = useCallback(() => {
     try {
       setIbkrPrepDone(window.localStorage.getItem(IBKR_PREP_DONE_KEY) === "1");
     } catch {
       setIbkrPrepDone(false);
     }
+    try {
+      setHedgeGateOk(!isFxHedgeOnboardingApplicable() || isHedgeOnboardingDone());
+    } catch {
+      setHedgeGateOk(false);
+    }
+    try {
+      setMifidDone(window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.mifid) === "1");
+      setKycDone(window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.kyc) === "1");
+      setApproveDone(window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.approve) === "1");
+    } catch {
+      setMifidDone(false);
+      setKycDone(false);
+      setApproveDone(false);
+    }
   }, []);
+
+  const refreshIbkrSnapshot = useCallback(async () => {
+    setIbkrLive((s) => ({ ...s, loading: true, error: "" }));
+    try {
+      const res = await fetch("/api/ibkr-snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paper_mode: true }),
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const raw = await res.text();
+      let data: {
+        status?: string;
+        error?: string;
+        net_liquidation?: number;
+        net_liquidation_ccy?: string;
+        account_code?: string;
+        cash_ledger?: { value?: number; currency?: string };
+      } = {};
+      try {
+        data = raw ? (JSON.parse(raw) as typeof data) : {};
+      } catch {
+        throw new Error("Resposta inválida do servidor.");
+      }
+      if (!res.ok || data.status !== "ok") {
+        const msg =
+          (typeof data.error === "string" && data.error) ||
+          `Falha ao ler a conta IBKR (${res.status}). Confirme TWS ligado, conta paper, e o backend (uvicorn) acessível.`;
+        setIbkrLive({
+          loading: false,
+          error: msg,
+          ok: false,
+          nav: 0,
+          navCcy: "EUR",
+          cash: 0,
+          cashCcy: "EUR",
+          accountCode: "",
+          updatedAt: null,
+        });
+        return;
+      }
+      const nav = safeNumber(data.net_liquidation, 0);
+      const navCcy = typeof data.net_liquidation_ccy === "string" ? data.net_liquidation_ccy : "USD";
+      const cl = data.cash_ledger;
+      const cash = safeNumber(cl?.value, 0);
+      const cashCcy = typeof cl?.currency === "string" ? cl.currency : navCcy;
+      const accountCode = typeof data.account_code === "string" ? data.account_code : "";
+      setIbkrLive({
+        loading: false,
+        error: "",
+        ok: true,
+        nav,
+        navCcy,
+        cash,
+        cashCcy,
+        accountCode,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      setIbkrLive({
+        loading: false,
+        error: e instanceof Error ? e.message : "Erro ao contactar o servidor.",
+        ok: false,
+        nav: 0,
+        navCcy: "EUR",
+        cash: 0,
+        cashCcy: "EUR",
+        accountCode: "",
+        updatedAt: null,
+      });
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    refreshOnboardingFlagsFromLs();
+  }, [refreshOnboardingFlagsFromLs]);
+
+  useEffect(() => {
+    const bump = () => refreshOnboardingFlagsFromLs();
+    window.addEventListener("storage", bump);
+    window.addEventListener(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT, bump);
+    return () => {
+      window.removeEventListener("storage", bump);
+      window.removeEventListener(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT, bump);
+    };
+  }, [refreshOnboardingFlagsFromLs]);
+
+  useEffect(() => {
+    void refreshIbkrSnapshot();
+  }, [refreshIbkrSnapshot]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let m = false;
       let k = false;
       try {
-        m = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.mifid) === "1";
         k = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.kyc) === "1";
       } catch {
-        m = false;
         k = false;
       }
       if (cancelled) return;
-      setMifidDone(m);
       setKycDone(k);
 
       if (!k) {
@@ -142,14 +248,10 @@ export default function IbkrPrepPage({ navEur, ibkrOk, cashEur, accountCode, ibk
 
       const ref = buildPersonaReferenceIdFromSession();
       if (!ref) {
+        // Sem referência não conseguimos validar no servidor; não apagar o passo «Identidade» no LS
+        // (o stepper deixa de mostrar ✓ e o utilizador fica bloqueado sem motivo claro).
         setServerKycOk(false);
         setPersonaNameOnRecord(null);
-        try {
-          window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.kyc, "0");
-          setKycDone(false);
-        } catch {
-          // ignore
-        }
         return;
       }
 
@@ -160,12 +262,20 @@ export default function IbkrPrepPage({ navEur, ibkrOk, cashEur, accountCode, ibk
         const rec = j?.record;
         const st = String(rec?.status ?? "").toLowerCase();
         const verified = Boolean(j?.ok && rec && st === "completed");
-        const nm = typeof rec?.name === "string" ? rec.name.trim() : "";
+        /** `name` na BD pode estar vazio mesmo com Persona concluído — o nome vem muitas vezes só em `fields`. */
+        const nm = extractDisplayNameFromPersonaRecord(rec);
         setPersonaNameOnRecord(verified && nm ? nm : verified ? "" : null);
-        if (!verified) {
+        if (verified) {
+          // Garantir LS alinhado com o servidor (e stepper com ✓) sem voltar ao passo Identidade.
           try {
-            window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.kyc, "0");
-            setKycDone(false);
+            window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.kyc, "1");
+            /** Funil linear: identidade confirmada implica MiFID percorrido — repara `step2` em falta no LS. */
+            if (window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.mifid) !== "1") {
+              window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.mifid, "1");
+            }
+            window.dispatchEvent(new Event(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT));
+            setKycDone(true);
+            setMifidDone(true);
           } catch {
             // ignore
           }
@@ -173,14 +283,9 @@ export default function IbkrPrepPage({ navEur, ibkrOk, cashEur, accountCode, ibk
         setServerKycOk(verified);
       } catch {
         if (cancelled) return;
+        // Erro de rede/API: não limpar KYC no cliente; `canPrepare` fica false até o servidor responder.
         setServerKycOk(false);
         setPersonaNameOnRecord(null);
-        try {
-          window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.kyc, "0");
-          setKycDone(false);
-        } catch {
-          // ignore
-        }
       }
     })();
     return () => {
@@ -188,25 +293,86 @@ export default function IbkrPrepPage({ navEur, ibkrOk, cashEur, accountCode, ibk
     };
   }, []);
 
-  const canPrepare = mifidDone && kycDone && serverKycOk === true;
+  const mifidSatisfied = mifidDone || kycDone || approveDone;
+
+  const canPrepare = mifidSatisfied && kycDone && serverKycOk === true && hedgeGateOk;
   /** Só mostramos o atalho para aprovação depois de «Preparar» (evita saltar o passo). */
   const canGoToApprove = canPrepare && ibkrPrepDone;
 
   const stepStateLabel = useMemo(() => {
-    if (!canPrepare) return "Bloqueado — complete os passos anteriores";
+    if (!canPrepare) {
+      if (kycDone && serverKycOk !== true) {
+        return serverKycOk === null
+          ? "A validar identidade no sistema…"
+          : "Pendente — identidade ainda não confirmada no servidor";
+      }
+      if (kycDone && serverKycOk === true && !hedgeGateOk) {
+        return "Pendente — falta escolher o hedge cambial (0%, 50% ou 100%)";
+      }
+      if (!kycDone) return "Pendente — falta concluir a identidade";
+      if (!mifidSatisfied) return "Pendente — falta confirmar o perfil de investidor";
+      return "Pendente — verifique perfil e identidade";
+    }
     if (preparing) return "A preparar…";
     if (ibkrPrepDone) return "Preparado neste dispositivo";
     return "Pronto para preparar";
-  }, [canPrepare, preparing, ibkrPrepDone]);
+  }, [canPrepare, preparing, ibkrPrepDone, kycDone, serverKycOk, mifidSatisfied, hedgeGateOk]);
 
-  const canPrepareNote = useMemo(() => {
-    if (!mifidDone) return "Falta confirmar o perfil de investidor (MiFID).";
-    if (!kycDone) return "Falta concluir a verificação de identidade.";
-    if (serverKycOk === null) return "A validar a identidade no servidor…";
-    if (!serverKycOk)
-      return "A identidade não está confirmada no sistema. Volte ao passo «Identidade» e conclua a verificação (incluindo guardar a confirmação).";
-    return "";
-  }, [mifidDone, kycDone, serverKycOk]);
+  /** Aviso accionável: o que falta, onde ir, botão directo (nunca só texto técnico). */
+  const prepareBlocker = useMemo((): {
+    title: string;
+    body: string;
+    ctaHref: string | null;
+    ctaLabel: string | null;
+  } | null => {
+    if (canPrepare) return null;
+    if (!mifidSatisfied) {
+      return {
+        title: "Falta confirmar o perfil de investidor",
+        body: "Precisa de confirmar o questionário no passo «Perfil de investidor» para continuar (último passo do questionário, antes da identidade).",
+        ctaHref: "/mifid-test",
+        ctaLabel: "Ir para Perfil de Investidor",
+      };
+    }
+    if (!kycDone) {
+      return {
+        title: "Falta concluir a verificação de identidade",
+        body: "Conclua o passo «Identidade» e guarde a confirmação no sistema para desbloquear a preparação da conta.",
+        ctaHref: "/persona-onboarding",
+        ctaLabel: "Ir para Identidade",
+      };
+    }
+    if (serverKycOk === null) {
+      return {
+        title: "A validar a identidade no sistema",
+        body: "Aguarde um momento enquanto confirmamos o registo de identidade.",
+        ctaHref: null,
+        ctaLabel: null,
+      };
+    }
+    if (serverKycOk !== true) {
+      return {
+        title: "Identidade ainda não confirmada no sistema",
+        body: "Volte ao passo «Identidade», conclua a verificação e assegure que a confirmação fica guardada no servidor.",
+        ctaHref: "/persona-onboarding",
+        ctaLabel: "Ir para Identidade",
+      };
+    }
+    if (!hedgeGateOk) {
+      return {
+        title: "Falta o passo «Hedge cambial»",
+        body: "Indique 0%, 50% ou 100% para a simulação de cobertura nos indicadores do dashboard (não envia ordens à IBKR). Este passo vem antes da corretora.",
+        ctaHref: "/client/fx-hedge-onboarding",
+        ctaLabel: "Ir para Hedge cambial",
+      };
+    }
+    return {
+      title: "Não é possível preparar ainda",
+      body: "Verifique os passos anteriores do onboarding. Se o problema persistir, volte ao painel e reabra esta página.",
+      ctaHref: "/client-dashboard",
+      ctaLabel: "Ir para o painel",
+    };
+  }, [canPrepare, mifidSatisfied, kycDone, serverKycOk, hedgeGateOk]);
 
   function handlePrepareIbkr() {
     if (!canPrepare || preparing) return;
@@ -220,147 +386,229 @@ export default function IbkrPrepPage({ navEur, ibkrOk, cashEur, accountCode, ibk
     window.location.href = "/client/approve";
   }
 
+  const connectionLabel = ibkrLive.loading
+    ? "A ligar…"
+    : ibkrLive.ok
+      ? "Conta ligada (leitura via TWS)"
+      : ibkrLive.error
+        ? "Sem leitura neste momento"
+        : "—";
+
   return (
     <>
       <Head>
         <title>DECIDE — Preparar a sua conta para investir</title>
       </Head>
-      <main className="min-h-screen bg-slate-950 text-slate-50">
-        <div className="mx-auto max-w-5xl px-6 py-10">
-          <OnboardingFlowBar currentStepId="approve" authStepHref="/client/login" />
+      <main className="min-h-screen bg-zinc-950 text-zinc-50">
+        <div className="mx-auto max-w-5xl px-6 py-8">
+          <OnboardingFlowBar currentStepId="approve" authStepHref="/client/login" compact />
 
-          <header className="mb-8 border-b border-slate-800 pb-8">
-            <p className="text-xs font-semibold uppercase tracking-wide text-sky-400">Passo corretora</p>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+          {/* 1 — Estado / bloqueio: primeira coisa visível após o stepper */}
+          {!canPrepare && prepareBlocker ? (
+            <section className="mb-5 rounded-xl border border-amber-500/35 bg-amber-950/30 p-4 shadow-md ring-1 ring-amber-900/30 sm:p-5">
+              <div className="flex flex-wrap items-start gap-2">
+                <span className="text-lg leading-none" aria-hidden>
+                  ⚠️
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-base font-bold tracking-tight text-amber-50">{prepareBlocker.title}</div>
+                  <p className="mt-2 max-w-2xl text-sm leading-relaxed text-amber-100/90">{prepareBlocker.body}</p>
+                  {prepareBlocker.ctaHref && prepareBlocker.ctaLabel ? (
+                    <Link
+                      href={prepareBlocker.ctaHref}
+                      className="mt-4 inline-flex min-h-[44px] items-center justify-center rounded-xl border-2 border-amber-400/60 bg-amber-950/60 px-5 text-sm font-bold text-white shadow-sm transition hover:border-amber-300/70 hover:bg-amber-900/50"
+                    >
+                      {prepareBlocker.ctaLabel}
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+          ) : (
+            <section className="mb-5 rounded-xl border border-zinc-600/40 bg-zinc-900/40 px-4 py-4 shadow-sm ring-1 ring-white/5 sm:px-5">
+              <p className="text-base font-bold tracking-tight text-zinc-100">Tudo pronto para continuar</p>
+              <p className="mt-1.5 text-sm font-medium leading-snug text-zinc-400">
+                Pode avançar para preparar a conta — o passo seguinte é um clique.
+              </p>
+              <p className="mt-2 text-[11px] text-zinc-500">
+                Estado: <span className="text-zinc-400">{stepStateLabel}</span>
+              </p>
+            </section>
+          )}
+
+          {/* Título compacto — decisão, não manual */}
+          <header className="mb-5 border-b border-zinc-800 pb-5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Passo corretora</p>
+            <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">
               Preparar a sua conta para investir
             </h1>
-            <p className="mt-2 text-sm font-medium text-sky-300/90">Ligada à Interactive Brokers</p>
-            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300">
-              Vamos organizar a sua conta para, mais à frente, poder <strong>ver e aprovar</strong> o plano de investimento.
-              Nada é executado automaticamente — a decisão é sempre sua.
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              Estado deste passo: <span className="text-slate-400">{stepStateLabel}</span>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
+              Interactive Brokers — organizamos a conta para, a seguir, <strong className="text-zinc-300">rever e aprovar</strong>{" "}
+              o plano. Nada é executado sem a sua decisão.
             </p>
           </header>
 
-          {/* Bloco 1 — Resumo da conta */}
-          <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-5 shadow-lg">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Conta Interactive Brokers</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Resumo dos valores que temos da sua conta.{" "}
-              <span className="text-slate-400">Dados atualizados automaticamente</span> quando há nova informação.
+          {/* 2 — Próximos passos: uma única secção de ação */}
+          <section className="mb-6 rounded-xl border border-zinc-800/90 bg-zinc-950/50 p-5 sm:p-6">
+            <h2 className="text-base font-semibold text-zinc-100">Próximos passos</h2>
+            <ul className="mt-3 list-inside list-disc space-y-1.5 text-sm leading-relaxed text-zinc-400">
+              <li>Ligamos a leitura da sua conta IBKR (paper) ao DECIDE</li>
+              <li>Geramos um plano ajustado ao seu perfil MiFID</li>
+              <li>Pode rever e aprovar o plano — o investimento só avança com a sua decisão</li>
+            </ul>
+
+            <div className="mt-6 border-t border-zinc-800/80 pt-5">
+              {canPrepare && !preparing ? (
+                <p className="mb-4 text-center text-sm font-semibold text-zinc-200">
+                  Avançar agora desbloqueia a preparação e o plano personalizado.
+                </p>
+              ) : !canPrepare ? (
+                <p className="mb-4 text-center text-sm text-zinc-500">
+                  A ação principal está no aviso <strong className="text-zinc-400">acima</strong> até concluir perfil e identidade.
+                </p>
+              ) : null}
+
+              <div className="flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
+                {canPrepare ? (
+                  <button
+                    type="button"
+                    onClick={handlePrepareIbkr}
+                    disabled={preparing}
+                    className={`rounded-full px-6 py-2.5 text-sm font-bold transition ${
+                      !preparing
+                        ? "border border-teal-400/35 bg-teal-700 text-white shadow-md shadow-teal-900/30 hover:bg-teal-600"
+                        : "cursor-wait border border-teal-500/20 bg-teal-900/90 text-teal-50"
+                    }`}
+                  >
+                    {preparing ? "A redirecionar…" : "Avançar para preparar conta"}
+                  </button>
+                ) : null}
+
+                {canPrepare ? (
+                  <Link
+                    href="/client/report"
+                    className="rounded-full border border-white/20 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:border-white/35 hover:text-white"
+                  >
+                    Ver exemplo de plano
+                  </Link>
+                ) : (
+                  <span className="text-center text-xs text-zinc-600">
+                    O exemplo de plano fica disponível quando puder preparar a conta.
+                  </span>
+                )}
+
+                {canGoToApprove ? (
+                  <Link
+                    href="/client/approve"
+                    className="rounded-full border border-teal-500/45 bg-teal-950/35 px-5 py-2.5 text-sm font-semibold text-teal-100 transition hover:border-teal-400/70 hover:bg-teal-900/45"
+                  >
+                    Ir para aprovar o plano
+                  </Link>
+                ) : null}
+              </div>
+
+              {!canPrepare ? (
+                <p className="mt-4 text-center text-xs text-zinc-600">
+                  O botão «Avançar para preparar conta» aparece aqui quando o passo estiver desbloqueado.
+                </p>
+              ) : !ibkrPrepDone ? (
+                <p className="mt-4 text-center text-xs text-zinc-600">Depois de avançar, poderá rever e aprovar o plano.</p>
+              ) : null}
+            </div>
+          </section>
+
+          {/* 3 — Dados IBKR (detalhe técnico; contraste baixo) */}
+          <section className="mb-6 rounded-xl border border-zinc-800/50 bg-zinc-950/50 p-4 sm:p-5">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-600">Dados da conta (IBKR)</h2>
+            <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-zinc-600">
+              Leitura em tempo real na conta paper via TWS — servidor DECIDE. TWS ligado; backend (
+              <code className="rounded bg-zinc-800 px-1 text-[11px]">uvicorn</code>) acessível.
             </p>
-            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 px-4 py-3">
-                <dt className="text-xs text-slate-500">Estado da ligação</dt>
-                <dd className="mt-1 font-semibold text-white">{ibkrOk ? "Conta ligada" : "Sem ligação neste momento"}</dd>
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <button
+                type="button"
+                data-testid="ibkr-refresh-values"
+                aria-label="Atualizar leitura dos valores via TWS na Interactive Brokers"
+                onClick={() => void refreshIbkrSnapshot()}
+                disabled={ibkrLive.loading}
+                style={ibkrRefreshButtonStyle(ibkrLive.loading)}
+              >
+                {ibkrLive.loading ? "A atualizar…" : "Atualizar leitura (TWS)"}
+              </button>
+              <span className="max-w-md text-xs font-medium leading-relaxed text-zinc-500">
+                Atualiza património e caixa reportados pelo TWS.
+              </span>
+            </div>
+            {ibkrLive.error ? (
+              <p className="mt-3 rounded-lg border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-100/90">
+                {ibkrLive.error}
+              </p>
+            ) : null}
+            <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+              <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 px-3 py-2.5">
+                <dt className="text-[11px] text-zinc-600">Estado da ligação</dt>
+                <dd className="mt-0.5 text-sm font-medium text-zinc-300">{connectionLabel}</dd>
               </div>
-              <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 px-4 py-3">
-                <dt className="text-xs text-slate-500">Tipo de conta</dt>
-                <dd className="mt-1 font-semibold text-white">{accountTypeLabel(ibkrPort)}</dd>
+              <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 px-3 py-2.5">
+                <dt className="text-[11px] text-zinc-600">Tipo de conta</dt>
+                <dd className="mt-0.5 text-sm font-medium text-zinc-300">{accountTypeLabelFromCode(ibkrLive.accountCode)}</dd>
               </div>
-              <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 px-4 py-3">
-                <dt className="text-xs text-slate-500">Património líquido</dt>
-                <dd className="mt-1 text-lg font-semibold text-sky-100">{navEur > 0 ? formatEuro(navEur) : "—"}</dd>
+              <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 px-3 py-2.5">
+                <dt className="text-[11px] text-zinc-600">Património líquido (NetLiquidation)</dt>
+                <dd className="mt-0.5 text-[15px] font-medium leading-tight tracking-tight text-zinc-300 sm:text-base">
+                  {ibkrLive.loading ? (
+                    <span className="text-zinc-600">…</span>
+                  ) : ibkrLive.ok ? (
+                    formatMoney(ibkrLive.nav, ibkrLive.navCcy)
+                  ) : (
+                    "—"
+                  )}
+                </dd>
               </div>
-              <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 px-4 py-3">
-                <dt className="text-xs text-slate-500">Dinheiro disponível</dt>
-                <dd className="mt-1 font-semibold text-white">{cashEur > 0 ? formatEuro(cashEur) : "—"}</dd>
+              <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 px-3 py-2.5">
+                <dt className="text-[11px] text-zinc-600">Dinheiro disponível</dt>
+                <dd className="mt-0.5 text-[15px] font-medium leading-tight tracking-tight text-zinc-300 sm:text-base">
+                  {ibkrLive.loading ? (
+                    <span className="text-zinc-600">…</span>
+                  ) : ibkrLive.ok ? (
+                    formatMoney(ibkrLive.cash, ibkrLive.cashCcy)
+                  ) : (
+                    "—"
+                  )}
+                </dd>
               </div>
-              <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 px-4 py-3 sm:col-span-2">
-                <dt className="text-xs text-slate-500">Conta · última atualização</dt>
-                <dd className="mt-1 text-slate-200">
-                  {accountCode ? <span className="font-mono">{accountCode}</span> : <span>—</span>}
-                  <span className="text-slate-500"> · </span>
-                  <span className="text-slate-400">{formatPtDateTime(diagUpdatedAt)}</span>
+              <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 px-3 py-2.5 sm:col-span-2">
+                <dt className="text-[11px] text-zinc-600">Conta · última leitura</dt>
+                <dd className="mt-0.5 text-sm text-zinc-400">
+                  {ibkrLive.accountCode ? <span className="font-mono">{ibkrLive.accountCode}</span> : <span>—</span>}
+                  <span className="text-zinc-500"> · </span>
+                  <span className="text-zinc-400">{formatPtDateTime(ibkrLive.updatedAt)}</span>
                 </dd>
               </div>
             </dl>
           </section>
 
-          {/* Identidade confirmada no servidor DECIDE */}
+          {/* Identidade — resumo curto, após dados técnicos */}
           {serverKycOk === true ? (
-            <section className="mb-6 rounded-2xl border border-emerald-900/50 bg-emerald-950/20 p-5">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-emerald-400/90">Identidade no sistema</h2>
-              <p className="mt-2 text-sm text-emerald-100/90">
-                Nome associado ao registo de verificação:{" "}
-                <strong className="text-white">{personaNameOnRecord && personaNameOnRecord.length > 0 ? personaNameOnRecord : "—"}</strong>
-              </p>
+            <section
+              className="mb-8 rounded-xl border border-zinc-700/60 bg-zinc-950/50 p-4 sm:p-5"
+            >
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Identidade no sistema</h2>
+              {(personaNameOnRecord ?? "").trim().length > 0 ? (
+                <p className="mt-2 text-sm text-zinc-300">
+                  Nome no registo:{" "}
+                  <strong className="font-medium text-zinc-100">{(personaNameOnRecord ?? "").trim()}</strong>
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-zinc-400">Nome não disponível neste momento.</p>
+              )}
               {personaNameOnRecord === "" && (
-                <p className="mt-2 text-xs text-emerald-200/70">
-                  A identidade está confirmada; o nome completo pode não aparecer aqui. Se precisar de rever ou corrigir, use o
-                  passo «Identidade».
+                <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+                  Identidade confirmada; o nome pode não aparecer aqui. Para rever, use o passo «Identidade».
                 </p>
               )}
             </section>
           ) : null}
-
-          {!canPrepare ? (
-            <section className="mb-6 rounded-xl border border-amber-800 bg-amber-950/40 p-4">
-              <div className="text-sm font-semibold text-amber-100">Não é possível avançar ainda</div>
-              <div className="mt-1 text-xs text-amber-200">{canPrepareNote}</div>
-            </section>
-          ) : null}
-
-          {/* Bloco 2 — O que acontece (preparação vs aprovação) */}
-          <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/40 p-6">
-            <h2 className="text-lg font-semibold text-white">O que acontece neste passo</h2>
-            <ul className="mt-4 list-inside list-disc space-y-1.5 text-sm font-medium leading-relaxed text-slate-200">
-              <li>Validamos a sua conta</li>
-              <li>Preparamos o seu plano</li>
-              <li>Poderá rever antes de decidir</li>
-            </ul>
-
-            <div className="mt-8 flex flex-wrap items-center gap-3 border-t border-slate-800 pt-6">
-              <button
-                type="button"
-                onClick={handlePrepareIbkr}
-                disabled={!canPrepare || preparing}
-                className={`rounded-full px-5 py-2.5 text-sm font-semibold transition ${
-                  canPrepare && !preparing
-                    ? "bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
-                    : "cursor-not-allowed bg-emerald-900/50 text-emerald-800/80 opacity-60"
-                }`}
-              >
-                {preparing ? "A redirecionar…" : "Preparar conta"}
-              </button>
-              <Link
-                href="/client/report"
-                className="rounded-full border border-slate-600 px-4 py-2 text-sm font-medium text-slate-100 hover:border-slate-400"
-              >
-                Ver plano sugerido
-              </Link>
-            </div>
-          </section>
-
-          {/* Bloco 3 — Aprovação: só após preparar neste dispositivo */}
-          <section className="mb-10 rounded-2xl border border-violet-900/40 bg-violet-950/20 p-6">
-            <h2 className="text-lg font-semibold text-violet-100">Aprovar o plano</h2>
-            <p className="mt-2 text-sm font-medium text-violet-100/95">Este é o passo onde decide se quer investir.</p>
-            <p className="mt-2 text-sm text-violet-200/85">
-              Depois de preparar a conta, poderá rever e aprovar o seu plano.
-            </p>
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-              {canGoToApprove ? (
-                <Link
-                  href="/client/approve"
-                  className="inline-flex w-fit rounded-full border border-violet-400/50 bg-violet-500/10 px-5 py-2.5 text-sm font-semibold text-violet-100 hover:bg-violet-500/20"
-                >
-                  Ir para aprovar o plano
-                </Link>
-              ) : (
-                <span className="inline-flex w-fit cursor-not-allowed rounded-full border border-slate-700 bg-slate-900/60 px-5 py-2.5 text-sm font-semibold text-slate-500">
-                  Ir para aprovar o plano
-                </span>
-              )}
-            </div>
-            {!canPrepare ? (
-              <p className="mt-3 text-xs text-slate-500">Complete primeiro o perfil e a identidade para desbloquear este passo.</p>
-            ) : !ibkrPrepDone ? (
-              <p className="mt-3 text-xs text-violet-300/80">Prepare a conta antes de avançar — use o botão verde acima.</p>
-            ) : null}
-          </section>
         </div>
       </main>
     </>

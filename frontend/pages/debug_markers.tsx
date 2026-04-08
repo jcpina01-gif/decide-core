@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { DECIDE_APP_FONT_FAMILY } from "../lib/decideClientTheme";
 
 type Markers = {
   _ddcap_marker_perf?: string;
@@ -174,7 +175,7 @@ export default function DebugMarkersPage() {
     background: "#0b0f17",
     color: "white",
     padding: "24px",
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+    fontFamily: DECIDE_APP_FONT_FAMILY,
   };
 
   const cardStyle: React.CSSProperties = {

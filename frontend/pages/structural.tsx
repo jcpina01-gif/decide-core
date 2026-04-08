@@ -31,9 +31,9 @@ function stateColor(state: string): string {
     case "STRESS":
       return "#ef4444";
     case "RECOVERY":
-      return "#60a5fa";
+      return "#d4d4d4";
     default:
-      return "#94a3b8";
+      return "#a1a1aa";
   }
 }
 
@@ -220,7 +220,7 @@ export default function StructuralPage() {
   const vixCompress = detailsNow?.vix?.compress_30d_from_peak;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0b1220", color: "#e5e7eb" }}>
+    <div style={{ minHeight: "100vh", background: "#09090b", color: "#e5e7eb" }}>
       <div style={{ maxWidth: 1120, margin: "0 auto", padding: "24px 16px 56px" }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div>
@@ -238,7 +238,7 @@ export default function StructuralPage() {
                 padding: "10px 12px",
                 borderRadius: 10,
                 border: "1px solid rgba(255,255,255,0.12)",
-                background: loading ? "rgba(255,255,255,0.06)" : "rgba(96,165,250,0.18)",
+                background: loading ? "rgba(255,255,255,0.06)" : "rgba(45,212,191,0.15)",
                 color: "#fff",
                 cursor: loading ? "not-allowed" : "pointer",
                 fontWeight: 700,

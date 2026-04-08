@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getBackendBase } from "../../lib/apiProxy";
 
-const UPSTREAM_MS = 55_000;
+/** Snapshot pode incluir reqContractDetails por posição (nome, sector, zona) — precisa de margem. */
+const UPSTREAM_MS = 120_000;
 
 /**
  * Proxy explícito para POST /api/ibkr-snapshot no FastAPI.
@@ -51,7 +52,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(503).json({
       status: "rejected",
       error: isAbort
-        ? `Timeout (${UPSTREAM_MS / 1000}s) ao contactar o backend em ${targetUrl}. Confirme uvicorn e TWS.`
+        ? `Timeout (${UPSTREAM_MS / 1000}s) ao contactar o backend em ${targetUrl}. Confirme uvicorn e IB Gateway ou TWS.`
         : `Ligação ao backend falhou (${msg}). Confirme BACKEND_URL e que o FastAPI está a correr (ex.: porta 8090).`,
     });
   } finally {

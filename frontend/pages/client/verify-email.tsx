@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { markEmailVerified, setSignupEmailVerifiedFromServerEmail } from "../../lib/clientAuth";
 import { devConfirmationLinkUsesLoopback } from "../../lib/emailConfirmationDevLink";
+import { DECIDE_APP_FONT_FAMILY, DECIDE_DASHBOARD, DECIDE_ONBOARDING } from "../../lib/decideClientTheme";
 
 /**
  * Pedir confirmação com toque: in-app mail / browsers em telemóvel ou tablet (incl. ecrãs >640px)
@@ -39,16 +40,22 @@ export default function ClientVerifyEmailPage() {
   const [okKind, setOkKind] = useState<"signup" | "account" | "prospect">("account");
   const [mobileDoneHint, setMobileDoneHint] = useState(false);
   const [copyHint, setCopyHint] = useState("");
+  const [pageOrigin, setPageOrigin] = useState("");
   const tokenRef = useRef<string>("");
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setPageOrigin(window.location.origin);
+  }, []);
+
   const runVerifyFlow = useCallback(async (token: string) => {
     if (!token) {
       setStatus("err");
-      setDetail("Falta o token no link. Abre o endereço completo que veio no email.");
+      setDetail("Falta o token no link. Abra o endereço completo que veio no email.");
       return;
     }
 
@@ -73,7 +80,7 @@ export default function ClientVerifyEmailPage() {
       };
       if (!r.ok || !j.ok || !j.email) {
         setStatus("err");
-        setDetail(j.error || "Token inválido ou expirado (48h). Pede um novo email na página de registo.");
+        setDetail(j.error || "Token inválido ou expirado (48h). Solicite um novo email na página de registo.");
         return;
       }
       const flow: "account" | "signup" | "prospect" =
@@ -123,7 +130,7 @@ export default function ClientVerifyEmailPage() {
       if (m.error === "no_local_account") {
         setStatus("err");
         setDetail(
-          "Este telemóvel ainda não tem a conta guardada (é normal). Toca em «Tentar de novo» depois de fazer login neste browser, ou abre o mesmo link no PC onde criaste a conta.",
+          "Este telemóvel ainda não tem a conta guardada (é normal). Toque em «Tentar de novo» depois de fazer login neste browser, ou abra o mesmo link no PC onde criou a conta.",
         );
         return;
       }
@@ -131,7 +138,7 @@ export default function ClientVerifyEmailPage() {
       setDetail(m.error || "Não foi possível confirmar.");
     } catch {
       setStatus("err");
-      setDetail("Erro de rede ao validar o token. Verifica a ligação e toca em «Tentar de novo».");
+      setDetail("Erro de rede ao validar o token. Verifique a ligação e toque em «Tentar de novo».");
     }
   }, []);
 
@@ -153,7 +160,7 @@ export default function ClientVerifyEmailPage() {
     if (!token) {
       setStatus("err");
       setDetail(
-        "Falta o token no link (a app de email pode ter cortado o endereço). Abre o email noutro browser: toca nos três pontos → «Abrir no Chrome/Safari» — ou copia o link completo para o PC.",
+        "Falta o token no link (a app de email pode ter cortado o endereço). Abra o email noutro browser: toque nos três pontos → «Abrir no Chrome/Safari» — ou copie o link completo para o PC.",
       );
       return;
     }
@@ -176,12 +183,12 @@ export default function ClientVerifyEmailPage() {
     justifyContent: "center",
     padding: "28px 20px 40px",
     boxSizing: "border-box",
-    fontFamily: 'system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    fontFamily: DECIDE_APP_FONT_FAMILY,
     WebkitFontSmoothing: "antialiased",
   };
 
   const themeColor =
-    status === "ok" ? "#0f172a" : status === "err" ? "#1c1917" : "#0c1222";
+    status === "ok" ? "#18181b" : status === "err" ? "#1c1917" : DECIDE_DASHBOARD.pageBg;
 
   return (
     <>
@@ -197,16 +204,16 @@ export default function ClientVerifyEmailPage() {
         <div
           style={{
             ...shell,
-            background: "radial-gradient(120% 80% at 50% 0%, #1e3a5f 0%, #0c1222 55%, #050810 100%)",
-            color: "#e2e8f0",
+            background: DECIDE_ONBOARDING.pageBackground,
+            color: DECIDE_ONBOARDING.text,
           }}
         >
           <div style={{ width: "100%", maxWidth: 400, textAlign: "center" }}>
             <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em", marginBottom: 10 }}>
-              Confirmar o teu email
+              Confirmar o email
             </div>
-            <p style={{ margin: "0 0 24px", fontSize: 14, color: "#94a3b8", lineHeight: 1.55 }}>
-              Carrega no botão abaixo para concluir. Algumas apps de email não permitem a confirmação automática ao
+            <p style={{ margin: "0 0 24px", fontSize: 14, color: "#a1a1aa", lineHeight: 1.55 }}>
+              Carregue no botão abaixo para concluir. Algumas apps de email não permitem a confirmação automática ao
               abrir o link.
             </p>
             {typeof window !== "undefined" && devConfirmationLinkUsesLoopback(window.location.href) ? (
@@ -223,10 +230,10 @@ export default function ClientVerifyEmailPage() {
                   textAlign: "left",
                 }}
               >
-                Este endereço usa <strong>127.0.0.1</strong> ou <strong>localhost</strong>. Num telemóvel isso{" "}
-                <strong>não é o teu PC</strong> — mesmo após confirmar, o servidor pode estar inacessível. Para testar no
-                telemóvel, configura <code style={{ color: "#fff" }}>EMAIL_LINK_BASE_URL</code> com o IP da rede (ex.{" "}
-                <code style={{ color: "#fde68a" }}>http://192.168.1.x:4701</code>) e gera um link novo no dashboard/registo.
+                Este endereço utiliza <strong>127.0.0.1</strong> ou <strong>localhost</strong>. Num telemóvel isso{" "}
+                <strong>não é o seu PC</strong> — mesmo após confirmar, o servidor pode estar inacessível. Para testar no
+                telemóvel, configure <code style={{ color: "#fff" }}>EMAIL_LINK_BASE_URL</code> com o IP da rede (ex.{" "}
+                <code style={{ color: "#fde68a" }}>http://192.168.1.x:4701</code>) e gere um link novo no dashboard/registo.
               </div>
             ) : null}
             <form
@@ -245,21 +252,21 @@ export default function ClientVerifyEmailPage() {
                   boxSizing: "border-box",
                   padding: "18px 22px",
                   borderRadius: 14,
-                  background: "linear-gradient(180deg, #3b82f6 0%, #2563eb 100%)",
-                  color: "#fff",
+                  background: DECIDE_DASHBOARD.buttonRegister,
+                  color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
                   fontSize: 17,
                   fontWeight: 800,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  boxShadow: "0 12px 32px rgba(37,99,235,0.35)",
+                  border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                  boxShadow: `${DECIDE_DASHBOARD.kpiMenuMainButtonShadow}, 0 12px 32px rgba(13, 148, 136, 0.32)`,
                   cursor: "pointer",
                 }}
               >
                 Confirmar email agora
               </button>
             </form>
-            <p style={{ marginTop: 20, fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
-              Se o link usar <code style={{ color: "#94a3b8" }}>127.0.0.1</code> e não funcionar no telemóvel, define{" "}
-              <code style={{ color: "#94a3b8" }}>EMAIL_LINK_BASE_URL</code> com o IP do PC e reenvia o email.
+            <p style={{ marginTop: 20, fontSize: 12, color: "#71717a", lineHeight: 1.45 }}>
+              Se o link utilizar <code style={{ color: "#a1a1aa" }}>127.0.0.1</code> e não funcionar no telemóvel, defina{" "}
+              <code style={{ color: "#a1a1aa" }}>EMAIL_LINK_BASE_URL</code> com o IP do PC e reenvie o email.
             </p>
           </div>
         </div>
@@ -269,8 +276,8 @@ export default function ClientVerifyEmailPage() {
         <div
           style={{
             ...shell,
-            background: "radial-gradient(120% 80% at 50% 0%, #1e3a5f 0%, #0c1222 55%, #050810 100%)",
-            color: "#e2e8f0",
+            background: DECIDE_ONBOARDING.pageBackground,
+            color: DECIDE_ONBOARDING.text,
           }}
         >
           <div
@@ -279,13 +286,13 @@ export default function ClientVerifyEmailPage() {
               height: 56,
               borderRadius: "50%",
               border: "3px solid rgba(148,163,184,0.25)",
-              borderTopColor: "#38bdf8",
+              borderTopColor: "#52525b",
               animation: "decideSpin 0.85s linear infinite",
               marginBottom: 24,
             }}
           />
-          <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em" }}>A confirmar o teu email…</div>
-          <div style={{ marginTop: 10, fontSize: 14, color: "#94a3b8", maxWidth: 280, textAlign: "center" }}>
+          <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em" }}>A confirmar o email…</div>
+          <div style={{ marginTop: 10, fontSize: 14, color: "#a1a1aa", maxWidth: 280, textAlign: "center" }}>
             Só um momento.
           </div>
           <style>{`@keyframes decideSpin { to { transform: rotate(360deg); } }`}</style>
@@ -297,8 +304,8 @@ export default function ClientVerifyEmailPage() {
           style={{
             ...shell,
             background:
-              "radial-gradient(ellipse 140% 90% at 50% -20%, rgba(34,197,94,0.22) 0%, transparent 50%), radial-gradient(120% 70% at 50% 100%, rgba(59,130,246,0.12) 0%, transparent 45%), linear-gradient(165deg, #0f172a 0%, #020617 100%)",
-            color: "#f8fafc",
+              "radial-gradient(ellipse 140% 90% at 50% -20%, rgba(45,212,191,0.2) 0%, transparent 50%), radial-gradient(120% 70% at 50% 100%, rgba(13,148,136,0.12) 0%, transparent 45%), linear-gradient(165deg, #18181b 0%, #09090b 100%)",
+            color: DECIDE_DASHBOARD.text,
           }}
         >
           <div style={{ width: "100%", maxWidth: 400, textAlign: "center" }}>
@@ -308,8 +315,8 @@ export default function ClientVerifyEmailPage() {
                 height: 72,
                 margin: "0 auto 20px",
                 borderRadius: "50%",
-                background: "linear-gradient(145deg, rgba(34,197,94,0.35), rgba(22,163,74,0.15))",
-                border: "1px solid rgba(74,222,128,0.45)",
+                background: "linear-gradient(145deg, rgba(45,212,191,0.28), rgba(13,148,136,0.2))",
+                border: "1px solid rgba(45,212,191,0.45)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -331,9 +338,9 @@ export default function ClientVerifyEmailPage() {
             >
               Está feito
             </h1>
-            <p style={{ margin: "0 0 20px", fontSize: 15, color: "#94a3b8", lineHeight: 1.5 }}>
+            <p style={{ margin: "0 0 20px", fontSize: 15, color: "#a1a1aa", lineHeight: 1.5 }}>
               {okKind === "prospect"
-                ? "Ficas na nossa lista para receberes novidades e informações sobre a DECIDE (sem conta criada)."
+                ? "O seu email ficou na nossa lista para receber novidades e informações sobre a DECIDE (sem conta criada)."
                 : "O endereço foi confirmado com sucesso."}
             </p>
             <div
@@ -346,7 +353,7 @@ export default function ClientVerifyEmailPage() {
                 border: "1px solid rgba(148,163,184,0.25)",
                 fontSize: 14,
                 fontWeight: 600,
-                color: "#e2e8f0",
+                color: "var(--text-primary)",
                 wordBreak: "break-all",
                 marginBottom: 20,
               }}
@@ -360,13 +367,13 @@ export default function ClientVerifyEmailPage() {
                   style={{
                     margin: "0 0 20px",
                     fontSize: 14,
-                    color: "#cbd5e1",
+                    color: "#d4d4d8",
                     lineHeight: 1.55,
                     textAlign: "left",
                   }}
                 >
                   <strong>No computador</strong>, a página de registo DECIDE deve mostrar o email como confirmado em
-                  poucos segundos (ou recarrega). <strong>Não precisas</strong> de voltar ao registo aqui no telemóvel.
+                  poucos segundos (ou recarregue). <strong>Não precisa</strong> de voltar ao registo aqui no telemóvel.
                 </p>
                 <button
                   type="button"
@@ -389,31 +396,51 @@ export default function ClientVerifyEmailPage() {
                     boxSizing: "border-box",
                     padding: "16px 22px",
                     borderRadius: 14,
-                    background: "linear-gradient(180deg, #22c55e 0%, #16a34a 100%)",
-                    color: "#fff",
+                    background: DECIDE_DASHBOARD.buttonRegister,
+                    color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
                     fontSize: 16,
                     fontWeight: 800,
                     textAlign: "center",
-                    border: "1px solid rgba(255,255,255,0.15)",
-                    boxShadow: "0 12px 28px rgba(22,163,74,0.35)",
+                    border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                    boxShadow: `${DECIDE_DASHBOARD.kpiMenuMainButtonShadow}, 0 12px 28px rgba(13, 148, 136, 0.3)`,
                     cursor: "pointer",
                   }}
                 >
                   OK — concluído
                 </button>
                 {mobileDoneHint ? (
-                  <p style={{ marginTop: 14, fontSize: 13, color: "#94a3b8", lineHeight: 1.45 }}>
-                    Podes <strong>fechar este separador</strong> (ou voltar atrás). Continua o registo no PC.
+                  <p style={{ marginTop: 14, fontSize: 13, color: "#a1a1aa", lineHeight: 1.45 }}>
+                    Pode <strong>fechar este separador</strong> (ou voltar atrás). Continue o registo no PC.
                   </p>
                 ) : null}
+                <div
+                  style={{
+                    marginTop: 14,
+                    marginBottom: 8,
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    background: "rgba(51, 65, 85, 0.45)",
+                    border: "1px solid rgba(148, 163, 184, 0.3)",
+                    fontSize: 12,
+                    color: "#d4d4d8",
+                    lineHeight: 1.5,
+                    textAlign: "left",
+                  }}
+                >
+                  Se ao continuar o browser disser que o endereço (ex. <strong>192.168.x.x</strong>) está{" "}
+                  <strong>inacessível</strong>: o Next.js no PC pode ter parado, o <strong>IP do PC mudou</strong>, o
+                  telemóvel saiu da <strong>mesma Wi‑Fi</strong>, ou a <strong>firewall</strong> bloqueia a porta. Confirme
+                  no PC <code style={{ color: "#e2e8f0" }}>ipconfig</code>, volte a executar <code style={{ color: "#e2e8f0" }}>npm run dev:lan</code>, e
+                  solicite um <strong>novo email</strong> de confirmação se alterou o IP em <code style={{ color: "#e2e8f0" }}>.env.local</code>.
+                </div>
                 <a
-                  href="/client/register"
+                  href={pageOrigin ? `${pageOrigin}/client/register` : "/client/register"}
                   style={{
                     display: "block",
                     marginTop: 18,
                     fontSize: 14,
                     fontWeight: 600,
-                    color: "#93c5fd",
+                    color: DECIDE_DASHBOARD.link,
                     textAlign: "center",
                   }}
                 >
@@ -423,21 +450,29 @@ export default function ClientVerifyEmailPage() {
             ) : (
               <>
                 <a
-                  href={okKind === "signup" ? "/client/register" : "/client-dashboard"}
+                  href={
+                    okKind === "signup"
+                      ? pageOrigin
+                        ? `${pageOrigin}/client/register`
+                        : "/client/register"
+                      : pageOrigin
+                        ? `${pageOrigin}/client-dashboard`
+                        : "/client-dashboard"
+                  }
                   style={{
                     display: "block",
                     width: "100%",
                     boxSizing: "border-box",
                     padding: "16px 22px",
                     borderRadius: 14,
-                    background: "linear-gradient(180deg, #3b82f6 0%, #2563eb 100%)",
-                    color: "#fff",
+                    background: DECIDE_DASHBOARD.buttonRegister,
+                    color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
                     fontSize: 16,
                     fontWeight: 800,
                     textDecoration: "none",
                     textAlign: "center",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    boxShadow: "0 12px 32px rgba(37,99,235,0.35)",
+                    border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                    boxShadow: `${DECIDE_DASHBOARD.kpiMenuMainButtonShadow}, 0 12px 32px rgba(13, 148, 136, 0.32)`,
                   }}
                 >
                   {okKind === "signup"
@@ -454,11 +489,11 @@ export default function ClientVerifyEmailPage() {
                       marginTop: 14,
                       fontSize: 14,
                       fontWeight: 600,
-                      color: "#93c5fd",
+                      color: "#d4d4d4",
                       textAlign: "center",
                     }}
                   >
-                    Quando quiseres, cria a tua conta →
+                    Quando quiser, crie a sua conta →
                   </a>
                 ) : null}
               </>
@@ -480,26 +515,25 @@ export default function ClientVerifyEmailPage() {
                     cursor: "pointer",
                     fontSize: 13,
                     fontWeight: 700,
-                    color: "#94a3b8",
+                    color: "#a1a1aa",
                     padding: "10px 0",
                     listStyle: "none",
                   }}
                 >
-                  Abriste no telemóvel?
+                  Abriu no telemóvel?
                 </summary>
-                <p style={{ margin: "0 0 10px", fontSize: 13, color: "#cbd5e1", lineHeight: 1.55 }}>
+                <p style={{ margin: "0 0 10px", fontSize: 13, color: "#d4d4d8", lineHeight: 1.55 }}>
                   A confirmação ficou registada no servidor. No <strong>PC</strong>, na página de registo, o estado deve
-                  actualizar em poucos segundos — ou recarrega a página.
+                  actualizar em poucos segundos — ou recarregue a página.
                 </p>
-                <p style={{ margin: 0, fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
-                  Link no email com <code style={{ color: "#94a3b8" }}>127.0.0.1</code> não abre no telemóvel; usa{" "}
-                  <code style={{ color: "#94a3b8" }}>EMAIL_LINK_BASE_URL</code> com o IP do PC e{" "}
-                  <code style={{ color: "#94a3b8" }}>npm run dev:lan</code>.
+                <p style={{ margin: 0, fontSize: 12, color: "#71717a", lineHeight: 1.5 }}>
+                  Link no email com <code style={{ color: "#a1a1aa" }}>127.0.0.1</code> não abre no telemóvel; utilize{" "}
+                  <code style={{ color: "#a1a1aa" }}>EMAIL_LINK_BASE_URL</code> com o IP do PC e{" "}
+                  <code style={{ color: "#a1a1aa" }}>npm run dev:lan</code>.
                 </p>
               </details>
             ) : null}
 
-            <p style={{ marginTop: 24, fontSize: 11, color: "#475569", letterSpacing: "0.06em" }}>DECIDE</p>
           </div>
         </div>
       ) : null}
@@ -547,12 +581,13 @@ export default function ClientVerifyEmailPage() {
                   marginBottom: 12,
                   padding: "16px 20px",
                   borderRadius: 14,
-                  background: "linear-gradient(180deg, #3b82f6 0%, #2563eb 100%)",
-                  color: "#fff",
+                  background: DECIDE_DASHBOARD.buttonRegister,
+                  color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
                   fontWeight: 800,
                   fontSize: 16,
-                  border: "1px solid rgba(255,255,255,0.12)",
+                  border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
                   cursor: "pointer",
+                  boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
                 }}
               >
                 Tentar confirmar de novo
@@ -581,7 +616,7 @@ export default function ClientVerifyEmailPage() {
                     const href = typeof window !== "undefined" ? window.location.href : "";
                     if (!href) return;
                     void navigator.clipboard?.writeText(href).then(() => {
-                      setCopyHint("Link copiado — podes colar no Safari/Chrome ou no PC.");
+                      setCopyHint("Link copiado — pode colar no Safari/Chrome ou no PC.");
                     });
                   }}
                   style={{
@@ -591,17 +626,17 @@ export default function ClientVerifyEmailPage() {
                     padding: "12px 16px",
                     borderRadius: 12,
                     background: "transparent",
-                    color: "#93c5fd",
+                    color: "#d4d4d4",
                     fontWeight: 700,
                     fontSize: 14,
-                    border: "1px solid rgba(147,197,253,0.35)",
+                    border: "1px solid rgba(45,212,191,0.35)",
                     cursor: "pointer",
                   }}
                 >
                   Copiar este link (abrir doutro browser ou no PC)
                 </button>
                 {copyHint ? (
-                  <p style={{ marginTop: 10, fontSize: 13, color: "#86efac", lineHeight: 1.4 }}>{copyHint}</p>
+                  <p style={{ marginTop: 10, fontSize: 13, color: DECIDE_DASHBOARD.accentSky, lineHeight: 1.4 }}>{copyHint}</p>
                 ) : null}
               </>
             ) : null}

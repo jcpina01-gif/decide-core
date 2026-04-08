@@ -28,16 +28,13 @@ export function getEmailLinkBaseUrl(): string {
 
 /**
  * Base URL dos links de confirmação no email.
- * 1) Se `EMAIL_LINK_BASE_URL` estiver definido → usa **sempre** (telemóvel = mesmo URL; evita IP/porta errados por acaso do Host do pedido).
- * 2) Em dev, sem EMAIL_LINK_BASE_URL: tenta inferir do Host do pedido (LAN).
- * 3) Caso contrário: getEmailLinkBaseUrl().
+ *
+ * - **Produção:** `EMAIL_LINK_BASE_URL` ou Host público (Vercel).
+ * - **Dev (predefinição):** se o pedido vier com `Host` LAN/público (não loopback), usa esse host — o link no email
+ *   coincide com o endereço que abriste no browser (evita `.env` com IP errado, ex. 192.168.1.249 inacessível).
+ * - **Dev estrito:** `EMAIL_LINK_BASE_URL_STRICT=1` força sempre `EMAIL_LINK_BASE_URL` quando definido.
  */
 export function resolveEmailLinkBaseUrl(req: NextApiRequest | undefined): string {
-  const explicit = stripTrailingSlash(String(process.env.EMAIL_LINK_BASE_URL || "").trim());
-  if (explicit) {
-    return explicit;
-  }
-
   const hostRaw = req?.headers?.host ? String(req.headers.host).trim() : "";
   const hostLc = hostRaw.toLowerCase();
   const isLoopback =
@@ -47,12 +44,31 @@ export function resolveEmailLinkBaseUrl(req: NextApiRequest | undefined): string
     hostLc === "localhost" ||
     hostLc === "127.0.0.1";
 
+  const strict = String(process.env.EMAIL_LINK_BASE_URL_STRICT || "").trim() === "1";
+  const explicit = stripTrailingSlash(String(process.env.EMAIL_LINK_BASE_URL || "").trim());
+
+  if (strict && explicit) {
+    return explicit;
+  }
+
   /**
-   * Em produção na Vercel o Host é o domínio público (ex. www.decidepoweredbyai.com).
-   * Antes: caíamos sempre em getEmailLinkBaseUrl() → 127.0.0.1 nos emails.
+   * Em dev, preferir o Host do pedido (mesmo IP/porta que o utilizador usou no registo).
    */
+  if (process.env.NODE_ENV !== "production" && hostRaw && !isLoopback) {
+    const xf = String(req?.headers?.["x-forwarded-proto"] || "")
+      .split(",")[0]
+      ?.trim()
+      .toLowerCase();
+    const proto = xf === "https" || xf === "http" ? xf : "http";
+    return stripTrailingSlash(`${proto}://${hostRaw}`);
+  }
+
+  if (explicit) {
+    return explicit;
+  }
+
   if (hostRaw && !isLoopback) {
-    const xf = String(req.headers["x-forwarded-proto"] || "")
+    const xf = String(req?.headers?.["x-forwarded-proto"] || "")
       .split(",")[0]
       ?.trim()
       .toLowerCase();

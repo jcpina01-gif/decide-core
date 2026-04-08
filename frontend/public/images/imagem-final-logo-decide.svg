@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 88" role="img" aria-labelledby="title desc" preserveAspectRatio="xMinYMid meet">
+  <title id="title">DECIDE</title>
+  <desc id="desc">Log�tipo DECIDE  Powered by AI</desc>
+  <defs>
+    <linearGradient id="decideDGradFinal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0034C8"/>
+      <stop offset="50%" stop-color="#0B84F7"/>
+      <stop offset="100%" stop-color="#38D4FF"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(4 4)">
+    <path
+      fill="url(#decideDGradFinal)"
+      d="M8 8h16c20 0 36 15 36 34S44 76 24 76H8V8zm12 12v44h10c12 0 20-9 20-22S42 24 30 24H20z"
+    />
+    <text
+      x="58"
+      y="46"
+      fill="#FFFFFF"
+      font-family="ui-sans-serif, system-ui, 'Segoe UI', sans-serif"
+      font-size="28"
+      font-weight="600"
+      letter-spacing="-0.02em"
+    >decide</text>
+    <text
+      x="58"
+      y="64"
+      fill="#FFFFFF"
+      font-family="ui-sans-serif, system-ui, 'Segoe UI', sans-serif"
+      font-size="9.5"
+      font-weight="600"
+      letter-spacing="0.22em"
+      opacity="0.92"
+    >POWERED BY AI</text>
+  </g>
+</svg>

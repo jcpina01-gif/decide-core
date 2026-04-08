@@ -1,5 +1,6 @@
 /**
- * Mata o que estiver à escuta na porta 4701 e arranca `next dev` (sem PowerShell aninhado).
+ * Mata o que estiver à escuta na porta 4701 e arranca `next dev --turbo` (sem PowerShell aninhado).
+ * Turbopack costuma chegar a «Ready» muito mais depressa no Windows do que Webpack.
  * Opcional: DECIDE_DEV_CLEAR_NEXT=1 apaga `.next` antes (corrige cache estragado).
  *
  * Uso: npm run dev:clean
@@ -140,7 +141,7 @@ console.log(`[dev-4701] A arrancar Next em http://127.0.0.1:${port} — mantém 
 
 const child = spawn(
   process.execPath,
-  ["-r", preload, nextBin, "dev", "-H", "127.0.0.1", "-p", port],
+  ["-r", preload, nextBin, "dev", "-H", "127.0.0.1", "-p", port, "--turbo"],
   { cwd: root, stdio: "inherit", env: process.env },
 );
 

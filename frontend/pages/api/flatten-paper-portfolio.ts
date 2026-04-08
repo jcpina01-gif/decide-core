@@ -4,7 +4,7 @@ import { getBackendBase } from "../../lib/apiProxy";
 const UPSTREAM_MS = 120_000;
 
 /**
- * Proxy para POST /api/flatten-paper-portfolio (fecha posições STK na conta paper).
+ * Proxy para POST /api/flatten-paper-portfolio (fecha STK + Forex CASH na conta paper).
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") {

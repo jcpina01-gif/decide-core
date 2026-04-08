@@ -1,9 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Head from "next/head";
+import { useRouter } from "next/router";
 import OnboardingFlowBar, {
   ONBOARDING_STORAGE_KEYS,
   ONBOARDING_MONTANTE_KEY,
 } from "../components/OnboardingFlowBar";
+import { DECIDE_CLIENT, ONBOARDING_PRIMARY_CTA_MAX_WIDTH_PX } from "../lib/decideClientTheme";
+import { persistOnboardingRiskProfile } from "../lib/decideOnboardingRiskProfile";
+import { getNextOnboardingHref } from "../lib/onboardingProgress";
 
 type RiskProfile = "conservador" | "moderado" | "dinamico";
 
@@ -21,9 +25,66 @@ function inferExperienceTier(
   return "";
 }
 
-const MIFID_WIZARD_STEP_KEY = "decide_mifid_wizard_step_v1";
-/** Último sub-passo concluído com «Continuar» (1–3). Ao retroceder, reduz-se para não mostrar verde no passo em edição. */
-const MIFID_WIZARD_MAX_DONE_KEY = "decide_mifid_wizard_max_done_v1";
+/** Normaliza o JSON gravado para comparar confirmações — evita invalidar KYC quando o utilizador só reconfirma o mesmo perfil. */
+function normalizeMifidSnapshotForCompare(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const num = (x: unknown): number | "" => {
+    const n = typeof x === "number" ? x : Number(x);
+    return Number.isFinite(n) && n > 0 ? n : "";
+  };
+  const anos = num(o.anosExperiencia);
+  const nProd = typeof o.nProdutos === "string" ? o.nProdutos.trim() : String(o.nProdutos ?? "").trim();
+  const nOp = num(o.nOperacoesAno);
+  let tier: ExperienceTier = "";
+  if (o.experienceTier === "pouca" || o.experienceTier === "alguma" || o.experienceTier === "muita") {
+    tier = o.experienceTier;
+  } else {
+    tier = inferExperienceTier(
+      typeof anos === "number" ? anos : "",
+      nProd,
+      typeof nOp === "number" ? nOp : "",
+    );
+  }
+  return {
+    experienceTier: tier,
+    anosExperiencia: anos,
+    nProdutos: nProd,
+    nOperacoesAno: nOp,
+    entendeVolatilidade: typeof o.entendeVolatilidade === "string" ? o.entendeVolatilidade.trim() : "",
+    entendeDrawdown: typeof o.entendeDrawdown === "string" ? o.entendeDrawdown.trim() : "",
+    aceitaPerda: num(o.aceitaPerda),
+    objetivo: typeof o.objetivo === "string" ? o.objetivo.trim() : "",
+    horizonte: num(o.horizonte),
+    liquidez: typeof o.liquidez === "string" ? o.liquidez.trim() : "",
+    rendimentosEstaveis: typeof o.rendimentosEstaveis === "string" ? o.rendimentosEstaveis.trim() : "",
+    patrimonio: num(o.patrimonio),
+    montante: num(o.montante),
+  };
+}
+
+function mifidPayloadsMateriallyEqual(a: unknown, b: unknown): boolean {
+  const na = normalizeMifidSnapshotForCompare(a);
+  const nb = normalizeMifidSnapshotForCompare(b);
+  if (!na || !nb) return false;
+  return JSON.stringify(na) === JSON.stringify(nb);
+}
+
+/** v3: assistente em 6 passos (objetivos em dois ecrãs). */
+const MIFID_WIZARD_STEP_KEY = "decide_mifid_wizard_step_v3";
+/** Último sub-passo concluído com «Continuar» (1–5 antes do resumo). */
+const MIFID_WIZARD_MAX_DONE_KEY = "decide_mifid_wizard_max_done_v3";
+/** Total de passos do assistente (sempre alinhado com a barra e «Passo X de Y»). */
+const MIFID_WIZARD_TOTAL_STEPS = 6;
+/** Largura útil maior que o shell onboarding por defeito — cartões MiFID em linha (passos 4–5). */
+const MIFID_PAGE_MAX_WIDTH_PX = 1520;
+
+function parseWizardStepFromQuery(stepStr: string | undefined): number | null {
+  if (typeof stepStr !== "string" || !/^\d{1,2}$/.test(stepStr.trim())) return null;
+  const n = parseInt(stepStr, 10);
+  if (n >= 1 && n <= MIFID_WIZARD_TOTAL_STEPS) return n;
+  return null;
+}
 
 /** Campos MiFID do passo 1 (preenchidos via nível de experiência). */
 const STEP1_MISSING_LABELS = new Set([
@@ -31,11 +92,14 @@ const STEP1_MISSING_LABELS = new Set([
   "Nº de tipos de produtos",
   "Operações por ano",
 ]);
-const STEP2_MISSING_LABELS = new Set(["Compreende volatilidade", "Compreende drawdown"]);
-const STEP3_MISSING_LABELS = new Set([
+const STEP_VOL_MISSING_LABELS = new Set(["Compreende volatilidade"]);
+const STEP_DD_MISSING_LABELS = new Set(["Compreende drawdown"]);
+const STEP_OBJ4A_MISSING_LABELS = new Set([
   "Perda máxima aceitável (%)",
   "Objetivo",
   "Horizonte (anos)",
+]);
+const STEP_OBJ4B_MISSING_LABELS = new Set([
   "Necessidade de liquidez",
   "Rendimentos estáveis",
   "Património financeiro (€)",
@@ -50,29 +114,71 @@ function profileLabelPt(p: RiskProfile): string {
 
 function profileExplanationPt(p: RiskProfile): string {
   if (p === "conservador") {
-    return "Perfil com menor tolerância a oscilações. Foco em preservação de capital e estabilidade.";
+    return "Menor tolerância a oscilações; foco em estabilidade.";
   }
   if (p === "moderado") {
-    return "Equilíbrio entre risco e retorno, com horizonte médio. Aceita alguma volatilidade dos mercados.";
+    return "Equilíbrio entre risco e retorno; aceita alguma volatilidade.";
   }
-  return "Aceita volatilidade e procura crescimento ao longo do tempo, com tolerância a oscilações mais acentuadas.";
+  return "Maior tolerância a oscilações; orientado a crescimento ao longo do tempo.";
+}
+
+function objetivoLabelPt(v: string): string {
+  if (v === "preservacao") return "preservação de capital";
+  if (v === "equilibrio") return "equilíbrio entre risco e retorno";
+  if (v === "crescimento") return "crescimento";
+  return v;
+}
+
+/** Uma linha — passo 6 (sem scroll excessivo). */
+function mifidWhyCompactOneLine(args: {
+  objetivo: string;
+  horizonteNum: number;
+  aceitaPerdaNum: number;
+}): string {
+  const { objetivo, horizonteNum, aceitaPerdaNum } = args;
+  const parts: string[] = [];
+  if (objetivo.trim().length > 0) {
+    if (objetivo === "preservacao") parts.push("Preservação de capital");
+    else if (objetivo === "equilibrio") parts.push("Equilíbrio risco/retorno");
+    else if (objetivo === "crescimento") parts.push("Crescimento");
+    else parts.push(objetivoLabelPt(objetivo));
+  }
+  if (horizonteNum > 0) {
+    parts.push(`Horizonte ${horizonteNum} anos`);
+  }
+  if (aceitaPerdaNum > 0) {
+    parts.push(`Quedas até ~${aceitaPerdaNum}%`);
+  }
+  return parts.join(" · ");
+}
+
+/** Significado prático numa linha — passo 6 compacto. */
+function profilePracticalOneLinePt(p: RiskProfile): string {
+  if (p === "conservador") {
+    return "Instrumentos mais estáveis · Oscilações mais contidas · Foco em preservação";
+  }
+  if (p === "moderado") {
+    return "Equilíbrio risco/retorno · Volatilidade moderada · Crescimento alinhado ao horizonte";
+  }
+  return "Mais exposição a ações · Volatilidade a curto prazo · Potencial a longo prazo";
 }
 
 function sectionStyle(): React.CSSProperties {
   return {
-    background: "#020b24",
-    border: "1px solid #15305b",
-    borderRadius: 22,
-    padding: 20,
+    background: DECIDE_CLIENT.cardGradient,
+    border: DECIDE_CLIENT.cardBorder,
+    borderRadius: 18,
+    padding: 16,
+    boxShadow: DECIDE_CLIENT.cardShadow,
   };
 }
 
 function inputStyle(): React.CSSProperties {
   return {
     width: "100%",
-    background: "#020816",
-    color: "#fff",
-    border: "1px solid #15305b",
+    background: DECIDE_CLIENT.inputBg,
+    color: DECIDE_CLIENT.text,
+    border: DECIDE_CLIENT.inputBorder,
     borderRadius: 12,
     padding: 12,
     fontSize: 16,
@@ -80,7 +186,239 @@ function inputStyle(): React.CSSProperties {
   };
 }
 
+/** Passo 4 — cartões; valores numéricos mantêm o cálculo de perfil existente. */
+const MIFID_LOSS_CARD_CHOICES = [
+  { id: "p10" as const, label: "Até 10%", sub: "Quedas moderadas; maior foco em estabilidade.", value: 8 },
+  { id: "p20" as const, label: "Até 20%", sub: "Oscilações mais marcadas, com um limite claro.", value: 15 },
+  { id: "p30" as const, label: "Até 30%", sub: "Tolerância elevada a períodos difíceis.", value: 30 },
+  { id: "p35" as const, label: "Mais de 30%", sub: "Cenários de stress mais profundos antes de rever a estratégia.", value: 35 },
+] as const;
+
+function lossTierIdFromValue(n: number | ""): (typeof MIFID_LOSS_CARD_CHOICES)[number]["id"] | "" {
+  if (typeof n !== "number" || !(n > 0)) return "";
+  if (n <= 10) return "p10";
+  if (n <= 20) return "p20";
+  if (n <= 30) return "p30";
+  return "p35";
+}
+
+const MIFID_OBJETIVO_CARDS = [
+  {
+    id: "preservacao" as const,
+    label: "Preservação de capital",
+    sub: "Prioridade em limitar perdas; retorno mais modesto.",
+  },
+  {
+    id: "equilibrio" as const,
+    label: "Equilíbrio",
+    sub: "Combinar crescimento com alguma estabilidade.",
+  },
+  {
+    id: "crescimento" as const,
+    label: "Crescimento",
+    sub: "Aceitar mais volatilidade em troca de potencial de valorização.",
+  },
+] as const;
+
+const MIFID_HORIZONTE_CARDS = [
+  { id: "h1" as const, label: "Menos de 4 anos", sub: "Pode precisar do dinheiro a médio prazo.", value: 3 },
+  { id: "h2" as const, label: "4 a 7 anos", sub: "Horizonte intermédio para o seu projecto.", value: 5 },
+  { id: "h3" as const, label: "7 anos ou mais", sub: "Pode manter o investimento alinhado no tempo.", value: 8 },
+] as const;
+
+function horizonteTierFromValue(n: number | ""): (typeof MIFID_HORIZONTE_CARDS)[number]["id"] | "" {
+  if (typeof n !== "number" || !(n > 0)) return "";
+  if (n < 4) return "h1";
+  if (n < 7) return "h2";
+  return "h3";
+}
+
+const MIFID_LIQUIDEZ_CARDS = [
+  { id: "baixa" as const, label: "Baixa", sub: "Sem necessidade urgente de levantar o dinheiro." },
+  { id: "media" as const, label: "Média", sub: "Pode precisar de parte do valor ocasionalmente." },
+  { id: "alta" as const, label: "Alta", sub: "A liquidez frequente é importante para si." },
+] as const;
+
+const MIFID_PATRIMONIO_CARDS = [
+  { id: "pat1" as const, label: "Até 50 000 €", sub: "Ordem de grandeza do património financeiro total.", value: 40_000 },
+  { id: "pat2" as const, label: "50 000 € a 100 000 €", sub: "Estimativa por intervalos — não precisa do valor exacto.", value: 75_000 },
+  { id: "pat3" as const, label: "100 000 € a 500 000 €", sub: "Útil para dimensionar o risco face ao seu contexto.", value: 250_000 },
+  { id: "pat4" as const, label: "Mais de 500 000 €", sub: "Património elevado; mantemos a mesma lógica de perfil.", value: 750_000 },
+] as const;
+
+function patrimonioTierFromValue(n: number | ""): (typeof MIFID_PATRIMONIO_CARDS)[number]["id"] | "" {
+  if (typeof n !== "number" || !(n > 0)) return "";
+  if (n < 50_000) return "pat1";
+  if (n < 100_000) return "pat2";
+  if (n < 500_000) return "pat3";
+  return "pat4";
+}
+
+function experienceTierShortPt(tier: ExperienceTier): string {
+  if (tier === "pouca") return "Pouca experiência";
+  if (tier === "alguma") return "Alguma experiência";
+  if (tier === "muita") return "Muita experiência";
+  return "";
+}
+
+/** Resumo único das escolhas já feitas — feedback global no rodapé do cartão. */
+function buildPerfilAtualLine(args: {
+  experienceTier: ExperienceTier;
+  entendeVolatilidade: string;
+  entendeDrawdown: string;
+  aceitaPerda: number | "";
+  objetivo: string;
+  horizonte: number | "";
+  liquidez: string;
+  rendimentosEstaveis: string;
+  patrimonio: number | "";
+  montante: number | "";
+}): string | null {
+  const parts: string[] = [];
+  const ex = experienceTierShortPt(args.experienceTier);
+  if (ex) parts.push(ex);
+  if (args.entendeVolatilidade === "sim") parts.push("Curto prazo: confortável com variações");
+  else if (args.entendeVolatilidade === "nao") parts.push("Curto prazo: prefere menos oscilação");
+  if (args.entendeDrawdown === "sim") parts.push("Quedas temporárias: compreende o risco");
+  else if (args.entendeDrawdown === "nao") parts.push("Quedas temporárias: menor tolerância");
+  if (typeof args.aceitaPerda === "number" && args.aceitaPerda > 0) {
+    const lid = lossTierIdFromValue(args.aceitaPerda);
+    const lc = MIFID_LOSS_CARD_CHOICES.find((c) => c.id === lid);
+    parts.push(lc ? `Tolerância ${lc.label}` : `Tolerância até ${args.aceitaPerda}%`);
+  }
+  if (args.objetivo) {
+    const o = MIFID_OBJETIVO_CARDS.find((c) => c.id === args.objetivo);
+    parts.push(o ? o.label : objetivoLabelPt(args.objetivo));
+  }
+  if (typeof args.horizonte === "number" && args.horizonte > 0) {
+    const hid = horizonteTierFromValue(args.horizonte);
+    const h = MIFID_HORIZONTE_CARDS.find((c) => c.id === hid);
+    parts.push(h ? `Horizonte: ${h.label}` : `Horizonte ${args.horizonte} anos`);
+  }
+  if (args.liquidez) {
+    const L = MIFID_LIQUIDEZ_CARDS.find((c) => c.id === args.liquidez);
+    parts.push(L ? `Liquidez: ${L.label}` : `Liquidez ${args.liquidez}`);
+  }
+  if (args.rendimentosEstaveis === "sim") parts.push("Rendimentos regulares: sim");
+  else if (args.rendimentosEstaveis === "nao") parts.push("Rendimentos regulares: foco em valorização");
+  if (typeof args.patrimonio === "number" && args.patrimonio > 0) {
+    const pid = patrimonioTierFromValue(args.patrimonio);
+    const p = MIFID_PATRIMONIO_CARDS.find((c) => c.id === pid);
+    parts.push(p ? `Património ${p.label}` : "Património indicado");
+  }
+  if (typeof args.montante === "number" && args.montante > 0) {
+    parts.push(`Montante a investir ${args.montante.toLocaleString("pt-PT")} €`);
+  }
+  if (parts.length === 0) return null;
+  return parts.join(" • ");
+}
+
+/** Passo 5 — resumo em lista (liquidez, rendimento, património, montante). */
+function buildResumoAtualLinhas(args: {
+  liquidez: string;
+  rendimentosEstaveis: string;
+  patrimonio: number | "";
+  montante: number | "";
+}): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = [];
+  if (args.liquidez) {
+    const L = MIFID_LIQUIDEZ_CARDS.find((c) => c.id === args.liquidez);
+    out.push({ label: "Liquidez", value: L?.label ?? args.liquidez });
+  }
+  if (args.rendimentosEstaveis === "sim") {
+    out.push({ label: "Rendimento", value: "Regular (complemento ou pagamentos periódicos)" });
+  } else if (args.rendimentosEstaveis === "nao") {
+    out.push({ label: "Rendimento", value: "Crescimento / valorização (sem dependência de rendimento regular)" });
+  }
+  if (typeof args.patrimonio === "number" && args.patrimonio > 0) {
+    const pid = patrimonioTierFromValue(args.patrimonio);
+    const p = MIFID_PATRIMONIO_CARDS.find((c) => c.id === pid);
+    out.push({ label: "Património", value: p?.label ?? "—" });
+  }
+  if (typeof args.montante === "number" && args.montante > 0) {
+    out.push({ label: "Montante a investir", value: `${args.montante.toLocaleString("pt-PT")} €` });
+  }
+  return out;
+}
+
+function mifidRendimentoCardStyle(selected: boolean, err: boolean, variant: "income" | "growth"): React.CSSProperties {
+  const base = mifidChoiceCardBase(selected, err);
+  if (err) return base;
+  const income = variant === "income";
+  return {
+    ...base,
+    background: selected
+      ? income
+        ? "rgba(251, 191, 36, 0.16)"
+        : "rgba(16, 185, 129, 0.13)"
+      : income
+        ? "rgba(251, 191, 36, 0.07)"
+        : "rgba(16, 185, 129, 0.07)",
+    border: selected
+      ? income
+        ? "2px solid rgba(251, 191, 36, 0.78)"
+        : "2px solid rgba(34, 197, 94, 0.72)"
+      : income
+        ? "1px solid rgba(251, 191, 36, 0.38)"
+        : "1px solid rgba(34, 197, 94, 0.38)",
+    boxShadow: selected
+      ? income
+        ? "0 0 0 3px rgba(251, 191, 36, 0.22), 0 0 26px rgba(251, 191, 36, 0.12)"
+        : "0 0 0 3px rgba(34, 197, 94, 0.2), 0 0 28px rgba(16, 185, 129, 0.14)"
+      : "none",
+    transform: selected ? "scale(1.012)" : "scale(1)",
+  };
+}
+
+const mifidStep4BlockTitle: React.CSSProperties = {
+  color: "#f1f5f9",
+  fontSize: 12,
+  fontWeight: 800,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  marginBottom: 6,
+  marginTop: 0,
+};
+
+const mifidChoiceInlineRow: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "row",
+  flexWrap: "nowrap",
+  gap: 8,
+  width: "100%",
+  alignItems: "stretch",
+};
+
+const mifidChoiceInlineBtn: React.CSSProperties = {
+  flex: "1 1 0",
+  minWidth: 0,
+  boxSizing: "border-box",
+};
+
+const mifidChoiceCardBase = (selected: boolean, err: boolean): React.CSSProperties => ({
+  textAlign: "left",
+  padding: "10px 12px",
+  borderRadius: 14,
+  border: err
+    ? "1px solid rgba(248,113,113,0.55)"
+    : selected
+      ? "2px solid rgba(45, 212, 191, 0.85)"
+      : DECIDE_CLIENT.panelBorder,
+  background: selected ? "rgba(45, 212, 191, 0.14)" : DECIDE_CLIENT.inputBg,
+  cursor: "pointer",
+  color: DECIDE_CLIENT.text,
+  boxShadow: selected
+    ? "0 0 0 3px rgba(45, 212, 191, 0.28), 0 0 28px rgba(45, 212, 191, 0.18)"
+    : err
+      ? "0 0 0 3px rgba(248,113,113,0.12)"
+      : "none",
+  transform: selected ? "scale(1.012)" : "scale(1)",
+  transition:
+    "border 0.2s ease, box-shadow 0.28s ease, background 0.2s ease, transform 0.22s cubic-bezier(0.34, 1.45, 0.64, 1)",
+});
+
 export default function MifidTestPage() {
+  const router = useRouter();
   const [anosExperiencia, setAnosExperiencia] = useState<number | "">("");
   const [nProdutos, setNProdutos] = useState("");
   const [nOperacoesAno, setNOperacoesAno] = useState<number | "">("");
@@ -96,23 +434,45 @@ export default function MifidTestPage() {
   const [experienceTier, setExperienceTier] = useState<ExperienceTier>("");
 
   const [confirmAttempted, setConfirmAttempted] = useState(false);
+  /** `decide_onboarding_step2_done` — passo MiFID concluído no funil (perfil já confirmado alguma vez). */
+  const [mifidPreviouslyConfirmed, setMifidPreviouslyConfirmed] = useState(false);
   const [wizardStep, setWizardStep] = useState(1);
-  /** Sub-passos já validados com «Continuar» (0 = nenhum, 1 = passo 1, …, 3 = até passo 3). */
+  /** Sub-passos já validados com «Continuar» (0 = nenhum … 5 = segundo ecrã de objetivos antes do resumo). */
   const [wizardMaxDone, setWizardMaxDone] = useState(0);
   /** Passo de onde o utilizador tentou avançar sem dados (para realçar campos). */
   const [attemptedFromStep, setAttemptedFromStep] = useState(0);
 
   const ONBOARDING_MIFID_FIELDS_KEY = "decide_onboarding_mifid_fields_v1";
 
+  /** Sincroniza passo interno: prioridade a `?step=` na URL, depois sessionStorage (retoma onde ficou). */
   useEffect(() => {
+    if (!router.isReady) return;
     try {
+      const raw = router.query.step;
+      const stepStr = Array.isArray(raw) ? raw[0] : raw;
+      const fromQuery = typeof stepStr === "string" ? parseWizardStepFromQuery(stepStr) : null;
+
+      if (fromQuery != null) {
+        setWizardStep(fromQuery);
+        const m = sessionStorage.getItem(MIFID_WIZARD_MAX_DONE_KEY);
+        const mn = m != null ? parseInt(m, 10) : NaN;
+        if (Number.isFinite(mn) && mn >= 0 && mn <= MIFID_WIZARD_TOTAL_STEPS - 1) {
+          setWizardMaxDone(Math.min(mn, Math.max(0, fromQuery - 1)));
+        } else {
+          setWizardMaxDone(Math.max(0, fromQuery - 1));
+        }
+        sessionStorage.setItem(MIFID_WIZARD_STEP_KEY, String(fromQuery));
+        return;
+      }
+
       const s = sessionStorage.getItem(MIFID_WIZARD_STEP_KEY);
       let step = 1;
-      if (s && /^[1-4]$/.test(s)) step = parseInt(s, 10);
+      const parsed = s != null ? parseWizardStepFromQuery(s) : null;
+      if (parsed != null) step = parsed;
       setWizardStep(step);
       const m = sessionStorage.getItem(MIFID_WIZARD_MAX_DONE_KEY);
       const mn = m != null ? parseInt(m, 10) : NaN;
-      if (Number.isFinite(mn) && mn >= 0 && mn <= 3) {
+      if (Number.isFinite(mn) && mn >= 0 && mn <= MIFID_WIZARD_TOTAL_STEPS - 1) {
         setWizardMaxDone(Math.min(mn, Math.max(0, step - 1)));
       } else {
         setWizardMaxDone(Math.max(0, step - 1));
@@ -120,7 +480,7 @@ export default function MifidTestPage() {
     } catch {
       // ignore
     }
-  }, []);
+  }, [router.isReady, router.query.step]);
 
   useEffect(() => {
     try {
@@ -144,6 +504,14 @@ export default function MifidTestPage() {
       window.localStorage.setItem("decide_onboarding_ibkr_prep_done_v1", "0");
     } catch {
       // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      setMifidPreviouslyConfirmed(window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.mifid) === "1");
+    } catch {
+      setMifidPreviouslyConfirmed(false);
     }
   }, []);
 
@@ -364,39 +732,78 @@ export default function MifidTestPage() {
   const canConfirmMifid = missingMifidFields.length === 0;
   const missingSet = useMemo(() => new Set(missingMifidFields), [missingMifidFields]);
 
+  const whyProfileCompactLine = useMemo(() => {
+    const h = typeof horizonte === "number" ? horizonte : 0;
+    const a = typeof aceitaPerda === "number" ? aceitaPerda : 0;
+    return mifidWhyCompactOneLine({ objetivo, horizonteNum: h, aceitaPerdaNum: a });
+  }, [objetivo, horizonte, aceitaPerda]);
+
   const step1MissingFields = useMemo(() => {
     if (!experienceTier) return ["Nível de experiência"];
     return [];
   }, [experienceTier]);
-  const step2MissingFields = useMemo(
-    () => missingMifidFields.filter((x) => STEP2_MISSING_LABELS.has(x)),
+  const stepVolMissingFields = useMemo(
+    () => missingMifidFields.filter((x) => STEP_VOL_MISSING_LABELS.has(x)),
     [missingMifidFields],
   );
-  const step3MissingFields = useMemo(
-    () => missingMifidFields.filter((x) => STEP3_MISSING_LABELS.has(x)),
+  const stepDdMissingFields = useMemo(
+    () => missingMifidFields.filter((x) => STEP_DD_MISSING_LABELS.has(x)),
     [missingMifidFields],
   );
-  const step3ReadyForSummary = step3MissingFields.length === 0;
-
-  /** Uma só resposta no UI quando ambos os campos MiFID coincidem (passo 2 fundido). */
-  const mercadosConfortoUnificado = useMemo(() => {
-    if (entendeVolatilidade && entendeVolatilidade === entendeDrawdown) return entendeVolatilidade;
-    return "";
-  }, [entendeVolatilidade, entendeDrawdown]);
+  const stepObj4aMissingFields = useMemo(
+    () => missingMifidFields.filter((x) => STEP_OBJ4A_MISSING_LABELS.has(x)),
+    [missingMifidFields],
+  );
+  const stepObj4bMissingFields = useMemo(
+    () => missingMifidFields.filter((x) => STEP_OBJ4B_MISSING_LABELS.has(x)),
+    [missingMifidFields],
+  );
+  const step4aReady = stepObj4aMissingFields.length === 0;
+  const step4bReady = stepObj4bMissingFields.length === 0;
 
   const aceitaPerdaNumLive = typeof aceitaPerda === "number" ? aceitaPerda : 0;
   const lossZero =
     aceitaPerda === "" || aceitaPerdaNumLive <= 0;
 
+  const perfilAtualLinha = useMemo(
+    () =>
+      buildPerfilAtualLine({
+        experienceTier,
+        entendeVolatilidade,
+        entendeDrawdown,
+        aceitaPerda,
+        objetivo,
+        horizonte,
+        liquidez,
+        rendimentosEstaveis,
+        patrimonio,
+        montante,
+      }),
+    [
+      experienceTier,
+      entendeVolatilidade,
+      entendeDrawdown,
+      aceitaPerda,
+      objetivo,
+      horizonte,
+      liquidez,
+      rendimentosEstaveis,
+      patrimonio,
+      montante,
+    ],
+  );
+
   function fieldStyleIfMissing(missingKey: string): React.CSSProperties {
     const stepErr =
       (attemptedFromStep === 1 && STEP1_MISSING_LABELS.has(missingKey)) ||
-      (attemptedFromStep === 2 && STEP2_MISSING_LABELS.has(missingKey)) ||
-      (attemptedFromStep === 3 && STEP3_MISSING_LABELS.has(missingKey));
+      (attemptedFromStep === 2 && STEP_VOL_MISSING_LABELS.has(missingKey)) ||
+      (attemptedFromStep === 3 && STEP_DD_MISSING_LABELS.has(missingKey)) ||
+      (attemptedFromStep === 4 && STEP_OBJ4A_MISSING_LABELS.has(missingKey)) ||
+      (attemptedFromStep === 5 && STEP_OBJ4B_MISSING_LABELS.has(missingKey));
     const err = missingSet.has(missingKey) && (confirmAttempted || stepErr);
     return {
       ...inputStyle(),
-      border: err ? "1px solid #f87171" : "1px solid #15305b",
+      border: err ? "1px solid #f87171" : DECIDE_CLIENT.panelBorder,
       boxShadow: err ? "0 0 0 3px rgba(248,113,113,0.14)" : "none",
     };
   }
@@ -413,7 +820,7 @@ export default function MifidTestPage() {
       return;
     }
     if (fromStep === 2) {
-      if (step2MissingFields.length > 0) {
+      if (stepVolMissingFields.length > 0) {
         setAttemptedFromStep(2);
         return;
       }
@@ -423,24 +830,36 @@ export default function MifidTestPage() {
       return;
     }
     if (fromStep === 3) {
-      // Só valida campos do passo 3 aqui. `canConfirmMifid` pode falhar por motivos fora deste ecrã
-      // (ex.: nível de experiência) — bloquear aqui sem mensagem gerava clique “morto”.
-      if (step3MissingFields.length > 0) {
+      if (stepDdMissingFields.length > 0) {
         setAttemptedFromStep(3);
-        setConfirmAttempted(true);
         return;
       }
       setAttemptedFromStep(0);
       setWizardMaxDone((m) => Math.max(m, 3));
       setWizardStep(4);
+      return;
     }
-  }
-
-  function wizardBack() {
-    setAttemptedFromStep(0);
-    const next = Math.max(1, wizardStep - 1);
-    setWizardMaxDone(Math.max(0, next - 1));
-    setWizardStep(next);
+    if (fromStep === 4) {
+      if (stepObj4aMissingFields.length > 0) {
+        setAttemptedFromStep(4);
+        setConfirmAttempted(true);
+        return;
+      }
+      setAttemptedFromStep(0);
+      setWizardMaxDone((m) => Math.max(m, 4));
+      setWizardStep(5);
+      return;
+    }
+    if (fromStep === 5) {
+      if (stepObj4bMissingFields.length > 0) {
+        setAttemptedFromStep(5);
+        setConfirmAttempted(true);
+        return;
+      }
+      setAttemptedFromStep(0);
+      setWizardMaxDone((m) => Math.max(m, 5));
+      setWizardStep(6);
+    }
   }
 
   function selectExperienceTier(tier: "pouca" | "alguma" | "muita") {
@@ -463,83 +882,141 @@ export default function MifidTestPage() {
   function confirmAndGoKyc() {
     setConfirmAttempted(true);
     if (!canConfirmMifid) return;
+    const newPayload = {
+      experienceTier,
+      anosExperiencia,
+      nProdutos,
+      nOperacoesAno,
+      entendeVolatilidade,
+      entendeDrawdown,
+      aceitaPerda,
+      objetivo,
+      horizonte,
+      liquidez,
+      rendimentosEstaveis,
+      patrimonio,
+      montante,
+    };
     try {
-      // Gravar campos para voltar com a informação preenchida.
-      window.localStorage.setItem(
-        ONBOARDING_MIFID_FIELDS_KEY,
-        JSON.stringify({
-          experienceTier,
-          anosExperiencia,
-          nProdutos,
-          nOperacoesAno,
-          entendeVolatilidade,
-          entendeDrawdown,
-          aceitaPerda,
-          objetivo,
-          horizonte,
-          liquidez,
-          rendimentosEstaveis,
-          patrimonio,
-          montante,
-        })
-      );
+      let previousRaw: string | null = null;
+      try {
+        previousRaw = window.localStorage.getItem(ONBOARDING_MIFID_FIELDS_KEY);
+      } catch {
+        previousRaw = null;
+      }
+      let previousParsed: unknown = null;
+      if (previousRaw) {
+        try {
+          previousParsed = JSON.parse(previousRaw);
+        } catch {
+          previousParsed = null;
+        }
+      }
+      const kycWasDone = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.kyc) === "1";
+      const unchanged =
+        previousParsed != null && mifidPayloadsMateriallyEqual(previousParsed, newPayload);
+
+      window.localStorage.setItem(ONBOARDING_MIFID_FIELDS_KEY, JSON.stringify(newPayload));
+      persistOnboardingRiskProfile(result.profile);
       window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.mifid, "1");
-      // Identidade tem de ser reconfirmada após novo perfil; o passo 4 só fica OK após gravação no backend.
-      window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.kyc, "0");
+      // Só invalida identidade se o perfil MiFID mudou (ou é a primeira gravação). Reconfirmar os mesmos dados não pode apagar KYC.
+      if (!kycWasDone || !unchanged) {
+        window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.kyc, "0");
+      }
     } catch {
       // ignore
     }
-    window.location.href = "/persona-onboarding";
+    let authed = false;
+    try {
+      authed = window.localStorage.getItem("decide_client_session_ok") === "1";
+    } catch {
+      authed = false;
+    }
+    if (!authed) {
+      window.location.href = "/client/login";
+      return;
+    }
+    /** Após gravar MiFID: identidade pendente → Persona; se KYC já estava válido e o perfil não foi invalidado, segue o funil. */
+    let kycDoneNow = false;
+    try {
+      kycDoneNow = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.kyc) === "1";
+    } catch {
+      kycDoneNow = false;
+    }
+    window.location.href = !kycDoneNow ? "/persona-onboarding" : getNextOnboardingHref();
   }
 
   const btnPrimary: React.CSSProperties = {
-    background: "linear-gradient(180deg, #7eb0ff 0%, #3558f5 100%)",
-    color: "#fff",
-    border: "2px solid rgba(255,255,255,0.35)",
-    borderRadius: 14,
-    padding: "14px 22px",
-    fontSize: 16,
+    background: DECIDE_CLIENT.buttonPrimaryGradient,
+    color: DECIDE_CLIENT.text,
+    border: DECIDE_CLIENT.buttonPrimaryBorder,
+    borderRadius: 12,
+    padding: "11px 18px",
+    fontSize: 15,
     fontWeight: 900,
     cursor: "pointer",
-    boxShadow: "0 10px 28px rgba(53, 88, 245, 0.4)",
+    boxShadow: DECIDE_CLIENT.buttonPrimaryGlow,
   };
-  const btnPrimaryFull: React.CSSProperties = {
+  const btnPrimaryCta: React.CSSProperties = {
     ...btnPrimary,
     width: "100%",
-    minHeight: 52,
+    maxWidth: ONBOARDING_PRIMARY_CTA_MAX_WIDTH_PX,
+    minHeight: 46,
     boxSizing: "border-box",
     display: "block",
+    textAlign: "center",
+    flexShrink: 0,
   };
-  const btnGhost: React.CSSProperties = {
-    background: "rgba(148,163,184,0.1)",
-    color: "#cbd5e1",
-    border: "1px solid rgba(148,163,184,0.5)",
-    borderRadius: 14,
-    padding: "14px 20px",
-    fontSize: 15,
-    fontWeight: 800,
-    cursor: "pointer",
+
+  const perfilAtualFooterStyle: React.CSSProperties = {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTop: "1px solid rgba(148, 163, 184, 0.22)",
+    color: "#a1a1aa",
+    fontSize: 12,
+    lineHeight: 1.5,
   };
-  /** Voltar: secundário, menos peso que o CTA (consistente em todos os passos). */
-  const btnGhostSecondary: React.CSSProperties = {
-    ...btnGhost,
-    alignSelf: "flex-start",
-    width: "auto",
-    maxWidth: "100%",
-    minHeight: 44,
-    padding: "11px 18px",
-    fontSize: 14,
-    fontWeight: 700,
-    background: "transparent",
-    border: "1px solid rgba(148,163,184,0.4)",
-  };
-  const wizardActions: React.CSSProperties = {
+
+  /** Rodapé do cartão: CTA único centrado (navegação atrás = funil global). */
+  const wizardActionsSticky: React.CSSProperties = {
     display: "flex",
-    flexDirection: "column",
-    gap: 12,
-    marginTop: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: "auto",
+    paddingTop: 12,
+    marginLeft: -16,
+    marginRight: -16,
+    marginBottom: -16,
+    paddingLeft: 16,
+    paddingRight: 16,
+    paddingBottom: 12,
+    boxSizing: "border-box",
     width: "100%",
-    alignItems: "stretch",
+    position: "sticky",
+    bottom: 0,
+    zIndex: 2,
+    background: "linear-gradient(180deg, rgba(17,22,28,0) 0%, rgba(17,22,28,0.82) 14%, rgba(17,22,28,0.97) 100%)",
+    borderTop: "1px solid rgba(255,255,255,0.06)",
+    borderRadius: "0 0 18px 18px",
+  };
+
+  const wizardActionsStickyPageButtonRow: React.CSSProperties = {
+    display: "flex",
+    justifyContent: "center",
+    width: "100%",
+  };
+
+  /** Passo 6: CTA sempre visível (conversão). */
+  const mifidStep6FixedCtaBar: React.CSSProperties = {
+    position: "fixed",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 50,
+    padding: "8px max(12px, 2vw) max(10px, env(safe-area-inset-bottom, 0px))",
+    background: "linear-gradient(180deg, rgba(11,15,20,0) 0%, rgba(11,15,20,0.9) 22%, rgba(11,15,20,0.99) 100%)",
+    borderTop: "1px solid rgba(255,255,255,0.08)",
+    boxSizing: "border-box",
   };
 
   return (
@@ -552,27 +1029,52 @@ export default function MifidTestPage() {
       <div
         style={{
           minHeight: "100vh",
-          background: "#000",
-          color: "#fff",
-          padding: "32px max(20px, 4vw)",
-          fontFamily: "Inter, Arial, sans-serif",
+          background: DECIDE_CLIENT.pageGradient,
+          color: DECIDE_CLIENT.text,
+          padding: "18px max(12px, 2vw) 22px",
+          fontFamily: DECIDE_CLIENT.fontFamily,
+          fontSize: "clamp(14px, 1.05vw, 15px)",
         }}
       >
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 800, lineHeight: 1.15 }}>Perfil de investidor</div>
-          <div style={{ color: "#94a3b8", fontSize: 16, marginTop: 8, maxWidth: 560, lineHeight: 1.55 }}>
-            Algumas perguntas para adequarmos o serviço ao seu perfil. Leva só alguns minutos.
+        <OnboardingFlowBar currentStepId="mifid" authStepHref="/client/login" shellMaxWidthPx={MIFID_PAGE_MAX_WIDTH_PX} />
+
+        <div style={{ marginBottom: 12, marginTop: 12 }}>
+          <div style={{ fontSize: "clamp(22px, 3.2vw, 34px)", fontWeight: 800, lineHeight: 1.12 }}>Definir o seu perfil de investidor</div>
+          <div style={{ color: "#cbd5e1", fontSize: "max(14px, 0.95em)", marginTop: 6, maxWidth: "min(100%, 960px)", lineHeight: 1.45, fontWeight: 500 }}>
+            Com estas escolhas, definimos o seu perfil de investimento e a estratégia mais adequada.
           </div>
+          <div style={{ color: "#71717a", fontSize: "max(12px, 0.88em)", marginTop: 6, maxWidth: "min(100%, 960px)", lineHeight: 1.45 }}>
+            Enquadramento MiFID com linguagem clara — ajuste mais tarde se o seu contexto mudar.
+          </div>
+          {mifidPreviouslyConfirmed ? (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                borderRadius: 12,
+                background: "rgba(45, 212, 191, 0.1)",
+                border: "1px solid rgba(45, 212, 191, 0.35)",
+                color: "#99f6e4",
+                fontSize: 14,
+                lineHeight: 1.45,
+                maxWidth: "min(100%, 960px)",
+              }}
+            >
+              <strong style={{ color: "#ecfdf5" }}>Perfil já confirmado.</strong> Se alterar respostas, confirme outra vez no último passo para aplicar.
+            </div>
+          ) : (
+            <div style={{ color: "#71717a", fontSize: 13, marginTop: 10, maxWidth: "min(100%, 960px)", lineHeight: 1.45 }}>
+              Respostas em rascunho neste dispositivo até confirmar no passo final.
+            </div>
+          )}
         </div>
 
-        <OnboardingFlowBar currentStepId="mifid" authStepHref="/client/login" />
-
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            {[1, 2, 3, 4].map((i) => {
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+            {Array.from({ length: MIFID_WIZARD_TOTAL_STEPS }, (_, idx) => idx + 1).map((i) => {
               const completed = i < wizardStep && i <= wizardMaxDone;
               const active = i === wizardStep;
-              const bg = completed ? "#22c55e" : active ? "#3b82f6" : "#1e293b";
+              const bg = completed ? "#2d6d66" : active ? "#3f9e93" : "#1a3d39";
               return (
                 <div
                   key={i}
@@ -587,15 +1089,25 @@ export default function MifidTestPage() {
               );
             })}
           </div>
-          <div style={{ color: "#64748b", fontSize: 13, fontWeight: 700 }}>Passo {wizardStep} de 4</div>
+          <div
+            style={{
+              color: "#f1f5f9",
+              fontSize: "clamp(14px, 2.8vw, 17px)",
+              fontWeight: 800,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+            }}
+          >
+            Passo {wizardStep} de {MIFID_WIZARD_TOTAL_STEPS}
+          </div>
         </div>
 
-        {((wizardStep === 1 && !experienceTier) || (wizardStep === 3 && lossZero)) ? (
+        {((wizardStep === 1 && !experienceTier) || (wizardStep === 4 && lossZero)) ? (
         <div
           style={{
-            marginBottom: 20,
-            padding: 16,
-            borderRadius: 16,
+            marginBottom: 12,
+            padding: 12,
+            borderRadius: 14,
             background: "rgba(251, 191, 36, 0.12)",
             border: "1px solid rgba(251, 191, 36, 0.45)",
             color: "#fef3c7",
@@ -609,7 +1121,7 @@ export default function MifidTestPage() {
               Escolha o nível de experiência que melhor o descreve — é rápido e ajuda-nos a adequar o serviço.
             </div>
           ) : null}
-          {wizardStep === 3 && lossZero ? (
+          {wizardStep === 4 && lossZero ? (
             <div>
               • <strong>Perda máxima aceitável (%)</strong> tem de ser <strong>maior que 0</strong>.
             </div>
@@ -617,13 +1129,13 @@ export default function MifidTestPage() {
         </div>
       ) : null}
 
-      <div style={{ maxWidth: 720, margin: "0 auto" }}>
+      <div style={{ maxWidth: MIFID_PAGE_MAX_WIDTH_PX, margin: "0 auto", width: "100%" }}>
         {wizardStep === 1 ? (
-          <div style={sectionStyle()}>
+          <div style={{ ...sectionStyle(), display: "flex", flexDirection: "column" }}>
             <div style={{ color: "#fff", fontSize: 22, fontWeight: 800, marginBottom: 8 }}>A sua experiência</div>
-            <div style={{ color: "#94a3b8", fontSize: 14, marginBottom: 20, lineHeight: 1.55 }}>
-              Indique o nível que melhor reflete a sua prática. Usamos isto para mapear anos, produtos e frequência de forma
-              consistente com o questionário.
+            <div style={{ color: "#a1a1aa", fontSize: 14, marginBottom: 20, lineHeight: 1.5 }}>
+              Uma escolha: o nível que melhor o descreve. A partir daqui alinhamos os indicadores regulamentares (anos, produtos,
+              frequência).
             </div>
             <div style={{ display: "grid", gap: 12 }}>
               {(
@@ -636,7 +1148,7 @@ export default function MifidTestPage() {
                   {
                     id: "alguma" as const,
                     title: "Alguma experiência",
-                    sub: "Já investi por algum tempo e conheço o essencial.",
+                    sub: "Já invisto há algum tempo e conheço o essencial.",
                   },
                   {
                     id: "muita" as const,
@@ -654,18 +1166,28 @@ export default function MifidTestPage() {
                     onClick={() => selectExperienceTier(id)}
                     style={{
                       textAlign: "left",
-                      padding: 18,
+                      padding: "10px 12px",
                       borderRadius: 16,
-                      border: err ? "1px solid rgba(248,113,113,0.55)" : selected ? "2px solid #60a5fa" : "1px solid #15305b",
-                      background: selected ? "rgba(59,130,246,0.14)" : "#020816",
+                      border: err
+                        ? "1px solid rgba(248,113,113,0.55)"
+                        : selected
+                          ? "2px solid rgba(45, 212, 191, 0.75)"
+                          : DECIDE_CLIENT.panelBorder,
+                      background: selected ? "rgba(45, 212, 191, 0.12)" : DECIDE_CLIENT.inputBg,
                       cursor: "pointer",
-                      color: "#fff",
-                      boxShadow: selected ? "0 0 0 3px rgba(59,130,246,0.22)" : err ? "0 0 0 3px rgba(248,113,113,0.12)" : "none",
-                      transition: "border 0.15s ease, box-shadow 0.15s ease, background 0.15s ease",
+                      color: DECIDE_CLIENT.text,
+                      boxShadow: selected
+                        ? "0 0 0 3px rgba(45, 212, 191, 0.28), 0 0 28px rgba(45, 212, 191, 0.18)"
+                        : err
+                          ? "0 0 0 3px rgba(248,113,113,0.12)"
+                          : "none",
+                      transform: selected ? "scale(1.012)" : "scale(1)",
+                      transition:
+                        "border 0.2s ease, box-shadow 0.28s ease, background 0.2s ease, transform 0.22s cubic-bezier(0.34, 1.45, 0.64, 1)",
                     }}
                   >
                     <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>{title}</div>
-                    <div style={{ color: "#94a3b8", fontSize: 14, lineHeight: 1.5 }}>{sub}</div>
+                    <div style={{ color: "#a1a1aa", fontSize: 14, lineHeight: 1.5 }}>{sub}</div>
                   </button>
                 );
               })}
@@ -686,8 +1208,14 @@ export default function MifidTestPage() {
                 Selecione uma das opções acima para continuar.
               </div>
             ) : null}
-            <div style={wizardActions}>
-              <button type="button" onClick={() => tryWizardNext(1)} style={btnPrimaryFull}>
+            {perfilAtualLinha ? (
+              <div style={perfilAtualFooterStyle}>
+                <span style={{ color: "#d4d4d4", fontWeight: 800 }}>Perfil atual: </span>
+                {perfilAtualLinha}
+              </div>
+            ) : null}
+            <div style={wizardActionsSticky}>
+              <button type="button" onClick={() => tryWizardNext(1)} style={btnPrimaryCta}>
                 Continuar
               </button>
             </div>
@@ -695,127 +1223,70 @@ export default function MifidTestPage() {
         ) : null}
 
         {wizardStep === 2 ? (
-          <div style={sectionStyle()}>
-            <div style={{ color: "#fff", fontSize: 22, fontWeight: 800, marginBottom: 8 }}>Como lê os mercados</div>
-            <div style={{ color: "#94a3b8", fontSize: 14, marginBottom: 20, lineHeight: 1.55 }}>
-              Oscilações no dia a dia e perdas temporárias fazem parte do investimento. Indique o que melhor o descreve.
+          <div style={{ ...sectionStyle(), display: "flex", flexDirection: "column" }}>
+            <div style={{ color: "#fff", fontSize: 22, fontWeight: 800, marginBottom: 8 }}>Como reagem os mercados</div>
+            <div style={{ color: "#a1a1aa", fontSize: 14, marginBottom: 10, lineHeight: 1.5 }}>
+              Preços sobem e descem no dia a dia — esta escolha define se está alinhado com essa realidade.
             </div>
-            <div>
-              <div style={{ color: "#9fb3d1", marginBottom: 8 }}>
-                Sente-se confortável com oscilações e com possíveis perdas temporárias antes de recuperação?
-              </div>
-              <select
-                value={mercadosConfortoUnificado}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setEntendeVolatilidade(v);
-                  setEntendeDrawdown(v);
-                }}
-                style={(() => {
-                  const step2Err =
-                    (missingSet.has("Compreende volatilidade") || missingSet.has("Compreende drawdown")) &&
-                    (confirmAttempted || attemptedFromStep === 2);
-                  return {
-                    ...inputStyle(),
-                    border: step2Err ? "1px solid #f87171" : "1px solid #15305b",
-                    boxShadow: step2Err ? "0 0 0 3px rgba(248,113,113,0.14)" : "none",
-                  };
-                })()}
-              >
-                <option value="">Selecionar…</option>
-                <option value="sim">Sim</option>
-                <option value="nao">Não</option>
-              </select>
+            <div style={{ color: "#71717a", fontSize: 12, marginBottom: 12, lineHeight: 1.45 }}>
+              Isto ajuda-nos a definir o nível de risco adequado.
             </div>
-            <div style={wizardActions}>
-              <button type="button" onClick={wizardBack} style={btnGhostSecondary}>
-                Voltar
-              </button>
-              <button type="button" onClick={() => tryWizardNext(2)} style={btnPrimaryFull}>
-                Continuar
-              </button>
+            <div style={{ color: "#e2e8f0", fontSize: 15, fontWeight: 800, marginBottom: 14, lineHeight: 1.4 }}>
+              Está confortável com variações no valor do investimento no curto prazo?
             </div>
-          </div>
-        ) : null}
-
-        {wizardStep === 3 ? (
-          <div style={sectionStyle()}>
-            <div style={{ color: "#fff", fontSize: 22, fontWeight: 800, marginBottom: 8 }}>Os seus objetivos</div>
-            <div style={{ color: "#94a3b8", fontSize: 14, marginBottom: 20, lineHeight: 1.55 }}>
-              Tolerância a perdas, horizonte e situação financeira ajudam-nos a adequar o serviço.
+            <div style={{ display: "grid", gap: 12 }}>
+              {(
+                [
+                  {
+                    id: "sim" as const,
+                    title: "Sim, estou confortável",
+                    sub: "Aceito que o valor possa variar de dia para dia.",
+                  },
+                  {
+                    id: "nao" as const,
+                    title: "Não, prefiro evitar oscilações",
+                    sub: "Quero menor movimento no curto prazo.",
+                  },
+                ] as const
+              ).map(({ id, title, sub }) => {
+                const selected = entendeVolatilidade === id;
+                const step2Err =
+                  missingSet.has("Compreende volatilidade") && (confirmAttempted || attemptedFromStep === 2);
+                const err = step2Err && !entendeVolatilidade;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setEntendeVolatilidade(id)}
+                    style={{
+                      textAlign: "left",
+                      padding: "10px 12px",
+                      borderRadius: 16,
+                      border: err
+                        ? "1px solid rgba(248,113,113,0.55)"
+                        : selected
+                          ? "2px solid rgba(45, 212, 191, 0.75)"
+                          : DECIDE_CLIENT.panelBorder,
+                      background: selected ? "rgba(45, 212, 191, 0.12)" : DECIDE_CLIENT.inputBg,
+                      cursor: "pointer",
+                      color: DECIDE_CLIENT.text,
+                      boxShadow: selected
+                        ? "0 0 0 3px rgba(45, 212, 191, 0.28), 0 0 28px rgba(45, 212, 191, 0.18)"
+                        : err
+                          ? "0 0 0 3px rgba(248,113,113,0.12)"
+                          : "none",
+                      transform: selected ? "scale(1.012)" : "scale(1)",
+                      transition:
+                        "border 0.2s ease, box-shadow 0.28s ease, background 0.2s ease, transform 0.22s cubic-bezier(0.34, 1.45, 0.64, 1)",
+                    }}
+                  >
+                    <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>{title}</div>
+                    <div style={{ color: "#a1a1aa", fontSize: 14, lineHeight: 1.5 }}>{sub}</div>
+                  </button>
+                );
+              })}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div>
-                <div style={{ color: "#9fb3d1", marginBottom: 8 }}>Perda máxima aceitável (%)</div>
-                <input
-                  type="number"
-                  value={aceitaPerda}
-                  onChange={(e) => setAceitaPerda(parseRequiredNumber(e.target.value))}
-                  style={fieldStyleIfMissing("Perda máxima aceitável (%)")}
-                />
-              </div>
-              <div>
-                <div style={{ color: "#9fb3d1", marginBottom: 8 }}>Objetivo principal</div>
-                <select value={objetivo} onChange={(e) => setObjetivo(e.target.value)} style={fieldStyleIfMissing("Objetivo")}>
-                  <option value="">Selecionar…</option>
-                  <option value="preservacao">Preservação</option>
-                  <option value="equilibrio">Equilíbrio</option>
-                  <option value="crescimento">Crescimento</option>
-                </select>
-              </div>
-              <div>
-                <div style={{ color: "#9fb3d1", marginBottom: 8 }}>Horizonte de investimento (anos)</div>
-                <input
-                  type="number"
-                  value={horizonte}
-                  onChange={(e) => setHorizonte(parseRequiredNumber(e.target.value))}
-                  style={fieldStyleIfMissing("Horizonte (anos)")}
-                />
-              </div>
-              <div>
-                <div style={{ color: "#9fb3d1", marginBottom: 8 }}>Necessidade de liquidez</div>
-                <select value={liquidez} onChange={(e) => setLiquidez(e.target.value)} style={fieldStyleIfMissing("Necessidade de liquidez")}>
-                  <option value="">Selecionar…</option>
-                  <option value="baixa">Baixa</option>
-                  <option value="media">Média</option>
-                  <option value="alta">Alta</option>
-                </select>
-              </div>
-              <div>
-                <div style={{ color: "#9fb3d1", marginBottom: 8 }}>Rendimentos regulares estáveis</div>
-                <select
-                  value={rendimentosEstaveis}
-                  onChange={(e) => setRendimentosEstaveis(e.target.value)}
-                  style={fieldStyleIfMissing("Rendimentos estáveis")}
-                >
-                  <option value="">Selecionar…</option>
-                  <option value="sim">Sim</option>
-                  <option value="nao">Não</option>
-                </select>
-              </div>
-              <div>
-                <div style={{ color: "#9fb3d1", marginBottom: 8 }}>Património financeiro total (€)</div>
-                <input
-                  type="number"
-                  value={patrimonio}
-                  onChange={(e) => setPatrimonio(parseRequiredNumber(e.target.value))}
-                  style={fieldStyleIfMissing("Património financeiro (€)")}
-                />
-              </div>
-              <div style={{ gridColumn: "1 / -1" }}>
-                <div style={{ color: "#9fb3d1", marginBottom: 8 }}>Valor a investir (confirmado no passo anterior)</div>
-                <input
-                  type="number"
-                  value={montante}
-                  disabled
-                  style={{
-                    ...fieldStyleIfMissing("Montante do Registo"),
-                    opacity: 0.65,
-                  }}
-                />
-              </div>
-            </div>
-            {(attemptedFromStep === 3 || confirmAttempted) && step3MissingFields.length > 0 ? (
+            {attemptedFromStep === 2 && stepVolMissingFields.length > 0 ? (
               <div
                 style={{
                   marginTop: 16,
@@ -828,42 +1299,420 @@ export default function MifidTestPage() {
                   lineHeight: 1.5,
                 }}
               >
-                Falta completar: {step3MissingFields.join(" · ")}.
+                Escolha uma das opções acima para continuar.
               </div>
             ) : null}
-            {!step3ReadyForSummary ? (
-              <div style={{ marginTop: 12, color: "#64748b", fontSize: 13, lineHeight: 1.5 }}>
-                Preencha todos os campos obrigatórios deste passo para ver o resumo.
+            {perfilAtualLinha ? (
+              <div style={perfilAtualFooterStyle}>
+                <span style={{ color: "#d4d4d4", fontWeight: 800 }}>Perfil atual: </span>
+                {perfilAtualLinha}
               </div>
             ) : null}
-            <div style={wizardActions}>
-              <button type="button" onClick={wizardBack} style={btnGhostSecondary}>
-                Voltar
-              </button>
-              <button
-                type="button"
-                disabled={!step3ReadyForSummary}
-                aria-disabled={!step3ReadyForSummary}
-                title={!step3ReadyForSummary ? "Complete os campos em falta" : undefined}
-                onClick={() => tryWizardNext(3)}
-                style={{
-                  ...btnPrimaryFull,
-                  opacity: step3ReadyForSummary ? 1 : 0.48,
-                  cursor: step3ReadyForSummary ? "pointer" : "not-allowed",
-                  boxShadow: step3ReadyForSummary ? btnPrimary.boxShadow : "none",
-                }}
-              >
-                Ver resumo
+            <div style={wizardActionsSticky}>
+              <button type="button" onClick={() => tryWizardNext(2)} style={btnPrimaryCta}>
+                Continuar
               </button>
             </div>
           </div>
         ) : null}
 
-        {wizardStep === 4 && !canConfirmMifid ? (
+        {wizardStep === 3 ? (
+          <div style={{ ...sectionStyle(), display: "flex", flexDirection: "column" }}>
+            <div style={{ color: "#fff", fontSize: 22, fontWeight: 800, marginBottom: 8 }}>Quedas antes de recuperar</div>
+            <div style={{ color: "#a1a1aa", fontSize: 14, marginBottom: 10, lineHeight: 1.5 }}>
+              Às vezes a carteira cai e só recupera mais tarde — precisamos de saber se compreende esse risco.
+            </div>
+            <div style={{ color: "#71717a", fontSize: 12, marginBottom: 12, lineHeight: 1.45 }}>
+              Isto ajuda-nos a calibrar a tolerância a quedas temporárias (drawdown).
+            </div>
+            <div style={{ color: "#e2e8f0", fontSize: 15, fontWeight: 800, marginBottom: 14, lineHeight: 1.4 }}>
+              Aceita que pode haver períodos em que perde valor antes de voltar a subir?
+            </div>
+            <div style={{ display: "grid", gap: 12 }}>
+              {(
+                [
+                  {
+                    id: "sim" as const,
+                    title: "Sim, compreendo",
+                    sub: "Sei que investir implica períodos em que o valor pode cair antes de recuperar.",
+                  },
+                  {
+                    id: "nao" as const,
+                    title: "Não, não estou confortável com isso",
+                    sub: "Prefiro evitar cenários com quedas prolongadas antes de recuperação.",
+                  },
+                ] as const
+              ).map(({ id, title, sub }) => {
+                const selected = entendeDrawdown === id;
+                const step3Err =
+                  missingSet.has("Compreende drawdown") && (confirmAttempted || attemptedFromStep === 3);
+                const err = step3Err && !entendeDrawdown;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setEntendeDrawdown(id)}
+                    style={{
+                      textAlign: "left",
+                      padding: "10px 12px",
+                      borderRadius: 16,
+                      border: err
+                        ? "1px solid rgba(248,113,113,0.55)"
+                        : selected
+                          ? "2px solid rgba(45, 212, 191, 0.75)"
+                          : DECIDE_CLIENT.panelBorder,
+                      background: selected ? "rgba(45, 212, 191, 0.12)" : DECIDE_CLIENT.inputBg,
+                      cursor: "pointer",
+                      color: DECIDE_CLIENT.text,
+                      boxShadow: selected
+                        ? "0 0 0 3px rgba(45, 212, 191, 0.28), 0 0 28px rgba(45, 212, 191, 0.18)"
+                        : err
+                          ? "0 0 0 3px rgba(248,113,113,0.12)"
+                          : "none",
+                      transform: selected ? "scale(1.012)" : "scale(1)",
+                      transition:
+                        "border 0.2s ease, box-shadow 0.28s ease, background 0.2s ease, transform 0.22s cubic-bezier(0.34, 1.45, 0.64, 1)",
+                    }}
+                  >
+                    <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>{title}</div>
+                    <div style={{ color: "#a1a1aa", fontSize: 14, lineHeight: 1.5 }}>{sub}</div>
+                  </button>
+                );
+              })}
+            </div>
+            {attemptedFromStep === 3 && stepDdMissingFields.length > 0 ? (
+              <div
+                style={{
+                  marginTop: 16,
+                  background: "#2a0a0a",
+                  border: "1px solid #7f1d1d",
+                  borderRadius: 14,
+                  padding: 14,
+                  color: "#fee2e2",
+                  fontSize: 14,
+                  lineHeight: 1.5,
+                }}
+              >
+                Escolha uma das opções acima para continuar.
+              </div>
+            ) : null}
+            {perfilAtualLinha ? (
+              <div style={perfilAtualFooterStyle}>
+                <span style={{ color: "#d4d4d4", fontWeight: 800 }}>Perfil atual: </span>
+                {perfilAtualLinha}
+              </div>
+            ) : null}
+            <div style={wizardActionsSticky}>
+              <button type="button" onClick={() => tryWizardNext(3)} style={btnPrimaryCta}>
+                Continuar
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {wizardStep === 4 ? (
+          <div style={{ ...sectionStyle(), display: "flex", flexDirection: "column" }}>
+            <div style={{ color: "#fff", fontSize: 22, fontWeight: 800, marginBottom: 8 }}>Objetivos e tolerância ao risco</div>
+            <div style={{ color: "#cbd5e1", fontSize: 15, marginBottom: 8, lineHeight: 1.5, maxWidth: "min(100%, 960px)" }}>
+              Estas respostas definem o seu perfil e a estratégia sugerida — alinham risco, horizonte e objetivo ao serviço
+              DECIDE (enquadramento MiFID).
+            </div>
+            <div style={{ color: "#71717a", fontSize: 13, marginBottom: 12, lineHeight: 1.5, maxWidth: "min(100%, 960px)" }}>
+              Não precisa de valores exactos: escolha o que melhor o descreve em cada linha.
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <div style={mifidStep4BlockTitle}>Tolerância a quedas da carteira</div>
+              <div style={{ color: "#a1a1aa", fontSize: 13, marginBottom: 8, lineHeight: 1.45 }}>
+                Até que queda estaria preparado para tolerar, em cenários adversos?
+              </div>
+              <div style={mifidChoiceInlineRow}>
+                {MIFID_LOSS_CARD_CHOICES.map(({ id, label, sub, value }) => {
+                  const selected = lossTierIdFromValue(typeof aceitaPerda === "number" ? aceitaPerda : "") === id;
+                  const err =
+                    missingSet.has("Perda máxima aceitável (%)") && (confirmAttempted || attemptedFromStep === 4) && !aceitaPerda;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setAceitaPerda(value)}
+                      style={{ ...mifidChoiceCardBase(selected, err), ...mifidChoiceInlineBtn }}
+                    >
+                      <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 4, lineHeight: 1.25 }}>{label}</div>
+                      <div style={{ color: "#a1a1aa", fontSize: 12, lineHeight: 1.35 }}>{sub}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <div style={mifidStep4BlockTitle}>Objetivo principal</div>
+              <div style={mifidChoiceInlineRow}>
+                {MIFID_OBJETIVO_CARDS.map(({ id, label, sub }) => {
+                  const selected = objetivo === id;
+                  const err = missingSet.has("Objetivo") && (confirmAttempted || attemptedFromStep === 4) && !objetivo;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setObjetivo(id)}
+                      style={{ ...mifidChoiceCardBase(selected, err), ...mifidChoiceInlineBtn }}
+                    >
+                      <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 4, lineHeight: 1.25 }}>{label}</div>
+                      <div style={{ color: "#a1a1aa", fontSize: 12, lineHeight: 1.35 }}>{sub}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <div style={mifidStep4BlockTitle}>Horizonte de investimento</div>
+              <div style={{ color: "#a1a1aa", fontSize: 13, marginBottom: 8, lineHeight: 1.45 }}>
+                Durante quanto tempo pode manter o investimento sem precisar desse dinheiro?
+              </div>
+              <div style={mifidChoiceInlineRow}>
+                {MIFID_HORIZONTE_CARDS.map(({ id, label, sub, value }) => {
+                  const selected = horizonteTierFromValue(typeof horizonte === "number" ? horizonte : "") === id;
+                  const err =
+                    missingSet.has("Horizonte (anos)") && (confirmAttempted || attemptedFromStep === 4) && !horizonte;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setHorizonte(value)}
+                      style={{ ...mifidChoiceCardBase(selected, err), ...mifidChoiceInlineBtn }}
+                    >
+                      <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 4, lineHeight: 1.25 }}>{label}</div>
+                      <div style={{ color: "#a1a1aa", fontSize: 12, lineHeight: 1.35 }}>{sub}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {(attemptedFromStep === 4 || confirmAttempted) && stepObj4aMissingFields.length > 0 ? (
+              <div
+                style={{
+                  marginTop: 16,
+                  background: "#2a0a0a",
+                  border: "1px solid #7f1d1d",
+                  borderRadius: 14,
+                  padding: 14,
+                  color: "#fee2e2",
+                  fontSize: 14,
+                  lineHeight: 1.5,
+                }}
+              >
+                Falta completar: {stepObj4aMissingFields.join(" · ")}.
+              </div>
+            ) : null}
+            {!step4aReady ? (
+              <div style={{ marginTop: 12, color: "#71717a", fontSize: 13, lineHeight: 1.5 }}>
+                Complete uma opção em cada linha para continuar.
+              </div>
+            ) : null}
+            {perfilAtualLinha ? (
+              <div style={perfilAtualFooterStyle}>
+                <span style={{ color: "#d4d4d4", fontWeight: 800 }}>Perfil atual: </span>
+                {perfilAtualLinha}
+              </div>
+            ) : null}
+            <div style={wizardActionsSticky}>
+              <button
+                type="button"
+                disabled={!step4aReady}
+                aria-disabled={!step4aReady}
+                title={!step4aReady ? "Complete as escolhas em falta" : undefined}
+                onClick={() => tryWizardNext(4)}
+                style={{
+                  ...btnPrimaryCta,
+                  opacity: step4aReady ? 1 : 0.48,
+                  cursor: step4aReady ? "pointer" : "not-allowed",
+                  boxShadow: step4aReady ? btnPrimary.boxShadow : "none",
+                }}
+              >
+                Continuar
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {wizardStep === 5 ? (
+          <div style={{ ...sectionStyle(), display: "flex", flexDirection: "column" }}>
+            <div style={{ color: "#fff", fontSize: 22, fontWeight: 800, marginBottom: 8 }}>Liquidez, rendimentos e património</div>
+            <div style={{ color: "#cbd5e1", fontSize: 15, marginBottom: 8, lineHeight: 1.5, maxWidth: "min(100%, 960px)" }}>
+              Estas respostas completam o enquadramento MiFID — situação financeira e necessidades de liquidez.
+            </div>
+            <div style={{ color: "#71717a", fontSize: 13, marginBottom: 12, lineHeight: 1.5, maxWidth: "min(100%, 960px)" }}>
+              Escolha o que melhor o descreve; em ecrãs estreitos pode deslizar horizontalmente em cada linha.
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <div style={mifidStep4BlockTitle}>Necessidade de liquidez</div>
+              <div style={mifidChoiceInlineRow}>
+                {MIFID_LIQUIDEZ_CARDS.map(({ id, label, sub }) => {
+                  const selected = liquidez === id;
+                  const err =
+                    missingSet.has("Necessidade de liquidez") &&
+                    (confirmAttempted || attemptedFromStep === 5) &&
+                    !liquidez;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setLiquidez(id)}
+                      style={{ ...mifidChoiceCardBase(selected, err), ...mifidChoiceInlineBtn }}
+                    >
+                      <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 4, lineHeight: 1.25 }}>{label}</div>
+                      <div style={{ color: "#a1a1aa", fontSize: 12, lineHeight: 1.35 }}>{sub}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <div style={mifidStep4BlockTitle}>Rendimentos regulares</div>
+              <div style={{ color: "#a1a1aa", fontSize: 13, marginBottom: 8, lineHeight: 1.45 }}>
+                Depende de rendimentos regulares deste investimento?
+              </div>
+              <div style={mifidChoiceInlineRow}>
+                {(
+                  [
+                    {
+                      id: "sim" as const,
+                      title: "Sim, preciso de rendimento regular",
+                      sub: "Ex.: complemento de rendimentos ou pagamentos periódicos.",
+                    },
+                    {
+                      id: "nao" as const,
+                      title: "Não, foco no crescimento",
+                      sub: "Reinvestimento ou valorização ao longo do tempo.",
+                    },
+                  ] as const
+                ).map(({ id, title, sub }) => {
+                  const selected = rendimentosEstaveis === id;
+                  const err =
+                    missingSet.has("Rendimentos estáveis") &&
+                    (confirmAttempted || attemptedFromStep === 5) &&
+                    !rendimentosEstaveis;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setRendimentosEstaveis(id)}
+                      style={{ ...mifidChoiceCardBase(selected, err), ...mifidChoiceInlineBtn }}
+                    >
+                      <div style={{ fontWeight: 900, fontSize: 13, marginBottom: 4, lineHeight: 1.25 }}>{title}</div>
+                      <div style={{ color: "#a1a1aa", fontSize: 12, lineHeight: 1.35 }}>{sub}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <div style={mifidStep4BlockTitle}>Património financeiro total (estimativa)</div>
+              <div style={mifidChoiceInlineRow}>
+                {MIFID_PATRIMONIO_CARDS.map(({ id, label, sub, value }) => {
+                  const selected = patrimonioTierFromValue(typeof patrimonio === "number" ? patrimonio : "") === id;
+                  const err =
+                    missingSet.has("Património financeiro (€)") &&
+                    (confirmAttempted || attemptedFromStep === 5) &&
+                    !patrimonio;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setPatrimonio(value)}
+                      style={{ ...mifidChoiceCardBase(selected, err), ...mifidChoiceInlineBtn }}
+                    >
+                      <div style={{ fontWeight: 900, fontSize: 13, marginBottom: 4, lineHeight: 1.25 }}>{label}</div>
+                      <div style={{ color: "#a1a1aa", fontSize: 11, lineHeight: 1.35 }}>{sub}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginBottom: 8,
+                padding: 14,
+                borderRadius: 14,
+                background: "rgba(15, 23, 42, 0.65)",
+                border: "1px solid rgba(148, 163, 184, 0.25)",
+              }}
+            >
+              <div style={{ color: "#a1a1aa", fontSize: 12, fontWeight: 700, marginBottom: 6, letterSpacing: "0.04em" }}>
+                Valor a investir (passo anterior)
+              </div>
+              {typeof montante === "number" && montante > 0 ? (
+                <div style={{ color: "#f8fafc", fontSize: 20, fontWeight: 800 }}>
+                  {montante.toLocaleString("pt-PT")} €
+                </div>
+              ) : (
+                <div style={{ color: "#fb923c", fontSize: 14 }}>
+                  Montante em falta — conclua primeiro o passo «Valor a investir» no funil.
+                </div>
+              )}
+            </div>
+
+            {(attemptedFromStep === 5 || confirmAttempted) && stepObj4bMissingFields.length > 0 ? (
+              <div
+                style={{
+                  marginTop: 16,
+                  background: "#2a0a0a",
+                  border: "1px solid #7f1d1d",
+                  borderRadius: 14,
+                  padding: 14,
+                  color: "#fee2e2",
+                  fontSize: 14,
+                  lineHeight: 1.5,
+                }}
+              >
+                Falta completar: {stepObj4bMissingFields.join(" · ")}.
+              </div>
+            ) : null}
+            {!step4bReady ? (
+              <div style={{ marginTop: 12, color: "#71717a", fontSize: 13, lineHeight: 1.5 }}>
+                Complete uma opção em cada linha (e o montante no funil, se aplicável) para ver o resumo do perfil.
+              </div>
+            ) : null}
+            {perfilAtualLinha ? (
+              <div style={perfilAtualFooterStyle}>
+                <span style={{ color: "#d4d4d4", fontWeight: 800 }}>Perfil atual: </span>
+                {perfilAtualLinha}
+              </div>
+            ) : null}
+            <div style={wizardActionsSticky}>
+              <button
+                type="button"
+                disabled={!step4bReady}
+                aria-disabled={!step4bReady}
+                title={!step4bReady ? "Complete as escolhas em falta" : undefined}
+                onClick={() => tryWizardNext(5)}
+                style={{
+                  ...btnPrimaryCta,
+                  opacity: step4bReady ? 1 : 0.48,
+                  cursor: step4bReady ? "pointer" : "not-allowed",
+                  boxShadow: step4bReady ? btnPrimary.boxShadow : "none",
+                }}
+              >
+                Ver o seu perfil
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {wizardStep === 6 && !canConfirmMifid ? (
           <div style={sectionStyle()}>
             <div style={{ color: "#fff", fontSize: 20, fontWeight: 800, marginBottom: 12 }}>Resumo indisponível</div>
-            <p style={{ color: "#94a3b8", lineHeight: 1.6, marginBottom: 12 }}>
-              Ainda faltam respostas para calcular o perfil. Volte aos passos anteriores para as completar.
+            <p style={{ color: "#a1a1aa", lineHeight: 1.6, marginBottom: 12 }}>
+              Ainda faltam respostas para calcular o perfil. Utilize a navegação do funil no topo para rever os passos
+              anteriores.
             </p>
             {missingMifidFields.length > 0 ? (
               <div
@@ -881,119 +1730,201 @@ export default function MifidTestPage() {
                 <strong style={{ color: "#fde68a" }}>Em falta:</strong> {missingMifidFields.join(" · ")}
               </div>
             ) : null}
-            <button type="button" onClick={() => setWizardStep(3)} style={btnPrimaryFull}>
-              Voltar ao questionário
-            </button>
+            {perfilAtualLinha ? (
+              <div style={{ ...perfilAtualFooterStyle, marginTop: 0 }}>
+                <span style={{ color: "#d4d4d4", fontWeight: 800 }}>Perfil atual: </span>
+                {perfilAtualLinha}
+              </div>
+            ) : null}
           </div>
         ) : null}
 
-        {wizardStep === 4 && canConfirmMifid ? (
-          <div style={{ display: "grid", gap: 20 }}>
-            <div style={sectionStyle()}>
-              <div style={{ color: "#94a3b8", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>O SEU PERFIL</div>
-              <div style={{ color: "#fff", fontSize: 32, fontWeight: 900, marginBottom: 12 }}>{profileLabelPt(result.profile)}</div>
-              <p style={{ color: "#cbd5e1", fontSize: 16, lineHeight: 1.65, margin: 0 }}>{profileExplanationPt(result.profile)}</p>
+        {wizardStep === 6 && canConfirmMifid ? (
+          <>
+            <div
+              style={{
+                display: "grid",
+                gap: 8,
+                paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
+                boxSizing: "border-box",
+              }}
+            >
               <div
                 style={{
-                  marginTop: 18,
-                  padding: 14,
-                  borderRadius: 14,
-                  background: "rgba(37,99,235,0.12)",
-                  border: "1px solid rgba(59,130,246,0.35)",
-                  color: "#bfdbfe",
-                  fontSize: 15,
-                  lineHeight: 1.55,
+                  ...sectionStyle(),
+                  padding: "14px 14px 12px",
+                  border: "1px solid rgba(45, 212, 191, 0.4)",
+                  boxShadow: `${DECIDE_CLIENT.cardShadow}, 0 0 0 1px rgba(45, 212, 191, 0.18), 0 0 40px rgba(45, 212, 191, 0.1)`,
                 }}
               >
-                O valor que indicou investir representa cerca de{" "}
-                <strong style={{ color: "#fff" }}>{(result.investmentRatio * 100).toFixed(1)}%</strong> do património financeiro
-                indicado.
-              </div>
-            </div>
+                <div style={{ color: "#d4d4d4", fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", marginBottom: 8 }}>
+                  PERFIL CALCULADO PARA SI
+                </div>
+                <div
+                  style={{
+                    color: "#e2e8f0",
+                    fontSize: "clamp(16px, 2.1vw, 18px)",
+                    fontWeight: 700,
+                    lineHeight: 1.25,
+                    marginBottom: 8,
+                  }}
+                >
+                  Este é o seu perfil de investidor
+                </div>
+                <div
+                  style={{
+                    padding: "12px 12px 14px",
+                    marginBottom: 10,
+                    borderRadius: 14,
+                    background:
+                      "radial-gradient(ellipse 90% 140% at 50% 0%, rgba(45, 212, 191, 0.14) 0%, transparent 58%)",
+                    border: "1px solid rgba(45, 212, 191, 0.28)",
+                    boxShadow: "0 0 36px rgba(45, 212, 191, 0.09), inset 0 1px 0 rgba(255,255,255,0.05)",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#fff",
+                      fontSize: "clamp(28px, 6vw, 40px)",
+                      fontWeight: 900,
+                      lineHeight: 1.05,
+                      letterSpacing: "-0.03em",
+                      textShadow: "0 0 36px rgba(45, 212, 191, 0.32), 0 2px 20px rgba(0,0,0,0.35)",
+                    }}
+                  >
+                    {profileLabelPt(result.profile)}
+                  </div>
+                </div>
+                <p style={{ color: "#cbd5e1", fontSize: 14, lineHeight: 1.45, margin: "0 0 8px" }}>
+                  {profileExplanationPt(result.profile)}
+                </p>
 
-            <div style={sectionStyle()}>
-              <div style={{ color: "#fff", fontSize: 18, fontWeight: 800, marginBottom: 12 }}>Resumo e validação</div>
+                <div
+                  style={{
+                    marginBottom: 8,
+                    padding: "8px 10px",
+                    borderRadius: 10,
+                    background: "rgba(15, 23, 42, 0.55)",
+                    border: "1px solid rgba(148, 163, 184, 0.2)",
+                  }}
+                >
+                  <div style={{ color: "#e2e8f0", fontSize: 12, fontWeight: 800, marginBottom: 4, lineHeight: 1.3 }}>
+                    O que isto significa para si
+                  </div>
+                  <p style={{ margin: 0, color: "#a1a1aa", fontSize: 12, lineHeight: 1.4 }}>
+                    {profilePracticalOneLinePt(result.profile)}
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ color: "#71717a", fontSize: 11, fontWeight: 800, marginBottom: 3 }}>Resumo das escolhas</div>
+                  <p style={{ margin: 0, color: "#a1a1aa", fontSize: 12, lineHeight: 1.4 }}>{whyProfileCompactLine}</p>
+                </div>
+
+                <div
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 10,
+                    background: DECIDE_CLIENT.infoBg,
+                    border: DECIDE_CLIENT.infoBorder,
+                    color: DECIDE_CLIENT.infoText,
+                    fontSize: 13,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  O montante representa ~<strong style={{ color: "#fff" }}>{(result.investmentRatio * 100).toFixed(1)}%</strong> do
+                  seu património.
+                </div>
+              </div>
+
               {result.warnings.length ? (
+                <div style={{ ...sectionStyle(), padding: "10px 12px" }}>
+                  <div style={{ color: "#fff", fontSize: 14, fontWeight: 800, marginBottom: 6 }}>Coerência</div>
+                  <div
+                    style={{
+                      background: "#2a0a0a",
+                      border: "1px solid #7f1d1d",
+                      borderRadius: 10,
+                      padding: 10,
+                      color: "#fee2e2",
+                      fontSize: 13,
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    {result.warnings.map((warning, idx) => (
+                      <div key={idx} style={{ marginBottom: idx < result.warnings.length - 1 ? 6 : 0 }}>
+                        • {warning}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p style={{ color: "#86efac", fontSize: 12, fontWeight: 700, margin: "0 0 2px", lineHeight: 1.35 }}>
+                  Perfil validado sem alertas.
+                </p>
+              )}
+
+              <details
+                style={{
+                  ...sectionStyle(),
+                  padding: "8px 12px",
+                  cursor: "pointer",
+                  marginTop: 0,
+                }}
+              >
+                <summary style={{ color: "#a1a1aa", fontWeight: 700, fontSize: 13, listStyle: "none" }}>
+                  Como chegámos a este perfil
+                </summary>
+                <div style={{ marginTop: 8, color: "#71717a", fontSize: 12, lineHeight: 1.45 }}>
+                  <p style={{ margin: "0 0 6px" }}>
+                    Soma de indicadores: até 5 → conservador · 6 a 9 → moderado · 10+ → dinâmico.
+                  </p>
+                  <div style={{ color: "#a1a1aa" }}>
+                    Conhecimento {result.knowledgeScore} · Risco/objetivo {result.riskScore} · Total {result.total}
+                  </div>
+                </div>
+              </details>
+
+              {confirmAttempted && missingMifidFields.length > 0 ? (
                 <div
                   style={{
                     background: "#2a0a0a",
                     border: "1px solid #7f1d1d",
-                    borderRadius: 14,
-                    padding: 14,
+                    borderRadius: 12,
+                    padding: 12,
                     color: "#fee2e2",
+                    lineHeight: 1.5,
+                    fontSize: 13,
                   }}
                 >
-                  {result.warnings.map((warning, idx) => (
-                    <div key={idx} style={{ marginBottom: 8 }}>
-                      • {warning}
-                    </div>
-                  ))}
+                  Faltam preencher: {missingMifidFields.join(", ")}.
                 </div>
-              ) : (
-                <div
-                  style={{
-                    background: "#052e1a",
-                    border: "1px solid #166534",
-                    borderRadius: 14,
-                    padding: 14,
-                    color: "#dcfce7",
-                  }}
-                >
-                  Com base nas respostas, não foram detetados alertas críticos neste preenchimento.
-                </div>
-              )}
+              ) : null}
             </div>
 
-            <details style={{ ...sectionStyle(), cursor: "pointer" }}>
-              <summary style={{ color: "#94a3b8", fontWeight: 700, fontSize: 14 }}>Detalhes do cálculo (opcional)</summary>
-              <div style={{ marginTop: 14, color: "#64748b", fontSize: 13, lineHeight: 1.6 }}>
-                <p style={{ margin: "0 0 10px" }}>
-                  <strong style={{ color: "#94a3b8" }}>Regra interna do perfil (soma dos indicadores):</strong> até 5 → conservador · 6
-                  a 9 → moderado · 10 ou mais → dinâmico. O resultado depende do conjunto das respostas.
-                </p>
-                <div style={{ color: "#cbd5e1" }}>
-                  Indicador conhecimento: {result.knowledgeScore} · Indicador objetivo/risco: {result.riskScore} · Total: {result.total}
+            <div style={mifidStep6FixedCtaBar}>
+              <div style={{ maxWidth: MIFID_PAGE_MAX_WIDTH_PX, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
+                <div style={wizardActionsStickyPageButtonRow}>
+                  <button
+                    type="button"
+                    onClick={confirmAndGoKyc}
+                    disabled={!canConfirmMifid}
+                    style={{
+                      ...btnPrimaryCta,
+                      opacity: canConfirmMifid ? 1 : 0.45,
+                      cursor: canConfirmMifid ? "pointer" : "not-allowed",
+                      boxShadow: canConfirmMifid ? btnPrimary.boxShadow : "none",
+                    }}
+                  >
+                    Confirmar perfil e avançar
+                  </button>
+                </div>
+                <div style={{ color: "#71717a", fontSize: 10, lineHeight: 1.35, textAlign: "center", width: "100%", marginTop: 4 }}>
+                  A seguir: identidade · corretora depois
                 </div>
               </div>
-            </details>
-
-            {confirmAttempted && missingMifidFields.length > 0 ? (
-              <div
-                style={{
-                  background: "#2a0a0a",
-                  border: "1px solid #7f1d1d",
-                  borderRadius: 14,
-                  padding: 14,
-                  color: "#fee2e2",
-                  lineHeight: 1.6,
-                }}
-              >
-                Faltam preencher: {missingMifidFields.join(", ")}.
-              </div>
-            ) : null}
-
-            <div style={{ ...wizardActions, marginTop: 0 }}>
-              <button type="button" onClick={wizardBack} style={btnGhostSecondary}>
-                Voltar e editar
-              </button>
-              <button
-                type="button"
-                onClick={confirmAndGoKyc}
-                disabled={!canConfirmMifid}
-                style={{
-                  ...btnPrimaryFull,
-                  opacity: canConfirmMifid ? 1 : 0.45,
-                  cursor: canConfirmMifid ? "pointer" : "not-allowed",
-                  boxShadow: canConfirmMifid ? btnPrimary.boxShadow : "none",
-                }}
-              >
-                Continuar para verificação
-              </button>
-              <div style={{ color: "#64748b", fontSize: 12, lineHeight: 1.5, textAlign: "center" }}>
-                Seguimos agora para a verificação de identidade. A ligação à corretora fica num passo posterior.
-              </div>
             </div>
-          </div>
+          </>
         ) : null}
       </div>
       </div>

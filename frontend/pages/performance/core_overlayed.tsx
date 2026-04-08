@@ -1,5 +1,8 @@
 import React, { useMemo, useState } from "react";
 import Head from "next/head";
+import ThousandsNumberInput, { asThousandsNumberChange } from "../../components/ThousandsNumberInput";
+import { onThousandsFieldRowPointerDownCapture } from "../../lib/thousandsFieldRowFocus";
+import { DECIDE_DASHBOARD } from "../../lib/decideClientTheme";
 
 function firstFinite(arr) {
   for (const v of arr || []) {
@@ -108,10 +111,10 @@ function MiniChart({ data, showVolMatched }) {
     return p;
   }
 
-  const cBench = "#93c5fd";
-  const cRaw = "#e5e7eb";
-  const cOver = "#22c55e";
-  const cVM = "#f59e0b";
+  const cBench = "#36d6b3";
+  const cRaw = "var(--text-secondary)";
+  const cOver = "var(--accent-primary)";
+  const cVM = "var(--accent-warning)";
 
   return (
     <div style={{ marginTop: 10 }}>
@@ -125,7 +128,7 @@ function MiniChart({ data, showVolMatched }) {
       <svg
         width="100%"
         viewBox={`0 0 ${width} ${height}`}
-        style={{ marginTop: 8, background: "#0b0f14", borderRadius: 12, border: "1px solid #1f2a37" }}
+        style={{ marginTop: 8, background: "var(--bg-main)", borderRadius: 12, border: "1px solid var(--border-soft)" }}
       >
         <path d={toPath("Benchmark")} stroke={cBench} strokeWidth="2" fill="none" opacity="0.95" />
         <path d={toPath("Modelo Raw")} stroke={cRaw} strokeWidth="2" fill="none" opacity="0.85" />
@@ -209,17 +212,18 @@ export default function PerformanceCoreOverlayed() {
         <title>DECIDE — Performance (core_overlayed)</title>
       </Head>
 
-      <div style={{ minHeight: "100vh", background: "#0b0f14", color: "#e6edf3", padding: 16 }}>
+      <div style={{ minHeight: "100vh", background: "var(--page-gradient)", color: "var(--text-primary)", padding: 16 }}>
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
           <h1 style={{ margin: "8px 0 12px 0", fontSize: 22 }}>Performance — core_overlayed</h1>
 
           <div
+            onPointerDownCapture={onThousandsFieldRowPointerDownCapture}
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
               gap: 10,
-              background: "#0f1620",
-              border: "1px solid #1f2a37",
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-soft)",
               borderRadius: 14,
               padding: 12,
             }}
@@ -229,7 +233,7 @@ export default function PerformanceCoreOverlayed() {
               <select
                 value={profile}
                 onChange={(e) => setProfile(e.target.value)}
-                style={{ background: "#0b0f14", color: "#e6edf3", padding: 8, borderRadius: 10, border: "1px solid #1f2a37" }}
+                style={{ background: "var(--bg-main)", color: "var(--text-primary)", padding: 8, borderRadius: 10, border: "1px solid var(--border-soft)" }}
               >
                 <option value="conservador">Conservador</option>
                 <option value="moderado">Moderado</option>
@@ -242,38 +246,41 @@ export default function PerformanceCoreOverlayed() {
               <input
                 value={benchmark}
                 onChange={(e) => setBenchmark(e.target.value)}
-                style={{ background: "#0b0f14", color: "#e6edf3", padding: 8, borderRadius: 10, border: "1px solid #1f2a37" }}
+                style={{ background: "var(--bg-main)", color: "var(--text-primary)", padding: 8, borderRadius: 10, border: "1px solid var(--border-soft)" }}
               />
             </label>
 
             <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span style={{ fontSize: 12, opacity: 0.85 }}>Lookback (dias)</span>
-              <input
-                type="number"
+              <ThousandsNumberInput
+                min={1}
+                maxDecimals={0}
                 value={lookbackDays}
-                onChange={(e) => setLookbackDays(parseInt(e.target.value || "120", 10))}
-                style={{ background: "#0b0f14", color: "#e6edf3", padding: 8, borderRadius: 10, border: "1px solid #1f2a37" }}
+                onChange={asThousandsNumberChange(setLookbackDays)}
+                style={{ background: "var(--bg-main)", color: "var(--text-primary)", padding: 8, borderRadius: 10, border: "1px solid var(--border-soft)" }}
               />
             </label>
 
             <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span style={{ fontSize: 12, opacity: 0.85 }}>Top Q</span>
-              <input
-                type="number"
+              <ThousandsNumberInput
+                min={1}
+                maxDecimals={0}
                 value={topQ}
-                onChange={(e) => setTopQ(parseInt(e.target.value || "20", 10))}
-                style={{ background: "#0b0f14", color: "#e6edf3", padding: 8, borderRadius: 10, border: "1px solid #1f2a37" }}
+                onChange={asThousandsNumberChange(setTopQ)}
+                style={{ background: "var(--bg-main)", color: "var(--text-primary)", padding: 8, borderRadius: 10, border: "1px solid var(--border-soft)" }}
               />
             </label>
 
             <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span style={{ fontSize: 12, opacity: 0.85 }}>Cap por ticker</span>
-              <input
-                type="number"
-                step="0.01"
+              <ThousandsNumberInput
+                min={0}
+                max={1}
+                maxDecimals={2}
                 value={capPerTicker}
-                onChange={(e) => setCapPerTicker(parseFloat(e.target.value || "0.2"))}
-                style={{ background: "#0b0f14", color: "#e6edf3", padding: 8, borderRadius: 10, border: "1px solid #1f2a37" }}
+                onChange={asThousandsNumberChange(setCapPerTicker)}
+                style={{ background: "var(--bg-main)", color: "var(--text-primary)", padding: 8, borderRadius: 10, border: "1px solid var(--border-soft)" }}
               />
             </label>
 
@@ -284,9 +291,9 @@ export default function PerformanceCoreOverlayed() {
                 style={{
                   padding: "10px 12px",
                   borderRadius: 12,
-                  border: "1px solid #1f2a37",
-                  background: loading ? "#111827" : "#0b1220",
-                  color: "#e6edf3",
+                  border: "1px solid var(--border-soft)",
+                  background: loading ? DECIDE_DASHBOARD.clientProgressTrackBg : "var(--accent-brand-subtle)",
+                  color: "var(--text-primary)",
                   cursor: loading ? "not-allowed" : "pointer",
                 }}
               >
@@ -315,11 +322,12 @@ export default function PerformanceCoreOverlayed() {
 
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, opacity: 0.9 }}>
                 Window:
-                <input
-                  type="number"
+                <ThousandsNumberInput
+                  min={1}
+                  maxDecimals={0}
                   value={voltargetWindow}
-                  onChange={(e) => setVoltargetWindow(parseInt(e.target.value || "60", 10))}
-                  style={{ width: 90, background: "#0b0f14", color: "#e6edf3", padding: 6, borderRadius: 10, border: "1px solid #1f2a37" }}
+                  onChange={asThousandsNumberChange(setVoltargetWindow)}
+                  style={{ width: 90, background: "var(--bg-main)", color: "var(--text-primary)", padding: 6, borderRadius: 10, border: "1px solid var(--border-soft)" }}
                 />
               </label>
 
@@ -338,8 +346,8 @@ export default function PerformanceCoreOverlayed() {
                     fontSize: 12,
                     padding: "6px 10px",
                     borderRadius: 999,
-                    border: "1px solid #1f2a37",
-                    background: overlayActive ? "#20120b" : "#0b2016",
+                    border: "1px solid var(--border-soft)",
+                    background: overlayActive ? "rgba(217, 164, 65, 0.12)" : "rgba(47, 191, 159, 0.1)",
                   }}
                   title="Cap/Overlay ativo (quando existir factor)"
                 >
@@ -351,7 +359,7 @@ export default function PerformanceCoreOverlayed() {
                     VolMatch RAW erro
                   </span>
                 ) : (
-                  <span style={{ fontSize: 12, padding: "6px 10px", borderRadius: 999, border: "1px solid #1f2a37", background: "#0f1b2b" }}>
+                  <span style={{ fontSize: 12, padding: "6px 10px", borderRadius: 999, border: "1px solid var(--border-soft)", background: "var(--accent-brand-subtle)" }}>
                     VolMatch RAW: {(resp && resp._mw_volmatch_raw_mult) ?? "—"}× (W={(resp && resp._mw_volmatch_raw_window) ?? "—"})
                   </span>
                 )}
@@ -374,8 +382,8 @@ export default function PerformanceCoreOverlayed() {
           <div
             style={{
               marginTop: 12,
-              background: "#0f1620",
-              border: "1px solid #1f2a37",
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-soft)",
               borderRadius: 14,
               padding: 12,
               overflow: "hidden",

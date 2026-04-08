@@ -1,9 +1,12 @@
-export type OnboardingStepId = "auth" | "onboarding" | "mifid" | "kyc" | "approve";
+export type OnboardingStepId = "auth" | "onboarding" | "mifid" | "kyc" | "approve" | "hedge";
 
 /** Índice 0-based no array de passos do `OnboardingFlowBar`. Sincronizado com cliques e avanços. */
 export const ONBOARDING_FLOW_MAX_IDX_KEY = "decide_onboarding_flow_max_idx_v1";
 
+import { isFxHedgeOnboardingApplicable } from "./clientSegment";
+
 const AUTH_OK_KEY = "decide_client_session_ok";
+const HEDGE_DONE_KEY = "decide_onboarding_step5_hedge_done";
 
 function readLsFlag(key: string): boolean {
   try {
@@ -16,21 +19,25 @@ function readLsFlag(key: string): boolean {
 
 /**
  * Último índice de passo considerado “concluído” só com base em localStorage (sem session).
- * auth=0, onboarding=1, mifid=2, kyc=3, approve=4. -1 = não autenticado.
+ * auth=0, onboarding=1, mifid=2, kyc=3, approve=4, hedge=5. -1 = não autenticado.
  */
 export function inferMaxCompletedIndexFromLocalStorage(): number {
   if (typeof window === "undefined") return -1;
   try {
     if (window.localStorage.getItem(AUTH_OK_KEY) !== "1") return -1;
-    let max = 0;
-    if (!readLsFlag("decide_onboarding_step1_done")) return max;
-    max = 1;
-    if (!readLsFlag("decide_onboarding_step2_done")) return max;
-    max = 2;
-    if (!readLsFlag("decide_onboarding_step3_done")) return max;
-    max = 3;
-    if (!readLsFlag("decide_onboarding_step4_done")) return max;
-    return 4;
+    if (!readLsFlag("decide_onboarding_step1_done")) return 0;
+    let max = 1;
+    if (readLsFlag("decide_onboarding_step2_done")) max = 2;
+    /** Passos à frente no LS implicam progressão — evita «buracos» (ex.: step3 sem step2) e stepper desalinhado. */
+    const kycDone = readLsFlag("decide_onboarding_step3_done");
+    if (kycDone) max = Math.max(max, 3);
+    /** Ordem no stepper: KYC → hedge (se aplicável) → Corretora/aprovação. */
+    const hedgeApplicable = isFxHedgeOnboardingApplicable();
+    const hedgeDone = window.localStorage.getItem(HEDGE_DONE_KEY) === "1";
+    const hedgeResolved = !hedgeApplicable || hedgeDone;
+    if (kycDone && hedgeResolved) max = Math.max(max, 4);
+    if (readLsFlag("decide_onboarding_step4_done") && kycDone && hedgeResolved) max = Math.max(max, 5);
+    return max;
   } catch {
     return -1;
   }
@@ -50,6 +57,7 @@ export function readSessionMaxCompletedIndex(): number | null {
 
 export function writeSessionMaxCompletedIndex(n: number): void {
   try {
+    if (typeof window === "undefined") return;
     window.sessionStorage.setItem(ONBOARDING_FLOW_MAX_IDX_KEY, String(n));
   } catch {
     // ignore

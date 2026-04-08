@@ -1,6 +1,7 @@
 import Head from "next/head";
 import React, { useEffect, useMemo, useState } from "react";
 import DashboardQuickLinks from "../components/DashboardQuickLinks";
+import { DECIDE_APP_FONT_FAMILY } from "../lib/decideClientTheme";
 
 type Holding = {
   ticker?: string;
@@ -78,10 +79,10 @@ type AggregatedHolding = {
 };
 
 const COLORS = {
-  bg: "#06163a",
-  panel: "#12244d",
+  bg: "#09090b",
+  panel: "#18181b",
   panel2: "#1a2d59",
-  line: "#3f73ff",
+  line: "#d4d4d4",
   text: "#ffffff",
   muted: "#b7c3e0",
   border: "rgba(255,255,255,0.08)",
@@ -172,7 +173,7 @@ const pageStyle: React.CSSProperties = {
   background: COLORS.bg,
   color: COLORS.text,
   padding: "20px 20px 30px 20px",
-  fontFamily: "Nunito, Segoe UI, Arial, sans-serif",
+  fontFamily: DECIDE_APP_FONT_FAMILY,
 };
 
 const panelStyle: React.CSSProperties = {
@@ -321,7 +322,7 @@ export default function DashboardFreeze() {
                 fontSize: 15,
                 fontWeight: 800,
                 cursor: "pointer",
-                fontFamily: "Nunito, Segoe UI, Arial, sans-serif",
+                fontFamily: DECIDE_APP_FONT_FAMILY,
               }}
             >
               {loading ? "A atualizar..." : "Atualizar"}

@@ -42,3 +42,5 @@ next-cache/
 # KPI Flask (iframe do client-dashboard) — ficheiro na raiz; dados em freeze/ (deploy separado ou disco)
 !/kpi_server.py
 !/requirements-kpi.txt
+# Permite `pip install -r requirements.txt` no Render (serviço KPI na raiz); conteúdo = -r requirements-kpi.txt
+!/requirements.txt

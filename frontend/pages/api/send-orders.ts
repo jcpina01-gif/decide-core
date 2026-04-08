@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getBackendBase } from "../../lib/apiProxy";
 
-/** Ordens podem demorar (vários contratos + TWS). */
+/** Ordens podem demorar (vários contratos + IB Gateway/TWS). */
 const UPSTREAM_MS = 120_000;
 
 /**
@@ -52,7 +52,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(503).json({
       status: "rejected",
       error: isAbort
-        ? `Timeout (${UPSTREAM_MS / 1000}s) ao contactar o backend em ${targetUrl}. TWS pode estar ocupada com muitas ordens.`
+        ? `Timeout (${UPSTREAM_MS / 1000}s) ao contactar o backend em ${targetUrl}. IB Gateway ou TWS pode estar ocupado com muitas ordens.`
         : `Ligação ao backend falhou (${msg}). Confirme BACKEND_URL no .env.local e que o uvicorn está a correr (ex.: python -m uvicorn main:app --host 127.0.0.1 --port 8090).`,
     });
   } finally {

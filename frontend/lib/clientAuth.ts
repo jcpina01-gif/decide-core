@@ -40,13 +40,13 @@ export function normalizeClientPhone(raw: string): { ok: true; e164: string } | 
   if (!s) return { ok: false, error: "Telemóvel é obrigatório." };
   if (s.startsWith("+")) {
     if (!/^\+[1-9]\d{6,14}$/.test(s)) {
-      return { ok: false, error: "Formato inválido. Usa E.164, ex.: +351912345678" };
+      return { ok: false, error: "Formato inválido. Utilize E.164, ex.: +351912345678" };
     }
     return { ok: true, e164: s };
   }
   if (/^9\d{8}$/.test(s)) return { ok: true, e164: `+351${s}` };
   if (/^3519\d{8}$/.test(s)) return { ok: true, e164: `+${s}` };
-  return { ok: false, error: "Indica o número com código do país, ex.: +351912345678 ou 912345678" };
+  return { ok: false, error: "Indique o número com código do país, ex.: +351912345678 ou 912345678" };
 }
 
 function normalizeUsername(u: string): string {
@@ -190,6 +190,24 @@ export async function fetchSignupEmailVerifiedFromServer(email: string): Promise
   }
 }
 
+/** Lista de interessados (dashboard) — gravado em `prospect_leads.json` após clicar no link. */
+export async function fetchProspectEmailVerifiedFromServer(email: string): Promise<boolean> {
+  try {
+    const em = email.trim().toLowerCase();
+    if (!em.includes("@") || typeof window === "undefined") return false;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 12_000);
+    const r = await fetch(`/api/client/email-verification/status?email=${encodeURIComponent(em)}`, {
+      signal: controller.signal,
+    });
+    window.clearTimeout(timer);
+    const j = (await r.json()) as { prospectVerified?: boolean };
+    return r.ok && j.prospectVerified === true;
+  } catch {
+    return false;
+  }
+}
+
 export function clearSignupEmailVerifiedFlag(): void {
   try {
     if (typeof window === "undefined") return;
@@ -200,6 +218,32 @@ export function clearSignupEmailVerifiedFlag(): void {
 }
 
 const CLIENT_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Parte local do email em formato de utilizador (minúsculas, a-z 0-9 . _ -).
+ * String vazia se não houver parte local válida com pelo menos 2 caracteres.
+ */
+export function deriveClientUsernameFromEmail(emailRaw: string): string {
+  const em = (emailRaw || "").trim().toLowerCase();
+  if (!em.includes("@")) return "";
+  const local = em.split("@")[0]!;
+  const s = local.replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return s.length >= 2 ? s : "";
+}
+
+/**
+ * Sugestão no registo: igual a `deriveClientUsernameFromEmail`, ou identificador único
+ * quando a parte local do email é demasiado curta (email válido).
+ */
+export function suggestClientUsernameFromEmail(emailRaw: string): string {
+  const base = deriveClientUsernameFromEmail(emailRaw);
+  if (base.length >= 2) return base;
+  const em = (emailRaw || "").trim().toLowerCase();
+  if (CLIENT_EMAIL_RE.test(em)) {
+    return `cliente-${Math.random().toString(36).slice(2, 9)}`;
+  }
+  return "";
+}
 
 export type RegisterClientUserErrorField =
   | "email"
@@ -312,7 +356,7 @@ export function registerClientUser(
   if (!keepVerified && !isSignupEmailVerifiedForInput(emailTrim)) {
     return {
       ok: false,
-      error: "Confirma o email: abre o link que enviámos antes de criar a conta.",
+      error: "Confirme o email: abra o link que lhe enviámos antes de criar a conta.",
       field: "emailNotVerified",
     };
   }
@@ -321,7 +365,7 @@ export function registerClientUser(
     return {
       ok: false,
       error:
-        "Confirma o telemóvel: no passo «Confirmação» envia o SMS e introduz o código lá — depois volta aqui para criar a conta.",
+        "Confirme o telemóvel: no passo «Confirmação» envie o SMS e introduza o código nesse passo — depois volte aqui para criar a conta.",
       field: "phoneNotVerified",
     };
   }
@@ -387,7 +431,7 @@ export function updateClientContact(
     return {
       ok: false,
       error:
-        "É preciso email na conta para gravar o telemóvel. Completa o registo ou o email em /client/register.",
+        "É preciso email na conta para gravar o telemóvel. Complete o registo ou o email em /client/register.",
     };
   }
   const emailChanged = (rec.email || "").trim().toLowerCase() !== emailTrim.toLowerCase();
@@ -447,7 +491,7 @@ async function notifyFetch(url: string, init: RequestInit): Promise<Response> {
 function fetchNotifyError(e: unknown): string {
   const name = e && typeof e === "object" && "name" in e ? String((e as { name?: string }).name) : "";
   if (name === "AbortError" || name === "TimeoutError") {
-    return "O pedido expirou. Se acabaste de arrancar o Next, espera ~1 min pela compilação e tenta outra vez.";
+    return "O pedido expirou. Se acabou de arrancar o Next, aguarde ~1 min pela compilação e tente outra vez.";
   }
   return "Sem ligação ao servidor.";
 }
@@ -455,7 +499,15 @@ function fetchNotifyError(e: unknown): string {
 /** Link de confirmação antes de existir conta (só email no token). */
 export async function requestEmailVerificationSignupSend(
   email: string,
-): Promise<{ ok: boolean; error?: string; mode?: string; link?: string }> {
+): Promise<{
+  ok: boolean;
+  error?: string;
+  mode?: string;
+  link?: string;
+  linkBase?: string;
+  provider?: string;
+  outboundId?: string;
+}> {
   try {
     const r = await notifyFetch("/api/client/email-verification/send", {
       method: "POST",
@@ -470,6 +522,8 @@ export async function requestEmailVerificationSignupSend(
       link?: string;
       linkBase?: string;
       message?: string;
+      provider?: string;
+      id?: string;
     };
     if (!r.ok) {
       const parts = [j.hint, j.error].filter((x): x is string => Boolean(x && String(x).trim()));
@@ -480,7 +534,14 @@ export async function requestEmailVerificationSignupSend(
       return { ok: true, mode: j.mode, link: j.link, error: j.message, linkBase: j.linkBase };
     }
     if (j.mode === "sent" && j.link) {
-      return { ok: true, mode: j.mode, link: j.link, linkBase: j.linkBase };
+      return {
+        ok: true,
+        mode: j.mode,
+        link: j.link,
+        linkBase: j.linkBase,
+        provider: j.provider,
+        outboundId: j.id,
+      };
     }
     return { ok: true, mode: j.mode };
   } catch (e) {

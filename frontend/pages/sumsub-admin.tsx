@@ -2,6 +2,7 @@ import Head from "next/head";
 import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
+import { DECIDE_APP_FONT_FAMILY, DECIDE_DASHBOARD, DECIDE_ONBOARDING } from "../lib/decideClientTheme";
 
 const API_BASE = "http://127.0.0.1:8101";
 
@@ -20,8 +21,8 @@ type SumsubRecord = {
 
 function cardStyle(): React.CSSProperties {
   return {
-    background: "#020b24",
-    border: "1px solid #15305b",
+    background: "rgba(24, 24, 27, 0.92)",
+    border: "1px solid rgba(63, 63, 70, 0.75)",
     borderRadius: 22,
     padding: 20,
     boxShadow: "0 8px 30px rgba(0,0,0,0.18)",
@@ -31,9 +32,9 @@ function cardStyle(): React.CSSProperties {
 function inputStyle(): React.CSSProperties {
   return {
     width: "100%",
-    background: "#020816",
+    background: "#27272a",
     color: "#fff",
-    border: "1px solid #15305b",
+    border: "1px solid rgba(63, 63, 70, 0.85)",
     borderRadius: 12,
     padding: 12,
     fontSize: 16,
@@ -55,9 +56,9 @@ function Button({
       onClick={onClick}
       disabled={disabled}
       style={{
-        background: disabled ? "#334155" : "#3f73ff",
+        background: disabled ? DECIDE_ONBOARDING.buttonDisabled : DECIDE_DASHBOARD.buttonRegister,
         color: "#fff",
-        border: "1px solid rgba(255,255,255,0.28)",
+        border: disabled ? DECIDE_ONBOARDING.inputBorder : DECIDE_ONBOARDING.buttonPrimaryBorder,
         borderRadius: 14,
         padding: "12px 18px",
         fontSize: 15,
@@ -71,7 +72,7 @@ function Button({
 }
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <div style={{ color: "#9fb3d1", fontSize: 14, marginBottom: 8 }}>{children}</div>;
+  return <div style={{ color: "#a1a1aa", fontSize: 14, marginBottom: 8 }}>{children}</div>;
 }
 
 export default function SumsubAdminPage() {
@@ -104,7 +105,7 @@ export default function SumsubAdminPage() {
 
   async function lookupStatus() {
     if (!externalUserId.trim()) {
-      setError("Indica um externalUserId.");
+      setError("Indique um externalUserId.");
       return;
     }
     setLoading(true);
@@ -143,20 +144,20 @@ export default function SumsubAdminPage() {
           background: "#000",
           color: "#fff",
           padding: 32,
-          fontFamily: "Inter, Arial, sans-serif",
+          fontFamily: DECIDE_APP_FONT_FAMILY,
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", gap: 20, marginBottom: 24, flexWrap: "wrap" }}>
           <div>
             <div style={{ fontSize: 40, fontWeight: 800 }}>DECIDE — Sumsub Admin</div>
-            <div style={{ color: "#9fb3d1", fontSize: 18 }}>
+            <div style={{ color: "#a1a1aa", fontSize: 18 }}>
               Consulta de estado KYC e histórico local de applicants.
             </div>
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <Link href="/sumsub-onboarding" style={{ color: "#93c5fd", fontSize: 16 }}>Onboarding Sumsub</Link>
-            <a href="http://localhost:5000/" style={{ color: "#93c5fd", fontSize: 16 }}>Dashboard</a>
-            <Link href="/client-montante" style={{ color: "#93c5fd", fontSize: 16 }}>Onboarding interno</Link>
+            <Link href="/sumsub-onboarding" style={{ color: "#d4d4d4", fontSize: 16 }}>Onboarding Sumsub</Link>
+            <a href="http://localhost:5000/" style={{ color: "#d4d4d4", fontSize: 16 }}>Dashboard</a>
+            <Link href="/client-montante" style={{ color: "#d4d4d4", fontSize: 16 }}>Onboarding interno</Link>
           </div>
         </div>
 
@@ -193,14 +194,14 @@ export default function SumsubAdminPage() {
 
           <div style={cardStyle()}>
             <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Applicants recentes</div>
-            <div style={{ color: "#9fb3d1", marginBottom: 14 }}>
+            <div style={{ color: "#a1a1aa", marginBottom: 14 }}>
               Histórico local guardado em `backend/data/sumsub_state.json`.
             </div>
 
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                 <thead>
-                  <tr style={{ textAlign: "left", borderBottom: "1px solid #15305b" }}>
+                  <tr style={{ textAlign: "left", borderBottom: "1px solid rgba(63, 63, 70, 0.75)" }}>
                     <th style={{ padding: "12px 10px" }}>externalUserId</th>
                     <th style={{ padding: "12px 10px" }}>Applicant ID</th>
                     <th style={{ padding: "12px 10px" }}>Email</th>
@@ -220,7 +221,7 @@ export default function SumsubAdminPage() {
                   ))}
                   {!records.length && (
                     <tr>
-                      <td colSpan={5} style={{ padding: 18, color: "#9fb3d1" }}>
+                      <td colSpan={5} style={{ padding: 18, color: "#a1a1aa" }}>
                         Ainda não há applicants guardados.
                       </td>
                     </tr>

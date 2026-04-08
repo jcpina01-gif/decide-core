@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { DECIDE_APP_FONT_FAMILY } from "../lib/decideClientTheme";
 
 type AnyObj = Record<string, any>;
 
@@ -228,7 +229,7 @@ export default function KPIsOverlayPage() {
   const okReg = !errReg && !!regJson;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0b0f14", color: "#e6eef7", padding: 24, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
+    <div style={{ minHeight: "100vh", background: "#0b0f14", color: "#e6eef7", padding: 24, fontFamily: DECIDE_APP_FONT_FAMILY }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
         <div>
           <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: 0.2 }}>DECIDE — KPIs Overlay</div>

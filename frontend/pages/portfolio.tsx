@@ -37,7 +37,7 @@ export default function PortfolioPage() {
       <div style={{ width: "min(1400px, calc(100% - 32px))", margin: "0 auto" }}>
         <div style={{ marginBottom: 20 }}>
           <div style={{ color: "#ffffff", fontSize: 30, fontWeight: 800 }}>DECIDE Portfolio</div>
-          <div style={{ color: "#94a3b8", marginTop: 4 }}>
+          <div style={{ color: "#a1a1aa", marginTop: 4 }}>
             Carteira atual, concentração, exposição e tabela de posições
           </div>
         </div>
