@@ -569,7 +569,8 @@ async function loadBackendModel(profile = "moderado", excludedTickers: string[] 
 }> {
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 12_000);
+    // run-model pode demorar >12s (Vercel→VM, cold start, JSON grande); abort cedo gera "This operation was aborted" sem 4xx na Rede.
+    const t = setTimeout(() => ctrl.abort(), 120_000);
     const r = await fetch(buildBackendRunModelUrl(profile, excludedTickers), {
       method: "GET",
       headers: { Accept: "application/json" },
