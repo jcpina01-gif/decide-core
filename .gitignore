@@ -34,11 +34,40 @@ next-cache/
 !/.gitignore
 !/README.md
 !/frontend/
-# API FastAPI (Render): só estes ficheiros (há pasta backend/ local com muito lixo ignorado)
+# API FastAPI / Cloud Run: versionar o mínimo para `main:app` + Docker (`COPY backend/`).
+# O resto da pasta backend/ (milhares de .py de research, BAK, tools, logs) continua ignorado.
 !/backend/
 /backend/*
+!/backend/main.py
+!/backend/app_main.py
+!/backend/app_shared.py
+!/backend/core.py
+!/backend/engine_v2.py
+!/backend/engine_entrypoint.py
+!/backend/engine_research_v2_constrained.py
+!/backend/ib_socket_env.py
+!/backend/ib_insync_thread_loop.py
+!/backend/ibkr_paper_checks.py
 !/backend/server.py
 !/backend/requirements.txt
+# Rotas incluídas em app_main (uvicorn main:app)
+!/backend/routers/
+/backend/routers/*
+!/backend/routers/__init__.py
+!/backend/routers/run_model.py
+!/backend/routers/send_orders.py
+!/backend/routers/paper_demo_orders.py
+!/backend/routers/ibkr_snapshot.py
+!/backend/routers/performance.py
+!/backend/routers/flatten_portfolio.py
+!/backend/routers/cancel_open_orders_paper.py
+!/backend/routers/sync_paper_exec_lines.py
+# Preços para o motor (run-model). CSV podem ser grandes — Git LFS se necessário.
+!/backend/data/
+/backend/data/*
+!/backend/data/prices_close.csv
+!/backend/data/prices_close_20y_global_index_proxy_from_tws.csv
+/backend/data/backups/
 # KPI Flask (iframe do client-dashboard) — ficheiro na raiz; dados em freeze/ (deploy separado ou disco)
 !/kpi_server.py
 !/requirements-kpi.txt
