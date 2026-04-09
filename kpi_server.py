@@ -5792,6 +5792,28 @@ def load_equity_curve(path: Path, equity_col: str):
     return df["date"].iloc[0], df["date"].iloc[-1], equity, df["date"]
 
 
+def align_equity_series_to_target_dates(
+    equity: pd.Series,
+    source_dates: pd.Series,
+    target_dates: pd.Series,
+) -> pd.Series:
+    """
+    Alinha a série do benchmark ao calendário do modelo. Os CSVs podem ter comprimentos
+    diferentes (ex.: benchmark mensal vs equity diária) — evita ValueError em
+    compute_monthly_stats / compute_rolling_alpha ao atribuir o mesmo índice de datas.
+    """
+    if len(equity) == len(target_dates):
+        return equity.astype(float).reset_index(drop=True)
+    idx = pd.to_datetime(source_dates)
+    s = pd.Series(np.asarray(equity, dtype=float), index=idx)
+    s = s[~s.index.duplicated(keep="last")].sort_index()
+    tgt = pd.to_datetime(target_dates)
+    out = s.reindex(tgt).ffill().bfill()
+    if bool(out.isna().any()):
+        out = out.ffill().bfill()
+    return pd.Series(np.asarray(out, dtype=float)).reset_index(drop=True)
+
+
 def build_horizon_returns_payload(
     dates: pd.Series,
     model_eq: pd.Series | np.ndarray,
@@ -7609,7 +7631,8 @@ def load_scaled_model_equity_series(
     bench_eq: pd.Series | None = None
     bench_path = base_path / "benchmark_equity_final_20y.csv"
     if bench_path.exists():
-        _, _, bench_eq, _ = load_equity_curve(bench_path, "benchmark_equity")
+        _, _, bench_eq, bench_dates = load_equity_curve(bench_path, "benchmark_equity")
+        bench_eq = align_equity_series_to_target_dates(bench_eq, bench_dates, dates)
         model_eq = apply_model_equity_profile_policy(
             model_eq,
             bench_eq,
@@ -7769,7 +7792,8 @@ def equity_series_bundle_for_simulator(
     if not model_path.exists() or not bench_path.exists():
         return None
     _, _, model_eq, dates = load_equity_curve(model_path, "model_equity")
-    _, _, bench_eq, _ = load_equity_curve(bench_path, "benchmark_equity")
+    _, _, bench_eq, bench_dates = load_equity_curve(bench_path, "benchmark_equity")
+    bench_eq = align_equity_series_to_target_dates(bench_eq, bench_dates, dates)
     model_eq = apply_model_equity_profile_policy(
         model_eq,
         bench_eq,
@@ -7964,7 +7988,8 @@ def compute_client_embed_plafonado_kpis(profile_key: str) -> dict | None:
         return None
     try:
         _, _, _, dates = load_equity_curve(cap_model_path, "model_equity")
-        _, _, bench_eq, _ = load_equity_curve(bench_path, "benchmark_equity")
+        _, _, bench_eq, bench_dates = load_equity_curve(bench_path, "benchmark_equity")
+        bench_eq = align_equity_series_to_target_dates(bench_eq, bench_dates, dates)
         m100_base = MODEL_PATHS["v5_overlay_cap15_max100exp"]
         m100_path_by = m100_base / f"model_equity_final_20y_{pk}.csv"
         m100_path_default = m100_base / "model_equity_final_20y.csv"
@@ -8090,7 +8115,8 @@ def index():
             404,
         )
     _, _, model_eq, dates = load_equity_curve(model_path, "model_equity")
-    _, _, bench_eq, _ = load_equity_curve(bench_path, "benchmark_equity")
+    _, _, bench_eq, bench_dates = load_equity_curve(bench_path, "benchmark_equity")
+    bench_eq = align_equity_series_to_target_dates(bench_eq, bench_dates, dates)
 
     run_model_snapshot = load_run_model_snapshot(profile_key)
     raw_kpis_snapshot = run_model_snapshot.get("raw_kpis") if run_model_snapshot else None
