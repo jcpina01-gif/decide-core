@@ -8049,8 +8049,12 @@ def api_embed_plafonado_cagr():
     return r
 
 
-@app.route("/")
+@app.route("/", methods=["GET", "HEAD"])
 def index():
+    # Render health-check usa HEAD /; sem isto a vista normal pode devolver 404 (ex.: freeze v5_overlay
+    # ausente no deploy) e o deploy falha mesmo com /api/health OK.
+    if request.method == "HEAD":
+        return Response(status=200)
     model_key = request.args.get("model", "v5_overlay")
     profile_key = request.args.get("profile", "moderado").strip().lower()
     if profile_key not in [p[0] for p in PROFILE_OPTIONS]:
