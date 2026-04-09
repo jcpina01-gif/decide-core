@@ -8701,5 +8701,11 @@ def api_diagnostics_rolling():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    # Render / Docker: variável PORT e escuta em 0.0.0.0 (127.0.0.1 só aceita ligações locais → proxy Render não liga).
+    _port = int(os.environ.get("PORT", "5000"))
+    _host = os.environ.get("KPI_BIND_HOST") or (
+        "0.0.0.0" if os.environ.get("RENDER") else "127.0.0.1"
+    )
+    _debug = os.environ.get("FLASK_DEBUG", "").lower() in ("1", "true", "yes")
+    app.run(host=_host, port=_port, debug=_debug)
 
