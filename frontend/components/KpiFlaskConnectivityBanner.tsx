@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getKpiEmbedBase } from "../lib/kpiEmbedNav";
+import { getKpiEmbedBase, getKpiEmbedBaseForIframe } from "../lib/kpiEmbedNav";
 
 type Props = {
   /** Muda quando o utilizador carrega «Atualizar recomendação» — volta a testar o Flask. */
@@ -14,7 +14,7 @@ export default function KpiFlaskConnectivityBanner({ bump = 0 }: Props) {
   const [phase, setPhase] = useState<"checking" | "ok" | "fail">("checking");
 
   useEffect(() => {
-    const base = getKpiEmbedBase();
+    const base = getKpiEmbedBaseForIframe();
     if (!base) {
       setPhase("fail");
       return;
@@ -44,7 +44,10 @@ export default function KpiFlaskConnectivityBanner({ bump = 0 }: Props) {
 
   if (phase === "checking" || phase === "ok") return null;
 
-  const base = getKpiEmbedBase() || "http://127.0.0.1:5000";
+  const raw = getKpiEmbedBase();
+  const forIframe = getKpiEmbedBaseForIframe();
+  const sameOriginMisconfig = Boolean(raw && !forIframe);
+  const base = forIframe || raw || "http://127.0.0.1:5000";
 
   return (
     <div
@@ -72,8 +75,17 @@ export default function KpiFlaskConnectivityBanner({ bump = 0 }: Props) {
         </li>
         <li>
           Confirme <code style={{ color: "#e2e8f0" }}>NEXT_PUBLIC_KPI_EMBED_BASE</code> no{" "}
-          <code style={{ color: "#e2e8f0" }}>.env.local</code> do frontend — esperado algo como{" "}
-          <code style={{ color: "#e2e8f0" }}>{base}</code>.
+          <code style={{ color: "#e2e8f0" }}>.env.local</code> / Vercel — tem de ser o URL do{" "}
+          <strong style={{ color: "#fff" }}>kpi_server</strong> (Flask), não o domínio deste site Next.
+          {sameOriginMisconfig ? (
+            <>
+              {" "}
+              <strong style={{ color: "#fff" }}>Detecção:</strong> a variável aponta para o mesmo domínio que a app —
+              o browser pede <code style={{ color: "#e2e8f0" }}>/?client_embed=1</code> ao Next e recebe{" "}
+              <strong style={{ color: "#fff" }}>404</strong>.
+            </>
+          ) : null}{" "}
+          Exemplo: <code style={{ color: "#e2e8f0" }}>{base}</code>.
         </li>
         <li>
           Depois de arrancar o Flask, use <strong style={{ color: "#fff" }}>Atualizar recomendação</strong> no topo.

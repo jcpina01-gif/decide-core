@@ -7,7 +7,7 @@ import {
   FLASK_KPI_EMBED_TABS,
   KPI_EMBED_TAB_STORAGE_KEY,
   KPI_EMBED_TABS_ALLOWED_ON_CARTEIRA_PAGE,
-  getKpiEmbedBase,
+  getKpiEmbedBaseForIframe,
   normalizeKpiEmbedTabId,
 } from "../lib/kpiEmbedNav";
 
@@ -148,7 +148,7 @@ export function useClientKpiEmbed({ profile, loggedIn, iframeRefresh }: UseClien
     if (tab === "fiscal") return "";
     /** Página Carteira: «Carteira actual» = posições IBKR em Next (não iframe Flask do modelo). */
     if (router.pathname === "/client/carteira" && tab === "portfolio") return "";
-    const base = getKpiEmbedBase();
+    const base = getKpiEmbedBaseForIframe();
     if (!base) return "";
     if (!FLASK_KPI_EMBED_TABS.has(tab)) return "";
     const t = iframeRefresh ? `&t=${iframeRefresh}` : "";

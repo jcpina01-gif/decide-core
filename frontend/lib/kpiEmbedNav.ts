@@ -316,6 +316,22 @@ export function normalizeKpiEmbedBaseUrl(input: string): string {
 
 }
 
+/**
+ * O iframe KPI usa `/?client_embed=1` no **servidor Flask**. Se `NEXT_PUBLIC_KPI_EMBED_BASE` apontar
+ * para o mesmo domínio que o Next (ex. só o site Vercel), o pedido dá **404** — devolve "" para mostrar
+ * o aviso de conectividade em vez de um iframe partido.
+ */
+export function kpiEmbedBaseRejectSameOriginAsApp(base: string): string {
+  if (!base.trim() || typeof window === "undefined") return base;
+  try {
+    const u = new URL(base);
+    if (u.origin === window.location.origin) return "";
+  } catch {
+    /* manter base */
+  }
+  return base;
+}
+
 
 
 export function getKpiEmbedBase(): string {
@@ -334,6 +350,11 @@ export function getKpiEmbedBase(): string {
 
   return "";
 
+}
+
+/** Base segura para iframes / health-check no browser (bloqueia URL = próprio site Next → 404 em `/?client_embed=1`). */
+export function getKpiEmbedBaseForIframe(): string {
+  return kpiEmbedBaseRejectSameOriginAsApp(getKpiEmbedBase());
 }
 
 
