@@ -143,7 +143,16 @@ async function loadBackendModel(profile = "moderado", excludedTickers: string[] 
       signal: ctrl.signal,
     });
     clearTimeout(t);
-    if (!r.ok) return { payload: null, error: `Backend respondeu ${r.status}` };
+    if (!r.ok) {
+      if (r.status === 405) {
+        return {
+          payload: null,
+          error:
+            "Backend respondeu 405 (GET não permitido). O serviço em DECIDE_BACKEND_URL está provavelmente a usar o stub `server:app` (só POST). Em Cloud Run / Docker use `uvicorn main:app` com o backend DECIDE completo.",
+        };
+      }
+      return { payload: null, error: `Backend respondeu ${r.status}` };
+    }
     const payload = await r.json();
     return { payload, error: "" };
   } catch (e) {
@@ -477,7 +486,18 @@ type ActualPosition = {
   currency: string;
 };
 
-export async function loadApprovalAlignedProposedTrades(projectRoot: string): Promise<{
+export type LoadApprovalAlignedProposedTradesOptions = {
+  /**
+   * NAV em EUR só aplicado quando o smoke IBKR (`tmp_diag`) não traz património —
+   * ex. Vercel sem ficheiros locais; alinha quantidades ao montante do onboarding.
+   */
+  navOverrideEur?: number;
+};
+
+export async function loadApprovalAlignedProposedTrades(
+  projectRoot: string,
+  options?: LoadApprovalAlignedProposedTradesOptions,
+): Promise<{
   trades: ApprovalProposedTrade[];
   navEur: number;
   coverageNote: string;
@@ -605,11 +625,20 @@ export async function loadApprovalAlignedProposedTrades(projectRoot: string): Pr
   const sel = smoke?.selected as Record<string, unknown> | undefined;
   const att0 = Array.isArray(smoke?.attempts) ? (smoke.attempts as unknown[])[0] : undefined;
   const att0o = att0 as Record<string, unknown> | undefined;
-  const navFinal = safeNumber(
+  const navFromSmoke = safeNumber(
     (sel?.netLiquidation as Record<string, unknown> | undefined)?.value ??
       (att0o?.netLiquidation as Record<string, unknown> | undefined)?.value,
     0,
   );
+  let navFinal = navFromSmoke;
+  const overrideNav =
+    options?.navOverrideEur != null ? safeNumber(options.navOverrideEur, 0) : 0;
+  if (navFromSmoke <= 0 && overrideNav > 0) {
+    navFinal = overrideNav;
+  } else if (navFinal <= 0) {
+    const envNav = safeNumber(process.env.DECIDE_APPROVAL_FALLBACK_NAV_EUR, 0);
+    if (envNav > 0) navFinal = envNav;
+  }
 
   const tradePlanByTicker = new Map<string, Record<string, string>>();
   for (const row of tradePlanRows) {
@@ -935,10 +964,16 @@ export async function loadApprovalAlignedProposedTrades(projectRoot: string): Pr
 
   proposedTrades.sort((a, b) => Math.abs(b.deltaValueEst) - Math.abs(a.deltaValueEst));
 
-  const coverageNote =
+  let coverageNote =
     tradePlanRows.length > 0
       ? "Mesma visão que «Alterações propostas» no plano: CSV IBKR + carteira recomendada + posições em conta."
       : "Sem CSV IBKR: lista a partir da diferença entre conta e recomendado (como no plano).";
+  if (navFromSmoke <= 0 && navFinal > 0) {
+    coverageNote += " NAV de referência sem ficheiro smoke IBKR no servidor.";
+    if (overrideNav > 0) {
+      coverageNote += " Usado o montante indicado no onboarding (pedido à API).";
+    }
+  }
 
   const trades: ApprovalProposedTrade[] = proposedTrades.map((t) => ({
     ticker: t.ticker,

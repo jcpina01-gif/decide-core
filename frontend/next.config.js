@@ -53,6 +53,9 @@ const nextConfig = {
   outputFileTracingIncludes: {
     "/api/landing/freeze-cap15-backtest": ["./data/landing/**/*"],
     "/api/landing/core-overlayed": ["./data/landing/**/*"],
+    /** Plano de aprovação (freeze + CSVs) em deploy Vercel com root `frontend/`. */
+    "/api/client/approval-plan": ["../freeze/**/*", "../backend/data/**/*"],
+    "/client/approve": ["../freeze/**/*", "../backend/data/**/*"],
   },
 
   typescript: {

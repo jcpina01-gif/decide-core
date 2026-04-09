@@ -8,6 +8,7 @@ import OnboardingFlowBar, {
 } from "../../components/OnboardingFlowBar";
 import { DECIDE_DASHBOARD, ONBOARDING_SHELL_MAX_WIDTH_PX } from "../../lib/decideClientTheme";
 import { loadApprovalAlignedProposedTrades } from "../../lib/server/approvalTradePlan";
+import { resolveDecideProjectRoot } from "../../lib/server/decideProjectRoot";
 import { FUNDING_STATUS_LS_KEY, type FundingStatus, readFundingStatus, writeFundingStatus } from "../../lib/fundingFlow";
 import {
   CLIENT_SESSION_CHANGED_EVENT,
@@ -23,7 +24,6 @@ import {
   isOnboardingFlowComplete,
 } from "../../lib/onboardingProgress";
 import ClientPendingTextLink from "../../components/ClientPendingTextLink";
-import path from "path";
 
 type PageProps = {
   navEur: number;
@@ -74,8 +74,7 @@ const IBKR_SEPA_GUIDE_URL = "https://www.ibkrguides.com/orgportal/transferandpay
 
 export const getServerSideProps: GetServerSideProps<PageProps> = async () => {
   try {
-    const frontRoot = process.cwd();
-    const projectRoot = path.resolve(frontRoot, "..");
+    const projectRoot = resolveDecideProjectRoot();
     const { trades, navEur } = await loadApprovalAlignedProposedTrades(projectRoot);
     let grossBuyOrderVolumeEur = 0;
     let equityBuyVolumeEur = 0;

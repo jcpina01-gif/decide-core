@@ -4,6 +4,7 @@ import Head from "next/head";
 import Link from "next/link";
 import OnboardingFlowBar, {
   ONBOARDING_LOCALSTORAGE_CHANGED_EVENT,
+  ONBOARDING_MONTANTE_KEY,
   ONBOARDING_STORAGE_KEYS,
 } from "../../components/OnboardingFlowBar";
 import InlineLoadingDots from "../../components/InlineLoadingDots";
@@ -11,7 +12,9 @@ import { isFxHedgeOnboardingApplicable, syncFeeSegmentFromNavEur } from "../../l
 import { isHedgeOnboardingDone } from "../../lib/fxHedgePrefs";
 import { getHrefAfterTradePlanApprovalStep } from "../../lib/onboardingProgress";
 import { DECIDE_DASHBOARD, ONBOARDING_SHELL_MAX_WIDTH_PX } from "../../lib/decideClientTheme";
+import { DECIDE_MIN_INVEST_EUR } from "../../lib/decideInvestPrefill";
 import { loadApprovalAlignedProposedTrades } from "../../lib/server/approvalTradePlan";
+import { resolveDecideProjectRoot } from "../../lib/server/decideProjectRoot";
 import path from "path";
 import fs from "fs";
 
@@ -97,6 +100,33 @@ const initialIbkrLive: IbkrLiveState = {
   updatedAt: null,
 };
 
+/** Pista EUR.USD para converter NAV USD → EUR (alinhado ao hint do backend). */
+function eurusdMidClient(): number {
+  const raw = Number(process.env.NEXT_PUBLIC_DECIDE_EURUSD_MID_HINT ?? "1.08");
+  return Number.isFinite(raw) && raw > 0 ? raw : 1.08;
+}
+
+/** Liquidez da conta IBKR em EUR equivalente (só EUR e USD — outras moedas não validam aqui). */
+function ibkrNavEurEquivalent(live: IbkrLiveState): number | null {
+  if (!live.ok || live.nav <= 0) return null;
+  const ccy = normalizeCcy(live.navCcy);
+  if (ccy === "EUR") return live.nav;
+  if (ccy === "USD") return live.nav / eurusdMidClient();
+  return null;
+}
+
+/**
+ * Confirmação de fundos via leitura **paper** (TWS/Gateway): liquidez ≥ mínimo do produto
+ * e ≥ 85 % do NAV de referência do plano (montante / rebalance).
+ */
+function ibkrPaperFundsCoverPlan(live: IbkrLiveState, planNavEur: number): boolean {
+  const eq = ibkrNavEurEquivalent(live);
+  if (eq == null) return false;
+  if (eq < DECIDE_MIN_INVEST_EUR) return false;
+  if (planNavEur > 0 && eq < planNavEur * 0.85) return false;
+  return true;
+}
+
 /** Resumo legível do foco sectorial (heurística a partir de nomes/tickers). */
 function summarizePortfolioTheme(trades: ProposedTrade[]): string {
   const parts: string[] = [];
@@ -153,8 +183,7 @@ const EMPTY_APPROVE_PROPS: PageProps = {
 
 export const getServerSideProps: GetServerSideProps<PageProps> = async () => {
   try {
-    const frontRoot = process.cwd();
-    const projectRoot = path.resolve(frontRoot, "..");
+    const projectRoot = resolveDecideProjectRoot();
     const tmpDir = path.join(projectRoot, "tmp_diag");
     const smokePath = path.join(tmpDir, "ibkr_paper_smoke_test.json");
     let smokeJson: Record<string, unknown> | null = null;
@@ -217,26 +246,70 @@ export default function ApprovePage({
   /** Navegação para o relatório após aprovar — feedback até o Next carregar a página seguinte. */
   const [approveBusy, setApproveBusy] = useState(false);
 
+  /** Sem smoke IBKR no servidor (ex. Vercel): plano alinhado ao montante em `ONBOARDING_MONTANTE_KEY`. */
+  const [clientRefPlan, setClientRefPlan] = useState<{
+    navEur: number;
+    trades: ProposedTrade[];
+    coverageNote: string;
+    csvRowCount: number;
+  } | null>(null);
+  const [clientRefPlanBusy, setClientRefPlanBusy] = useState(false);
+  const [clientRefPlanError, setClientRefPlanError] = useState("");
+
   const [excludedTickers, setExcludedTickers] = useState<string[]>([]);
   const [ibkrLive, setIbkrLive] = useState<IbkrLiveState>(initialIbkrLive);
   /** Linha da tabela em foco (clique para destacar). */
   const [tableFocusIdx, setTableFocusIdx] = useState<number | null>(null);
+
+  const displayTrades = useMemo(() => {
+    if (clientRefPlan?.trades?.length) return clientRefPlan.trades;
+    return trades;
+  }, [clientRefPlan, trades]);
+
+  const displayNavEur = useMemo(() => {
+    if (clientRefPlan != null && clientRefPlan.navEur > 0) return clientRefPlan.navEur;
+    return navEur;
+  }, [clientRefPlan, navEur]);
+
+  const displayCoverageNote = useMemo(() => {
+    if (clientRefPlan?.trades?.length) return clientRefPlan.coverageNote;
+    return coverageNote;
+  }, [clientRefPlan, coverageNote]);
+
+  const displayCsvRowCount = useMemo(() => {
+    if (clientRefPlan?.trades?.length) return clientRefPlan.csvRowCount;
+    return csvRowCount;
+  }, [clientRefPlan, csvRowCount]);
+
   /** NAV em EUR para taxas / exclusões: conta paper (TWS) se vier em EUR, senão último NAV do plano (tmp_diag). */
   const navEurForFees = useMemo(() => {
     if (ibkrLive.ok && ibkrLive.nav > 0 && normalizeCcy(ibkrLive.navCcy) === "EUR") {
       return ibkrLive.nav;
     }
-    return navEur;
-  }, [ibkrLive.ok, ibkrLive.nav, ibkrLive.navCcy, navEur]);
+    return displayNavEur;
+  }, [ibkrLive.ok, ibkrLive.nav, ibkrLive.navCcy, displayNavEur]);
 
   const canExclude = navEurForFees >= 50000;
   const maxExclusions = canExclude ? 5 : 0;
 
   /** Plano de ordens disponível (CSV rebalance) + NAV — não exige smoke IBKR `ok` para desbloquear o botão. */
-  const hasTradePlan = navEur > 0 && trades.length > 0;
+  const hasTradePlan = displayNavEur > 0 && displayTrades.length > 0;
   /** Diagnóstico IBKR em tmp_diag (opcional para UI de aviso). */
   const ibkrSmokeOk = ibkrOk;
-  const canApproveAll = hasTradePlan && mifidDone && kycDone && hedgeGateOk && ibkrPrepDone;
+
+  const paperFundsVerified = useMemo(
+    () => ibkrPaperFundsCoverPlan(ibkrLive, displayNavEur),
+    [ibkrLive, displayNavEur],
+  );
+
+  const canApproveAll =
+    hasTradePlan &&
+    mifidDone &&
+    kycDone &&
+    hedgeGateOk &&
+    ibkrPrepDone &&
+    !ibkrLive.loading &&
+    paperFundsVerified;
 
   const handleToggle = (ticker: string) => {
     if (!canExclude) return;
@@ -253,7 +326,7 @@ export default function ApprovePage({
     });
   };
 
-  const approvedTrades = trades.filter(
+  const approvedTrades = displayTrades.filter(
     (t) => !excludedTickers.includes(t.ticker),
   );
 
@@ -313,7 +386,9 @@ export default function ApprovePage({
       setIbkrPrepDone(ibkrPrep);
       setHedgeGateOk(hedgeOk);
 
-      const allowed = hasTradePlan && mifid && kyc && hedgeOk && ibkrPrep;
+      const fundsOk =
+        ibkrLive.loading || ibkrPaperFundsCoverPlan(ibkrLive, displayNavEur);
+      const allowed = hasTradePlan && mifid && kyc && hedgeOk && ibkrPrep && fundsOk;
       if (!allowed) {
         window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.approve, "0");
         setUserApproved(false);
@@ -328,7 +403,7 @@ export default function ApprovePage({
     } finally {
       setFlowReady(true);
     }
-  }, [hasTradePlan]);
+  }, [hasTradePlan, ibkrLive.loading, ibkrLive.ok, ibkrLive.nav, ibkrLive.navCcy, displayNavEur]);
 
   useEffect(() => {
     syncApprovalGatesFromLocalStorage();
@@ -410,6 +485,86 @@ export default function ApprovePage({
     void refreshIbkrSnapshot();
   }, [refreshIbkrSnapshot]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const serverOk = navEur > 0 && trades.length > 0;
+    if (serverOk) return;
+
+    let montante = 0;
+    try {
+      const raw = window.localStorage.getItem(ONBOARDING_MONTANTE_KEY);
+      montante =
+        raw != null ? safeNumber(Number(String(raw).replace(/\s/g, "").replace(",", ".")), 0) : 0;
+    } catch {
+      montante = 0;
+    }
+    if (!(montante > 0)) return;
+
+    let cancelled = false;
+    setClientRefPlanBusy(true);
+    setClientRefPlanError("");
+    void fetch("/api/client/approval-plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ referenceNavEur: Math.round(montante) }),
+      credentials: "same-origin",
+      cache: "no-store",
+    })
+      .then(async (res) => {
+        const rawText = await res.text();
+        let data: {
+          ok?: boolean;
+          error?: string;
+          trades?: ProposedTrade[];
+          navEur?: number;
+          coverageNote?: string;
+          csvRowCount?: number;
+        } = {};
+        try {
+          data = rawText ? (JSON.parse(rawText) as typeof data) : {};
+        } catch {
+          throw new Error("Resposta inválida do servidor.");
+        }
+        if (!res.ok || data.ok === false) {
+          throw new Error(
+            typeof data.error === "string" && data.error
+              ? data.error
+              : `Falha ao carregar plano (${res.status}).`,
+          );
+        }
+        return data;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        if (
+          Array.isArray(data.trades) &&
+          data.trades.length > 0 &&
+          typeof data.navEur === "number" &&
+          data.navEur > 0
+        ) {
+          setClientRefPlan({
+            navEur: data.navEur,
+            trades: data.trades,
+            coverageNote: typeof data.coverageNote === "string" ? data.coverageNote : "",
+            csvRowCount: typeof data.csvRowCount === "number" ? data.csvRowCount : 0,
+          });
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setClientRefPlanError(e instanceof Error ? e.message : "Erro ao carregar plano");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setClientRefPlanBusy(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navEur, trades.length]);
+
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
     syncFeeSegmentFromNavEur(navEurForFees);
@@ -439,6 +594,22 @@ export default function ApprovePage({
     if (!ibkrPrepDone) {
       // eslint-disable-next-line no-alert
       alert("Aprovação bloqueada: confirme a preparação IBKR (passo Corretora).");
+      return;
+    }
+    if (ibkrLive.loading) {
+      // eslint-disable-next-line no-alert
+      alert("Aguarde a leitura da conta IBKR paper (TWS / Gateway).");
+      return;
+    }
+    if (!paperFundsVerified) {
+      const eq = ibkrNavEurEquivalent(ibkrLive);
+      const eqStr = eq != null ? formatEuro(eq) : "liquidez não validada (use conta em EUR ou USD na paper)";
+      // eslint-disable-next-line no-alert
+      alert(
+        `Aprovação bloqueada: na conta paper, o valor líquido equivalente (${eqStr}) tem de ser ≥ ${formatEuro(
+          DECIDE_MIN_INVEST_EUR,
+        )} e ≥ ~85 % do NAV de referência do plano (${formatEuro(displayNavEur)}). Deposite na paper ou ajuste o plano.`,
+      );
       return;
     }
     if (!confirmReview) {
@@ -482,15 +653,29 @@ export default function ApprovePage({
   const approveButtonHint = useMemo(() => {
     if (approveBusy) return null;
     if (!hasTradePlan) {
-      return "Botão desactivo: falta plano de ordens ou NAV de referência válido (página Plano / tmp_diag).";
+      return "Botão desactivo: falta plano de ordens ou NAV de referência válido (Plano / tmp_diag ou montante no onboarding).";
     }
     if (!mifidDone) return "Botão desactivo: falta concluir o teste MiFID.";
     if (!kycDone) return "Botão desactivo: falta concluir o KYC (Persona).";
     if (!hedgeGateOk) return "Botão desactivo: falta concluir o passo «Hedge cambial» (0%, 50% ou 100%).";
     if (!ibkrPrepDone) return "Botão desactivo: falta concluir a preparação IBKR (passo Corretora).";
+    if (ibkrLive.loading) return "Botão desactivo: a ler liquidez na conta IBKR paper…";
+    if (!paperFundsVerified) {
+      return "Botão desactivo: fundos na conta paper abaixo do mínimo ou abaixo de ~85 % do NAV de referência do plano.";
+    }
     if (!confirmReview) return "Botão desactivo: marque a confirmação de que reviu a proposta e os riscos (caixa acima).";
     return null;
-  }, [approveBusy, hasTradePlan, mifidDone, kycDone, hedgeGateOk, ibkrPrepDone, confirmReview]);
+  }, [
+    approveBusy,
+    hasTradePlan,
+    mifidDone,
+    kycDone,
+    hedgeGateOk,
+    ibkrPrepDone,
+    confirmReview,
+    ibkrLive.loading,
+    paperFundsVerified,
+  ]);
 
   return (
     <>
@@ -513,6 +698,18 @@ export default function ApprovePage({
             />
           ) : null}
 
+          {clientRefPlanBusy ? (
+            <p className="mb-4 rounded-lg border border-slate-700/80 bg-slate-900/50 px-4 py-3 text-xs text-slate-400">
+              A alinhar o plano ao montante que indicou no onboarding
+              <InlineLoadingDots />
+            </p>
+          ) : null}
+          {clientRefPlanError && !clientRefPlanBusy ? (
+            <p className="mb-4 rounded-lg border border-amber-800/60 bg-amber-950/30 px-4 py-3 text-xs text-amber-200/95">
+              {clientRefPlanError}
+            </p>
+          ) : null}
+
           <header className="mb-6 border-b border-slate-800 pb-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Aprovação do plano</p>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
@@ -533,9 +730,9 @@ export default function ApprovePage({
                   atualizar números, volte a correr o rebalance.
                 </p>
                 <p>
-                  <strong className="text-slate-400">Alinhamento:</strong> {coverageNote} CSV IBKR:{" "}
-                  <strong className="text-slate-300">{csvRowCount}</strong> linhas · aqui:{" "}
-                  <strong className="text-slate-300">{trades.length}</strong>. Comparar com{" "}
+                  <strong className="text-slate-400">Alinhamento:</strong> {displayCoverageNote} CSV IBKR:{" "}
+                  <strong className="text-slate-300">{displayCsvRowCount}</strong> linhas · aqui:{" "}
+                  <strong className="text-slate-300">{displayTrades.length}</strong>. Comparar com{" "}
                   <Link href="/client/report" className="text-zinc-400 hover:text-zinc-300">
                     «Alterações propostas»
                   </Link>{" "}
@@ -563,9 +760,21 @@ export default function ApprovePage({
                   : null}
                 {mifidDone && kycDone && hedgeGateOk && !ibkrPrepDone ? " Falta preparar IBKR (passo Corretora)." : null}
                 {mifidDone && kycDone && hedgeGateOk && ibkrPrepDone && !hasTradePlan
-                  ? navEur <= 0
-                    ? `Património inválido (${formatEuro(navEur)}).`
+                  ? displayNavEur <= 0
+                    ? `Património inválido (${formatEuro(displayNavEur)}).`
                     : "Sem linhas de plano (confirma backend/freeze do modelo e tmp_diag)."
+                  : null}
+                {mifidDone && kycDone && hedgeGateOk && ibkrPrepDone && hasTradePlan && ibkrLive.loading
+                  ? " A confirmar liquidez na conta IBKR paper…"
+                  : null}
+                {mifidDone &&
+                kycDone &&
+                hedgeGateOk &&
+                ibkrPrepDone &&
+                hasTradePlan &&
+                !ibkrLive.loading &&
+                !paperFundsVerified
+                  ? " Fundos na conta paper insuficientes: tem de haver liquidez ≥ mínimo do produto e ≥ ~85 % do NAV de referência do plano. Deposite na paper ou use «Atualizar leitura (TWS)»."
                   : null}
                 {accountCode ? ` Conta: ${accountCode}.` : ""}
                 {cashEur > 0 ? ` Cash: ${formatEuro(cashEur)}.` : ""}
@@ -628,10 +837,10 @@ export default function ApprovePage({
                   <p className="mt-3 text-lg font-semibold text-white sm:text-xl">
                     {approvedTrades.length}{" "}
                     {approvedTrades.length === 1 ? "ordem proposta" : "ordens propostas"}
-                    {trades.length !== approvedTrades.length ? (
+                    {displayTrades.length !== approvedTrades.length ? (
                       <span className="text-sm font-normal text-slate-500">
                         {" "}
-                        ({trades.length} no ficheiro do plano)
+                        ({displayTrades.length} no ficheiro do plano)
                       </span>
                     ) : null}
                   </p>
@@ -856,24 +1065,24 @@ export default function ApprovePage({
                   <span className="text-slate-500">…</span>
                 ) : ibkrLive.ok && ibkrLive.nav > 0 ? (
                   formatMoney(ibkrLive.nav, ibkrLive.navCcy)
-                ) : navEur > 0 ? (
-                  formatEuro(navEur)
+                ) : displayNavEur > 0 ? (
+                  formatEuro(displayNavEur)
                 ) : (
                   "—"
                 )}
               </div>
-              {navEur > 0 ? (
+              {displayNavEur > 0 ? (
                 <div className="mt-1.5 space-y-1 text-[10px] leading-snug text-slate-500">
                   {ibkrLive.ok && ibkrLive.nav > 0 ? (
                     <>
                       <div>
                         <span className="text-slate-600">NAV de referência do plano (último rebalance): </span>
-                        <span className="font-medium text-slate-400">{formatEuro(navEur)}</span>
+                        <span className="font-medium text-slate-400">{formatEuro(displayNavEur)}</span>
                       </div>
                       {normalizeCcy(ibkrLive.navCcy) === "EUR" &&
-                      Math.abs(ibkrLive.nav - navEur) > Math.max(500, navEur * 0.02) ? (
+                      Math.abs(ibkrLive.nav - displayNavEur) > Math.max(500, displayNavEur * 0.02) ? (
                         <div className="text-slate-500">
-                          A conta (~{formatEuro(ibkrLive.nav)}) e o plano (~{formatEuro(navEur)}) usam referências
+                          A conta (~{formatEuro(ibkrLive.nav)}) e o plano (~{formatEuro(displayNavEur)}) usam referências
                           diferentes; isso é esperado até voltar a correr o rebalance com o NAV que pretende como base.
                         </div>
                       ) : null}
@@ -881,7 +1090,7 @@ export default function ApprovePage({
                   ) : (
                     <div>
                       <span className="text-slate-600">NAV de referência do plano (sem leitura TWS): </span>
-                      <span className="font-medium text-slate-400">{formatEuro(navEur)}</span>
+                      <span className="font-medium text-slate-400">{formatEuro(displayNavEur)}</span>
                     </div>
                   )}
                 </div>
@@ -889,6 +1098,11 @@ export default function ApprovePage({
               {ibkrLive.error ? (
                 <div className="mt-1 max-w-xs text-[10px] text-amber-500/95">{ibkrLive.error}</div>
               ) : null}
+              <p className="mt-2 max-w-xl text-[10px] leading-snug text-slate-600">
+                O backend só aceita envio de ordens com <strong className="font-medium text-slate-500">paper_mode</strong> e
+                conta <strong className="font-medium text-slate-500">paper (DU*)</strong> quando a protecção está activa —
+                não envia para conta real.
+              </p>
             </div>
             <button
               type="button"
@@ -969,7 +1183,7 @@ export default function ApprovePage({
                   </tr>
                 </thead>
                 <tbody>
-                  {trades.map((t, idx) => {
+                  {displayTrades.map((t, idx) => {
                     const excluded = excludedTickers.includes(t.ticker);
                     const sideU = safeString(t.side, "").toUpperCase();
                     const isInactive = sideU === "INACTIVE";
@@ -1076,7 +1290,7 @@ export default function ApprovePage({
                       </tr>
                     );
                   })}
-                  {trades.length === 0 && (
+                  {displayTrades.length === 0 && (
                     <tr>
                       <td
                         colSpan={8}

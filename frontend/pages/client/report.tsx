@@ -578,6 +578,13 @@ async function loadBackendModel(profile = "moderado", excludedTickers: string[] 
     clearTimeout(t);
 
     if (!r.ok) {
+      if (r.status === 405) {
+        return {
+          payload: null,
+          error:
+            "Backend respondeu 405 (GET não permitido). O URL configurado (DECIDE_BACKEND_URL / BACKEND_URL) aponta para um backend que só aceita POST em /api/run-model (ex.: `server:app` no Docker). Faça deploy com `uvicorn main:app` e a pasta `backend/` completa.",
+        };
+      }
       return {
         payload: null,
         error: `Backend respondeu ${r.status}`,

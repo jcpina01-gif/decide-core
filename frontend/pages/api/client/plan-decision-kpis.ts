@@ -1,10 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import path from "path";
 import {
   fetchPlafonadoCagrPctFromKpiServer,
   normalizeRiskProfileForKpi,
 } from "../../../lib/server/fetchPlafonadoCagrFromKpiServer";
 import { loadApprovalAlignedProposedTrades } from "../../../lib/server/approvalTradePlan";
+import { resolveDecideProjectRoot } from "../../../lib/server/decideProjectRoot";
 import { computePlanActivity } from "../../../lib/planDecisionKpiMath";
 import { readPlafonadoM100CagrDisplayPercent } from "../../../lib/server/readPlafonadoFreezeCagr";
 import { readHeroKpiFreezeContext } from "../../../lib/server/readHeroKpiFreezeContext";
@@ -40,7 +40,7 @@ export default async function handler(
     return;
   }
   try {
-    const projectRoot = path.resolve(process.cwd(), "..");
+    const projectRoot = resolveDecideProjectRoot();
     const profile = normalizeRiskProfileForKpi(
       typeof req.query.profile === "string" ? req.query.profile : undefined,
     );
