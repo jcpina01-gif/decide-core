@@ -12,6 +12,7 @@ import {
   safeNumber,
   type IbkrSnapshotPayload,
 } from "../lib/ibkrSnapshotParse";
+import { PLAFONADO_MODEL_INLINE_PT } from "../lib/freezePlafonadoDir";
 
 type Props = {
   /** Bump externo (ex. botão «Atualizar recomendação» na mesma página). */
@@ -126,7 +127,8 @@ export default function CarteiraIbkrSummary({
       {!compact ? (
         <p style={{ margin: "0 0 12px", fontSize: 14, lineHeight: 1.5, color: "#a1a1aa", maxWidth: 720 }}>
           Valores reportados pela corretora (ligação TWS / IB Gateway). Abaixo segue o detalhe das posições na mesma
-          conta; o plano recomendado pelo modelo DECIDE está no <strong style={{ color: "#e4e4e7" }}>Dashboard</strong>.
+          conta; o plano recomendado pelo {PLAFONADO_MODEL_INLINE_PT} está no{" "}
+          <strong style={{ color: "#e4e4e7" }}>Dashboard</strong>.
         </p>
       ) : null}
       {loading ? (

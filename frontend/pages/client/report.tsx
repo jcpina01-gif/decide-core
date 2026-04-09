@@ -40,7 +40,7 @@ import {
   readPlafonadoM100CagrDisplayPercent,
 } from "../../lib/server/readPlafonadoFreezeCagr";
 import { readHeroKpiFreezeContext } from "../../lib/server/readHeroKpiFreezeContext";
-import { FREEZE_PLAFONADO_MODEL_DIR } from "../../lib/freezePlafonadoDir";
+import { FREEZE_PLAFONADO_MODEL_DIR, PLAFONADO_MODEL_DISPLAY_NAME_PT } from "../../lib/freezePlafonadoDir";
 import path from "path";
 import fs from "fs";
 import {
@@ -735,15 +735,6 @@ function normalizeBackendModelPayloadForReport(payload: any | null): any | null 
     ...out,
     current_portfolio: { positions: builtPositions },
   };
-}
-
-/** Relatório alinhado ao modelo CAP15 (exposição a risco ≤100% NV). */
-function isCap15ModelMeta(meta: unknown): boolean {
-  if (!meta || typeof meta !== "object") return false;
-  const m = meta as Record<string, unknown>;
-  const mn = String(m.model_name ?? "").toUpperCase();
-  const ds = String(m.data_source ?? "").toLowerCase();
-  return mn.includes("CAP15") || ds.includes("cap15");
 }
 
 function dailyReturnsFromEquity(equity: number[]): number[] {
@@ -1859,7 +1850,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
       : turnoverPctTechnical;
 
   const planSummary = {
-    strategyLabel: "Ações globais (modelo DECIDE)",
+    strategyLabel: "Ações globais (DECIDE V2.3 smooth)",
     riskLabel: profileRiskLabel(profileLabel),
     positionCount: recommendedPositions.length,
     turnoverPct,
@@ -1872,9 +1863,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     tradePlanRows.length > 0
       ? "Inclui ordens do plano IBKR e ajustes sintéticos para cobrir toda a carteira recomendada."
       : "Sem plano IBKR disponível: lista construída a partir da diferença entre carteira atual e recomendada.";
-  const modelDisplayName = isCap15ModelMeta(modelPayload?.meta)
-    ? "Modelo CAP15"
-    : "Modelo com exposição máxima ≤ 100%";
+  const modelDisplayName = PLAFONADO_MODEL_DISPLAY_NAME_PT;
 
   const feeSegment: "A" | "B" = navEur >= 50000 ? "B" : "A";
   const monthlyFixedFeeEur = feeSegment === "A" ? 20 : 0;
