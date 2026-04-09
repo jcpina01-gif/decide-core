@@ -5295,20 +5295,20 @@ HTML_TEMPLATE = """
       }
 
       function parsePtSimNumber(raw) {
-        var trimmed = String(raw).trim().replace(/[\s\u00A0\u202F]/g, '');
+        var trimmed = String(raw).trim().replace(/[\\s\u00A0\u202F]/g, '');
         if (!trimmed || trimmed === '-') return NaN;
         var hasComma = trimmed.indexOf(',') >= 0;
         var hasDot = trimmed.indexOf('.') >= 0;
         var t = trimmed;
         if (hasComma && !hasDot) {
-          t = t.replace(/\./g, '').replace(',', '.');
+          t = t.replace(/\\./g, '').replace(',', '.');
         } else if (hasDot && !hasComma) {
           t = t.replace(/,/g, '');
         } else if (hasComma && hasDot) {
           var lastComma = trimmed.lastIndexOf(',');
           var lastDot = trimmed.lastIndexOf('.');
           if (lastComma > lastDot) {
-            t = trimmed.replace(/\./g, '').replace(',', '.');
+            t = trimmed.replace(/\\./g, '').replace(',', '.');
           } else {
             t = trimmed.replace(/,/g, '');
           }
@@ -5323,7 +5323,7 @@ HTML_TEMPLATE = """
         if (!Number.isFinite(n)) return '';
         if (maxDecimals <= 0) return String(Math.trunc(n));
         var s = n.toFixed(maxDecimals);
-        var trimmed = s.replace(/\.?0+$/, '');
+        var trimmed = s.replace(/\\.?0+$/, '');
         return trimmed.replace('.', ',');
       }
 
@@ -5347,7 +5347,7 @@ HTML_TEMPLATE = """
           capIn.addEventListener('focus', function () {
             var n = parsePtSimNumber(this.value);
             if (Number.isFinite(n)) this.value = toPlainEditStringSim(n, 0);
-            else this.value = String(this.value).replace(/[\s\u00A0\u202F]/g, '');
+            else this.value = String(this.value).replace(/[\\s\u00A0\u202F]/g, '');
           });
           capIn.addEventListener('blur', function () {
             var n = parsePtSimNumber(this.value);
@@ -5364,7 +5364,7 @@ HTML_TEMPLATE = """
           yrsIn.addEventListener('focus', function () {
             var n = parsePtSimNumber(this.value);
             if (Number.isFinite(n)) this.value = toPlainEditStringSim(n, 1);
-            else this.value = String(this.value).replace(/[\s\u00A0\u202F]/g, '');
+            else this.value = String(this.value).replace(/[\\s\u00A0\u202F]/g, '');
           });
           yrsIn.addEventListener('blur', function () {
             var n = parsePtSimNumber(this.value);
