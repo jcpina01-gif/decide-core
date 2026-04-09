@@ -611,6 +611,45 @@ function hasUsableModelPayload(payload: any): boolean {
   return hasPositions && hasSeries;
 }
 
+/** engine_v2 devolve `selection` + `series` sem `current_portfolio`; o gráfico espera `equity_raw` alinhado a `equity_overlayed`. */
+function normalizeBackendModelPayloadForReport(payload: any | null): any | null {
+  if (!payload || typeof payload !== "object") return payload;
+  const out: any = { ...payload };
+  const prevSeries = out.series && typeof out.series === "object" ? out.series : {};
+  const baseSeries = { ...prevSeries };
+  const overlayed = baseSeries.equity_overlayed;
+  const raw = baseSeries.equity_raw;
+  const hasOverlay = Array.isArray(overlayed) && overlayed.length > 0;
+  const rawEmpty = !Array.isArray(raw) || raw.length === 0;
+  if (hasOverlay && rawEmpty) {
+    baseSeries.equity_raw = overlayed.map((x: unknown) => safeNumber(x, 0));
+  }
+  if (Object.keys(baseSeries).length > 0) {
+    out.series = baseSeries;
+  }
+  if (hasUsableModelPayload(out)) return out;
+
+  const dates = out.series?.dates;
+  const sel = out.selection;
+  if (!Array.isArray(dates) || dates.length < 50 || !Array.isArray(sel) || sel.length === 0) {
+    return out;
+  }
+
+  const builtPositions = sel.map((s: any) => ({
+    ticker: safeString(s.ticker, "").toUpperCase(),
+    weight_pct: safeNumber(s.weight, 0) * 100,
+    score: safeNumber(s.score, 0),
+    name_short: safeString(s.ticker, ""),
+    region: "",
+    sector: "",
+  }));
+
+  return {
+    ...out,
+    current_portfolio: { positions: builtPositions },
+  };
+}
+
 /** Relatório alinhado ao modelo CAP15 (exposição a risco ≤100% NV). */
 function isCap15ModelMeta(meta: unknown): boolean {
   if (!meta || typeof meta !== "object") return false;
@@ -1041,6 +1080,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     "moderado",
     excludedTickersApplied
   );
+  modelPayload = normalizeBackendModelPayloadForReport(modelPayload);
   if (!hasUsableModelPayload(modelPayload)) {
     const snap = loadFreezeRunModelSnapshot(projectRoot);
     if (snap) {

@@ -136,7 +136,7 @@ async function loadBackendModel(profile = "moderado", excludedTickers: string[] 
 }> {
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 12_000);
+    const t = setTimeout(() => ctrl.abort(), 120_000);
     const r = await fetch(buildBackendRunModelUrl(profile, excludedTickers), {
       method: "GET",
       headers: { Accept: "application/json" },
@@ -171,6 +171,49 @@ function hasUsableModelPayload(payload: unknown): boolean {
   const hasPositions = Array.isArray(positions) && positions.length > 0;
   const hasSeries = Array.isArray(dates) && dates.length >= 50;
   return hasPositions && hasSeries;
+}
+
+function normalizeBackendModelPayloadForReport(payload: unknown | null): unknown | null {
+  if (!payload || typeof payload !== "object") return payload;
+  const out: Record<string, unknown> = { ...(payload as Record<string, unknown>) };
+  const prevSeries =
+    out.series && typeof out.series === "object" ? (out.series as Record<string, unknown>) : {};
+  const baseSeries = { ...prevSeries };
+  const overlayed = baseSeries.equity_overlayed;
+  const raw = baseSeries.equity_raw;
+  const hasOverlay = Array.isArray(overlayed) && overlayed.length > 0;
+  const rawEmpty = !Array.isArray(raw) || raw.length === 0;
+  if (hasOverlay && rawEmpty) {
+    baseSeries.equity_raw = overlayed.map((x: unknown) => safeNumber(x, 0));
+  }
+  if (Object.keys(baseSeries).length > 0) {
+    out.series = baseSeries;
+  }
+  if (hasUsableModelPayload(out)) return out;
+
+  const series = out.series as Record<string, unknown> | undefined;
+  const dates = series?.dates;
+  const sel = out.selection;
+  if (!Array.isArray(dates) || dates.length < 50 || !Array.isArray(sel) || sel.length === 0) {
+    return out;
+  }
+
+  const builtPositions = sel.map((s: unknown) => {
+    const si = s as Record<string, unknown>;
+    return {
+      ticker: safeString(si.ticker, "").toUpperCase(),
+      weight_pct: safeNumber(si.weight, 0) * 100,
+      score: safeNumber(si.score, 0),
+      name_short: safeString(si.ticker, ""),
+      region: "",
+      sector: "",
+    };
+  });
+
+  return {
+    ...out,
+    current_portfolio: { positions: builtPositions },
+  };
 }
 
 function dailyReturnsFromEquity(equity: number[]): number[] {
@@ -616,6 +659,7 @@ export async function loadApprovalAlignedProposedTrades(
   const excludedTickersApplied: string[] = [];
 
   let { payload: modelPayload } = await loadBackendModel("moderado", excludedTickersApplied);
+  modelPayload = normalizeBackendModelPayloadForReport(modelPayload);
   if (!hasUsableModelPayload(modelPayload)) {
     const snap = loadFreezeRunModelSnapshot(projectRoot);
     if (snap) modelPayload = snap;
