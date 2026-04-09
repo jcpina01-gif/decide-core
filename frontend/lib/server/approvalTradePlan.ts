@@ -4,9 +4,16 @@
  */
 import fs from "fs";
 import path from "path";
-import { fetchPlafonadoCagrPctFromKpiServer } from "./fetchPlafonadoCagrFromKpiServer";
+import {
+  fetchPlafonadoCagrPctFromKpiServer,
+  planPlafonadoModeradoCagrFallbackPct,
+} from "./fetchPlafonadoCagrFromKpiServer";
 import { recommendedCagrDisplayPercentFromModelPayload } from "../planDecisionKpiMath";
-import { readPlafonadoM100CagrDisplayPercent } from "./readPlafonadoFreezeCagr";
+import {
+  readLandingEmbeddedFreezeCap15CagrDisplayPercent,
+  readPlafonadoM100CagrDisplayPercent,
+  resolvePlafonadoNextFrontendCwd,
+} from "./readPlafonadoFreezeCagr";
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
 
 export type ApprovalProposedTrade = {
@@ -1032,6 +1039,11 @@ export async function loadApprovalAlignedProposedTrades(
   const recommendedCagrPct =
     (await fetchPlafonadoCagrPctFromKpiServer("moderado")) ??
     readPlafonadoM100CagrDisplayPercent(projectRoot) ??
+    readLandingEmbeddedFreezeCap15CagrDisplayPercent(
+      resolvePlafonadoNextFrontendCwd(projectRoot),
+      "moderado",
+    ) ??
+    planPlafonadoModeradoCagrFallbackPct() ??
     recommendedCagrDisplayPercentFromModelPayload(modelPayload);
 
   return {

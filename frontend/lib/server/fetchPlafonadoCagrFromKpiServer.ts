@@ -106,3 +106,19 @@ export async function fetchCap15OverlayCagrPctFromKpiServer(
 ): Promise<number | null> {
   return fetchPlafonadoCagrPctFromKpiServer(profile);
 }
+
+/**
+ * Último recurso no cartão «Plano» (perfil moderado plafonado) quando Flask e CSV embebido falham no SSR.
+ * Sobrescrever com `PLAN_MODERADO_CAGR_FALLBACK_PCT` / `NEXT_PUBLIC_PLAN_MODERADO_CAGR_FALLBACK_PCT`.
+ */
+export function planPlafonadoModeradoCagrFallbackPct(): number {
+  const raw =
+    process.env.PLAN_MODERADO_CAGR_FALLBACK_PCT?.trim() ||
+    process.env.NEXT_PUBLIC_PLAN_MODERADO_CAGR_FALLBACK_PCT?.trim() ||
+    "";
+  if (raw) {
+    const n = Number(raw);
+    if (Number.isFinite(n)) return n;
+  }
+  return 24.9;
+}

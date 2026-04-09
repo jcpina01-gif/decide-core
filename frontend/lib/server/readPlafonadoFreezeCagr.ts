@@ -34,7 +34,8 @@ function normalizePlafonadoProfile(
   return "moderado";
 }
 
-function resolveNextFrontendCwd(projectRoot: string): string {
+/** Pasta `frontend/` do monorepo, ou `projectRoot` se já for a app Next. */
+export function resolvePlafonadoNextFrontendCwd(projectRoot: string): string {
   const front = path.join(projectRoot, "frontend");
   try {
     if (fs.existsSync(path.join(front, "package.json"))) return front;
@@ -106,7 +107,7 @@ export function readPlafonadoM100CagrDisplayPercent(
   profileRaw?: string,
 ): number | null {
   const profile = normalizePlafonadoProfile(profileRaw);
-  const cwd = resolveNextFrontendCwd(projectRoot);
+  const cwd = resolvePlafonadoNextFrontendCwd(projectRoot);
   const built = buildPlafonadoEmbedLikeSeries(profile, cwd);
   if (built?.equity_overlayed?.length >= MIN_EQUITY_POINTS) {
     const pct = cagrDisplayFromEquity(built.equity_overlayed);

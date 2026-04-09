@@ -33,8 +33,12 @@ import {
 import {
   fetchPlafonadoKpisFromKpiServer,
   normalizeRiskProfileForKpi,
+  planPlafonadoModeradoCagrFallbackPct,
 } from "../../lib/server/fetchPlafonadoCagrFromKpiServer";
-import { readPlafonadoM100CagrDisplayPercent } from "../../lib/server/readPlafonadoFreezeCagr";
+import {
+  readLandingEmbeddedFreezeCap15CagrDisplayPercent,
+  readPlafonadoM100CagrDisplayPercent,
+} from "../../lib/server/readPlafonadoFreezeCagr";
 import { readHeroKpiFreezeContext } from "../../lib/server/readHeroKpiFreezeContext";
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../../lib/freezePlafonadoDir";
 import path from "path";
@@ -1742,12 +1746,24 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
   const freezeHero = readHeroKpiFreezeContext(projectRoot);
   const embedModelKpis = await fetchPlafonadoKpisFromKpiServer(kpiProfile);
 
-  const cagrPct = capPctDisplay(
-    embedModelKpis?.cagrPct ??
-      readPlafonadoM100CagrDisplayPercent(projectRoot, kpiProfile) ??
-      cagrFromModel ??
-      overlayModelCagrPct,
-  );
+  const plafonadoCardCagrFromFiles =
+    readPlafonadoM100CagrDisplayPercent(projectRoot, kpiProfile) ??
+    readLandingEmbeddedFreezeCap15CagrDisplayPercent(frontRoot, kpiProfile);
+
+  /** Perfil conservador/moderado: não usar CAGR da curva `engine_v2` no cartão (diverge do Modelo CAP15 / iframe). */
+  const cagrPct = planPlafonado
+    ? capPctDisplay(
+        embedModelKpis?.cagrPct ??
+          plafonadoCardCagrFromFiles ??
+          (kpiProfile === "moderado" ? planPlafonadoModeradoCagrFallbackPct() : null) ??
+          overlayModelCagrPct,
+      )
+    : capPctDisplay(
+        embedModelKpis?.cagrPct ??
+          plafonadoCardCagrFromFiles ??
+          cagrFromModel ??
+          overlayModelCagrPct,
+      );
 
   const benchmarkCagrPct =
     freezeHero.benchmarkCagrPct != null
