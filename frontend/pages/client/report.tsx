@@ -95,6 +95,14 @@ type ProposedTrade = {
   nameShort: string;
 };
 
+type LiveIbkrStructure = {
+  netLiquidation: number;
+  ccy: string;
+  grossPositionsValue: number;
+  financing: number;
+  financingCcy: string;
+};
+
 type ReportData = {
   generatedAt: string;
   accountCode: string;
@@ -152,6 +160,8 @@ type ReportData = {
   estimatedPerformanceFeeEur: number;
   /** Símbolo IBKR para executar TBILL_PROXY (ex. BIL, SHV) — espelha TBILL_PROXY_IB_TICKER no backend. */
   tbillProxyIbTicker: string;
+  /** Carteira/NAV via POST ao FastAPI quando não há tmp_diag (ex. Vercel → VM com IB Gateway). */
+  initialIbkrStructure?: LiveIbkrStructure;
 };
 
 type PageProps = {
@@ -561,6 +571,79 @@ function buildBackendRunModelUrl(profile: string, excludedTickers: string[] = []
     url.searchParams.set("exclude_tickers", excludedTickers.join(","));
   }
   return url.toString();
+}
+
+/** Mesmo host que run-model: em Vercel não há tmp_diag — hidrata NAV/carteira no SSR. */
+async function loadIbkrSnapshotFromDecideBackend(): Promise<{
+  ok: boolean;
+  net_liquidation?: number;
+  net_liquidation_ccy?: string;
+  account_code?: string;
+  cash_ledger?: { value?: number; currency?: string };
+  positions?: Array<{
+    ticker?: string;
+    name?: string;
+    sector?: string;
+    qty?: number;
+    market_price?: number;
+    value?: number;
+    currency?: string;
+    weight_pct?: number;
+  }>;
+  error?: string;
+} | null> {
+  const baseRaw =
+    process.env.DECIDE_BACKEND_URL ||
+    process.env.NEXT_PUBLIC_DECIDE_BACKEND_URL ||
+    process.env.BACKEND_URL ||
+    process.env.NEXT_PUBLIC_BACKEND_URL ||
+    "";
+  let base = String(baseRaw || "").trim().replace(/\/+$/, "");
+  if (!base) return null;
+  if (/\/api$/i.test(base)) base = base.replace(/\/api$/i, "");
+  const url = `${base.replace(/\/+$/, "")}/api/ibkr-snapshot`;
+  try {
+    const ctrl = new AbortController();
+    // Partilha orçamento com run-model no mesmo SSR (maxDuration 120s na Vercel).
+    const t = setTimeout(() => ctrl.abort(), 45_000);
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ paper_mode: true }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    let data: Record<string, unknown>;
+    try {
+      data = (await r.json()) as Record<string, unknown>;
+    } catch {
+      return { ok: false, error: "Resposta IBKR-snapshot não é JSON válido." };
+    }
+    const positions = data.positions;
+    if (!r.ok || data.status !== "ok" || !Array.isArray(positions)) {
+      const err =
+        (typeof data.error === "string" && data.error) ||
+        (typeof data.detail === "string" && data.detail) ||
+        `HTTP ${r.status}`;
+      return { ok: false, error: err };
+    }
+    return {
+      ok: true,
+      net_liquidation: safeNumber(data.net_liquidation, 0),
+      net_liquidation_ccy: safeString(data.net_liquidation_ccy, "USD"),
+      account_code: safeString(data.account_code, ""),
+      cash_ledger:
+        data.cash_ledger && typeof data.cash_ledger === "object"
+          ? (data.cash_ledger as { value?: number; currency?: string })
+          : undefined,
+      positions,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
 }
 
 async function loadBackendModel(profile = "moderado", excludedTickers: string[] = []): Promise<{
@@ -1091,7 +1174,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     }
   }
 
-  const navEur = safeNumber(
+  let navEur = safeNumber(
     smokeJson?.selected?.netLiquidation?.value ??
       smokeJson?.attempts?.[0]?.netLiquidation?.value,
     0
@@ -1106,15 +1189,15 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
   };
   const sel = smokeJson?.selected as Record<string, unknown> | undefined;
   const att0 = smokeJson?.attempts?.[0] as Record<string, unknown> | undefined;
-  const accountBaseCurrency =
+  let accountBaseCurrency =
     netLiqCurrency(sel) || netLiqCurrency(att0) || "EUR";
 
-  const cashEur = safeNumber(
+  let cashEur = safeNumber(
     smokeJson?.selected?.cash?.value ?? smokeJson?.attempts?.[0]?.cash?.value,
     0
   );
 
-  const accountCode = safeString(
+  let accountCode = safeString(
     smokeJson?.selected?.accountCode ??
       smokeJson?.attempts?.[0]?.accountCode,
     ""
@@ -1132,7 +1215,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     ? smokeJson.selected.positions
     : [];
 
-  const actualPositions: ActualPosition[] = rawPositions.map((p: any) => {
+  let actualPositions: ActualPosition[] = rawPositions.map((p: any) => {
     const ticker = safeString(p.ticker ?? p.symbol).toUpperCase();
     const qty = safeNumber(p.position ?? p.qty, 0);
     const tradePlanRow = tradePlanByTicker.get(ticker);
@@ -1162,6 +1245,89 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
   });
 
   actualPositions.sort((a, b) => b.value - a.value);
+
+  let initialIbkrStructure: LiveIbkrStructure | null = null;
+  if (navEur <= 0 && actualPositions.length === 0) {
+    const ib = await loadIbkrSnapshotFromDecideBackend();
+    if (ib?.ok && Array.isArray(ib.positions)) {
+      const navCcy = safeString(ib.net_liquidation_ccy, "USD");
+      const nav = safeNumber(ib.net_liquidation, 0);
+      navEur = nav;
+      accountBaseCurrency = navCcy || accountBaseCurrency;
+      accountCode = safeString(ib.account_code, accountCode);
+      const cl = ib.cash_ledger;
+      if (cl && typeof cl.value === "number" && Number.isFinite(cl.value)) {
+        cashEur = safeNumber(cl.value, 0);
+      }
+      const grossPositionsValue = ib.positions.reduce(
+        (acc, p) => acc + Math.abs(safeNumber(p.value, 0)),
+        0,
+      );
+      let financing = 0;
+      let financingCcy = navCcy;
+      if (
+        cl &&
+        typeof cl.value === "number" &&
+        Number.isFinite(cl.value) &&
+        Math.abs(cl.value) > 1e-4
+      ) {
+        financing = cl.value;
+        financingCcy = safeString(cl.currency, navCcy);
+      }
+      initialIbkrStructure = {
+        netLiquidation: nav,
+        ccy: navCcy,
+        grossPositionsValue,
+        financing,
+        financingCcy,
+      };
+      actualPositions = ib.positions.map((p) => {
+        const ticker = safeString(p.ticker, "").toUpperCase();
+        const qty = safeNumber(p.qty, 0);
+        const marketPrice = safeNumber(p.market_price, 0);
+        const value = safeNumber(p.value, qty * marketPrice);
+        const weightPct = nav > 0 ? (value / nav) * 100 : 0;
+        const closePrice = getClosePrice(ticker);
+        const m = metaForTicker(ticker);
+        const nameShort = pickBestDisplayName(
+          ticker,
+          safeString(p.name, ""),
+          safeString(m?.nameShort, ""),
+        );
+        const sector = trimmedCell(m?.sector) || trimmedCell(p.sector);
+        return {
+          ticker,
+          nameShort,
+          sector,
+          qty,
+          marketPrice,
+          closePrice: closePrice > 0 ? closePrice : null,
+          value,
+          weightPct,
+          currency: safeString(p.currency, navCcy),
+        };
+      });
+      if (
+        cl &&
+        typeof cl.value === "number" &&
+        Number.isFinite(cl.value) &&
+        Math.abs(cl.value) > 1e-4
+      ) {
+        actualPositions.push({
+          ticker: "LIQUIDEZ",
+          nameShort: "Caixa e equivalentes",
+          sector: "Liquidez",
+          qty: 0,
+          marketPrice: 0,
+          closePrice: null,
+          value: cl.value,
+          weightPct: nav > 0 ? (cl.value / nav) * 100 : 0,
+          currency: financingCcy,
+        });
+      }
+      actualPositions.sort((a, b) => b.value - a.value);
+    }
+  }
 
   const cashSleeveFracRaw = safeNumber(
     modelPayload?.kpis?.latest_cash_sleeve ??
@@ -1754,6 +1920,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     estimatedMonthlyManagementFeeEur,
     estimatedPerformanceFeeEur,
     tbillProxyIbTicker: eurMmSym,
+    ...(initialIbkrStructure ? { initialIbkrStructure } : {}),
   };
 
   return {
@@ -1806,14 +1973,6 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
     </h2>
   );
 }
-
-type LiveIbkrStructure = {
-  netLiquidation: number;
-  ccy: string;
-  grossPositionsValue: number;
-  financing: number;
-  financingCcy: string;
-};
 
 /** Rótulo da linha sintética LIQUIDEZ (TotalCashValue IBKR): positivo ≈ caixa; negativo ≈ margem. */
 function liquidezCashLabel(value: number): string {
@@ -2261,7 +2420,9 @@ export default function ClientReportPage({ reportData }: PageProps) {
     execFillsRef.current = execFills;
   }, [execFills]);
   const [liveActualPositions, setLiveActualPositions] = useState<ActualPosition[] | null>(null);
-  const [liveIbkrStructure, setLiveIbkrStructure] = useState<LiveIbkrStructure | null>(null);
+  const [liveIbkrStructure, setLiveIbkrStructure] = useState<LiveIbkrStructure | null>(
+    () => reportData.initialIbkrStructure ?? null,
+  );
   const [liveSnapshotError, setLiveSnapshotError] = useState<string>("");
   const [portfolioRefreshing, setPortfolioRefreshing] = useState(false);
   const [flattenBusy, setFlattenBusy] = useState(false);
