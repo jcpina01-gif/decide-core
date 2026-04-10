@@ -8141,6 +8141,15 @@ def index():
     else:
         raw_eq = model_eq.copy()
 
+    # Série «raw» / teórico: mesmo calendário que o modelo activo. O CSV por perfil
+    # (ex. dinâmico) pode ter N linhas ≠ `model_equity_final_20y.csv` → evita 500 no template/KPIs.
+    if len(raw_eq) != len(dates):
+        if raw_path.exists():
+            _, _, raw_eq, raw_dates = load_equity_curve(raw_path, "model_equity")
+            raw_eq = align_equity_series_to_target_dates(raw_eq, raw_dates, dates)
+        else:
+            raw_eq = model_eq.copy()
+
     # CAP15 e restantes: ver `apply_model_equity_profile_policy`.
     model_eq = apply_model_equity_profile_policy(
         model_eq,
