@@ -7406,8 +7406,12 @@ def load_holdings_and_breakdowns(base_path: Path):
             company_name = company_from_meta
         else:
             company_name = company_from_h or company_from_meta or ticker
-        country = _normalize_country(_clean_str(h.get("country") or "") or country_from_meta, zone_from_meta or zone)
-        zone = _clean_str(h.get("zone") or "") or zone_from_meta
+        zone_from_h = _clean_str(h.get("zone") or "")
+        country = _normalize_country(
+            _clean_str(h.get("country") or "") or country_from_meta,
+            zone_from_meta or zone_from_h,
+        )
+        zone = zone_from_h or zone_from_meta
         country = _normalize_country(country, zone)
 
         if not zone:
