@@ -13,8 +13,7 @@ from ibkr_paper_checks import ibkr_require_paper_env, is_paper_account
 
 router = APIRouter(tags=["ibkr-snapshot"])
 
-IBKR_HOST = ib_socket_host()
-IBKR_PORT = ib_socket_port()
+# Host/porta lidos em cada pedido (não cachear no import — evita ficar preso a 7497 após mudar ``backend/.env``).
 # Distinct from send-orders clientId to reduce clashes if both run close together.
 IBKR_CLIENT_ID = 96
 IBKR_MARKET_DATA_TYPE = 3
@@ -161,7 +160,7 @@ def _connect_ib() -> IB:
             asyncio.set_event_loop(asyncio.new_event_loop())
 
     ib = IB()
-    ib.connect(IBKR_HOST, IBKR_PORT, clientId=IBKR_CLIENT_ID, timeout=8)
+    ib.connect(ib_socket_host(), ib_socket_port(), clientId=IBKR_CLIENT_ID, timeout=8)
     ib.reqMarketDataType(IBKR_MARKET_DATA_TYPE)
     return ib
 
@@ -354,7 +353,7 @@ def ibkr_snapshot(req: IbkrSnapshotRequest) -> dict:
     try:
         ib = _connect_ib()
     except Exception as e:
-        loc = f"{IBKR_HOST}:{IBKR_PORT} (clientId={IBKR_CLIENT_ID})"
+        loc = f"{ib_socket_host()}:{ib_socket_port()} (clientId={IBKR_CLIENT_ID})"
         detail = (str(e) or "").strip() or repr(e) or type(e).__name__
         return {
             "status": "rejected",

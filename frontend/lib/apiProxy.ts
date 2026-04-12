@@ -20,6 +20,16 @@ export function getBackendBase(): string {
   return b.replace(/\/+$/, "") || "http://127.0.0.1:8090";
 }
 
+/**
+ * Na Vercel, `BACKEND_URL` em localhost faz o proxy IBKR falhar sempre — a carteira no dashboard não actualiza.
+ */
+export function productionBackendLocalhostHint(): string {
+  if (process.env.VERCEL !== "1") return "";
+  const b = getBackendBase();
+  if (!/127\.0\.0\.1|localhost/i.test(b)) return "";
+  return " Em Vercel, defina DECIDE_BACKEND_URL (ou BACKEND_URL) com o URL público do FastAPI (ex.: https://api-paper.seudominio.com), não localhost.";
+}
+
 export function normalizePathParam(p: unknown): string[] {
   if (Array.isArray(p)) return p.map((x) => String(x)).filter(Boolean);
   if (typeof p === "string" && p.trim()) return [p.trim()];

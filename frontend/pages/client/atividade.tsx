@@ -76,9 +76,10 @@ function rowSummaryLine(e: OrderActivityEntry): string {
 }
 
 /**
- * Histórico de ordens de bolsa (envio, execução, cancelamento) a partir do registo local
- * preenchido no Plano ao executar ordens e ao usar «Cancelar ordens não executadas (paper)».
- * Cancelamentos feitos só na TWS não aparecem aqui.
+ * Histórico de ordens e eventos do Plano (envio, execução, cancelamento, falhas, informação)
+ * gravado em localStorage neste browser: executar plano, zerar posições (paper), cancelar ordens em aberto,
+ * sincronizar execução / actualizar carteira IBKR, erros de rede ou API, etc.
+ * Acções feitas só na TWS/Gateway sem passar pelo Plano não aparecem aqui.
  */
 export default function ClientAtividadePage() {
   const [entries, setEntries] = useState<OrderActivityEntry[]>([]);

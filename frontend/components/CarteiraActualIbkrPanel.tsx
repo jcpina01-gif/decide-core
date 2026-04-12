@@ -8,6 +8,7 @@ import {
   IBKR_NO_STOCK_POSITIONS_LABEL_PT,
   ibkrSnapshotUnavailableHint,
   isIbkrSnapshotOk,
+  tmpDiagIbkrFallbackUserNote,
   type IbkrSnapshotPayload,
 } from "../lib/ibkrSnapshotParse";
 import { yahooFinanceQuoteHref } from "../lib/yahooFinanceQuoteUrl";
@@ -50,6 +51,7 @@ export default function CarteiraActualIbkrPanel({ refreshToken = 0 }: Props) {
   const [ccy, setCcy] = useState("EUR");
   const [rows, setRows] = useState<ReturnType<typeof buildIbkrPositionDisplayRows>>([]);
   const [hint, setHint] = useState<string>("");
+  const [fallbackNote, setFallbackNote] = useState<string>("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,15 +72,18 @@ export default function CarteiraActualIbkrPanel({ refreshToken = 0 }: Props) {
       }
       if (isIbkrSnapshotOk(snap, r.ok)) {
         setHint("");
+        setFallbackNote(tmpDiagIbkrFallbackUserNote(snap));
         setOk(true);
         setCcy(typeof snap.net_liquidation_ccy === "string" ? snap.net_liquidation_ccy : "EUR");
         setRows(buildIbkrPositionDisplayRows(snap));
       } else {
+        setFallbackNote("");
         setHint(ibkrSnapshotUnavailableHint(snap, r.ok, r.status));
         setOk(false);
         setRows([]);
       }
     } catch {
+      setFallbackNote("");
       setHint("Erro de rede ao pedir o snapshot IBKR.");
       setOk(false);
       setRows([]);
@@ -128,6 +133,11 @@ export default function CarteiraActualIbkrPanel({ refreshToken = 0 }: Props) {
         ver concentração na parte accionista, mas <strong style={{ color: "#a1a1aa" }}>não</strong> implica validação
         CAP15; para isso compare com a carteira recomendada no <strong style={{ color: "#a1a1aa" }}>Plano</strong>.
       </p>
+      {ok && fallbackNote && !loading ? (
+        <p style={{ margin: "0 0 14px", fontSize: 13, lineHeight: 1.45, color: "#a78bfa", maxWidth: 820 }}>
+          {fallbackNote}
+        </p>
+      ) : null}
       {loading ? (
         <p style={{ margin: 0, fontSize: 14, color: "#71717a" }} role="status">
           A carregar posições

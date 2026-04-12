@@ -55,6 +55,7 @@ const nextConfig = {
     "/api/landing/core-overlayed": ["./data/landing/**/*"],
     /** Plano de aprovação (freeze + CSVs) em deploy Vercel com root `frontend/`. */
     "/api/client/approval-plan": ["../freeze/**/*", "../backend/data/**/*"],
+    "/api/client/plan-decision-kpis": ["../freeze/**/*", "../backend/data/**/*"],
     "/client/approve": ["../freeze/**/*", "../backend/data/**/*"],
   },
 

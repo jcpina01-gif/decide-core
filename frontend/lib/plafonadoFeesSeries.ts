@@ -1,6 +1,6 @@
 /**
  * Série do simulador de custos alinhada ao Modelo CAP15 (`compute_client_embed_plafonado_kpis` no kpi_server):
- * calendário CAP15, valores m100 reindexados, depois política de vol (moderado cru; conservador/dinâmico vs benchmark).
+ * calendário CAP15, valores m100 reindexados, depois política de vol (moderado cru; conservador/dinâmico 0,75× / 1,25× vs benchmark).
  */
 
 import fs from "fs";
@@ -27,12 +27,50 @@ const PROFILE_VOL_MULT: Record<string, number> = {
   dinamico: 1.25,
 };
 
+/** Igual a `normalize_risk_profile_key` no kpi_server (acentos, variantes PT/EN). */
 function normalizeProfile(raw: string): "conservador" | "moderado" | "dinamico" {
-  const p = String(raw || "moderado")
-    .trim()
-    .toLowerCase();
-  if (p === "conservador" || p === "dinamico") return p;
+  const rawS = String(raw ?? "moderado").trim();
+  if (!rawS) return "moderado";
+  const p = rawS
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+  if (
+    p === "conservador" ||
+    p === "conservative" ||
+    p === "defensivo" ||
+    p === "defensive"
+  ) {
+    return "conservador";
+  }
+  if (
+    p === "dinamico" ||
+    p === "dynamic" ||
+    p === "agresivo" ||
+    p === "agressivo" ||
+    p === "arrojado"
+  ) {
+    return "dinamico";
+  }
+  if (
+    p === "moderado" ||
+    p === "moderate" ||
+    p === "medio" ||
+    p === "equilibrado" ||
+    p === "balanced" ||
+    p === "neutro" ||
+    p === "neutral"
+  ) {
+    return "moderado";
+  }
   return "moderado";
+}
+
+/** Para APIs Next / leitura de freeze — exportado para alinhar query params e ficheiros `_*_{perfil}.csv`. */
+export function normalizeRiskProfileKeyForKpi(
+  raw: string | undefined | null,
+): "conservador" | "moderado" | "dinamico" {
+  return normalizeProfile(String(raw ?? "moderado"));
 }
 
 function kpiEnvRealEquity(): boolean {
@@ -151,9 +189,11 @@ function scaleModelEquityToProfileVol(
   benchEq: number[],
   profileKey: string,
 ): number[] {
+  const pk = normalizeProfile(profileKey);
+  if (pk === "moderado") return modelEq.slice();
   const n = Math.min(modelEq.length, benchEq.length);
   if (n < 30) return modelEq.slice();
-  const mult = PROFILE_VOL_MULT[profileKey] ?? 1.0;
+  const mult = PROFILE_VOL_MULT[pk] ?? 1.0;
   const mR: number[] = [];
   const bR: number[] = [];
   for (let i = 1; i < n; i += 1) {
@@ -197,19 +237,15 @@ function applyModelEquityProfilePolicy(
     forceSyntheticProfileVol: boolean;
   },
 ): number[] {
-  if (opts.usedProfileFile) return modelEq.slice();
+  void opts;
   const pk = normalizeProfile(profileKey);
   if (pk === "moderado") return modelEq.slice();
-  if (opts.forceSyntheticProfileVol) {
-    return scaleModelEquityToProfileVol(modelEq, benchEq, profileKey);
-  }
-  if (opts.clientEmbed) return modelEq.slice();
-  return scaleModelEquityToProfileVol(modelEq, benchEq, profileKey);
+  return scaleModelEquityToProfileVol(modelEq, benchEq, pk);
 }
 
 /**
  * Alinhado a `apply_model_equity_profile_policy` no kpi_server: moderado = série sem reescala;
- * conservador/dinâmico = 0,75× / 1,25× vs benchmark quando o sintético está activo.
+ * conservador/dinâmico = 0,75× / 1,25× vs benchmark (sempre que há benchmark alinhado).
  */
 export function applyPlafonadoProfileVolPolicy(
   modelEq: number[],
@@ -226,14 +262,58 @@ export function applyPlafonadoProfileVolPolicy(
 
 type DirPair = { cap15Dir: string; m100Dir: string };
 
+/** Alinhado a `resolve_benchmark` / `coerce_long` no kpi_server (stub ~60 linhas). */
+const MIN_BENCHMARK_CSV_ROWS = 500;
+/** CSVs `model_equity_final_20y_{perfil}.csv` placeholder (ex. moderado com ~60 linhas). */
+const MIN_MODEL_EQUITY_PROFILE_ROWS = 500;
+
+function countCsvDataRows(filePath: string): number {
+  try {
+    const text = fs.readFileSync(filePath, "utf8");
+    const lines = text.replace(/\r/g, "").split("\n").filter((l) => l.trim().length > 0);
+    return Math.max(0, lines.length - 1);
+  } catch {
+    return 0;
+  }
+}
+
+function modelEquityCsvLooksComplete(filePath: string): boolean {
+  return countCsvDataRows(filePath) >= MIN_MODEL_EQUITY_PROFILE_ROWS;
+}
+
+/**
+ * Benchmark longo para o mesmo `model_outputs/` que o iframe (`benchmark_equity_final_20y.csv` ou clone).
+ */
+function resolveCoercedBenchmarkPath(repoRoot: string, modelOutputsDir: string): string {
+  const primary = path.join(modelOutputsDir, "benchmark_equity_final_20y.csv");
+  const clone = path.join(path.dirname(modelOutputsDir), "model_outputs_from_clone", "benchmark_equity_final_20y.csv");
+  if (countCsvDataRows(primary) >= MIN_BENCHMARK_CSV_ROWS) return primary;
+  if (fs.existsSync(clone) && countCsvDataRows(clone) >= MIN_BENCHMARK_CSV_ROWS) return clone;
+  const smoothClone = path.join(
+    repoRoot,
+    "freeze",
+    FREEZE_PLAFONADO_MODEL_DIR,
+    "model_outputs_from_clone",
+    "benchmark_equity_final_20y.csv",
+  );
+  if (fs.existsSync(smoothClone) && countCsvDataRows(smoothClone) >= MIN_BENCHMARK_CSV_ROWS) {
+    return smoothClone;
+  }
+  return primary;
+}
+
 function resolveCap15M100Dirs(cwd: string): DirPair | null {
-  const cap15 = path.join(cwd, "..", "freeze", "DECIDE_MODEL_V5_OVERLAY_CAP15", "model_outputs");
-  const m100 = path.join(cwd, "..", "freeze", FREEZE_PLAFONADO_MODEL_DIR, "model_outputs");
-  const capBench = path.join(cap15, "benchmark_equity_final_20y.csv");
-  const capModel = path.join(cap15, "model_equity_final_20y.csv");
-  const m100Model = path.join(m100, "model_equity_final_20y.csv");
-  if (fs.existsSync(capBench) && fs.existsSync(capModel) && fs.existsSync(m100Model)) {
-    return { cap15Dir: cap15, m100Dir: m100 };
+  const repoRoot = path.resolve(path.join(cwd, ".."));
+  const smooth = path.join(repoRoot, "freeze", FREEZE_PLAFONADO_MODEL_DIR, "model_outputs");
+  const m100Model = path.join(smooth, "model_equity_final_20y.csv");
+  const capModelSmooth = path.join(smooth, "model_equity_final_20y.csv");
+  const benchP = resolveCoercedBenchmarkPath(repoRoot, smooth);
+  if (
+    fs.existsSync(capModelSmooth) &&
+    fs.existsSync(m100Model) &&
+    countCsvDataRows(benchP) >= MIN_BENCHMARK_CSV_ROWS
+  ) {
+    return { cap15Dir: smooth, m100Dir: smooth };
   }
   return null;
 }
@@ -247,71 +327,14 @@ function resolveLandingDir(cwd: string): string | null {
 }
 
 /**
- * Constrói datas + benchmark + equity «overlay» como no iframe / `/api/embed-plafonado-cagr`.
+ * Série a partir de `frontend/data/landing/freeze-cap15/` (artefacto embebido; não depende do freeze do repo).
  */
-export function buildPlafonadoEmbedLikeSeries(
+export function buildLandingFreezeCap15Series(
   profileKeyRaw: string,
   cwd: string,
 ): PlafonadoFeesSeriesResult | null {
   const pk = normalizeProfile(profileKeyRaw);
   const forceSyntheticVol = kpiForceSyntheticVolClientEmbed();
-
-  const pair = resolveCap15M100Dirs(cwd);
-  if (pair) {
-    const capModelPath = path.join(pair.cap15Dir, "model_equity_final_20y.csv");
-    const benchPath = path.join(pair.cap15Dir, "benchmark_equity_final_20y.csv");
-    const m100Default = path.join(pair.m100Dir, "model_equity_final_20y.csv");
-    const m100ByProfile = path.join(pair.m100Dir, `model_equity_final_20y_${pk}.csv`);
-    let m100Path = m100Default;
-    let usedProfileFile = false;
-    if (!forceSyntheticVol && fs.existsSync(m100ByProfile)) {
-      m100Path = m100ByProfile;
-      usedProfileFile = true;
-    }
-
-    let capT: string;
-    let benchT: string;
-    let m100T: string;
-    try {
-      capT = fs.readFileSync(capModelPath, "utf8");
-      benchT = fs.readFileSync(benchPath, "utf8");
-      m100T = fs.readFileSync(m100Path, "utf8");
-    } catch {
-      return null;
-    }
-
-    const capM = parseEquityCsv(capT, "model_equity");
-    const benchP = parseEquityCsv(benchT, "benchmark_equity");
-    const m100P = parseEquityCsv(m100T, "model_equity");
-    const nCap = Math.min(capM.dates.length, capM.equity.length, benchP.dates.length, benchP.equity.length);
-    if (nCap < 50) return null;
-    const capDates = capM.dates.slice(0, nCap);
-    const benchmark_equity = benchP.equity.slice(0, nCap);
-
-    const alignedRaw = alignM100EquityToCapDates(capDates, m100P.dates, m100P.equity);
-    if (!alignedRaw) return null;
-
-    const equity_raw = alignedRaw;
-    const equity_overlayed = applyModelEquityProfilePolicy(equity_raw, benchmark_equity, pk, {
-      usedProfileFile,
-      clientEmbed: true,
-      forceSyntheticProfileVol: forceSyntheticVol,
-    });
-
-    return {
-      dates: capDates,
-      benchmark_equity,
-      equity_overlayed,
-      equity_raw,
-      meta: {
-        profile: pk,
-        aligned_cap15_m100: true,
-        force_synthetic_vol: forceSyntheticVol,
-        used_m100_profile_file: usedProfileFile,
-      },
-    };
-  }
-
   const land = resolveLandingDir(cwd);
   if (!land) return null;
 
@@ -336,7 +359,7 @@ export function buildPlafonadoEmbedLikeSeries(
   const profileFile = path.join(land, `model_equity_final_20y_${pk}.csv`);
   let baseEq = equity_raw;
   let usedProfileFile = false;
-  if (!forceSyntheticVol && fs.existsSync(profileFile)) {
+  if (pk !== "moderado" && !forceSyntheticVol && fs.existsSync(profileFile)) {
     try {
       const pt = fs.readFileSync(profileFile, "utf8");
       const mp = parseEquityCsv(pt, "model_equity");
@@ -371,4 +394,100 @@ export function buildPlafonadoEmbedLikeSeries(
       used_m100_profile_file: usedProfileFile,
     },
   };
+}
+
+/**
+ * Rentabilidade anual do «Plano recomendado»: prefere o artefacto embebido `landing/freeze-cap15`
+ * (narrativa de produto / custos), senão a mesma série que o iframe (`freeze` + benchmark coerced).
+ */
+export function buildPlanHeroPlafonadoSeries(
+  profileKeyRaw: string,
+  cwd: string,
+): PlafonadoFeesSeriesResult | null {
+  const fromLanding = buildLandingFreezeCap15Series(profileKeyRaw, cwd);
+  if (fromLanding) return fromLanding;
+  return buildPlafonadoEmbedLikeSeriesFromFreezeOnly(profileKeyRaw, cwd);
+}
+
+/** Série a partir do `freeze/` do repo (paridade com o iframe Flask); sem fallback landing. */
+function buildPlafonadoEmbedLikeSeriesFromFreezeOnly(
+  profileKeyRaw: string,
+  cwd: string,
+): PlafonadoFeesSeriesResult | null {
+  const pk = normalizeProfile(profileKeyRaw);
+  const forceSyntheticVol = kpiForceSyntheticVolClientEmbed();
+  const pair = resolveCap15M100Dirs(cwd);
+  if (!pair) return null;
+
+  const repoRoot = path.resolve(path.join(cwd, ".."));
+  const capModelPath = path.join(pair.cap15Dir, "model_equity_final_20y.csv");
+  const benchPath = resolveCoercedBenchmarkPath(repoRoot, pair.cap15Dir);
+  const m100Default = path.join(pair.m100Dir, "model_equity_final_20y.csv");
+  const m100ByProfile = path.join(pair.m100Dir, `model_equity_final_20y_${pk}.csv`);
+  let m100Path = m100Default;
+  let usedProfileFile = false;
+  if (
+    pk !== "moderado" &&
+    !forceSyntheticVol &&
+    fs.existsSync(m100ByProfile) &&
+    modelEquityCsvLooksComplete(m100ByProfile)
+  ) {
+    m100Path = m100ByProfile;
+    usedProfileFile = true;
+  }
+
+  let capT: string;
+  let benchT: string;
+  let m100T: string;
+  try {
+    capT = fs.readFileSync(capModelPath, "utf8");
+    benchT = fs.readFileSync(benchPath, "utf8");
+    m100T = fs.readFileSync(m100Path, "utf8");
+  } catch {
+    return null;
+  }
+
+  const capM = parseEquityCsv(capT, "model_equity");
+  const benchP = parseEquityCsv(benchT, "benchmark_equity");
+  const m100P = parseEquityCsv(m100T, "model_equity");
+  const nCap = Math.min(capM.dates.length, capM.equity.length, benchP.dates.length, benchP.equity.length);
+  if (nCap < 50) return null;
+  const capDates = capM.dates.slice(0, nCap);
+  const benchmark_equity = benchP.equity.slice(0, nCap);
+
+  const alignedRaw = alignM100EquityToCapDates(capDates, m100P.dates, m100P.equity);
+  if (!alignedRaw) return null;
+
+  const equity_raw = alignedRaw;
+  const equity_overlayed = applyModelEquityProfilePolicy(equity_raw, benchmark_equity, pk, {
+    usedProfileFile,
+    clientEmbed: true,
+    forceSyntheticProfileVol: forceSyntheticVol,
+  });
+
+  return {
+    dates: capDates,
+    benchmark_equity,
+    equity_overlayed,
+    equity_raw,
+    meta: {
+      profile: pk,
+      aligned_cap15_m100: true,
+      force_synthetic_vol: forceSyntheticVol,
+      used_m100_profile_file: usedProfileFile,
+    },
+  };
+}
+
+/**
+ * Constrói datas + benchmark + equity «overlay» como no iframe / `/api/embed-plafonado-cagr`.
+ */
+export function buildPlafonadoEmbedLikeSeries(
+  profileKeyRaw: string,
+  cwd: string,
+): PlafonadoFeesSeriesResult | null {
+  return (
+    buildPlafonadoEmbedLikeSeriesFromFreezeOnly(profileKeyRaw, cwd) ??
+    buildLandingFreezeCap15Series(profileKeyRaw, cwd)
+  );
 }

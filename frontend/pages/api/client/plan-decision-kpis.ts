@@ -6,7 +6,10 @@ import {
 import { loadApprovalAlignedProposedTrades } from "../../../lib/server/approvalTradePlan";
 import { resolveDecideProjectRoot } from "../../../lib/server/decideProjectRoot";
 import { computePlanActivity } from "../../../lib/planDecisionKpiMath";
-import { readPlafonadoM100CagrDisplayPercent } from "../../../lib/server/readPlafonadoFreezeCagr";
+import {
+  readPlafonadoM100CagrDisplayPercent,
+  readPlanRecommendedCagrDisplayPercent,
+} from "../../../lib/server/readPlafonadoFreezeCagr";
 import { readHeroKpiFreezeContext } from "../../../lib/server/readHeroKpiFreezeContext";
 
 type OkBody = {
@@ -47,11 +50,15 @@ export default async function handler(
     const { trades, navEur, recommendedCagrPct: cagrFromModel } =
       await loadApprovalAlignedProposedTrades(projectRoot);
     const m = computePlanActivity(trades, navEur);
-    /** Alinhado ao cartão «Modelo CAP15» no iframe (`embed-plafonado-cagr` / MAX100EXP). */
+    /**
+     * Hero = CAGR do **CAP15 plafonado** (mesma lógica que o cartão no iframe): freeze + série tipo embed,
+     * depois Flask; só depois landing / plano de aprovação.
+     */
     const recommendedModelLabel = "Modelo CAP15";
     const recommendedCagrPct =
-      (await fetchPlafonadoCagrPctFromKpiServer(profile)) ??
       readPlafonadoM100CagrDisplayPercent(projectRoot, profile) ??
+      (await fetchPlafonadoCagrPctFromKpiServer(profile)) ??
+      readPlanRecommendedCagrDisplayPercent(projectRoot, profile) ??
       cagrFromModel;
     const { historyPeriodLabel, historyYearRangeLabel, benchmarkCagrPct } =
       readHeroKpiFreezeContext(projectRoot);

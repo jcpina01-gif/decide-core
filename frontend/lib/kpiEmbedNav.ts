@@ -324,23 +324,34 @@ export function normalizeKpiEmbedBaseUrl(input: string): string {
 export function kpiEmbedBaseRejectSameOriginAsApp(base: string): string {
   if (!base.trim() || typeof window === "undefined") return base;
   try {
-    const u = new URL(base);
-    if (u.origin === window.location.origin) return "";
+    const u =
+      base.startsWith("http://") || base.startsWith("https://")
+        ? new URL(base)
+        : new URL(base, window.location.origin);
+    if (u.origin !== window.location.origin) return base;
+    const p = u.pathname;
+    if (p === "/kpi-flask" || p.startsWith("/kpi-flask/")) return base;
+    return "";
   } catch {
-    /* manter base */
+    return base;
   }
-  return base;
 }
 
 
 
 export function getKpiEmbedBase(): string {
+  /**
+   * Em dev o browser usa o proxy do Next (`middleware.ts` → 127.0.0.1:5000).
+   * Em produção com `KPI_EMBED_UPSTREAM` + `NEXT_PUBLIC_KPI_EMBED_BASE=/kpi-flask`, o middleware reencaminha
+   * para o mesmo `kpi_server` que em local (regras de vol / perfil idênticas ao build deployado).
+   */
+  if (process.env.NODE_ENV === "development") {
+    return "/kpi-flask";
+  }
 
   const fromEnv = normalizeKpiEmbedBaseUrl(String(process.env.NEXT_PUBLIC_KPI_EMBED_BASE || ""));
 
   if (fromEnv) return fromEnv;
-
-  if (process.env.NODE_ENV === "development") return "http://127.0.0.1:5000";
 
   if (typeof window === "undefined") return "";
 

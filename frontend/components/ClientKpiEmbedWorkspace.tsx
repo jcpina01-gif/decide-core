@@ -197,14 +197,23 @@ const KPI_EMBED_POST_LOAD_HOLD_MS = 1100;
 const KPI_EMBED_POST_LOAD_HOLD_FEES_MS = 500;
 const KPI_EMBED_SLOW_HINT_MS = 8000;
 /** Se o `load` do iframe nunca concluir (Flask parado, rede, ou página presa). */
-const KPI_EMBED_IFRAME_MAX_WAIT_MS = 42_000;
+/** Primeira carga do `kpi_server.py` (pandas/plotly) pode demorar >40s em discos lentos / antivírus. */
+const KPI_EMBED_IFRAME_MAX_WAIT_MS = 120_000;
 
 function withIframeRetryParam(raw: string, retryNonce: number): string {
   if (!raw || retryNonce <= 0) return raw;
+  const origin =
+    typeof window !== "undefined" ? window.location.origin : "http://localhost";
   try {
-    const u = new URL(raw);
+    const u =
+      raw.startsWith("http://") || raw.startsWith("https://")
+        ? new URL(raw)
+        : new URL(raw, origin);
     u.searchParams.set("_decide_retry", String(retryNonce));
-    return u.toString();
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+      return u.toString();
+    }
+    return `${u.pathname}${u.search}${u.hash}`;
   } catch {
     const sep = raw.includes("?") ? "&" : "?";
     return `${raw}${sep}_decide_retry=${encodeURIComponent(String(retryNonce))}`;
@@ -281,9 +290,9 @@ function KpiEmbedIframe({
           </p>
           {slowHint ? (
             <p className="decide-app-kpi-iframe-loading-hint">
-              Se o ecrã ficar vazio, confirme que o <strong>serviço Flask</strong> do KPI está a correr (em desenvolvimento,
-              tipicamente <code>127.0.0.1:5000</code>) e que <code>NEXT_PUBLIC_KPI_EMBED_BASE</code> aponta para a{" "}
-              <strong>raiz</strong> desse serviço, sem <code>/api</code> no fim.
+              Se o ecrã ficar vazio, confirme que o <strong>Flask KPI</strong> está a correr em{" "}
+              <code>127.0.0.1:5000</code> (ex. <code>npm run kpi</code> na pasta <code>backend</code>). Em dev o Next
+              encaminha <code>/kpi-flask</code> para esse serviço.
             </p>
           ) : null}
         </div>
@@ -307,9 +316,9 @@ function KpiEmbedIframe({
           }}
         >
           <p style={{ margin: 0, maxWidth: 400, fontSize: 14, lineHeight: 1.55, color: "#fecaca" }}>
-            O simulador não terminou de carregar a tempo. O serviço Flask em{" "}
-            <code style={{ color: "#e2e8f0" }}>127.0.0.1:5000</code> pode estar parado, sobrecarregado ou inacessível
-            (firewall / VPN).
+            O simulador não terminou de carregar a tempo. Em dev confirme <code style={{ color: "#e2e8f0" }}>npm run kpi</code>{" "}
+            (Flask em <code style={{ color: "#e2e8f0" }}>127.0.0.1:5000</code>) e que o Next encaminha{" "}
+            <code style={{ color: "#e2e8f0" }}>/kpi-flask</code> para aí.
           </p>
           <button
             type="button"

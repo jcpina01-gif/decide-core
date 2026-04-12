@@ -29,8 +29,12 @@ export type IbkrSnapshotPosition = {
   weight?: number;
 };
 
+const TMP_DIAG_IBKR_FALLBACK_SOURCE = "tmp_diag_fallback";
+
 export type IbkrSnapshotPayload = {
   status?: string;
+  /** Devolvido pelo proxy Next em 503 quando não há ligação ao FastAPI (diagnóstico). */
+  backendBase?: string;
   /** Alguns erros do proxy Next ou do FastAPI. */
   error?: string;
   detail?: unknown;
@@ -38,7 +42,23 @@ export type IbkrSnapshotPayload = {
   net_liquidation_ccy?: string;
   positions?: IbkrSnapshotPosition[];
   cash_ledger?: { value?: number; currency?: string };
+  /** Metadados do FastAPI ou do fallback `tmp_diag` (ver `ibkrSnapshotTmpDiagFallback.ts`). */
+  meta?: {
+    decide_snapshot_source?: string;
+    decide_snapshot_fallback_note?: string;
+    [key: string]: unknown;
+  };
 };
+
+/** Resposta reconstruída a partir de `tmp_diag/` quando o proxy não alcança o FastAPI. */
+export function isTmpDiagIbkrFallbackSnapshot(snap: IbkrSnapshotPayload): boolean {
+  return snap.meta?.decide_snapshot_source === TMP_DIAG_IBKR_FALLBACK_SOURCE;
+}
+
+export function tmpDiagIbkrFallbackUserNote(snap: IbkrSnapshotPayload): string {
+  const n = snap.meta?.decide_snapshot_fallback_note;
+  return typeof n === "string" && n.trim() ? n.trim() : "";
+}
 
 /**
  * True quando o snapshot tem dados de conta utilizáveis.
@@ -78,7 +98,16 @@ export function ibkrSnapshotUnavailableHint(
 ): string {
   if (!httpOk) {
     if (httpStatus === 503) {
-      return "Não foi possível contactar o backend (IBKR). Confirme BACKEND_URL / uvicorn e IB Gateway ou TWS em execução.";
+      const b = typeof snap.backendBase === "string" && snap.backendBase.trim() ? snap.backendBase.trim() : "";
+      const tail = b ? ` Base configurada (proxy): ${b}.` : "";
+      const proxyErr =
+        typeof snap.error === "string" && snap.error.trim() ? ` ${snap.error.trim()}` : "";
+      const noDetail =
+        !proxyErr &&
+        b &&
+        !/127\.0\.0\.1|localhost/i.test(b) &&
+        ` A API em produção devolveu 503 (sem JSON de erro) — o container/VM pode estar parado, em cold start falhado, ou o Cloudflare não está a alcançar a origem. Confirme em ${b}/api/health no browser.`;
+      return `Não foi possível contactar o backend (IBKR).${proxyErr}${noDetail || ""} Se a API estiver OK, confirme IB Gateway ou TWS acessível a partir do servidor onde corre o FastAPI (não só no seu PC).${tail}`;
     }
     if (httpStatus === 404) {
       return "Endpoint IBKR não encontrado no backend — confirme a versão do FastAPI e a rota /api/ibkr-snapshot.";

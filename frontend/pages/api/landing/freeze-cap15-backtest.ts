@@ -1,17 +1,18 @@
 /**
  * Landing / simulador de custos: série alinhada ao Modelo CAP15 (`compute_client_embed_plafonado_kpis` no kpi_server)
- * (CAP15 + m100; moderado sem reescala de vol; conservador/dinâmico com alvo vs benchmark; opt-out global `DECIDE_KPI_REAL_EQUITY=1`).
+ * (CAP15 + m100; moderado sem reescala de vol; conservador/dinâmico com alvo vs benchmark; no Flask `DECIDE_KPI_REAL_EQUITY=1` só mexe na escolha do CSV no embed).
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { buildPlafonadoEmbedLikeSeries } from "../../../lib/plafonadoFeesSeries";
+import {
+  buildPlafonadoEmbedLikeSeries,
+  normalizeRiskProfileKeyForKpi,
+} from "../../../lib/plafonadoFeesSeries";
 
 function normalizeProfileParam(raw: unknown): string {
-  const s = String(raw ?? "moderado")
-    .trim()
-    .toLowerCase();
-  if (s === "conservador" || s === "dinamico" || s === "moderado") return s;
-  return "moderado";
+  return normalizeRiskProfileKeyForKpi(
+    raw === undefined || raw === null ? undefined : String(raw),
+  );
 }
 
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -45,7 +46,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       kind: "freeze_v5_plafonado_embed_aligned",
       profile: built.meta.profile,
       note:
-        "Mesma construção que o cartão «Modelo CAP15» / `/api/embed-plafonado-cagr` (kpi_server): CAP15 + m100 plafonado; moderado sem reescala de vol; conservador/dinâmico com alvo vs benchmark salvo `DECIDE_KPI_REAL_EQUITY=1`.",
+        "Mesma construção que o cartão «Modelo CAP15» / `/api/embed-plafonado-cagr` (kpi_server): CAP15 + m100 plafonado; moderado sem reescala de vol; conservador/dinâmico com alvo vs benchmark.",
       aligned_cap15_m100: built.meta.aligned_cap15_m100,
       force_synthetic_vol: built.meta.force_synthetic_vol,
       used_m100_profile_file: built.meta.used_m100_profile_file,

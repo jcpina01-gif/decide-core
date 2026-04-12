@@ -19,6 +19,9 @@ import { DECIDE_APP_FONT_FAMILY, DECIDE_DASHBOARD } from "../../lib/decideClient
 import {
   recordCancelOpenOrdersPaperResponse,
   recordExecutionSnapshotFromSyncedFills,
+  recordFlattenPaperPortfolioResponse,
+  recordPlanActivityFailure,
+  recordPlanActivityInfo,
   recordSendOrdersResponse,
   recordUserAbortedSendOrders,
 } from "../../lib/clientOrderActivityLog";
@@ -27,22 +30,10 @@ import {
   isDecideCashSleeveBrokerSymbol,
 } from "../../lib/decideCashSleeveDisplay";
 import {
-  fillSyntheticEquityBuyQuantities,
-  loadApprovalAlignedProposedTrades,
-} from "../../lib/server/approvalTradePlan";
-import {
-  fetchPlafonadoKpisFromKpiServer,
-  normalizeRiskProfileForKpi,
-  planPlafonadoModeradoCagrFallbackPct,
-} from "../../lib/server/fetchPlafonadoCagrFromKpiServer";
-import {
-  readLandingEmbeddedFreezeCap15CagrDisplayPercent,
-  readPlafonadoM100CagrDisplayPercent,
-} from "../../lib/server/readPlafonadoFreezeCagr";
-import { readHeroKpiFreezeContext } from "../../lib/server/readHeroKpiFreezeContext";
-import { FREEZE_PLAFONADO_MODEL_DIR, PLAFONADO_MODEL_DISPLAY_NAME_PT } from "../../lib/freezePlafonadoDir";
-import path from "path";
-import fs from "fs";
+  estimateUsdNotionalForBuyFxHedge,
+  isBuyMissingEquityClosePrice,
+} from "../../lib/approvalPlanTradeDisplay";
+import { capPctDisplay, eurMmIbTicker, safeNumber, safeString } from "../../lib/clientReportCoreUtils";
 import {
   ResponsiveContainer,
   LineChart,
@@ -54,14 +45,14 @@ import {
   Legend,
 } from "recharts";
 
-type SeriesPoint = {
+export type SeriesPoint = {
   date: string;
   benchmark: number;
   raw: number;
   overlayed: number;
 };
 
-type ActualPosition = {
+export type ActualPosition = {
   ticker: string;
   /** Nome curto (metadados CSV ou snapshot IBKR). */
   nameShort: string;
@@ -75,7 +66,7 @@ type ActualPosition = {
   currency: string;
 };
 
-type RecommendedPosition = {
+export type RecommendedPosition = {
   ticker: string;
   nameShort: string;
   region: string;
@@ -88,7 +79,7 @@ type RecommendedPosition = {
   excluded: boolean;
 };
 
-type ProposedTrade = {
+export type ProposedTrade = {
   ticker: string;
   side: string;
   absQty: number;
@@ -99,7 +90,7 @@ type ProposedTrade = {
   nameShort: string;
 };
 
-type LiveIbkrStructure = {
+export type LiveIbkrStructure = {
   netLiquidation: number;
   ccy: string;
   grossPositionsValue: number;
@@ -107,7 +98,7 @@ type LiveIbkrStructure = {
   financingCcy: string;
 };
 
-type ReportData = {
+export type ReportData = {
   generatedAt: string;
   accountCode: string;
   profile: string;
@@ -168,43 +159,9 @@ type ReportData = {
   initialIbkrStructure?: LiveIbkrStructure;
 };
 
-type PageProps = {
+export type PageProps = {
   reportData: ReportData;
 };
-
-function safeNumber(x: unknown, fallback = 0): number {
-  const v = typeof x === "number" ? x : Number(x);
-  return Number.isFinite(v) ? v : fallback;
-}
-
-function safeString(x: unknown, fallback = ""): string {
-  return typeof x === "string" ? x : fallback;
-}
-
-/** Células CSV / API: devolve texto trimado ou "". */
-function trimmedCell(x: unknown): string {
-  return typeof x === "string" ? x.trim() : "";
-}
-
-/**
- * Sector na carteira recomendada: preferir metadados locais (GICS nos CSVs)
- * ao valor vindo do motor, que muitas vezes é "Other" ou genérico.
- */
-function pickRecommendedSector(p: { sector?: unknown }, metaSector: string | undefined): string {
-  const fromMeta = trimmedCell(metaSector);
-  const fromPayload = trimmedCell(
-    typeof p.sector === "string" ? p.sector : p.sector != null ? String(p.sector) : "",
-  );
-  return fromMeta || fromPayload || "";
-}
-
-function pickRecommendedIndustry(p: { industry?: unknown }, metaIndustry: string | undefined): string {
-  const fromMeta = trimmedCell(metaIndustry);
-  const fromPayload = trimmedCell(
-    typeof p.industry === "string" ? p.industry : p.industry != null ? String(p.industry) : "",
-  );
-  return fromMeta || fromPayload || "";
-}
 
 /**
  * Proximidade da carteira real aos pesos-alvo do plano (só linhas do plano com peso ≥ 0,05%).
@@ -234,25 +191,6 @@ function computePortfolioVsPlanCoveragePct(
   }
   if (denom <= 0) return null;
   return Math.min(100, Math.round((num / denom) * 1000) / 10);
-}
-
-/** UCITS MM em EUR (proxy `EUR_MM_PROXY` no plano) — alinhar com `EUR_MM_IB_TICKER` no backend. */
-function eurMmIbTicker(): string {
-  const v = (
-    process.env.NEXT_PUBLIC_EUR_MM_IB_TICKER ||
-    process.env.EUR_MM_IB_TICKER ||
-    "CSH2"
-  )
-    .trim()
-    .toUpperCase();
-  return v || "CSH2";
-}
-
-function fallbackEurMmPriceEur(ticker: string): number {
-  const t = ticker.trim().toUpperCase();
-  if (t === "CSH2") return 100.0;
-  if (t === "XEON") return 52.0;
-  return 100.0;
 }
 
 /** Caixa/MM (CSH2, ETF T-Bills), proxies do plano e hedge EURUSD — fora do denominador «só títulos de risco» à direita. */
@@ -292,22 +230,6 @@ function planLiquidezVsAccoesPctFromRecommended(
     liquidezPct: (liquidez / t) * 100,
     acoesPct: (acoes / t) * 100,
   };
-}
-
-const MIN_FX_HEDGE_USD_ORDER_REPORT = Number(
-  process.env.DECIDE_MIN_FX_HEDGE_USD || process.env.NEXT_PUBLIC_DECIDE_MIN_FX_HEDGE_USD || 500,
-);
-
-function fxHedgeOrderPctFromEnvReport(): number {
-  const raw = Number(
-    process.env.DECIDE_FX_HEDGE_ORDER_PCT ?? process.env.NEXT_PUBLIC_DECIDE_FX_HEDGE_ORDER_PCT ?? 100,
-  );
-  return Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 100;
-}
-
-function eurusdMidHintReport(): number {
-  const raw = Number(process.env.DECIDE_EURUSD_MID_HINT ?? process.env.NEXT_PUBLIC_DECIDE_EURUSD_MID_HINT ?? 1.08);
-  return Number.isFinite(raw) && raw > 0 ? raw : 1.08;
 }
 
 function formatEuro(v: number): string {
@@ -353,25 +275,6 @@ function formatEurUsdRate(v: number | null | undefined): string {
     minimumFractionDigits: 4,
     maximumFractionDigits: 6,
   }).format(v);
-}
-
-/** Montante USD estimado das compras (qty × preço em USD) — usado para EURUSD no mesmo envio que as ações. */
-function estimateUsdNotionalForBuyFxHedge(trades: ProposedTrade[]): number {
-  let sumPx = 0;
-  let sumDelta = 0;
-  for (const t of trades) {
-    if (String(t.side).toUpperCase() !== "BUY") continue;
-    const tick = String(t.ticker).toUpperCase();
-    if (tick === "EURUSD" || tick === "TBILL_PROXY" || tick === "EUR_MM_PROXY") continue;
-    const q = Math.floor(Math.abs(Number(t.absQty) || 0));
-    const px = Number(t.marketPrice) || 0;
-    if (q > 0 && px > 0) sumPx += q * px;
-    sumDelta += Math.abs(Number(t.deltaValueEst) || 0);
-  }
-  const rounded = Math.round(sumPx * 100) / 100;
-  const deltaUsd = Math.round(sumDelta * 100) / 100;
-  /** Se `qty×preço` subestima (close em falta no cliente), usar soma dos |Δ| em valor como tecto. */
-  return Math.max(rounded, deltaUsd);
 }
 
 /**
@@ -485,1455 +388,6 @@ function fillEligibleForCompletionRetry(f: { status?: string; requested_qty?: nu
   if (liveNoFill) return false;
   return true;
 }
-
-function splitCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
-
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        cur += '"';
-        i += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (ch === "," && !inQuotes) {
-      out.push(cur);
-      cur = "";
-      continue;
-    }
-
-    cur += ch;
-  }
-
-  out.push(cur);
-  return out;
-}
-
-function parseCsv(text: string): Record<string, string>[] {
-  const lines = text
-    .replace(/\r/g, "")
-    .split("\n")
-    .filter((x) => x.trim().length > 0);
-
-  if (lines.length === 0) return [];
-
-  const headers = splitCsvLine(lines[0]).map((h) => h.trim());
-  const rows: Record<string, string>[] = [];
-
-  for (let i = 1; i < lines.length; i += 1) {
-    const cols = splitCsvLine(lines[i]);
-    const row: Record<string, string> = {};
-    for (let j = 0; j < headers.length; j += 1) {
-      row[headers[j]] = cols[j] ?? "";
-    }
-    rows.push(row);
-  }
-
-  return rows;
-}
-
-function readJsonIfExists<T>(filePath: string): T | null {
-  if (!fs.existsSync(filePath)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf-8")) as T;
-  } catch {
-    return null;
-  }
-}
-
-function readCsvIfExists(filePath: string): Record<string, string>[] {
-  if (!fs.existsSync(filePath)) return [];
-  try {
-    return parseCsv(fs.readFileSync(filePath, "utf-8"));
-  } catch {
-    return [];
-  }
-}
-
-function buildBackendRunModelUrl(profile: string, excludedTickers: string[] = []): string {
-  const baseRaw =
-    process.env.DECIDE_BACKEND_URL ||
-    process.env.NEXT_PUBLIC_DECIDE_BACKEND_URL ||
-    process.env.BACKEND_URL ||
-    process.env.NEXT_PUBLIC_BACKEND_URL ||
-    "http://127.0.0.1:8090";
-  let base = String(baseRaw || "").trim().replace(/\/+$/, "");
-  if (/\/api$/i.test(base)) base = base.replace(/\/api$/i, "");
-  if (!base) base = "http://127.0.0.1:8090";
-  const url = new URL(base);
-  url.pathname = (url.pathname.replace(/\/+$/, "") + "/api/run-model").replace(/\/{2,}/g, "/");
-  url.searchParams.set("profile", profile);
-  if (excludedTickers.length > 0) {
-    url.searchParams.set("exclude_tickers", excludedTickers.join(","));
-  }
-  return url.toString();
-}
-
-/** Mesmo host que run-model: em Vercel não há tmp_diag — hidrata NAV/carteira no SSR. */
-async function loadIbkrSnapshotFromDecideBackend(): Promise<{
-  ok: boolean;
-  net_liquidation?: number;
-  net_liquidation_ccy?: string;
-  account_code?: string;
-  cash_ledger?: { value?: number; currency?: string };
-  positions?: Array<{
-    ticker?: string;
-    name?: string;
-    sector?: string;
-    qty?: number;
-    market_price?: number;
-    value?: number;
-    currency?: string;
-    weight_pct?: number;
-  }>;
-  error?: string;
-} | null> {
-  const baseRaw =
-    process.env.DECIDE_BACKEND_URL ||
-    process.env.NEXT_PUBLIC_DECIDE_BACKEND_URL ||
-    process.env.BACKEND_URL ||
-    process.env.NEXT_PUBLIC_BACKEND_URL ||
-    "";
-  let base = String(baseRaw || "").trim().replace(/\/+$/, "");
-  if (!base) return null;
-  if (/\/api$/i.test(base)) base = base.replace(/\/api$/i, "");
-  const url = `${base.replace(/\/+$/, "")}/api/ibkr-snapshot`;
-  try {
-    const ctrl = new AbortController();
-    // Partilha orçamento com run-model no mesmo SSR (maxDuration 120s na Vercel).
-    const t = setTimeout(() => ctrl.abort(), 45_000);
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ paper_mode: true }),
-      signal: ctrl.signal,
-    });
-    clearTimeout(t);
-    let data: Record<string, unknown>;
-    try {
-      data = (await r.json()) as Record<string, unknown>;
-    } catch {
-      return { ok: false, error: "Resposta IBKR-snapshot não é JSON válido." };
-    }
-    const positions = data.positions;
-    if (!r.ok || data.status !== "ok" || !Array.isArray(positions)) {
-      const err =
-        (typeof data.error === "string" && data.error) ||
-        (typeof data.detail === "string" && data.detail) ||
-        `HTTP ${r.status}`;
-      return { ok: false, error: err };
-    }
-    return {
-      ok: true,
-      net_liquidation: safeNumber(data.net_liquidation, 0),
-      net_liquidation_ccy: safeString(data.net_liquidation_ccy, "USD"),
-      account_code: safeString(data.account_code, ""),
-      cash_ledger:
-        data.cash_ledger && typeof data.cash_ledger === "object"
-          ? (data.cash_ledger as { value?: number; currency?: string })
-          : undefined,
-      positions,
-    };
-  } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : String(e),
-    };
-  }
-}
-
-async function loadBackendModel(profile = "moderado", excludedTickers: string[] = []): Promise<{
-  payload: any | null;
-  error: string;
-}> {
-  try {
-    const ctrl = new AbortController();
-    // run-model pode demorar >12s (Vercel→VM, cold start, JSON grande); abort cedo gera "This operation was aborted" sem 4xx na Rede.
-    const t = setTimeout(() => ctrl.abort(), 120_000);
-    const r = await fetch(buildBackendRunModelUrl(profile, excludedTickers), {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      signal: ctrl.signal,
-    });
-    clearTimeout(t);
-
-    if (!r.ok) {
-      if (r.status === 405) {
-        return {
-          payload: null,
-          error:
-            "Backend respondeu 405 (GET não permitido). O URL configurado (DECIDE_BACKEND_URL / BACKEND_URL) aponta para um backend que só aceita POST em /api/run-model (ex.: `server:app` no Docker). Faça deploy com `uvicorn main:app` e a pasta `backend/` completa.",
-        };
-      }
-      return {
-        payload: null,
-        error: `Backend respondeu ${r.status}`,
-      };
-    }
-
-    const payload = await r.json();
-    return { payload, error: "" };
-  } catch (e) {
-    return {
-      payload: null,
-      error: e instanceof Error ? e.message : "Falha a ligar ao backend",
-    };
-  }
-}
-
-function hasUsableModelPayload(payload: any): boolean {
-  if (!payload || typeof payload !== "object") return false;
-  const positions = payload?.current_portfolio?.positions;
-  const dates = payload?.series?.dates;
-  const hasPositions = Array.isArray(positions) && positions.length > 0;
-  const hasSeries = Array.isArray(dates) && dates.length >= 50;
-  return hasPositions && hasSeries;
-}
-
-/** engine_v2 devolve `selection` + `series` sem `current_portfolio`; o gráfico espera `equity_raw` alinhado a `equity_overlayed`. */
-function normalizeBackendModelPayloadForReport(payload: any | null): any | null {
-  if (!payload || typeof payload !== "object") return payload;
-  const out: any = { ...payload };
-  const prevSeries = out.series && typeof out.series === "object" ? out.series : {};
-  const baseSeries = { ...prevSeries };
-  const overlayed = baseSeries.equity_overlayed;
-  const raw = baseSeries.equity_raw;
-  const hasOverlay = Array.isArray(overlayed) && overlayed.length > 0;
-  const rawEmpty = !Array.isArray(raw) || raw.length === 0;
-  if (hasOverlay && rawEmpty) {
-    baseSeries.equity_raw = overlayed.map((x: unknown) => safeNumber(x, 0));
-  }
-  if (Object.keys(baseSeries).length > 0) {
-    out.series = baseSeries;
-  }
-  if (hasUsableModelPayload(out)) return out;
-
-  const dates = out.series?.dates;
-  const sel = out.selection;
-  if (!Array.isArray(dates) || dates.length < 50 || !Array.isArray(sel) || sel.length === 0) {
-    return out;
-  }
-
-  const builtPositions = sel.map((s: any) => ({
-    ticker: safeString(s.ticker, "").toUpperCase(),
-    weight_pct: safeNumber(s.weight, 0) * 100,
-    score: safeNumber(s.score, 0),
-    name_short: safeString(s.ticker, ""),
-    region: "",
-    sector: "",
-  }));
-
-  return {
-    ...out,
-    current_portfolio: { positions: builtPositions },
-  };
-}
-
-function dailyReturnsFromEquity(equity: number[]): number[] {
-  const r: number[] = [];
-  for (let i = 1; i < equity.length; i += 1) {
-    const prev = equity[i - 1];
-    if (prev > 0) r.push(equity[i] / prev - 1);
-  }
-  return r;
-}
-
-function annualizedVolFromDailyReturns(rets: number[]): number {
-  if (rets.length < 2) return 0;
-  const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
-  let s2 = 0;
-  for (const x of rets) s2 += (x - mean) ** 2;
-  const sd = Math.sqrt(s2 / (rets.length - 1));
-  return sd * Math.sqrt(252);
-}
-
-function sharpeFromDailyReturns(rets: number[]): number {
-  if (rets.length < 2) return 0;
-  const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
-  let s2 = 0;
-  for (const x of rets) s2 += (x - mean) ** 2;
-  const sd = Math.sqrt(s2 / (rets.length - 1));
-  if (sd <= 0) return 0;
-  return (mean / sd) * Math.sqrt(252);
-}
-
-function maxDrawdownFraction(equity: number[]): number {
-  if (equity.length === 0) return 0;
-  let peak = equity[0] || 1;
-  let maxDd = 0;
-  for (const x of equity) {
-    if (x > peak) peak = x;
-    if (peak > 0) {
-      const dd = (peak - x) / peak;
-      if (dd > maxDd) maxDd = dd;
-    }
-  }
-  return maxDd;
-}
-
-function totalReturnFraction(equity: number[]): number {
-  if (equity.length < 2) return 0;
-  const a = equity[0];
-  const b = equity[equity.length - 1];
-  if (!(a > 0) || !(b > 0)) return 0;
-  return b / a - 1;
-}
-
-/**
- * Horizonte único do relatório: gráfico, CAGR nos cartões e métricas de risco (Sharpe, vol, MDD)
- * alinhados à mesma janela móvel no fim da série.
- */
-const DISPLAY_REPORT_YEARS = 20;
-const PCT_DISPLAY_CAP = 400;
-
-function parseDateYmd(s: string): number {
-  const t = Date.parse(String(s).slice(0, 10));
-  return Number.isFinite(t) ? t : NaN;
-}
-
-function findHorizonStartIdx(dates: string[], n: number, years: number): number {
-  if (n < 2) return 0;
-  const last = parseDateYmd(String(dates[n - 1]));
-  if (!Number.isFinite(last)) return 0;
-  const cutoff = last - years * 365.25 * 24 * 3600 * 1000;
-  for (let i = 0; i < n; i += 1) {
-    const t = parseDateYmd(String(dates[i]));
-    if (Number.isFinite(t) && t >= cutoff) return i;
-  }
-  return Math.max(0, n - Math.floor(252 * Math.min(years, 30)));
-}
-
-function yearsSpanBetween(dates: string[], startIdx: number, endIdx: number): number {
-  const a = parseDateYmd(String(dates[startIdx]));
-  const b = parseDateYmd(String(dates[endIdx]));
-  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return 0;
-  return (b - a) / (365.25 * 24 * 3600 * 1000);
-}
-
-function capPctDisplay(p: number): number {
-  if (!Number.isFinite(p)) return 0;
-  return Math.max(-PCT_DISPLAY_CAP, Math.min(PCT_DISPLAY_CAP, p));
-}
-
-function cagrPctFromEquityWindow(equity: number[], years: number): number {
-  if (equity.length < 2 || !(years > 0.08)) return 0;
-  const a = equity[0];
-  const b = equity[equity.length - 1];
-  if (!(a > 0) || !(b > 0)) return 0;
-  return (Math.pow(b / a, 1 / years) - 1) * 100;
-}
-
-function profileRiskLabel(profile: string): string {
-  const p = profile.trim().toLowerCase();
-  if (p.includes("conserv")) return "Conservador";
-  if (p.includes("agress")) return "Agressivo";
-  if (p.includes("moder")) return "Moderado";
-  const t = profile.trim();
-  return t ? t.charAt(0).toUpperCase() + t.slice(1) : "Moderado";
-}
-
-function exclusionTickerGroup(ticker: string): string {
-  const t = ticker.trim().toUpperCase().replace(/\./g, "-");
-  // Dual-class aliases that should appear only once in exclusion lists.
-  if (t === "GOOG" || t === "GOOGL") return "GOOG";
-  return t;
-}
-
-function normalizeTickerKey(ticker: string): string {
-  return ticker.trim().toUpperCase().replace(/\./g, "-");
-}
-
-function pickBestDisplayName(ticker: string, candidate: string, fallback: string): string {
-  const t = normalizeTickerKey(ticker);
-  const c = safeString(candidate, "").trim();
-  const f = safeString(fallback, "").trim();
-  const isWeak = (v: string) => {
-    if (!v) return true;
-    const n = normalizeTickerKey(v);
-    return n === t || n === exclusionTickerGroup(t);
-  };
-  if (!isWeak(c)) return c;
-  if (!isWeak(f)) return f;
-  return c || f || ticker;
-}
-
-/**
- * Quando o motor em 8090 está offline, usa o snapshot em
- * `freeze/<FREEZE_PLAFONADO_MODEL_DIR>/model_outputs/` (CAP15 plafonado, V2.3 smooth).
- */
-function loadFreezeRunModelSnapshot(projectRoot: string): any | null {
-  const dir = path.join(projectRoot, "freeze", FREEZE_PLAFONADO_MODEL_DIR, "model_outputs");
-  const pfPath = path.join(dir, "portfolio_final.json");
-  const benchPath = path.join(dir, "benchmark_equity_final_20y.csv");
-  const modelPathModerado = path.join(dir, "model_equity_final_20y_moderado.csv");
-  const modelPathBase = path.join(dir, "model_equity_final_20y.csv");
-  const modelPath = fs.existsSync(modelPathModerado) ? modelPathModerado : modelPathBase;
-  const overlayPath = path.join(dir, "equity_overlayed.json");
-  const kpisPath = path.join(dir, "v5_kpis.json");
-
-  if (!fs.existsSync(pfPath) || !fs.existsSync(benchPath) || !fs.existsSync(modelPath)) {
-    return null;
-  }
-
-  const pf = readJsonIfExists<{ holdings?: unknown[] }>(pfPath);
-  const kpisMeta = readJsonIfExists<Record<string, unknown>>(kpisPath);
-  const benchRows = readCsvIfExists(benchPath);
-  const modelRows = readCsvIfExists(modelPath);
-
-  let overlayed: number[] = [];
-  if (fs.existsSync(overlayPath)) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(overlayPath, "utf8")) as unknown;
-      if (Array.isArray(raw)) overlayed = raw.map((x) => safeNumber(Number(x), 0));
-    } catch {
-      overlayed = [];
-    }
-  }
-
-  const nRaw = Math.min(benchRows.length, modelRows.length);
-  const n = overlayed.length > 0 ? Math.min(nRaw, overlayed.length) : nRaw;
-  const holdings = Array.isArray(pf?.holdings) ? pf!.holdings! : [];
-
-  if (n < 50 || holdings.length === 0) return null;
-
-  const dates: string[] = [];
-  const benchmark_equity: number[] = [];
-  const equity_raw: number[] = [];
-  const equity_overlayed: number[] = [];
-
-  for (let i = 0; i < n; i += 1) {
-    const b = benchRows[i];
-    const m = modelRows[i];
-    const dRaw = String(b?.date ?? m?.date ?? "").trim();
-    dates.push(dRaw.length >= 10 ? dRaw.slice(0, 10) : dRaw);
-    benchmark_equity.push(safeNumber(Number(b?.benchmark_equity), 0));
-    const rawEq = safeNumber(Number(m?.model_equity), 0);
-    equity_raw.push(rawEq);
-    equity_overlayed.push(
-      overlayed.length > i ? safeNumber(overlayed[i], rawEq) : rawEq
-    );
-  }
-
-  const positions = holdings.map((h: any) => ({
-    ticker: safeString(h?.ticker, "").toUpperCase(),
-    name_short: safeString(h?.company ?? h?.ticker, h?.ticker),
-    region: safeString(h?.zone || h?.country, ""),
-    sector: safeString(h?.sector, ""),
-    score: safeNumber(h?.score, 0),
-    weight_pct: safeNumber(h?.weight_pct, 0),
-  }));
-
-  const ovr = equity_overlayed;
-  const bench = benchmark_equity;
-  const rawEq = equity_raw;
-
-  const retsO = dailyReturnsFromEquity(ovr);
-  const retsB = dailyReturnsFromEquity(bench);
-
-  const kpis = {
-    total_return: totalReturnFraction(ovr),
-    cagr: safeNumber(Number(kpisMeta?.overlayed_cagr), 0),
-    sharpe:
-      typeof kpisMeta?.overlayed_sharpe === "number"
-        ? (kpisMeta.overlayed_sharpe as number)
-        : sharpeFromDailyReturns(retsO),
-    vol: annualizedVolFromDailyReturns(retsO),
-    max_drawdown: maxDrawdownFraction(ovr),
-    latest_cash_sleeve: safeNumber(Number(kpisMeta?.latest_cash_sleeve), 0),
-  };
-
-  const benchmark_kpis = {
-    total_return: totalReturnFraction(bench),
-    cagr: safeNumber(Number(kpisMeta?.benchmark_cagr), 0),
-    sharpe: sharpeFromDailyReturns(retsB),
-    vol: annualizedVolFromDailyReturns(retsB),
-    max_drawdown: maxDrawdownFraction(bench),
-  };
-
-  return {
-    meta: {
-      profile: safeString(kpisMeta?.profile, "moderado"),
-      data_source: "freeze_local_fallback_cap15_v23_smooth",
-      model_name: FREEZE_PLAFONADO_MODEL_DIR,
-      latest_cash_sleeve: safeNumber(Number(kpisMeta?.latest_cash_sleeve), 0),
-      freeze_dir: dir,
-    },
-    current_portfolio: { positions },
-    series: {
-      dates,
-      benchmark_equity,
-      equity_raw,
-      equity_overlayed,
-    },
-    kpis,
-    benchmark_kpis,
-  };
-}
-
-export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => {
-  const frontRoot = process.cwd();
-  const projectRoot = path.resolve(frontRoot, "..");
-  const tmpDir = path.join(projectRoot, "tmp_diag");
-  const eurMmSym = eurMmIbTicker();
-
-  const smokePath = path.join(tmpDir, "ibkr_paper_smoke_test.json");
-  const statusPath = path.join(tmpDir, "ibkr_order_status_and_cancel.json");
-  const tradePlanPath = path.join(tmpDir, "decide_trade_plan_ibkr.csv");
-  const companyMetaPath = path.join(projectRoot, "backend", "data", "company_meta_combined.csv");
-  const companyMetaV3Path = path.join(projectRoot, "backend", "data", "company_meta_v3.csv");
-  const companyMetaGlobalPath = path.join(projectRoot, "backend", "data", "company_meta_global.csv");
-  const companyMetaGlobalEnrichedPath = path.join(
-    projectRoot,
-    "backend",
-    "data",
-    "company_meta_global_enriched.csv",
-  );
-
-  const smokeJson = readJsonIfExists<any>(smokePath);
-  const statusJson = readJsonIfExists<any>(statusPath);
-  const tradePlanRows = readCsvIfExists(tradePlanPath);
-  const companyMetaRows = readCsvIfExists(companyMetaPath);
-  const companyMetaV3Rows = readCsvIfExists(companyMetaV3Path);
-  const companyMetaGlobalRows = readCsvIfExists(companyMetaGlobalPath);
-  const companyMetaGlobalEnrichedRows = readCsvIfExists(companyMetaGlobalEnrichedPath);
-
-  const metaByTicker = new Map<
-    string,
-    { sector: string; region: string; nameShort: string; industry: string }
-  >();
-  const upsertMeta = (row: Record<string, string>) => {
-    const tRaw = safeString(row.ticker || row.symbol).toUpperCase();
-    const t = normalizeTickerKey(tRaw);
-    if (!t) return;
-    const curr = metaByTicker.get(t) || { sector: "", region: "", nameShort: "", industry: "" };
-    const sectorFromRow = trimmedCell(row.sector || row.gics_sector || row.sector_name);
-    const industryFromRow = trimmedCell(row.industry || row.gics_sub_industry || row.sub_industry || "");
-    const nameCandidate = trimmedCell(row.name_short || row.name || row.company || "");
-    const nameWeak =
-      !nameCandidate ||
-      normalizeTickerKey(nameCandidate) === t ||
-      normalizeTickerKey(nameCandidate) === exclusionTickerGroup(t);
-    const nextName = nameWeak ? curr.nameShort || nameCandidate : nameCandidate;
-    const regionCandidate = trimmedCell(row.region || row.zone || row.country_group || "");
-    const next = {
-      sector: sectorFromRow || curr.sector,
-      region: regionCandidate || curr.region,
-      nameShort: nextName,
-      industry: industryFromRow || curr.industry,
-    };
-    metaByTicker.set(t, next);
-    // Also index the dot/dash variant to avoid lookup misses (e.g. BRK.B vs BRK-B).
-    const alt = t.includes("-") ? t.replace(/-/g, ".") : t.replace(/\./g, "-");
-    if (alt && alt !== t) metaByTicker.set(alt, next);
-  };
-  for (const row of companyMetaGlobalRows) upsertMeta(row);
-  for (const row of companyMetaGlobalEnrichedRows) upsertMeta(row);
-  for (const row of companyMetaV3Rows) upsertMeta(row);
-  for (const row of companyMetaRows) upsertMeta(row);
-
-  const brkMeta = {
-    sector: "Conglomerados / Holdings financeiros",
-    region: "US",
-    nameShort: "Berkshire Hathaway (Classe B)",
-    industry: "",
-  };
-  {
-    const nk = normalizeTickerKey("BRK.B");
-    const cur = metaByTicker.get(nk) || { sector: "", region: "", nameShort: "", industry: "" };
-    const merged = {
-      sector: cur.sector || brkMeta.sector,
-      region: cur.region || brkMeta.region,
-      industry: cur.industry || brkMeta.industry,
-      nameShort:
-        cur.nameShort && cur.nameShort !== nk && cur.nameShort !== "BRK.B"
-          ? cur.nameShort
-          : brkMeta.nameShort,
-    };
-    metaByTicker.set(nk, merged);
-    metaByTicker.set("BRK.B", merged);
-  }
-
-  const metaForTicker = (ticker: string) => {
-    const k = normalizeTickerKey(ticker);
-    const direct = metaByTicker.get(k);
-    if (direct) return direct;
-    const alt = k.includes("-") ? k.replace(/-/g, ".") : k.replace(/\./g, "-");
-    if (alt) {
-      const hit = metaByTicker.get(alt);
-      if (hit) return hit;
-    }
-    const compact = k.replace(/\s+/g, "");
-    if (compact === "BRKB" || k.trim().toUpperCase() === "BRK B") {
-      return metaByTicker.get("BRK-B") ?? metaByTicker.get("BRK.B");
-    }
-    return undefined;
-  };
-
-  // "Last close" prices (for the "Preço" column). We only read the header + last line.
-  const pricesClosePath = path.join(projectRoot, "backend", "data", "prices_close.csv");
-  let closeAsOfDate = "";
-  const closePricesByTicker = new Map<string, number>();
-
-  function normalizeTickerForCloseCsv(ticker: string) {
-    const s = ticker.trim().toUpperCase().replace(/\s+/g, "");
-    // Attempt common IB->CSV normalization (e.g. BRK.B -> BRK-B).
-    return s.replace(/\./g, "-");
-  }
-
-  function getClosePrice(ticker: string): number {
-    const t = ticker.trim().toUpperCase();
-    const candidates = [
-      t,
-      normalizeTickerForCloseCsv(t),
-      // If CSV uses '.' instead of '-'
-      t.replace(/-/g, "."),
-    ];
-    for (const c of candidates) {
-      const v = closePricesByTicker.get(c);
-      if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
-    }
-    return 0;
-  }
-
-  try {
-    if (fs.existsSync(pricesClosePath)) {
-      const textRaw = fs.readFileSync(pricesClosePath, "utf-8");
-      const text = textRaw.replace(/^\uFEFF/, ""); // BOM safety
-
-      const firstNl = text.indexOf("\n");
-      const lastNl = text.lastIndexOf("\n");
-      const prevNl = text.lastIndexOf("\n", lastNl - 1);
-
-      if (firstNl > 0 && lastNl > 0 && prevNl > 0) {
-        const headerLine = text.slice(0, firstNl).replace(/\r/g, "").trim();
-        const lastLine = text.slice(prevNl + 1, lastNl).replace(/\r/g, "").trim();
-
-        const headers = splitCsvLine(headerLine).map((h) => h.trim());
-        const values = splitCsvLine(lastLine);
-
-        const dateIdx = headers.findIndex((h) => h.toLowerCase() === "date");
-        const dateVal = dateIdx >= 0 ? values[dateIdx] : values[0];
-        closeAsOfDate = String(dateVal || "").slice(0, 10);
-
-        for (let i = 0; i < headers.length; i += 1) {
-          const col = headers[i];
-          if (!col || col.toLowerCase() === "date") continue;
-          const raw = values[i];
-          const num = Number(raw);
-          if (Number.isFinite(num) && num > 0) {
-            closePricesByTicker.set(col.toUpperCase(), num);
-          }
-        }
-      }
-    }
-  } catch {
-    // If close CSV fails to parse, keep closeAsOfDate empty and close prices as 0.
-  }
-
-  const clearExclusions =
-    safeString(ctx.query.clear, "") === "1" ||
-    safeString(ctx.query.clear, "").toLowerCase() === "true";
-  const rawExclude = clearExclusions ? "" : ctx.query.exclude;
-  const excludeTokens = Array.isArray(rawExclude)
-    ? rawExclude.join(",")
-    : safeString(rawExclude, "");
-  const excludedTickersApplied = Array.from(
-    new Set(
-      excludeTokens
-        .split(",")
-        .map((x) => x.trim().toUpperCase())
-        .filter((x) => /^[A-Z0-9.\-]{1,16}$/.test(x))
-    )
-  ).slice(0, 5);
-
-  let { payload: modelPayload, error: backendError } = await loadBackendModel(
-    "moderado",
-    excludedTickersApplied
-  );
-  modelPayload = normalizeBackendModelPayloadForReport(modelPayload);
-  if (!hasUsableModelPayload(modelPayload)) {
-    const snap = loadFreezeRunModelSnapshot(projectRoot);
-    if (snap) {
-      modelPayload = snap;
-      backendError = "";
-    } else if (!backendError) {
-      backendError = "Dados do backend incompletos (sem carteira/série).";
-    }
-  }
-
-  let navEur = safeNumber(
-    smokeJson?.selected?.netLiquidation?.value ??
-      smokeJson?.attempts?.[0]?.netLiquidation?.value,
-    0
-  );
-
-  const netLiqCurrency = (o: Record<string, unknown> | undefined): string => {
-    const nl = o?.netLiquidation;
-    if (nl && typeof nl === "object" && nl !== null && "currency" in nl) {
-      return safeString((nl as { currency?: string }).currency, "").trim().toUpperCase();
-    }
-    return "";
-  };
-  const sel = smokeJson?.selected as Record<string, unknown> | undefined;
-  const att0 = smokeJson?.attempts?.[0] as Record<string, unknown> | undefined;
-  let accountBaseCurrency =
-    netLiqCurrency(sel) || netLiqCurrency(att0) || "EUR";
-
-  let cashEur = safeNumber(
-    smokeJson?.selected?.cash?.value ?? smokeJson?.attempts?.[0]?.cash?.value,
-    0
-  );
-
-  let accountCode = safeString(
-    smokeJson?.selected?.accountCode ??
-      smokeJson?.attempts?.[0]?.accountCode,
-    ""
-  );
-
-  const tradePlanByTicker = new Map<string, Record<string, string>>();
-  for (const row of tradePlanRows) {
-    const ticker = safeString(row.ticker).toUpperCase();
-    if (ticker) tradePlanByTicker.set(ticker, row);
-  }
-
-  const rawPositions = Array.isArray(statusJson?.positions)
-    ? statusJson.positions
-    : Array.isArray(smokeJson?.selected?.positions)
-    ? smokeJson.selected.positions
-    : [];
-
-  let actualPositions: ActualPosition[] = rawPositions.map((p: any) => {
-    const ticker = safeString(p.ticker ?? p.symbol).toUpperCase();
-    const qty = safeNumber(p.position ?? p.qty, 0);
-    const tradePlanRow = tradePlanByTicker.get(ticker);
-    const marketPrice = safeNumber(tradePlanRow?.market_price, 0);
-    const value = qty * marketPrice;
-    const weightPct = navEur > 0 ? (value / navEur) * 100 : 0;
-    const closePrice = getClosePrice(ticker);
-    const m = metaForTicker(ticker);
-    const nameShort = pickBestDisplayName(
-      ticker,
-      safeString(p.name ?? p.companyName ?? p.short_name, ""),
-      safeString(m?.nameShort, ""),
-    );
-    const sector = trimmedCell(m?.sector) || trimmedCell(p.sector ?? p.gics_sector);
-
-    return {
-      ticker,
-      nameShort,
-      sector,
-      qty,
-      marketPrice,
-      closePrice: closePrice > 0 ? closePrice : null,
-      value,
-      weightPct,
-      currency: safeString(p.currency, safeString(tradePlanRow?.currency, "USD")),
-    };
-  });
-
-  actualPositions.sort((a, b) => b.value - a.value);
-
-  let initialIbkrStructure: LiveIbkrStructure | null = null;
-  if (navEur <= 0 && actualPositions.length === 0) {
-    const ib = await loadIbkrSnapshotFromDecideBackend();
-    if (ib?.ok && Array.isArray(ib.positions)) {
-      const navCcy = safeString(ib.net_liquidation_ccy, "USD");
-      const nav = safeNumber(ib.net_liquidation, 0);
-      navEur = nav;
-      accountBaseCurrency = navCcy || accountBaseCurrency;
-      accountCode = safeString(ib.account_code, accountCode);
-      const cl = ib.cash_ledger;
-      if (cl && typeof cl.value === "number" && Number.isFinite(cl.value)) {
-        cashEur = safeNumber(cl.value, 0);
-      }
-      const grossPositionsValue = ib.positions.reduce(
-        (acc, p) => acc + Math.abs(safeNumber(p.value, 0)),
-        0,
-      );
-      let financing = 0;
-      let financingCcy = navCcy;
-      if (
-        cl &&
-        typeof cl.value === "number" &&
-        Number.isFinite(cl.value) &&
-        Math.abs(cl.value) > 1e-4
-      ) {
-        financing = cl.value;
-        financingCcy = safeString(cl.currency, navCcy);
-      }
-      initialIbkrStructure = {
-        netLiquidation: nav,
-        ccy: navCcy,
-        grossPositionsValue,
-        financing,
-        financingCcy,
-      };
-      actualPositions = ib.positions.map((p) => {
-        const ticker = safeString(p.ticker, "").toUpperCase();
-        const qty = safeNumber(p.qty, 0);
-        const marketPrice = safeNumber(p.market_price, 0);
-        const value = safeNumber(p.value, qty * marketPrice);
-        const weightPct = nav > 0 ? (value / nav) * 100 : 0;
-        const closePrice = getClosePrice(ticker);
-        const m = metaForTicker(ticker);
-        const nameShort = pickBestDisplayName(
-          ticker,
-          safeString(p.name, ""),
-          safeString(m?.nameShort, ""),
-        );
-        const sector = trimmedCell(m?.sector) || trimmedCell(p.sector);
-        return {
-          ticker,
-          nameShort,
-          sector,
-          qty,
-          marketPrice,
-          closePrice: closePrice > 0 ? closePrice : null,
-          value,
-          weightPct,
-          currency: safeString(p.currency, navCcy),
-        };
-      });
-      if (
-        cl &&
-        typeof cl.value === "number" &&
-        Number.isFinite(cl.value) &&
-        Math.abs(cl.value) > 1e-4
-      ) {
-        actualPositions.push({
-          ticker: "LIQUIDEZ",
-          nameShort: "Caixa e equivalentes",
-          sector: "Liquidez",
-          qty: 0,
-          marketPrice: 0,
-          closePrice: null,
-          value: cl.value,
-          weightPct: nav > 0 ? (cl.value / nav) * 100 : 0,
-          currency: financingCcy,
-        });
-      }
-      actualPositions.sort((a, b) => b.value - a.value);
-    }
-  }
-
-  const cashSleeveFracRaw = safeNumber(
-    modelPayload?.kpis?.latest_cash_sleeve ??
-      modelPayload?.meta?.latest_cash_sleeve ??
-      modelPayload?.summary?.latest_cash_sleeve,
-    0
-  );
-  const cashSleeveFrac =
-    cashSleeveFracRaw >= 0 && cashSleeveFracRaw <= 0.95 ? cashSleeveFracRaw : 0;
-  const investedFrac = 1 - cashSleeveFrac;
-
-  const recommendedRaw: RecommendedPosition[] = Array.isArray(
-    modelPayload?.current_portfolio?.positions
-  )
-    ? modelPayload.current_portfolio.positions.map((p: any) => ({
-        ticker: (() => {
-          const t = safeString(p.ticker).toUpperCase();
-          return t;
-        })(),
-        nameShort: (() => {
-          const t = safeString(p.ticker).toUpperCase();
-          const m = metaForTicker(t);
-          return pickBestDisplayName(
-            t,
-            safeString(p.name_short || p.short_name || p.ticker),
-            safeString(m?.nameShort, "")
-          );
-        })(),
-        region: (() => {
-          const t = safeString(p.ticker).toUpperCase();
-          const m = metaForTicker(t);
-          return safeString(p.region || m?.region, "");
-        })(),
-        sector: (() => {
-          const t = safeString(p.ticker).toUpperCase();
-          const m = metaForTicker(t);
-          return pickRecommendedSector(p, m?.sector);
-        })(),
-        industry: (() => {
-          const t = safeString(p.ticker).toUpperCase();
-          const m = metaForTicker(t);
-          return pickRecommendedIndustry(p, m?.industry);
-        })(),
-        score: safeNumber(p.score, 0),
-        weightPct: safeNumber(p.weight_pct, 0) * investedFrac,
-        originalWeightPct: safeNumber(p.weight_pct, 0) * investedFrac,
-        excluded: false,
-      }))
-    : [];
-
-  // Remover duplicados exatos por ticker (mantém o maior peso).
-  const dedupByTicker = new Map<string, RecommendedPosition>();
-  for (const p of recommendedRaw) {
-    const k = exclusionTickerGroup(normalizeTickerKey(p.ticker));
-    const prev = dedupByTicker.get(k);
-    if (!prev || safeNumber(p.weightPct, 0) > safeNumber(prev.weightPct, 0)) {
-      dedupByTicker.set(k, { ...p, ticker: k });
-    }
-  }
-  const recommendedRawUnique = Array.from(dedupByTicker.values());
-
-  // Lista de exclusão sem "títulos" duplicados (ex.: GOOG/GOOGL -> 1 entrada).
-  const exclusionByTitle = new Map<string, { ticker: string; nameShort: string; weightPct: number }>();
-  for (const p of recommendedRawUnique) {
-    if (!p.ticker || p.ticker === "TBILL_PROXY") continue;
-    const grp = exclusionTickerGroup(p.ticker);
-    const dedupeKey = grp;
-    const prev = exclusionByTitle.get(dedupeKey);
-    if (!prev || safeNumber(p.weightPct, 0) > safeNumber(prev.weightPct, 0)) {
-      exclusionByTitle.set(dedupeKey, {
-        ticker: p.ticker,
-        nameShort: p.nameShort || p.ticker,
-        weightPct: safeNumber(p.weightPct, 0),
-      });
-    }
-  }
-  const exclusionCandidates = Array.from(exclusionByTitle.values())
-    .sort((a, b) => b.weightPct - a.weightPct)
-    .map((x) => ({ ticker: x.ticker, nameShort: x.nameShort }));
-
-  const recommendedPositions: RecommendedPosition[] = recommendedRawUnique.map((p) => ({
-    ...p,
-    excluded: excludedTickersApplied.includes(p.ticker),
-  }));
-
-  const recommendedWeightSumPct = recommendedPositions.reduce(
-    (acc, p) => acc + safeNumber(p.weightPct, 0),
-    0
-  );
-  const modelCashSleevePct = cashSleeveFrac * 100;
-  const tbillsProxyWeightPct =
-    modelCashSleevePct > 0 ? modelCashSleevePct : Math.max(0, 100 - recommendedWeightSumPct);
-  const tbillIdx = recommendedPositions.findIndex((p) => p.ticker === "TBILL_PROXY");
-  if (tbillIdx >= 0) {
-    recommendedPositions[tbillIdx].nameShort = "T-Bills / Cash Sleeve";
-    recommendedPositions[tbillIdx].sector = "Cash & T-Bills";
-    recommendedPositions[tbillIdx].industry = "";
-    recommendedPositions[tbillIdx].region = recommendedPositions[tbillIdx].region || "US";
-    recommendedPositions[tbillIdx].weightPct = safeNumber(
-      recommendedPositions[tbillIdx].weightPct,
-      0
-    );
-  } else {
-    recommendedPositions.push({
-      ticker: "TBILL_PROXY",
-      nameShort: "T-Bills / Cash Sleeve",
-      region: "US",
-      sector: "Cash & T-Bills",
-      industry: "",
-      score: 0,
-      weightPct: tbillsProxyWeightPct,
-      originalWeightPct: tbillsProxyWeightPct,
-      excluded: false,
-    });
-  }
-
-  // Reescalar proporcionalmente os títulos aprovados (não excluídos), mantendo excluídos visíveis mas a 0%.
-  const nonTb = recommendedPositions.filter((p) => p.ticker !== "TBILL_PROXY");
-  const totalNonTbPct = nonTb.reduce((acc, p) => acc + safeNumber(p.weightPct, 0), 0);
-  const approvedNonTb = nonTb.filter((p) => !p.excluded);
-  const approvedNonTbPct = approvedNonTb.reduce((acc, p) => acc + safeNumber(p.weightPct, 0), 0);
-  const tbillPos = recommendedPositions.find((p) => p.ticker === "TBILL_PROXY");
-
-  if (approvedNonTbPct > 0 && totalNonTbPct > 0) {
-    const scale = totalNonTbPct / approvedNonTbPct;
-    for (const p of recommendedPositions) {
-      if (p.ticker === "TBILL_PROXY") continue;
-      if (p.excluded) {
-        p.weightPct = 0;
-      } else {
-        p.weightPct = p.weightPct * scale;
-      }
-    }
-  } else if (tbillPos) {
-    // Se excluiu tudo, o sleeve vai para T-Bills/Cash.
-    for (const p of recommendedPositions) {
-      if (p.ticker !== "TBILL_PROXY") p.weightPct = 0;
-    }
-    tbillPos.weightPct += totalNonTbPct;
-  }
-
-  recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
-
-  const proposedTrades: ProposedTrade[] = tradePlanRows
-    .filter((r) => {
-      const side = safeString(r.side).toUpperCase();
-      return side === "BUY" || side === "SELL";
-    })
-    .map((r) => ({
-      ticker: safeString(r.ticker).toUpperCase(),
-      side: safeString(r.side).toUpperCase(),
-      absQty: safeNumber(r.abs_qty, 0),
-      marketPrice: safeNumber(r.market_price, 0),
-      closePrice: null as number | null,
-      deltaValueEst: safeNumber(r.delta_value_est, 0),
-      targetWeightPct: safeNumber(r.weight_pct, 0),
-      nameShort: (() => {
-        const t = safeString(r.ticker).toUpperCase();
-        const m = metaForTicker(t);
-        return pickBestDisplayName(
-          t,
-          safeString(r.name_short || r.name || r.ticker),
-          safeString(m?.nameShort, "")
-        );
-      })(),
-    }));
-
-  for (const t of proposedTrades) {
-    const cp = getClosePrice(t.ticker);
-    if (cp > 0) t.closePrice = cp;
-  }
-
-  const targetWeightByTicker = new Map<string, number>(
-    recommendedPositions.map((p) => [p.ticker, safeNumber(p.weightPct, 0)])
-  );
-  for (const t of proposedTrades) {
-    t.targetWeightPct = safeNumber(targetWeightByTicker.get(t.ticker), 0);
-  }
-  // BUY sem peso-alvo:
-  // - se foi excluído pelo cliente, manter visível como INATIVO;
-  // - caso contrário, remover (stale rows do CSV antigo).
-  for (let i = proposedTrades.length - 1; i >= 0; i -= 1) {
-    const t = proposedTrades[i];
-    if (t.side === "BUY" && t.targetWeightPct <= 0) {
-      if (excludedTickersApplied.includes(t.ticker)) {
-        t.side = "INACTIVE";
-        t.absQty = 0;
-        t.deltaValueEst = 0;
-      } else {
-        proposedTrades.splice(i, 1);
-      }
-    }
-  }
-
-  const proposedByTicker = new Set(
-    proposedTrades.map((t) => exclusionTickerGroup(normalizeTickerKey(t.ticker)))
-  );
-  for (const r of recommendedPositions) {
-    if (
-      r.ticker === "TBILL_PROXY" ||
-      safeNumber(r.weightPct, 0) <= 0 ||
-      proposedByTicker.has(exclusionTickerGroup(normalizeTickerKey(r.ticker)))
-    ) {
-      continue;
-    }
-    proposedTrades.push({
-      ticker: r.ticker,
-      side: "BUY",
-      absQty: 0,
-      marketPrice: 0,
-      closePrice: (() => {
-        const cp = getClosePrice(r.ticker);
-        return cp > 0 ? cp : null;
-      })(),
-      deltaValueEst: navEur > 0 ? (r.weightPct / 100) * navEur : 0,
-      targetWeightPct: r.weightPct,
-      nameShort: r.nameShort || r.ticker,
-    });
-    proposedByTicker.add(exclusionTickerGroup(normalizeTickerKey(r.ticker)));
-  }
-
-  const recommendedTickersActive = new Set(
-    recommendedPositions
-      .filter((p) => p.ticker !== "TBILL_PROXY" && safeNumber(p.weightPct, 0) > 0)
-      .map((p) => p.ticker)
-  );
-  for (const a of actualPositions) {
-    if (
-      recommendedTickersActive.has(a.ticker) ||
-      proposedByTicker.has(exclusionTickerGroup(normalizeTickerKey(a.ticker)))
-    ) {
-      continue;
-    }
-    proposedTrades.push({
-      ticker: a.ticker,
-      side: "SELL",
-      absQty: Math.abs(a.qty),
-      marketPrice: a.marketPrice,
-      closePrice: a.closePrice,
-      deltaValueEst: a.value,
-      targetWeightPct: 0,
-      nameShort: a.nameShort || a.ticker,
-    });
-    proposedByTicker.add(exclusionTickerGroup(normalizeTickerKey(a.ticker)));
-  }
-
-  // Garantir 1 linha INATIVO por ticker excluído (mesmo que não existisse BUY prévio).
-  for (const ex of excludedTickersApplied) {
-    const exKey = exclusionTickerGroup(normalizeTickerKey(ex));
-    if (proposedByTicker.has(exKey)) {
-      const row = proposedTrades.find((t) => t.ticker === ex);
-      if (row) {
-        row.side = "INACTIVE";
-        row.targetWeightPct = 0;
-        row.absQty = 0;
-        row.deltaValueEst = 0;
-      }
-      continue;
-    }
-
-    const ref = recommendedPositions.find((p) => p.ticker === ex);
-    if (!ref) continue;
-    const cp = getClosePrice(ex);
-    proposedTrades.push({
-      ticker: ex,
-      side: "INACTIVE",
-      absQty: 0,
-      marketPrice: cp > 0 ? cp : 0,
-      closePrice: cp > 0 ? cp : null,
-      deltaValueEst: 0,
-      targetWeightPct: 0,
-      nameShort: ref.nameShort || ex,
-    });
-    proposedByTicker.add(exKey);
-  }
-
-  fillSyntheticEquityBuyQuantities(proposedTrades, navEur, getClosePrice);
-
-  // Sleeve caixa do modelo (TBILL_PROXY no JSON) → ordens como UCITS MM em EUR (`EUR_MM_PROXY` → CSH2/XEON).
-  {
-    for (let i = proposedTrades.length - 1; i >= 0; i -= 1) {
-      if (proposedTrades[i].ticker === "TBILL_PROXY") proposedTrades.splice(i, 1);
-    }
-    const tbillW = tbillPos ? safeNumber(tbillPos.weightPct, 0) : 0;
-    if (tbillW > 0 && navEur > 0) {
-      const pxRaw = getClosePrice(eurMmSym) || getClosePrice("EUR_MM_PROXY");
-      const pxEur = pxRaw > 0 ? pxRaw : fallbackEurMmPriceEur(eurMmSym);
-      const notional = (tbillW / 100) * navEur;
-      const q = Math.max(1, Math.floor(notional / pxEur));
-      const existing = proposedTrades.find((t) => t.ticker === "EUR_MM_PROXY");
-      if (existing) {
-        if (existing.side === "INACTIVE") {
-          /* reservado */
-        } else {
-          existing.side = "BUY";
-          existing.ticker = "EUR_MM_PROXY";
-          existing.absQty = Math.max(safeNumber(existing.absQty, 0), q);
-          existing.marketPrice = pxEur;
-          existing.closePrice = pxEur > 0 ? pxEur : null;
-          existing.deltaValueEst = notional;
-          existing.targetWeightPct = tbillW;
-          existing.nameShort = `MM EUR / caixa (${eurMmSym})`;
-        }
-      } else {
-        proposedTrades.push({
-          ticker: "EUR_MM_PROXY",
-          side: "BUY",
-          absQty: q,
-          marketPrice: pxEur,
-          closePrice: pxEur > 0 ? pxEur : null,
-          deltaValueEst: notional,
-          targetWeightPct: tbillW,
-          nameShort: `MM EUR / caixa (${eurMmSym})`,
-        });
-      }
-    }
-  }
-
-  {
-    const hedgeUsdRaw = estimateUsdNotionalForBuyFxHedge(proposedTrades as ProposedTrade[]);
-    const pct = fxHedgeOrderPctFromEnvReport();
-    const hedgeUsd = (hedgeUsdRaw * pct) / 100;
-    if (hedgeUsd >= MIN_FX_HEDGE_USD_ORDER_REPORT) {
-      const mid = eurusdMidHintReport();
-      const eurQty = Math.round((hedgeUsd / mid) * 100) / 100;
-      if (eurQty >= 1) {
-        proposedTrades.push({
-          ticker: "EURUSD",
-          side: "BUY",
-          absQty: eurQty,
-          marketPrice: mid,
-          closePrice: mid,
-          deltaValueEst: hedgeUsd,
-          targetWeightPct: 0,
-          nameShort: "Hedge cambial EUR.USD (IDEALPRO)",
-        });
-      }
-    }
-  }
-
-  proposedTrades.sort((a, b) => Math.abs(b.deltaValueEst) - Math.abs(a.deltaValueEst));
-
-  // Carteira recomendada (UI): o modelo usa TBILL_PROXY no JSON; na execução vira MM EUR (UCITS). Mostrar CSH2/XEON + EURUSD quando existir hedge no plano.
-  {
-    const tbIdx = recommendedPositions.findIndex((p) => p.ticker === "TBILL_PROXY");
-    if (tbIdx >= 0) {
-      const prev = recommendedPositions[tbIdx];
-      const w = safeNumber(prev.weightPct, 0);
-      const ow = safeNumber(prev.originalWeightPct, w);
-      const excl = prev.excluded;
-      recommendedPositions.splice(tbIdx, 1);
-      recommendedPositions.push({
-        ticker: eurMmSym,
-        nameShort: `MM EUR / caixa (${eurMmSym})`,
-        region: "EU",
-        sector: "Money market UCITS (EUR)",
-        industry: "",
-        score: 0,
-        weightPct: w,
-        originalWeightPct: ow,
-        excluded: excl,
-      });
-    }
-    const fxRow = proposedTrades.find((t) => t.ticker === "EURUSD");
-    if (fxRow && navEur > 0) {
-      const hedgeUsd = safeNumber(fxRow.deltaValueEst, 0);
-      const wFx = capPctDisplay((hedgeUsd / navEur) * 100);
-      recommendedPositions.push({
-        ticker: "EURUSD",
-        nameShort: fxRow.nameShort || "Hedge cambial EUR.USD (IDEALPRO)",
-        region: "FX",
-        sector: "Cobertura cambial (operacional)",
-        industry: "",
-        score: 0,
-        weightPct: wFx,
-        originalWeightPct: wFx,
-        excluded: false,
-      });
-    }
-    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
-  }
-
-  const dates: string[] = Array.isArray(modelPayload?.series?.dates)
-    ? modelPayload.series.dates
-    : [];
-  const benchmark: number[] = Array.isArray(modelPayload?.series?.benchmark_equity)
-    ? modelPayload.series.benchmark_equity.map((x: unknown) => safeNumber(x, 0))
-    : [];
-  const raw: number[] = Array.isArray(modelPayload?.series?.equity_raw)
-    ? modelPayload.series.equity_raw.map((x: unknown) => safeNumber(x, 0))
-    : [];
-  const overlayed: number[] = Array.isArray(modelPayload?.series?.equity_overlayed)
-    ? modelPayload.series.equity_overlayed.map((x: unknown) => safeNumber(x, 0))
-    : [];
-
-  const n = Math.min(dates.length, benchmark.length, raw.length, overlayed.length);
-  const hStart = n >= 50 ? findHorizonStartIdx(dates, n, DISPLAY_REPORT_YEARS) : 0;
-  const ySpanCagr = n >= 2 ? yearsSpanBetween(dates, hStart, n - 1) : 0;
-
-  const benchW = benchmark.slice(hStart, n);
-  const ovrW = overlayed.slice(hStart, n);
-
-  const profileLabel = safeString(modelPayload?.meta?.profile, "moderado");
-  const kpiProfile = normalizeRiskProfileForKpi(profileLabel);
-  /** Mesma regra que `/api/client/plan-decision-kpis` e o cartão no dashboard. */
-  const planPlafonado = kpiProfile === "conservador" || kpiProfile === "moderado";
-
-  const overlayModelCagrPct = capPctDisplay(cagrPctFromEquityWindow(ovrW, ySpanCagr));
-  const overlayBenchmarkCagrPct = capPctDisplay(cagrPctFromEquityWindow(benchW, ySpanCagr));
-
-  const { recommendedCagrPct: cagrFromModel } = await loadApprovalAlignedProposedTrades(projectRoot);
-  const freezeHero = readHeroKpiFreezeContext(projectRoot);
-  const embedModelKpis = await fetchPlafonadoKpisFromKpiServer(kpiProfile);
-
-  const plafonadoCardCagrFromFiles =
-    readPlafonadoM100CagrDisplayPercent(projectRoot, kpiProfile) ??
-    readLandingEmbeddedFreezeCap15CagrDisplayPercent(frontRoot, kpiProfile);
-
-  /** Perfil conservador/moderado: não usar CAGR da curva `engine_v2` no cartão (diverge do Modelo CAP15 / iframe). */
-  const cagrPct = planPlafonado
-    ? capPctDisplay(
-        embedModelKpis?.cagrPct ??
-          plafonadoCardCagrFromFiles ??
-          (kpiProfile === "moderado" ? planPlafonadoModeradoCagrFallbackPct() : null) ??
-          overlayModelCagrPct,
-      )
-    : capPctDisplay(
-        embedModelKpis?.cagrPct ??
-          plafonadoCardCagrFromFiles ??
-          cagrFromModel ??
-          overlayModelCagrPct,
-      );
-
-  const benchmarkCagrPct =
-    freezeHero.benchmarkCagrPct != null
-      ? capPctDisplay(freezeHero.benchmarkCagrPct)
-      : overlayBenchmarkCagrPct;
-
-  const totalReturnPct = cagrPct;
-  const benchmarkTotalReturnPct = benchmarkCagrPct;
-
-  const retsO = dailyReturnsFromEquity(ovrW);
-  const retsB = dailyReturnsFromEquity(benchW);
-  let sharpe = sharpeFromDailyReturns(retsO);
-  const benchmarkSharpe = sharpeFromDailyReturns(retsB);
-  let volatilityPct = capPctDisplay(annualizedVolFromDailyReturns(retsO));
-  const benchmarkVolatilityPct = capPctDisplay(
-    annualizedVolFromDailyReturns(retsB)
-  );
-  let maxDrawdownPct = capPctDisplay(maxDrawdownFraction(ovrW) * 100);
-  const benchmarkMaxDrawdownPct = capPctDisplay(
-    maxDrawdownFraction(benchW) * 100
-  );
-
-  if (planPlafonado && embedModelKpis) {
-    if (embedModelKpis.sharpe != null) sharpe = embedModelKpis.sharpe;
-    if (embedModelKpis.volAnnualPct != null) {
-      volatilityPct = capPctDisplay(embedModelKpis.volAnnualPct);
-    }
-    if (embedModelKpis.maxDrawdownPct != null) {
-      maxDrawdownPct = capPctDisplay(embedModelKpis.maxDrawdownPct);
-    }
-  }
-
-  const displayHorizonLabel =
-    n >= 50
-      ? `Últimos ${DISPLAY_REPORT_YEARS} anos (histórico do modelo; ilustrativo)`
-      : "Horizonte limitado pelos dados disponíveis";
-  const cagrYearRangeInParens =
-    freezeHero.historyYearRangeLabel != null &&
-    String(freezeHero.historyYearRangeLabel).trim() !== ""
-      ? String(freezeHero.historyYearRangeLabel).trim()
-      : null;
-  const displayCagrModelSubLabel = cagrYearRangeInParens
-    ? `Retorno anualizado da carteira modelo (${cagrYearRangeInParens})`
-    : n >= 50
-      ? `CAGR anualizado da carteira modelo — últimos ${DISPLAY_REPORT_YEARS} anos`
-      : "CAGR anualizado da carteira modelo no período disponível";
-  const displayCagrBenchmarkSubLabel = cagrYearRangeInParens
-    ? `Retorno anualizado do benchmark (${cagrYearRangeInParens})`
-    : n >= 50
-      ? `CAGR anualizado do benchmark — últimos ${DISPLAY_REPORT_YEARS} anos`
-      : "CAGR anualizado do benchmark no período disponível";
-
-  const series: SeriesPoint[] = [];
-  const baseBench = benchmark[hStart] > 0 ? benchmark[hStart] : 1;
-  const baseRaw = raw[hStart] > 0 ? raw[hStart] : 1;
-  const baseOverlay = overlayed[hStart] > 0 ? overlayed[hStart] : 1;
-  for (let i = hStart; i < n; i += 5) {
-    series.push({
-      date: String(dates[i]).slice(0, 10),
-      benchmark: ((benchmark[i] / baseBench) - 1) * 100,
-      raw: ((raw[i] / baseRaw) - 1) * 100,
-      overlayed: ((overlayed[i] / baseOverlay) - 1) * 100,
-    });
-  }
-
-  const currentValueEur =
-    actualPositions.reduce((acc, p) => acc + p.value, 0) + cashEur;
-
-  const buyCount = proposedTrades.filter((t) => t.side === "BUY").length;
-  const sellCount = proposedTrades.filter((t) => t.side === "SELL").length;
-  const buyAbsPlan = proposedTrades
-    .filter((t) => t.side === "BUY")
-    .reduce((acc, t) => acc + Math.abs(t.deltaValueEst), 0);
-  const sellAbsPlan = proposedTrades
-    .filter((t) => t.side === "SELL")
-    .reduce((acc, t) => acc + Math.abs(t.deltaValueEst), 0);
-  /** Maior perna compra/venda — evita impacto % artificial >100% pela soma de todos os |Δ|. */
-  const turnoverAbs = Math.max(buyAbsPlan, sellAbsPlan);
-  const turnoverPctTechnical =
-    navEur > 0 ? capPctDisplay((turnoverAbs / navEur) * 100) : 0;
-  /**
-   * Constituição inicial: sobretudo caixa → alvo; poucas vendas. A soma das compras em valor estimado pode
-   * exceder 100% do NAV de referência (USD+EUR+FX/MM); para o cliente, o que importa é alocar o património
-   * de referência (~100%), não a percentagem técnica bruta.
-   */
-  const initialConstitutionLikely =
-    navEur > 0 &&
-    sellAbsPlan / navEur < 0.06 &&
-    buyAbsPlan > navEur * 0.25;
-  const turnoverPct =
-    initialConstitutionLikely && turnoverPctTechnical > 100
-      ? capPctDisplay(100)
-      : turnoverPctTechnical;
-
-  const planSummary = {
-    strategyLabel: "Ações globais (DECIDE V2.3 smooth)",
-    riskLabel: profileRiskLabel(profileLabel),
-    positionCount: recommendedPositions.length,
-    turnoverPct,
-    turnoverPctTechnical,
-    initialConstitution: initialConstitutionLikely,
-    buyCount,
-    sellCount,
-  };
-  const proposedTradesCoverageNote =
-    tradePlanRows.length > 0
-      ? "Inclui ordens do plano IBKR e ajustes sintéticos para cobrir toda a carteira recomendada."
-      : "Sem plano IBKR disponível: lista construída a partir da diferença entre carteira atual e recomendada.";
-  const modelDisplayName = PLAFONADO_MODEL_DISPLAY_NAME_PT;
-
-  const feeSegment: "A" | "B" = navEur >= 50000 ? "B" : "A";
-  const monthlyFixedFeeEur = feeSegment === "A" ? 20 : 0;
-  const annualManagementFeePct = feeSegment === "B" ? 0.6 : 0;
-  const estimatedAnnualManagementFeeEur =
-    feeSegment === "B" ? navEur * 0.006 : 0;
-  const estimatedMonthlyManagementFeeEur =
-    feeSegment === "B" ? estimatedAnnualManagementFeeEur / 12 : 20;
-
-  /** 15% sobre excesso de CAGR anual vs benchmark, com teto para não alarmar o cliente. */
-  const cagrExcessFrac = Math.max(
-    0,
-    cagrPct / 100 - benchmarkCagrPct / 100
-  );
-  const performanceFeeRaw =
-    feeSegment === "B" ? navEur * Math.min(0.2, cagrExcessFrac) * 0.15 : 0;
-  const estimatedPerformanceFeeEur = Math.min(
-    performanceFeeRaw,
-    navEur * 0.05
-  );
-
-  const reportData: ReportData = {
-    generatedAt: new Date().toISOString(),
-    accountCode,
-    profile: profileLabel,
-    modelDisplayName,
-    navEur,
-    accountBaseCurrency,
-    cashEur,
-    currentValueEur,
-    totalReturnPct,
-    benchmarkTotalReturnPct,
-    cagrPct,
-    benchmarkCagrPct,
-    sharpe,
-    benchmarkSharpe,
-    volatilityPct,
-    benchmarkVolatilityPct,
-    maxDrawdownPct,
-    benchmarkMaxDrawdownPct,
-    displayHorizonLabel,
-    displayCagrModelSubLabel,
-    displayCagrBenchmarkSubLabel,
-    planSummary,
-    excludedTickersApplied,
-    exclusionCandidates,
-    tbillsProxyWeightPct,
-    proposedTradesCoverageNote,
-    backendError,
-    closeAsOfDate,
-    actualPositions,
-    recommendedPositions,
-    proposedTrades,
-    series,
-    feeSegment,
-    monthlyFixedFeeEur,
-    annualManagementFeePct,
-    estimatedAnnualManagementFeeEur,
-    estimatedMonthlyManagementFeeEur,
-    estimatedPerformanceFeeEur,
-    tbillProxyIbTicker: eurMmSym,
-    ...(initialIbkrStructure ? { initialIbkrStructure } : {}),
-  };
-
-  return {
-    props: {
-      reportData,
-    },
-  };
-};
 
 function SummaryCard({
   title,
@@ -2244,6 +698,42 @@ function buildIncompleteRetryOrdersFromFills(fills: ReportExecFillRow[]): Array<
 }
 
 /**
+ * Quando o POST `send-orders` faz timeout, não há `fills` na resposta. Criamos linhas provisórias a partir do plano
+ * para o utilizador poder usar «Actualizar estado (IBKR)» e depois «Completar ordens pendentes» sem reenviar o lote inteiro.
+ * `PreSubmitted` + 0 fill mantém `fillEligibleForCompletionRetry` falso até sincronizar (evita duplicar na IB).
+ */
+function buildBootstrapExecFillsFromProposedTrades(
+  trades: ProposedTrade[],
+  resolveIbkrSendTicker: (t: string) => string,
+): ReportExecFillRow[] {
+  const rows: ReportExecFillRow[] = [];
+  for (const t of trades) {
+    if (t.side !== "BUY" && t.side !== "SELL") continue;
+    const qty = Math.floor(Number(t.absQty) || 0);
+    if (qty <= 0) continue;
+    const sym = String(t.ticker || "").trim().toUpperCase();
+    if (sym === "EURUSD") continue;
+    rows.push({
+      ticker: resolveIbkrSendTicker(t.ticker),
+      action: String(t.side).toUpperCase(),
+      requested_qty: qty,
+      filled: 0,
+      avg_fill_price: null,
+      status: "PreSubmitted",
+      message:
+        "Sem resposta a tempo do servidor DECIDE — pode já existir ordem na IBKR. Use «Actualizar estado (IBKR)» na grelha antes de reenviar tudo.",
+    });
+  }
+  rows.sort((a, b) => {
+    const pa = String(a.action).toUpperCase() === "SELL" ? 0 : 1;
+    const pb = String(b.action).toUpperCase() === "SELL" ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+    return String(a.ticker).localeCompare(String(b.ticker));
+  });
+  return rows;
+}
+
+/**
  * Após cancelamento paper na IB: actualiza o instantâneo local da tabela (antes só `send-orders` gravava aqui).
  */
 function applyPaperCancelRowsToExecFills(
@@ -2405,6 +895,11 @@ function reportPlanTickerLinkPair(ticker: string, yfColor: string): ReactNode {
     </span>
   );
 }
+
+export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => {
+  const { getClientReportServerSideProps } = await import("../../lib/server/clientReportGetServerSideProps");
+  return getClientReportServerSideProps(ctx);
+};
 
 export default function ClientReportPage({ reportData }: PageProps) {
   const isClientB = reportData.feeSegment === "B";
@@ -2705,6 +1200,10 @@ export default function ClientReportPage({ reportData }: PageProps) {
     setExecutionMessage(
       "Registo de execução nesta página foi limpo. Ordens canceladas ou concluídas na TWS / IB Gateway não actualizam esta tabela automaticamente — a corretora é a referência. Pode voltar a enviar o plano em «Alterações propostas» abaixo.",
     );
+    recordPlanActivityInfo(
+      "Limpeza manual da tabela de execução nesta página (o histórico em Atividade mantém-se; só a grelha local foi reposta).",
+      "Plano — DECISÃO FINAL",
+    );
   }, []);
 
   const refreshIbkrPositionsFromIb = async (opts?: { skipExecTableSync?: boolean }) => {
@@ -2730,6 +1229,10 @@ export default function ClientReportPage({ reportData }: PageProps) {
             );
           } catch (syncErr: unknown) {
             const syncMsg = syncErr instanceof Error ? syncErr.message : String(syncErr);
+            recordPlanActivityFailure(
+              `Sincronização da tabela de ordens com a IBKR: ${syncMsg}`,
+              "Plano — actualizar carteira / estado",
+            );
             setExecutionMessage((prev) =>
               [prev, `Sincronização da tabela de ordens: ${syncMsg}`].filter(Boolean).join(" "),
             );
@@ -2851,6 +1354,10 @@ export default function ClientReportPage({ reportData }: PageProps) {
         raw === "Failed to fetch" || raw === "Load failed" || raw === "NetworkError when attempting to fetch resource."
           ? "Sem ligação ao servidor (Next/API). Confirme que o frontend está a correr (npm run dev), que utiliza a mesma origem (URL) e que a firewall não bloqueia. Se o erro persistir, reinicie o Next e o backend (uvicorn na porta de BACKEND_URL)."
           : raw;
+      recordPlanActivityFailure(
+        `Actualização da carteira IBKR (snapshot): ${msg}`,
+        "Plano — actualizar carteira / estado",
+      );
       setLiveSnapshotError(msg);
       if (typeof window !== "undefined") {
         window.requestAnimationFrame(() => {
@@ -2870,6 +1377,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
 
   const flattenPaperPortfolioAll = async () => {
     if (typeof window === "undefined") return;
+    let flattenActivityRecorded = false;
     const ok = window.confirm(
       `Conta IBKR paper (teste): enviar ordens de mercado para fechar TODAS as posições em ações (incl. ${tbillIb} / proxy T-Bills) e posições Forex em pares (CASH / IDEALPRO), p.ex. EUR.USD — para poder recomprar o plano e executar hedge FX limpo.\n\n` +
         "Saldo de caixa e linha de margem não são «zerados» — apenas fecho de títulos e FX.\n\nContinuar?"
@@ -2893,13 +1401,17 @@ export default function ClientReportPage({ reportData }: PageProps) {
         throw new Error(raw.slice(0, 200) || `Resposta inválida (${res.status})`);
       }
       if (!res.ok || data.status !== "ok") {
-        throw new Error(
+        const errMsg =
           typeof data.error === "string" && data.error
             ? data.error
-            : `Falha ao fechar posições (${res.status})`
-        );
+            : `Falha ao fechar posições (${res.status})`;
+        recordFlattenPaperPortfolioResponse([], { error: errMsg });
+        flattenActivityRecorded = true;
+        throw new Error(errMsg);
       }
       const closes = Array.isArray(data.closes) ? data.closes : [];
+      recordFlattenPaperPortfolioResponse(closes);
+      flattenActivityRecorded = true;
       const sum = summarizeFlattenCloses(closes);
       setFlattenMessage("A sincronizar a carteira com o IBKR…");
       await refreshIbkrPositionsFromIb();
@@ -2913,7 +1425,11 @@ export default function ClientReportPage({ reportData }: PageProps) {
         }, 9000);
       }
     } catch (e: unknown) {
-      setFlattenMessage(e instanceof Error ? e.message : String(e));
+      const m = e instanceof Error ? e.message : String(e);
+      if (!flattenActivityRecorded) {
+        recordFlattenPaperPortfolioResponse([], { error: m });
+      }
+      setFlattenMessage(m);
     } finally {
       setFlattenBusy(false);
     }
@@ -2988,6 +1504,10 @@ export default function ClientReportPage({ reportData }: PageProps) {
         "Não há linhas para sincronizar. Se a tabela aparece acima, recarregue a página (F5) e tente de novo.",
       );
       setSyncExecNote(null);
+      recordPlanActivityInfo(
+        "Sincronização manual da tabela de execução com a IBKR: sem linhas na grelha — nada a enviar ao backend.",
+        "Plano — sincronizar execução (IBKR)",
+      );
       return null;
     }
     setSyncExecError(null);
@@ -3020,11 +1540,15 @@ export default function ClientReportPage({ reportData }: PageProps) {
       return updated;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setSyncExecError(
+      const friendly =
         msg.includes("fetch") || msg.includes("Load failed") || msg.includes("NetworkError")
           ? "Sem ligação ao Next ou ao backend. Confirme npm run dev, uvicorn (BACKEND_URL no .env.local) e porta livre (ex. não repetir 8090 ocupada)."
-          : msg,
+          : msg;
+      recordPlanActivityFailure(
+        `Sincronização manual da tabela de execução com a IBKR: ${friendly}`,
+        "Plano — sincronizar execução (IBKR)",
       );
+      setSyncExecError(friendly);
       setSyncExecNote(null);
       setExecutionMessage((prev) => [prev, `Sincronização IBKR: ${msg}`].filter(Boolean).join(" "));
       return null;
@@ -3209,8 +1733,22 @@ export default function ClientReportPage({ reportData }: PageProps) {
         (typeof e?.message === "string" && e.message.includes("aborted"));
       const raw = e instanceof Error ? e.message : String(e);
       const lower = raw.toLowerCase();
+      const isFullPlanSend = !override || override.length === 0;
+      let bootstrappedAfterTimeout = false;
+      if (isAbort && isFullPlanSend) {
+        const bootstrap = buildBootstrapExecFillsFromProposedTrades(proposedTradesFiltered, resolveIbkrSendTicker);
+        if (bootstrap.length > 0) {
+          setExecFills(bootstrap);
+          setExecSummary(buildExecSummaryFromFills(bootstrap));
+          bootstrappedAfterTimeout = true;
+        }
+      }
       const msg = isAbort
-        ? `Tempo limite (~${Math.round(SEND_ORDERS_FETCH_MS / 1000)}s) — o servidor não concluiu a tempo. Confirme: IB Gateway ou TWS ligado (paper, porta 7497), backend FastAPI a correr (BACKEND_URL no .env.local), e tente de novo. Se o IB Gateway ou a TWS estiver bloqueado num diálogo, feche-o e volte a executar.`
+        ? `Tempo limite (~${Math.round(SEND_ORDERS_FETCH_MS / 1000)}s) — o servidor não concluiu a tempo. Confirme: IB Gateway ou TWS ligado (paper, porta 7497), backend FastAPI a correr (BACKEND_URL no .env.local), e tente de novo. Se o IB Gateway ou a TWS estiver bloqueado num diálogo, feche-o e volte a executar.${
+            bootstrappedAfterTimeout
+              ? " Foram criadas linhas provisórias na tabela (a partir do plano) — na grelha abaixo use primeiro «Actualizar estado (IBKR)»; se após sincronizar aparecer quantidade em falta, use «Completar ordens pendentes» em vez de reenviar o lote completo."
+              : ""
+          }`
         : lower === "failed to fetch" ||
             lower === "fetch failed" ||
             lower.includes("networkerror") ||
@@ -3377,13 +1915,16 @@ export default function ClientReportPage({ reportData }: PageProps) {
     execResponseLineCount > 0 &&
     execResponseLineCount !== planTradeCount;
 
-  const tradeVolumeGrossAbs = proposedTradesFiltered.reduce(
-    (acc, t) => acc + Math.abs(t.deltaValueEst),
-    0
-  );
+  const tradeVolumeGrossAbs = proposedTradesFiltered.reduce((acc, t) => {
+    if (t.side === "BUY" && isBuyMissingEquityClosePrice(t)) return acc;
+    return acc + Math.abs(t.deltaValueEst);
+  }, 0);
   const buyNotionalAbs = proposedTradesFiltered
     .filter((t) => t.side === "BUY")
-    .reduce((acc, t) => acc + Math.abs(t.deltaValueEst), 0);
+    .reduce(
+      (acc, t) => acc + (isBuyMissingEquityClosePrice(t) ? 0 : Math.abs(t.deltaValueEst)),
+      0,
+    );
   const sellNotionalAbs = proposedTradesFiltered
     .filter((t) => t.side === "SELL")
     .reduce((acc, t) => acc + Math.abs(t.deltaValueEst), 0);
@@ -4636,7 +3177,16 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           : "—"}
                       </td>
                       <td style={{ padding: "10px 8px" }}>
-                        {formatMoneyCompact(Math.abs(t.deltaValueEst), ccy)}
+                        {isBuyMissingEquityClosePrice(t) ? (
+                          <span
+                            style={{ color: "#71717a" }}
+                            title="Sem preço de fecho para este ticker em backend/data/prices_close.csv — não é possível calcular quantidade nem impacto executável."
+                          >
+                            —
+                          </span>
+                        ) : (
+                          formatMoneyCompact(Math.abs(t.deltaValueEst), ccy)
+                        )}
                       </td>
                       <td style={{ padding: "10px 8px" }}>{formatPct(t.targetWeightPct)}</td>
                     </tr>
@@ -5670,6 +4220,80 @@ export default function ClientReportPage({ reportData }: PageProps) {
                       >
                         Rever ordens
                       </button>
+                      {execFills.length > 0 && (
+                        <button
+                          type="button"
+                          disabled={portfolioRefreshing}
+                          onClick={() => {
+                            void refreshIbkrPositionsFromIb();
+                            scrollToCarteiraAtual();
+                          }}
+                          style={{
+                            background: portfolioRefreshing ? "#334155" : DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+                            border: portfolioRefreshing
+                              ? "1px solid #475569"
+                              : DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                            color: portfolioRefreshing ? "#e2e8f0" : DECIDE_DASHBOARD.kpiMenuMainButtonColor,
+                            borderRadius: 12,
+                            padding: "12px 18px",
+                            fontWeight: 700,
+                            fontSize: 14,
+                            cursor: portfolioRefreshing ? "wait" : "pointer",
+                            boxShadow: portfolioRefreshing ? undefined : DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
+                          }}
+                        >
+                          {portfolioRefreshing ? (
+                            <>
+                              A atualizar a carteira
+                              <InlineLoadingDots />
+                            </>
+                          ) : (
+                            "Ver carteira atualizada"
+                          )}
+                        </button>
+                      )}
+                      {incompleteRetryFromFills.length > 0 && (
+                        <button
+                          type="button"
+                          disabled={portfolioRefreshing || syncExecBusy || completePendingBusy}
+                          onClick={() => void handleCompletePendingOrders()}
+                          style={{
+                            background:
+                              portfolioRefreshing || syncExecBusy || completePendingBusy
+                                ? "#334155"
+                                : DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+                            border:
+                              portfolioRefreshing || syncExecBusy || completePendingBusy
+                                ? "1px solid #475569"
+                                : DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                            color:
+                              portfolioRefreshing || syncExecBusy || completePendingBusy
+                                ? "#e2e8f0"
+                                : DECIDE_DASHBOARD.kpiMenuMainButtonColor,
+                            borderRadius: 12,
+                            padding: "12px 18px",
+                            fontWeight: 700,
+                            fontSize: 14,
+                            cursor:
+                              portfolioRefreshing || syncExecBusy || completePendingBusy
+                                ? "not-allowed"
+                                : "pointer",
+                            boxShadow:
+                              portfolioRefreshing || syncExecBusy || completePendingBusy
+                                ? undefined
+                                : DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
+                          }}
+                        >
+                          {completePendingBusy || syncExecBusy ? (
+                            <>
+                              A sincronizar com a IBKR
+                              <InlineLoadingDots />
+                            </>
+                          ) : (
+                            `Completar ordens pendentes (${incompleteRetryFromFills.length})`
+                          )}
+                        </button>
+                      )}
                     </>
                   )}
                   {postApprovalStage === "done" && liveSnapshotError ? (
@@ -5829,7 +4453,9 @@ export default function ClientReportPage({ reportData }: PageProps) {
                       ? "«Completar ordens pendentes» sincroniza primeiro com a IBKR e só reenvia o que ainda falta — evita uma 2ª ordem quando a 1ª já tinha continuado a preencher (ex.: GOLD 249 + 149). Use «Repetir falhadas» só para linhas inactivas/erro. Linhas «Em curso» com 0% executado não são reenviadas aqui."
                       : "Sem reenvio automático para linhas já submetidas ou inactivas — confirme no IB Gateway ou na TWS e use «Ver carteira atualizada»."
                     : postApprovalStage === "failed"
-                    ? "Pode tentar de novo ou rever as ordens antes de submeter."
+                    ? execFills.length > 0
+                      ? "Com linhas na tabela (incl. após timeout do envio): sincronize com «Actualizar estado (IBKR)» na grelha; use «Completar ordens pendentes» só quando o botão aparecer com contagem > 0. «Tentar novamente» reenvia o plano completo — confirme na TWS se já há ordens activas."
+                      : "Pode tentar de novo ou rever as ordens antes de submeter."
                     : "Pode executar ou rever as ordens antes de decidir."}
                 </p>
               </>

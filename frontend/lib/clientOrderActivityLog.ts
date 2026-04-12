@@ -284,6 +284,219 @@ export function recordSendOrdersResponse(
     entries.push(...eventsFromFill(row as SendFillRow, ts, source));
   }
 
+  if (
+    payload.fills.length === 0 &&
+    (!payload.status || payload.status === "ok") &&
+    entries.length === 0
+  ) {
+    entries.push({
+      id: makeId(),
+      ts,
+      kind: "info",
+      ticker: "—",
+      detail:
+        "Envio de ordens: resposta OK sem linhas `fills` no JSON — nada a listar (ou lote vazio).",
+      source,
+    });
+  }
+
+  appendOrderActivityEntries(entries);
+}
+
+/** Mensagem informativa genérica (ex.: limpeza de UI, estado sem ordens). */
+export function recordPlanActivityInfo(detail: string, source = "Plano"): void {
+  const ts = new Date().toISOString();
+  appendOrderActivityEntries([
+    {
+      id: makeId(),
+      ts,
+      kind: "info",
+      ticker: "—",
+      detail,
+      source,
+    },
+  ]);
+}
+
+/** Falha genérica no fluxo do plano / IBKR (snapshot, rede, etc.). */
+export function recordPlanActivityFailure(detail: string, source = "Plano"): void {
+  const ts = new Date().toISOString();
+  appendOrderActivityEntries([
+    {
+      id: makeId(),
+      ts,
+      kind: "falha",
+      ticker: "—",
+      detail,
+      source,
+    },
+  ]);
+}
+
+export type FlattenPortfolioActivityRow = {
+  ticker?: string;
+  side?: string;
+  status?: string;
+  requested_qty?: number;
+  filled?: number;
+  avg_fill_price?: number | null;
+  message?: string | null;
+  executed_as?: string;
+};
+
+/**
+ * Resultado de POST /api/flatten-paper-portfolio (zerar posições paper).
+ */
+export function recordFlattenPaperPortfolioResponse(
+  closes: unknown[],
+  opts: { source?: string; error?: string } = {},
+): void {
+  const ts = new Date().toISOString();
+  const source = opts.source ?? "Plano — zerar posições (paper)";
+
+  if (opts.error) {
+    recordPlanActivityFailure(`Zerar carteira (paper) falhou: ${opts.error}`, source);
+    return;
+  }
+
+  if (!Array.isArray(closes) || closes.length === 0) {
+    recordPlanActivityInfo(
+      "Zerar posições (paper): concluído — sem linhas de fecho (sem posições elegíveis ou carteira já vazia).",
+      source,
+    );
+    return;
+  }
+
+  const entries: OrderActivityEntry[] = [];
+
+  for (const raw of closes) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw as FlattenPortfolioActivityRow;
+    const ticker = String(r.ticker || "—").trim() || "—";
+    const side = String(r.side || "").trim();
+    const stRaw = String(r.status || "").trim();
+    const st = stRaw.toLowerCase();
+    const reqN = Number(r.requested_qty ?? NaN);
+    const qty = Number.isFinite(reqN) && reqN > 0 ? reqN : undefined;
+    const filled = Number(r.filled ?? 0);
+    const msg = typeof r.message === "string" && r.message.trim() ? r.message.trim() : undefined;
+    const execHint = r.executed_as ? ` · ${r.executed_as}` : "";
+
+    if (st === "skipped") {
+      entries.push({
+        id: makeId(),
+        ts,
+        kind: "info",
+        ticker,
+        detail: msg || "Posição ignorada no fecho automático (tipo ou regra).",
+        source,
+      });
+      continue;
+    }
+
+    if (st === "error") {
+      entries.push({
+        id: makeId(),
+        ts,
+        kind: "falha",
+        ticker,
+        side: side || undefined,
+        qty,
+        status: stRaw || undefined,
+        detail: msg || "Erro ao colocar ordem de mercado de fecho.",
+        source,
+      });
+      continue;
+    }
+
+    entries.push({
+      id: makeId(),
+      ts,
+      kind: "envio",
+      ticker,
+      side: side || undefined,
+      qty,
+      status: stRaw || undefined,
+      detail: `Ordem de mercado para fecho (zerar carteira)${execHint}${msg ? ` — ${msg}` : ""}`,
+      source,
+    });
+
+    let execQty = filled;
+    if (execQty <= 0 && qty && qty > 0 && (st.includes("filled") || st === "filled")) {
+      execQty = qty;
+    }
+    if (qty != null && filled + 1e-6 >= qty) {
+      execQty = Math.max(execQty, qty);
+    }
+
+    if (execQty > 0) {
+      const ap = r.avg_fill_price;
+      entries.push({
+        id: makeId(),
+        ts,
+        kind: "execucao",
+        ticker,
+        side: side || undefined,
+        qty,
+        filled: execQty,
+        avgPrice: typeof ap === "number" && Number.isFinite(ap) ? ap : ap == null ? null : Number(ap),
+        status: stRaw || undefined,
+        detail:
+          qty != null && execQty + 1e-6 >= qty
+            ? "Fecho executado (quantidade preenchida)."
+            : `Fecho parcial — ${execQty} de ${qty ?? "?"} unidades`,
+        source,
+      });
+    }
+
+    if (st.includes("cancel") && !st.includes("pendingcancel")) {
+      entries.push({
+        id: makeId(),
+        ts,
+        kind: "cancelamento",
+        ticker,
+        side: side || undefined,
+        qty,
+        filled: filled > 0 ? filled : undefined,
+        status: stRaw || undefined,
+        detail: msg || "Ordem de fecho cancelada ou terminada na corretora.",
+        source,
+      });
+    }
+
+    const stillWorking =
+      st.includes("pending") ||
+      st.includes("submitted") ||
+      st.includes("presubmitted") ||
+      st.includes("pendingsubmit") ||
+      st.includes("apisubmitted");
+    const looksFailed =
+      execQty <= 0 &&
+      !st.includes("cancel") &&
+      !stillWorking &&
+      (st.includes("inactive") ||
+        st.includes("reject") ||
+        st.includes("apierror") ||
+        (st.includes("error") && !st.includes("pendingcancel")));
+    if (looksFailed) {
+      entries.push({
+        id: makeId(),
+        ts,
+        kind: "falha",
+        ticker,
+        side: side || undefined,
+        qty,
+        status: stRaw || undefined,
+        detail: msg || "Fecho sem preenchimento — verificar TWS / permissões / liquidez / horário.",
+        source,
+      });
+    }
+  }
+
+  for (const e of entries) {
+    if (e.ticker !== "—") e.detail = appendCashSleeveToDetail(e.ticker, e.detail || "");
+  }
+
   appendOrderActivityEntries(entries);
 }
 
@@ -447,5 +660,18 @@ export function recordExecutionSnapshotFromSyncedFills(
     });
   }
 
-  if (entries.length) appendOrderActivityEntries(entries);
+  if (entries.length) {
+    appendOrderActivityEntries(entries);
+  } else if (fills.length > 0) {
+    appendOrderActivityEntries([
+      {
+        id: makeId(),
+        ts,
+        kind: "info",
+        ticker: "—",
+        detail: `Sincronização IBKR: ${fills.length} linha(s) na tabela — nenhuma com quantidade preenchida confirmada para registo de execução.`,
+        source,
+      },
+    ]);
+  }
 }

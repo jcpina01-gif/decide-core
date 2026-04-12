@@ -1,33 +1,40 @@
+import { normalizeRiskProfileKeyForKpi } from "../plafonadoFeesSeries";
 import { normalizeKpiEmbedBaseUrl } from "../kpiEmbedNav";
 
 export type RiskProfileKpi = "conservador" | "moderado" | "dinamico";
 
-function isRiskProfileKpi(s: string): s is RiskProfileKpi {
-  return s === "conservador" || s === "moderado" || s === "dinamico";
+function absoluteHttpBaseFromEnvVar(raw: string | undefined): string {
+  const t = String(raw ?? "").trim();
+  if (!t) return "";
+  const n = normalizeKpiEmbedBaseUrl(t);
+  if (!n) return "";
+  /**
+   * `NEXT_PUBLIC_KPI_EMBED_BASE=/kpi-flask` é só para o **browser** (middleware Next → Flask).
+   * Se o servidor Node usar esse valor, `fetch("/kpi-flask/api/health")` falha ou bate no próprio Next
+   * e devolve 200 sem `build` → banner `kpi_health_missing_build` com Flask «correcto» na 5000.
+   */
+  if (!/^https?:\/\//i.test(n)) return "";
+  return n;
 }
 
 /**
  * Base URL do serviço KPI (Flask) para pedidos **server-side** (Next API).
- * Preferir `KPI_SERVER_INTERNAL_BASE` em Docker/Render; senão `NEXT_PUBLIC_KPI_EMBED_BASE`;
+ * Preferir `KPI_SERVER_INTERNAL_BASE` em Docker/Render; senão `NEXT_PUBLIC_KPI_EMBED_BASE` **se for URL absoluta**;
  * em desenvolvimento, fallback `http://127.0.0.1:5000`.
  */
 export function kpiServerBaseUrlForServer(): string {
-  const raw =
-    process.env.KPI_SERVER_INTERNAL_BASE ||
-    process.env.NEXT_PUBLIC_KPI_EMBED_BASE ||
-    "";
-  const fromEnv = normalizeKpiEmbedBaseUrl(String(raw));
-  if (fromEnv) return fromEnv;
+  const a = absoluteHttpBaseFromEnvVar(process.env.KPI_SERVER_INTERNAL_BASE);
+  if (a) return a;
+  const b = absoluteHttpBaseFromEnvVar(process.env.NEXT_PUBLIC_KPI_EMBED_BASE);
+  if (b) return b;
   if (process.env.NODE_ENV === "development") return "http://127.0.0.1:5000";
   return "";
 }
 
 export function normalizeRiskProfileForKpi(raw: unknown): RiskProfileKpi {
-  const s = String(raw ?? "moderado")
-    .trim()
-    .toLowerCase();
-  if (isRiskProfileKpi(s)) return s;
-  return "moderado";
+  return normalizeRiskProfileKeyForKpi(
+    raw === undefined || raw === null ? undefined : String(raw),
+  );
 }
 
 export type PlafonadoKpisFromKpiServer = {
@@ -54,7 +61,7 @@ export async function fetchPlafonadoKpisFromKpiServer(
   const url = `${base.replace(/\/+$/, "")}/api/embed-plafonado-cagr?profile=${encodeURIComponent(profile)}`;
   try {
     const ac = new AbortController();
-    const t = setTimeout(() => ac.abort(), 5000);
+    const t = setTimeout(() => ac.abort(), 15_000);
     const r = await fetch(url, {
       signal: ac.signal,
       headers: { Accept: "application/json" },

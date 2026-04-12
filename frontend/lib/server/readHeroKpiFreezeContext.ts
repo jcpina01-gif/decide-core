@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
 import {
   cagrFractionFromEquityLikeKpiServer,
   overlayedCagrToDisplayPercent,
@@ -52,13 +53,52 @@ export function readHeroKpiFreezeContext(projectRoot: string): {
   historyYearRangeLabel: string | null;
   benchmarkCagrPct: number | null;
 } {
+  const smoothOut = path.join(projectRoot, "freeze", FREEZE_PLAFONADO_MODEL_DIR, "model_outputs");
+  const smoothKpis = path.join(smoothOut, "v5_kpis.json");
+  try {
+    if (fs.existsSync(smoothKpis)) {
+      const raw = fs.readFileSync(smoothKpis, "utf8");
+      const meta = JSON.parse(raw) as {
+        benchmark_cagr?: unknown;
+        data_start?: unknown;
+        data_end?: unknown;
+      };
+      const benchmarkCagrPct = overlayedCagrToDisplayPercent(meta.benchmark_cagr);
+      if (benchmarkCagrPct != null) {
+        const ds = String(meta.data_start ?? "").trim().slice(0, 10);
+        const de = String(meta.data_end ?? "").trim().slice(0, 10);
+        const d0 = parseIsoishDate(ds);
+        const d1 = parseIsoishDate(de);
+        const historyPeriodLabel =
+          d0 && d1 ? `${formatPtMonthYear(d0)} – ${formatPtMonthYear(d1)}` : null;
+        const y0 = d0?.getFullYear();
+        const y1 = d1?.getFullYear();
+        const historyYearRangeLabel =
+          y0 != null && y1 != null ? (y0 === y1 ? `${y0}` : `${y0}–${y1}`) : null;
+        return { historyPeriodLabel, historyYearRangeLabel, benchmarkCagrPct };
+      }
+    }
+  } catch {
+    /* fall through to CSV */
+  }
+
+  const smoothCloneBench = path.join(
+    projectRoot,
+    "freeze",
+    FREEZE_PLAFONADO_MODEL_DIR,
+    "model_outputs_from_clone",
+    "benchmark_equity_final_20y.csv",
+  );
+  const smoothPrimaryBench = path.join(smoothOut, "benchmark_equity_final_20y.csv");
+
   const tryRel = [
-    ["freeze", "DECIDE_MODEL_V5_OVERLAY_CAP15", "model_outputs", "benchmark_equity_final_20y.csv"],
-    ["frontend", "data", "landing", "freeze-cap15", "benchmark_equity_final_20y.csv"],
+    [smoothCloneBench],
+    [smoothPrimaryBench],
+    [path.join(projectRoot, "frontend", "data", "landing", "freeze-cap15", "benchmark_equity_final_20y.csv")],
   ];
   for (const parts of tryRel) {
-    const p = path.join(projectRoot, ...parts);
-    if (!fs.existsSync(p)) continue;
+    const p = parts[0];
+    if (!p || !fs.existsSync(p)) continue;
     try {
       const text = fs.readFileSync(p, "utf8");
       const lines = text
@@ -85,7 +125,7 @@ export function readHeroKpiFreezeContext(projectRoot: string): {
         if (d) lastDate = d;
         equity.push(v);
       }
-      if (equity.length < 50 || !firstDate || !lastDate) continue;
+      if (equity.length < 500 || !firstDate || !lastDate) continue;
       const frac = cagrFractionFromEquityLikeKpiServer(equity);
       const benchmarkCagrPct =
         frac != null ? overlayedCagrToDisplayPercent(frac) : null;

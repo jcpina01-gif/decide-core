@@ -15,6 +15,8 @@ import {
   resolvePlafonadoNextFrontendCwd,
 } from "./readPlafonadoFreezeCagr";
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
+import { isBuyMissingEquityClosePrice } from "../approvalPlanTradeDisplay";
+import { seedMetaMapFromCompanyMeta } from "../companyMeta";
 
 export type ApprovalProposedTrade = {
   ticker: string;
@@ -454,7 +456,9 @@ function estimateUsdBuyNotionalForFxHedge(trades: InternalProposedTrade[]): numb
     const q = Math.floor(Math.abs(Number(t.absQty) || 0));
     const px = Number(t.marketPrice) || 0;
     if (q > 0 && px > 0) sumPx += q * px;
-    sumDelta += Math.abs(safeNumber(t.deltaValueEst, 0));
+    if (!isBuyMissingEquityClosePrice(t)) {
+      sumDelta += Math.abs(safeNumber(t.deltaValueEst, 0));
+    }
   }
   const rounded = Math.round(sumPx * 100) / 100;
   const deltaUsd = Math.round(sumDelta * 100) / 100;
@@ -489,7 +493,10 @@ export function fillSyntheticEquityBuyQuantities(
       px = safeNumber(t.closePrice, 0);
     }
     if (px <= 0) px = getClosePrice(t.ticker);
-    if (!(px > 0)) continue;
+    if (!(px > 0)) {
+      /* Sem coluna/preço: mantém absQty=0; quem apresenta o plano deve tratar via isBuyMissingEquityClosePrice. */
+      continue;
+    }
     let notional = safeNumber(t.deltaValueEst, 0);
     if (notional <= 0 && navFinal > 0 && safeNumber(t.targetWeightPct, 0) > 0) {
       notional = (safeNumber(t.targetWeightPct, 0) / 100) * navFinal;
@@ -601,6 +608,7 @@ export async function loadApprovalAlignedProposedTrades(
     const alt = t.includes("-") ? t.replace(/-/g, ".") : t.replace(/\./g, "-");
     if (alt && alt !== t) metaByTicker.set(alt, next);
   };
+  seedMetaMapFromCompanyMeta(upsertMeta);
   for (const row of readCsvIfExists(companyMetaGlobalPath)) upsertMeta(row);
   for (const row of readCsvIfExists(companyMetaGlobalEnrichedPath)) upsertMeta(row);
   for (const row of readCsvIfExists(companyMetaV3Path)) upsertMeta(row);

@@ -1,0 +1,226 @@
+{
+  "model_name": "DECIDE_MODEL_V5",
+  "engine_version": "engine_research_v5",
+  "holdings": [
+    {
+      "ticker": "MU",
+      "company": "Micron Technology",
+      "country": "US",
+      "zone": "US",
+      "sector": "Technology",
+      "weight": 0.15,
+      "weight_pct": 15.0,
+      "score": 1.5713718546450106,
+      "rank": 1
+    },
+    {
+      "ticker": "MRNA",
+      "company": "MRNA",
+      "country": "",
+      "zone": "",
+      "sector": "",
+      "weight": 0.15,
+      "weight_pct": 15.0,
+      "score": 0.7034219114455907,
+      "rank": 2
+    },
+    {
+      "ticker": "LRCX",
+      "company": "Lam Research",
+      "country": "US",
+      "zone": "US",
+      "sector": "Technology",
+      "weight": 0.15,
+      "weight_pct": 15.0,
+      "score": 0.35478113740914147,
+      "rank": 3
+    },
+    {
+      "ticker": "ASML",
+      "company": "ASML",
+      "country": "EU",
+      "zone": "EU",
+      "sector": "Technology",
+      "weight": 0.08317058076065417,
+      "weight_pct": 8.317058076065416,
+      "score": 0.1365696875786238,
+      "rank": 4
+    },
+    {
+      "ticker": "KLAC",
+      "company": "KLAC",
+      "country": "US",
+      "zone": "US",
+      "sector": "",
+      "weight": 0.06362085792595777,
+      "weight_pct": 6.362085792595777,
+      "score": 0.10446819790084301,
+      "rank": 5
+    },
+    {
+      "ticker": "FANG",
+      "company": "FANG",
+      "country": "US",
+      "zone": "US",
+      "sector": "",
+      "weight": 0.05752231855192223,
+      "weight_pct": 5.752231855192223,
+      "score": 0.09445413271841036,
+      "rank": 6
+    },
+    {
+      "ticker": "INTC",
+      "company": "Intel",
+      "country": "US",
+      "zone": "US",
+      "sector": "Technology",
+      "weight": 0.05718157316618078,
+      "weight_pct": 5.718157316618077,
+      "score": 0.09389461407072307,
+      "rank": 7
+    },
+    {
+      "ticker": "BKR",
+      "company": "BKR",
+      "country": "US",
+      "zone": "US",
+      "sector": "",
+      "weight": 0.052115179764513186,
+      "weight_pct": 5.211517976451319,
+      "score": 0.0855753771760413,
+      "rank": 8
+    },
+    {
+      "ticker": "ROST",
+      "company": "Ross Stores",
+      "country": "US",
+      "zone": "US",
+      "sector": "Consumer Discretionary",
+      "weight": 0.04904299017941719,
+      "weight_pct": 4.904299017941719,
+      "score": 0.0805307091217652,
+      "rank": 9
+    },
+    {
+      "ticker": "GILD",
+      "company": "GILD",
+      "country": "US",
+      "zone": "US",
+      "sector": "",
+      "weight": 0.026236547304104012,
+      "weight_pct": 2.623654730410401,
+      "score": 0.043081544407807586,
+      "rank": 10
+    },
+    {
+      "ticker": "BIIB",
+      "company": "BIIB",
+      "country": "US",
+      "zone": "US",
+      "sector": "",
+      "weight": 0.024498887816219273,
+      "weight_pct": 2.4498887816219272,
+      "score": 0.04022823244090695,
+      "rank": 11
+    },
+    {
+      "ticker": "ADI",
+      "company": "ADI",
+      "country": "US",
+      "zone": "US",
+      "sector": "",
+      "weight": 0.0240258352204899,
+      "weight_pct": 2.4025835220489897,
+      "score": 0.03945145963715637,
+      "rank": 12
+    },
+    {
+      "ticker": "WBD",
+      "company": "WBD",
+      "country": "US",
+      "zone": "US",
+      "sector": "",
+      "weight": 0.02337425278654579,
+      "weight_pct": 2.337425278654579,
+      "score": 0.03838153312442047,
+      "rank": 13
+    },
+    {
+      "ticker": "AMGN",
+      "company": "AMGN",
+      "country": "US",
+      "zone": "US",
+      "sector": "",
+      "weight": 0.0225435819949544,
+      "weight_pct": 2.25435819949544,
+      "score": 0.037017535789656254,
+      "rank": 14
+    },
+    {
+      "ticker": "ILMN",
+      "company": "ILMN",
+      "country": "US",
+      "zone": "US",
+      "sector": "",
+      "weight": 0.014856372439843642,
+      "weight_pct": 1.4856372439843641,
+      "score": 0.02439480552023459,
+      "rank": 15
+    },
+    {
+      "ticker": "MAR",
+      "company": "MAR",
+      "country": "US",
+      "zone": "US",
+      "sector": "",
+      "weight": 0.01371679151496614,
+      "weight_pct": 1.371679151496614,
+      "score": 0.02252356439798064,
+      "rank": 16
+    },
+    {
+      "ticker": "REGN",
+      "company": "REGN",
+      "country": "US",
+      "zone": "US",
+      "sector": "",
+      "weight": 0.012999176655135242,
+      "weight_pct": 1.2999176655135243,
+      "score": 0.021345209788543464,
+      "rank": 17
+    },
+    {
+      "ticker": "GOOGL",
+      "company": "GOOGL",
+      "country": "US",
+      "zone": "US",
+      "sector": "",
+      "weight": 0.009657823594967902,
+      "weight_pct": 0.9657823594967903,
+      "score": 0.015858563677100066,
+      "rank": 18
+    },
+    {
+      "ticker": "GOOG",
+      "company": "GOOG",
+      "country": "US",
+      "zone": "US",
+      "sector": "",
+      "weight": 0.008263203287489711,
+      "weight_pct": 0.8263203287489711,
+      "score": 0.013568536867846334,
+      "rank": 19
+    },
+    {
+      "ticker": "PCAR",
+      "company": "PCAR",
+      "country": "US",
+      "zone": "US",
+      "sector": "",
+      "weight": 0.007174027036638697,
+      "weight_pct": 0.7174027036638697,
+      "score": 0.011780062398432158,
+      "rank": 20
+    }
+  ]
+}

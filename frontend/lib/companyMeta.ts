@@ -6,7 +6,11 @@ export type CompanyMetaEntry = {
 };
 
 export const COMPANY_META: Record<string, CompanyMetaEntry> = {
-  ALPHABET: { name: "Alphabet", country: "USA", zone: "US", sector: "Technology" },
+  /** Classe C (ticker mais usado em índices / alguns payloads do modelo). */
+  GOOG: { name: "Alphabet (Classe C)", country: "USA", zone: "US", sector: "Communication Services" },
+  /** Classe A. */
+  GOOGL: { name: "Alphabet (Classe A)", country: "USA", zone: "US", sector: "Communication Services" },
+  ALPHABET: { name: "Alphabet", country: "USA", zone: "US", sector: "Communication Services" },
   MRNA: { name: "Moderna", country: "USA", zone: "US", sector: "Health Care" },
   MU: { name: "Micron Technology", country: "USA", zone: "US", sector: "Technology" },
   LRCX: { name: "Lam Research", country: "USA", zone: "US", sector: "Technology" },
@@ -50,4 +54,22 @@ export const COMPANY_META: Record<string, CompanyMetaEntry> = {
   XOM: { name: "Exxon Mobil", country: "USA", zone: "US", sector: "Energy" },
   CCI: { name: "Crown Castle", country: "USA", zone: "US", sector: "Real Estate" },
   CCJ: { name: "Cameco", country: "Canada", zone: "CAN", sector: "Materials" },
+  /** Diamondback Energy (NASDAQ) — presente no universo DECIDE (não confundir com índice FANG+). */
+  FANG: { name: "Diamondback Energy", country: "USA", zone: "US", sector: "Energy" },
 };
+
+/**
+ * Preenche sectores / região / nome quando os CSV `company_meta_*.csv` não existem ou não cobrem o ticker.
+ * Os CSV lidos no SSR sobrepõem estes valores quando trazem células preenchidas.
+ */
+export function seedMetaMapFromCompanyMeta(upsertMeta: (row: Record<string, string>) => void): void {
+  for (const [ticker, entry] of Object.entries(COMPANY_META)) {
+    upsertMeta({
+      ticker,
+      sector: entry.sector,
+      zone: entry.zone,
+      name_short: entry.name,
+      industry: "",
+    });
+  }
+}

@@ -53,9 +53,11 @@ export function useClientKpiEmbed({ profile, loggedIn, iframeRefresh }: UseClien
       const path = router.pathname || "";
       if (!ROUTES_WITH_EMBED.has(path)) return;
       try {
-        const q: Record<string, string | string[]> = { ...router.query };
-        q.embed_tab = t;
-        void router.replace({ pathname: path, query: q }, undefined, { shallow: true });
+        void router.replace(
+          { pathname: path, query: { ...router.query, embed_tab: t } },
+          undefined,
+          { shallow: true },
+        );
       } catch {
         /* ignore */
       }
@@ -167,9 +169,11 @@ export function useClientKpiEmbed({ profile, loggedIn, iframeRefresh }: UseClien
       else hedgeQs += "&hedge_pct=100";
       hedgeQs += `&hedge_pair=${encodeURIComponent(prefs?.pair || "EURUSD")}`;
     }
+    /** Força novo HTML do Flask após mudanças em `kpi_server.py` (evita iframe «preso» a processo antigo). */
+    const embedRev = "&embed_src_rev=16";
     return `${base}/?client_embed=1&profile=${encodeURIComponent(profile)}&embed_tab=${encodeURIComponent(
       tab,
-    )}&kpi_view=${encodeURIComponent(kpiViewMode)}${t}${hedgeQs}`;
+    )}&kpi_view=${encodeURIComponent(kpiViewMode)}${embedRev}${t}${hedgeQs}`;
   }, [profile, iframeRefresh, kpiEmbedTab, kpiViewMode, loggedIn, router.pathname]);
 
   return {

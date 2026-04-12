@@ -13,6 +13,8 @@ const gatePassword = () => (process.env.SITE_GATE_PASSWORD || "").trim();
 
 /** Rotas que têm de funcionar sem Basic Auth (link no email abre noutro browser / app de correio). */
 function isSiteGateBypass(pathname: string): boolean {
+  /** Proxy dev para Flask KPI — o iframe não envia Basic Auth; tem de contornar o site gate. */
+  if (pathname === "/kpi-flask" || pathname.startsWith("/kpi-flask/")) return true;
   if (pathname.startsWith("/client/verify-email")) return true;
   if (pathname.startsWith("/api/client/email-verification/")) return true;
   /** OTP SMS no registo — mesmo racional que o email (fetch pode não levar credenciais Basic em alguns clientes). */
@@ -24,7 +26,46 @@ function isSiteGateBypass(pathname: string): boolean {
 }
 
 export function middleware(req: NextRequest) {
-  if (isSiteGateBypass(req.nextUrl.pathname)) {
+  const pathname = req.nextUrl.pathname;
+
+  /**
+   * Dev + Turbopack: rewrites em `next.config.js` para 127.0.0.1:5000 são pouco fiáveis.
+   * O middleware faz `rewrite` explícito para o Flask KPI (`npm run kpi`).
+   */
+  if (process.env.NODE_ENV === "development" && (pathname === "/kpi-flask" || pathname.startsWith("/kpi-flask/"))) {
+    let suffix = pathname.slice("/kpi-flask".length);
+    if (!suffix || suffix === "/") suffix = "/";
+    else if (!suffix.startsWith("/")) suffix = `/${suffix}`;
+    const target = new URL(`http://127.0.0.1:5000${suffix}`);
+    target.search = req.nextUrl.search;
+    return NextResponse.rewrite(target);
+  }
+
+  /**
+   * Produção (ex. Vercel): mesmo padrão que em dev — o iframe usa `NEXT_PUBLIC_KPI_EMBED_BASE=/kpi-flask` e o
+   * middleware encaminha para o `kpi_server` público. Defina `KPI_EMBED_UPSTREAM` com URL absoluta (https://…)
+   * do serviço Flask (build alinhado ao repo — regras de vol / perfil como em local).
+   */
+  const kpiUpstreamProd = (process.env.KPI_EMBED_UPSTREAM || "").trim();
+  if (
+    process.env.NODE_ENV !== "development" &&
+    kpiUpstreamProd &&
+    (pathname === "/kpi-flask" || pathname.startsWith("/kpi-flask/"))
+  ) {
+    let suffix = pathname.slice("/kpi-flask".length);
+    if (!suffix || suffix === "/") suffix = "/";
+    else if (!suffix.startsWith("/")) suffix = `/${suffix}`;
+    const base = kpiUpstreamProd.replace(/\/+$/, "");
+    try {
+      const target = new URL(suffix, `${base}/`);
+      target.search = req.nextUrl.search;
+      return NextResponse.rewrite(target);
+    } catch {
+      return NextResponse.next();
+    }
+  }
+
+  if (isSiteGateBypass(pathname)) {
     return NextResponse.next();
   }
 

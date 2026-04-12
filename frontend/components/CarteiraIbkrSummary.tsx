@@ -10,6 +10,7 @@ import {
   ibkrSnapshotUnavailableHint,
   isIbkrSnapshotOk,
   safeNumber,
+  tmpDiagIbkrFallbackUserNote,
   type IbkrSnapshotPayload,
 } from "../lib/ibkrSnapshotParse";
 import { PLAFONADO_MODEL_INLINE_PT } from "../lib/freezePlafonadoDir";
@@ -36,6 +37,7 @@ export default function CarteiraIbkrSummary({
   const [invested, setInvested] = useState<number | null>(null);
   const [uninvested, setUninvested] = useState<number | null>(null);
   const [hint, setHint] = useState<string>("");
+  const [fallbackNote, setFallbackNote] = useState<string>("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,6 +58,7 @@ export default function CarteiraIbkrSummary({
       }
       if (isIbkrSnapshotOk(snap, r.ok)) {
         setHint("");
+        setFallbackNote(tmpDiagIbkrFallbackUserNote(snap));
         setNav(safeNumber(snap.net_liquidation, 0));
         setCcy(typeof snap.net_liquidation_ccy === "string" ? snap.net_liquidation_ccy : "EUR");
         setOk(true);
@@ -63,6 +66,7 @@ export default function CarteiraIbkrSummary({
         setInvested(d.invested);
         setUninvested(d.uninvested);
       } else {
+        setFallbackNote("");
         setHint(ibkrSnapshotUnavailableHint(snap, r.ok, r.status));
         setOk(false);
         setNav(null);
@@ -70,6 +74,7 @@ export default function CarteiraIbkrSummary({
         setUninvested(null);
       }
     } catch {
+      setFallbackNote("");
       setHint("Erro de rede ao pedir o snapshot IBKR.");
       setOk(false);
       setNav(null);
@@ -140,6 +145,19 @@ export default function CarteiraIbkrSummary({
         </p>
       ) : compact ? (
         <div className="carteira-ibkr-summary-metrics">
+          {fallbackNote ? (
+            <p
+              style={{
+                margin: "0 0 10px",
+                fontSize: 12,
+                lineHeight: 1.45,
+                color: "#a78bfa",
+                maxWidth: 720,
+              }}
+            >
+              {fallbackNote}
+            </p>
+          ) : null}
           <p style={{ margin: "0 0 10px", fontSize: 13, lineHeight: 1.45, color: "#a1a1aa", maxWidth: 720 }}>
             Valores da <strong style={{ color: "#e4e4e7" }}>conta IBKR</strong> (TWS/Gateway). Abaixo, a lista
             detalhada das posições na mesma conta (não é a carteira recomendada do modelo — veja o Dashboard para o
@@ -181,6 +199,11 @@ export default function CarteiraIbkrSummary({
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {fallbackNote ? (
+            <p style={{ margin: 0, fontSize: 13, lineHeight: 1.45, color: "#a78bfa", maxWidth: 720 }}>
+              {fallbackNote}
+            </p>
+          ) : null}
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: "#71717a", marginBottom: 2 }}>Carteira (valor total)</div>
             <div

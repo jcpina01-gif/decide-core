@@ -13,6 +13,7 @@ import { isHedgeOnboardingDone } from "../../lib/fxHedgePrefs";
 import { getHrefAfterTradePlanApprovalStep } from "../../lib/onboardingProgress";
 import { DECIDE_DASHBOARD, ONBOARDING_SHELL_MAX_WIDTH_PX } from "../../lib/decideClientTheme";
 import { DECIDE_MIN_INVEST_EUR } from "../../lib/decideInvestPrefill";
+import { isBuyMissingEquityClosePrice } from "../../lib/approvalPlanTradeDisplay";
 import { loadApprovalAlignedProposedTrades } from "../../lib/server/approvalTradePlan";
 import { resolveDecideProjectRoot } from "../../lib/server/decideProjectRoot";
 import path from "path";
@@ -127,6 +128,13 @@ function ibkrPaperFundsCoverPlan(live: IbkrLiveState, planNavEur: number): boole
   return true;
 }
 
+/** Leitura IBKR utilizável para a regra dos fundos (só EUR/USD → equivalente EUR). */
+function ibkrLiveSupportsFundsCheck(live: IbkrLiveState): boolean {
+  if (!live.ok || live.nav <= 0) return false;
+  const ccy = normalizeCcy(live.navCcy);
+  return ccy === "EUR" || ccy === "USD";
+}
+
 /** Resumo legível do foco sectorial (heurística a partir de nomes/tickers). */
 function summarizePortfolioTheme(trades: ProposedTrade[]): string {
   const parts: string[] = [];
@@ -161,7 +169,9 @@ function countPortfolioImpact(trades: ProposedTrade[]) {
     const s = safeString(t.side, "").toUpperCase();
     if (s === "BUY") {
       nBuy += 1;
-      buyNotional += safeNumber(t.deltaValueEst, 0);
+      if (!isBuyMissingEquityClosePrice(t)) {
+        buyNotional += safeNumber(t.deltaValueEst, 0);
+      }
     } else if (s === "SELL") {
       nSell += 1;
       sellNotional += Math.abs(safeNumber(t.deltaValueEst, 0));
@@ -602,13 +612,27 @@ export default function ApprovePage({
       return;
     }
     if (!paperFundsVerified) {
+      if (!ibkrLive.ok) {
+        // eslint-disable-next-line no-alert
+        alert(
+          `Aprovação bloqueada: não há leitura válida da conta paper na IBKR. ${ibkrLive.error ? ibkrLive.error + " " : ""}Confirme TWS/IB Gateway e use «Atualizar leitura (TWS)».`,
+        );
+        return;
+      }
+      if (!ibkrLiveSupportsFundsCheck(ibkrLive)) {
+        // eslint-disable-next-line no-alert
+        alert(
+          "Aprovação bloqueada: nesta página só validamos património quando a conta paper está em EUR ou USD (base). Ajuste na IBKR ou contacte suporte.",
+        );
+        return;
+      }
       const eq = ibkrNavEurEquivalent(ibkrLive);
-      const eqStr = eq != null ? formatEuro(eq) : "liquidez não validada (use conta em EUR ou USD na paper)";
+      const eqStr = eq != null ? formatEuro(eq) : "—";
       // eslint-disable-next-line no-alert
       alert(
-        `Aprovação bloqueada: na conta paper, o valor líquido equivalente (${eqStr}) tem de ser ≥ ${formatEuro(
+        `Aprovação bloqueada: património líquido total na paper (${eqStr}) tem de ser ≥ ${formatEuro(
           DECIDE_MIN_INVEST_EUR,
-        )} e ≥ ~85 % do NAV de referência do plano (${formatEuro(displayNavEur)}). Deposite na paper ou ajuste o plano.`,
+        )} e ≥ ~85 % do NAV de referência do plano (${formatEuro(displayNavEur)}). Alinhe o montante do onboarding ao que tem na conta ou deposite na paper.`,
       );
       return;
     }
@@ -661,7 +685,18 @@ export default function ApprovePage({
     if (!ibkrPrepDone) return "Botão desactivo: falta concluir a preparação IBKR (passo Corretora).";
     if (ibkrLive.loading) return "Botão desactivo: a ler liquidez na conta IBKR paper…";
     if (!paperFundsVerified) {
-      return "Botão desactivo: fundos na conta paper abaixo do mínimo ou abaixo de ~85 % do NAV de referência do plano.";
+      if (ibkrLive.loading) {
+        return "Botão desactivo: a ler património na conta IBKR paper…";
+      }
+      if (!ibkrLive.ok) {
+        return ibkrLive.error
+          ? `Botão desactivo: leitura IBKR falhou — ${ibkrLive.error.slice(0, 120)}${ibkrLive.error.length > 120 ? "…" : ""}`
+          : "Botão desactivo: sem leitura da conta paper — confirme TWS/IB Gateway, backend e carregue em «Atualizar leitura (TWS)».";
+      }
+      if (!ibkrLiveSupportsFundsCheck(ibkrLive)) {
+        return "Botão desactivo: a validação de fundos só aceita conta base em EUR ou USD na paper (ajuste na IBKR ou contacte suporte).";
+      }
+      return `Botão desactivo: património líquido total na paper tem de ser ≥ ${formatEuro(DECIDE_MIN_INVEST_EUR)} e ≥ ~85 % do NAV de referência do plano (${formatEuro(displayNavEur)}).`;
     }
     if (!confirmReview) return "Botão desactivo: marque a confirmação de que reviu a proposta e os riscos (caixa acima).";
     return null;
@@ -674,7 +709,10 @@ export default function ApprovePage({
     ibkrPrepDone,
     confirmReview,
     ibkrLive.loading,
+    ibkrLive.ok,
+    ibkrLive.error,
     paperFundsVerified,
+    displayNavEur,
   ]);
 
   return (
@@ -774,7 +812,15 @@ export default function ApprovePage({
                 hasTradePlan &&
                 !ibkrLive.loading &&
                 !paperFundsVerified
-                  ? " Fundos na conta paper insuficientes: tem de haver liquidez ≥ mínimo do produto e ≥ ~85 % do NAV de referência do plano. Deposite na paper ou use «Atualizar leitura (TWS)»."
+                  ? !ibkrLive.ok
+                    ? ` Não foi possível ler o património na conta paper. ${ibkrLive.error ? ibkrLive.error : "Confirme IB Gateway/TWS (paper, API activa), o backend DECIDE e carregue em «Atualizar leitura (TWS)»."}`
+                    : !ibkrLiveSupportsFundsCheck(ibkrLive)
+                      ? " A validação nesta página usa o património líquido total (Net Liquidation) em conta base EUR ou USD. Outras moedas base não são aceites aqui — altere a visualização/base na IBKR ou peça apoio."
+                      : ` Património na paper insuficiente face ao plano: o valor líquido total da conta (não só «caixa») tem de ser ≥ ${formatEuro(
+                          DECIDE_MIN_INVEST_EUR,
+                        )} e ≥ ~85 % do NAV de referência (${formatEuro(
+                          displayNavEur,
+                        )}). Aumente o saldo na paper, alinhe o montante do onboarding ao que tem na conta, ou actualize a leitura na TWS.`
                   : null}
                 {accountCode ? ` Conta: ${accountCode}.` : ""}
                 {cashEur > 0 ? ` Cash: ${formatEuro(cashEur)}.` : ""}
@@ -1282,7 +1328,16 @@ export default function ApprovePage({
                           {t.marketPrice > 0 ? t.marketPrice.toFixed(2) : "—"}
                         </td>
                         <td className="px-3 py-2 text-right">
-                          {formatEuro(t.deltaValueEst)}
+                          {isBuyMissingEquityClosePrice(t) ? (
+                            <span
+                              className="text-slate-500"
+                              title="Sem preço de fecho para este ticker em backend/data/prices_close.csv — não é possível calcular quantidade nem impacto executável. Atualize o ficheiro de closes ou use preço da corretora."
+                            >
+                              —
+                            </span>
+                          ) : (
+                            formatEuro(t.deltaValueEst)
+                          )}
                         </td>
                         <td className="px-3 py-2 text-right">
                           {formatPct(t.targetWeightPct)}

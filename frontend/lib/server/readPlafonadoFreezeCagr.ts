@@ -2,8 +2,11 @@ import fs from "fs";
 import path from "path";
 import {
   applyPlafonadoProfileVolPolicy,
+  buildLandingFreezeCap15Series,
+  buildPlanHeroPlafonadoSeries,
   buildPlafonadoEmbedLikeSeries,
   kpiForceSyntheticVolClientEmbed,
+  normalizeRiskProfileKeyForKpi,
   parseEquityCsv,
 } from "../plafonadoFeesSeries";
 import {
@@ -23,15 +26,24 @@ const FREEZE_CAP15_OVERLAY_OUTPUTS = [
 ] as const;
 
 const MIN_EQUITY_POINTS = 50;
+/** Alinhado a `model_equity_csv_is_stub` no kpi_server: CSVs por perfil placeholder (~60 linhas). */
+const MIN_EQUITY_ROWS_FOR_PROFILE_CSV = 500;
+
+function modelEquityCsvLooksComplete(filePath: string): boolean {
+  try {
+    const text = fs.readFileSync(filePath, "utf8");
+    const lines = text.replace(/\r/g, "").split("\n").filter((l) => l.trim().length > 0);
+    const dataRows = Math.max(0, lines.length - 1);
+    return dataRows >= MIN_EQUITY_ROWS_FOR_PROFILE_CSV;
+  } catch {
+    return false;
+  }
+}
 
 function normalizePlafonadoProfile(
   raw: string | undefined,
 ): "conservador" | "moderado" | "dinamico" {
-  const p = String(raw ?? "moderado")
-    .trim()
-    .toLowerCase();
-  if (p === "conservador" || p === "dinamico") return p;
-  return "moderado";
+  return normalizeRiskProfileKeyForKpi(raw);
 }
 
 /** Pasta `frontend/` do monorepo, ou `projectRoot` se já for a app Next. */
@@ -99,6 +111,23 @@ function parseModelEquityColumn(text: string): number[] {
 }
 
 /**
+ * CAGR em % do hero «Plano recomendado»: primeiro `frontend/data/landing/freeze-cap15` (produto / custos),
+ * senão freeze do repo (paridade com iframe quando landing não existe).
+ */
+export function readPlanRecommendedCagrDisplayPercent(
+  projectRoot: string,
+  profileRaw?: string,
+): number | null {
+  const profile = normalizePlafonadoProfile(profileRaw);
+  const cwd = resolvePlafonadoNextFrontendCwd(projectRoot);
+  const built = buildPlanHeroPlafonadoSeries(profile, cwd);
+  if (built?.equity_overlayed?.length >= MIN_EQUITY_POINTS) {
+    return cagrDisplayFromEquity(built.equity_overlayed);
+  }
+  return null;
+}
+
+/**
  * CAGR em % alinhado ao iframe / `buildPlafonadoEmbedLikeSeries`: mesma série (CAP15 + m100 + política de vol
  * moderado = série sem filtro de vol; outros perfis com alvo vs benchmark quando aplicável), não `overlayed_cagr` do JSON isolado.
  */
@@ -122,7 +151,12 @@ export function readPlafonadoM100CagrDisplayPercent(
   const baseModel = path.join(dir, "model_equity_final_20y.csv");
   let modelPath = baseModel;
   let usedProfileFile = false;
-  if (!forceSyn && fs.existsSync(byProfile)) {
+  if (
+    profile !== "moderado" &&
+    !forceSyn &&
+    fs.existsSync(byProfile) &&
+    modelEquityCsvLooksComplete(byProfile)
+  ) {
     modelPath = byProfile;
     usedProfileFile = true;
   } else if (!fs.existsSync(baseModel)) return null;
@@ -175,7 +209,7 @@ export function readLandingEmbeddedFreezeCap15CagrDisplayPercent(
   profileRaw?: string,
 ): number | null {
   const profile = normalizePlafonadoProfile(profileRaw);
-  const built = buildPlafonadoEmbedLikeSeries(profile, nextJsCwdFrontend);
+  const built = buildLandingFreezeCap15Series(profile, nextJsCwdFrontend);
   if (built?.equity_overlayed?.length >= MIN_EQUITY_POINTS) {
     return cagrDisplayFromEquity(built.equity_overlayed);
   }

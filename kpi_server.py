@@ -4,10 +4,12 @@ from math import sqrt
 from pathlib import Path
 import json
 import os
+import sys
+import unicodedata
 
 import numpy as np
 import pandas as pd
-from flask import Flask, Response, jsonify, render_template_string, request
+from flask import Flask, Response, jsonify, make_response, render_template_string, request
 
 TRADING_DAYS_PER_YEAR = 252
 
@@ -19,10 +21,61 @@ try:
 except ValueError:
     RISK_FREE_ANNUAL = 0.0
 
-REPO_ROOT = Path(__file__).resolve().parent
-BACKEND_META_PATH = REPO_ROOT / "backend" / "data" / "company_meta_global_enriched.csv"
+def _resolve_kpi_repo_root() -> Path:
+    """Pasta do monorepo com `freeze/` — permite apontar para `decide-core` mesmo com `kpi_server.py` doutro clone."""
+    for key in ("DECIDE_KPI_REPO_ROOT", "DECIDE_PROJECT_ROOT"):
+        raw = (os.environ.get(key) or "").strip()
+        if not raw:
+            continue
+        p = Path(raw).expanduser().resolve()
+        if p.is_dir() and (p / "freeze").is_dir():
+            return p
+    return Path(__file__).resolve().parent
 
-# CAP15 plafonado (≤100% NAV): freeze V2.3 smooth. A chave `v5_overlay_cap15` continua a apontar ao freeze com margem.
+
+REPO_ROOT = _resolve_kpi_repo_root()
+BACKEND_META_PATH = REPO_ROOT / "backend" / "data" / "company_meta_global_enriched.csv"
+# Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
+KPI_SERVER_BUILD_TAG = "decide-kpi-2026-04-embed-diag-canon-v13"
+
+
+def _kpi_package_dir() -> Path:
+    """Pasta do `kpi_server.py`; pode ter `freeze/` completo quando `DECIDE_PROJECT_ROOT` aponta para clone parcial."""
+    return Path(__file__).resolve().parent
+
+
+def _freeze_search_roots() -> tuple[Path, ...]:
+    """Monorepos a pesquisar (`freeze/`, benchmark longo, teórico). Evita stub se o clone só existir no checkout canónico."""
+    seen: set[str] = set()
+    out: list[Path] = []
+    for p in (REPO_ROOT, _kpi_package_dir()):
+        try:
+            key = str(p.resolve())
+        except OSError:
+            key = str(p)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return tuple(out)
+
+
+def _fallback_benchmark_equity_csv_list() -> list[Path]:
+    paths: list[Path] = []
+    for root in _freeze_search_roots():
+        paths.append(
+            root
+            / "freeze"
+            / "DECIDE_MODEL_V5_V2_3_SMOOTH"
+            / "model_outputs_from_clone"
+            / "benchmark_equity_final_20y.csv",
+        )
+    return paths
+
+# CAP15 plafonado (≤100% NAV): freeze V2.3 smooth (`model_outputs`).
+# Série «com margem» / teórico: `model_equity_final_20y[_perfil]_margin.csv`, `model_equity_theoretical_20y.csv`
+# (`scripts/generate_smooth_margin_equity_csvs.py`). Sem fallback para outro freeze de modelo.
+# Benchmark: se `model_outputs/benchmark_equity_final_20y.csv` for um stub curto, usar `model_outputs_from_clone/` (mesmo calendário que o modelo).
 _PLAFONADO_CAP15_OUTPUTS = REPO_ROOT / "freeze" / "DECIDE_MODEL_V5_V2_3_SMOOTH" / "model_outputs"
 
 MODEL_PATHS = {
@@ -52,6 +105,9 @@ V5_KPI_JSON_MODEL_KEYS = (
     "v5_overlay_cap15_max100exp",
 )
 
+# CAP15 investível (plafonado / legado overlay) e comparativo com margem: conservador/dinâmico com alvo de vol vs benchmark sempre.
+CAP15_VOL_TARGET_MODEL_KEYS = frozenset({"v5_overlay_cap15_max100exp", "v5_overlay_cap15", "v5_v2_3_smooth"})
+
 # Frontend Next.js base URL (para links rápidos no dashboard Flask)
 # Ex.: http://127.0.0.1:4701
 FRONTEND_URL = (os.environ.get("FRONTEND_URL") or "http://127.0.0.1:4701").rstrip("/")
@@ -66,6 +122,30 @@ PROFILE_VOL_MULTIPLIER = {"conservador": 0.75, "moderado": 1.0, "dinamico": 1.25
 PROFILE_LABEL_PT_SHORT = {"conservador": "Conservador", "moderado": "Moderado", "dinamico": "Dinâmico"}
 
 
+def normalize_risk_profile_key(profile_key: str | None) -> str:
+    """
+    Mapeia variantes (PT com acentos, labels em inglês) para conservador | moderado | dinamico.
+
+    Sem isto, `dinâmico` ≠ `dinamico` falha o whitelist do Flask e cai em moderado; e
+    `PROFILE_VOL_MULTIPLIER.get` devolve 1.0 em vez de 1.25.
+    """
+    raw = (profile_key or "").strip()
+    if not raw:
+        return "moderado"
+    lowered = raw.lower()
+    s = "".join(
+        ch for ch in unicodedata.normalize("NFD", lowered) if unicodedata.category(ch) != "Mn"
+    )
+    s = s.strip()
+    if s in ("conservador", "conservative", "defensivo", "defensive"):
+        return "conservador"
+    if s in ("dinamico", "dynamic", "agresivo", "agressivo", "arrojado"):
+        return "dinamico"
+    if s in ("moderado", "moderate", "medio", "equilibrado", "balanced", "neutro", "neutral"):
+        return "moderado"
+    return "moderado"
+
+
 def scale_model_equity_to_profile_vol(
     model_eq: pd.Series,
     bench_eq: pd.Series,
@@ -74,14 +154,17 @@ def scale_model_equity_to_profile_vol(
     has_profile_file: bool,
 ) -> pd.Series:
     """
-    Quando não existe CSV dedicado por perfil, escala retornos diários para que a vol
-    anual da curva fique ≈ multiplier × vol do benchmark (conservador 0,75×; dinâmico 1,25×).
-    O perfil moderado não usa esta função na política de cartões (série cru do modelo).
-    Com ficheiro `model_equity_final_20y_{perfil}.csv`, a série mantém-se (assume gerada offline).
+    Escala retornos para a vol anual da curva ficar ≈ multiplier × vol do benchmark
+    (conservador 0,75×; dinâmico 1,25×). O moderado não passa por aqui na política de cartões.
+    Se `has_profile_file=True`, devolve a série sem alterar (uso pontual por chamadores legados).
     """
     if has_profile_file:
         return model_eq.astype(float)
-    mult = PROFILE_VOL_MULTIPLIER.get(profile_key, 1.0)
+    canon = normalize_risk_profile_key(profile_key)
+    # Nunca reescalar moderado aqui (defesa em profundidade — a política de cartões já o evita).
+    if canon == "moderado":
+        return model_eq.astype(float)
+    mult = PROFILE_VOL_MULTIPLIER.get(canon, 1.0)
     model_eq = model_eq.astype(float)
     bench_eq = bench_eq.astype(float)
     m_ret = model_eq.pct_change().dropna()
@@ -93,7 +176,8 @@ def scale_model_equity_to_profile_vol(
             b_ret_c = b_ret.loc[common_idx]
             m_vol = float(m_ret_c.std() * sqrt(TRADING_DAYS_PER_YEAR))
             b_vol = float(b_ret_c.std() * sqrt(TRADING_DAYS_PER_YEAR))
-            if m_vol > 0 and b_vol > 0:
+            # Benchmark alinhado a um stub curto → vol quase nula mas >0: o factor escala o modelo para CAGR ~0%.
+            if m_vol > 0 and b_vol >= 0.02:
                 target_vol = mult * b_vol
                 scale = target_vol / m_vol
                 ret_scaled = m_ret * scale
@@ -105,7 +189,7 @@ def scale_model_equity_to_profile_vol(
 
 
 def kpi_env_real_equity() -> bool:
-    """Opt-in: iframe / APIs embed usam o CSV do freeze sem reescala de vol (0,75× / 1× / 1,25×)."""
+    """Opt-in no embed: preferir `model_equity_final_20y_{perfil}.csv` quando existir (ver `kpi_force_synthetic_vol`)."""
     return str(os.environ.get("DECIDE_KPI_REAL_EQUITY", "")).strip().lower() in {
         "1",
         "true",
@@ -126,12 +210,14 @@ def kpi_env_synthetic_profile_vol_override() -> bool:
 
 def kpi_force_synthetic_vol(*, client_embed: bool) -> bool:
     """
-    Quando activo, aplica reescala sintética **só a conservador/dinâmico** (moderado fica sempre com série cru).
+    Controla sobretudo **qual CSV** se carrega no embed (ficheiro base `model_equity_final_20y.csv` vs variante por perfil).
 
-    - Iframe / rotas embed: **por defeito activo** para esses perfis; opt-out global: `DECIDE_KPI_REAL_EQUITY=1`.
+    - Iframe / rotas embed: por defeito usa o CSV base para todos os perfis; `DECIDE_KPI_REAL_EQUITY=1` permite CSV por perfil.
+    - Nos modelos **CAP15** (`CAP15_VOL_TARGET_MODEL_KEYS` / margem), conservador/dinâmico aplicam sempre esse alvo
+      em `apply_model_equity_profile_policy` (`strict_cap15_vol_targets`). Nos restantes modelos v5, a reescala
+      segue o comportamento legado (este flag e `client_embed` incluídos).
     - Reforço global: `DECIDE_KPI_SYNTHETIC_PROFILE_VOL=1`.
-    - Página KPI no browser (não embed): só reescala se `DECIDE_KPI_SYNTHETIC_PROFILE_VOL=1`; senão segue a lógica
-      «CSV por perfil ou reescala na página completa» via `apply_model_equity_profile_policy`.
+    - Página KPI completa (não embed): só força o caminho «base» quando `DECIDE_KPI_SYNTHETIC_PROFILE_VOL=1`.
     """
     if kpi_env_synthetic_profile_vol_override():
         return True
@@ -148,27 +234,38 @@ def apply_model_equity_profile_policy(
     used_profile_file: bool,
     client_embed: bool,
     force_synthetic_profile_vol: bool,
+    strict_cap15_vol_targets: bool = False,
 ) -> pd.Series:
     """
-    - `model_equity_final_20y_{perfil}.csv`: série do motor, sem tocar.
-    - **Moderado:** sem reescala de vol para o benchmark (série investível tal como no backtest).
-    - Conservador / dinâmico: reescala 0,75× / 1,25× vol do benchmark quando aplicável.
-    - `force_synthetic_profile_vol=True`: reescala só conservador/dinâmico; moderado mantém-se cru.
-    - Opt-out global: `DECIDE_KPI_REAL_EQUITY=1` (todos os perfis sem sintético no embed).
+    - **Moderado:** sem reescala de vol vs benchmark (série tal como vem do modelo / CSV).
+    - **Conservador / dinâmico:** alvo ≈ 0,75× / 1,25× vol do benchmark quando a reescala está activa.
+
+    Com `strict_cap15_vol_targets=True` (CAP15 plafonado, série m100 alinhada, com margem): conservador/dinâmico
+    aplicam sempre esse alvo (ignora `used_profile_file` e opt-out de embed); moderado mantém-se cru.
+
+    Com `strict_cap15_vol_targets=False` (outros modelos v5): comportamento legado — `used_profile_file` isenta;
+    no embed sem `force_synthetic_profile_vol` conservador/dinâmico ficam sem reescala.
     """
+    pk = normalize_risk_profile_key(profile_key)
+    if strict_cap15_vol_targets:
+        if pk == "moderado":
+            return model_eq.astype(float)
+        return scale_model_equity_to_profile_vol(
+            model_eq, bench_eq, pk, has_profile_file=False
+        )
+
     if used_profile_file:
         return model_eq.astype(float)
-    pk = (profile_key or "moderado").strip().lower()
     if pk == "moderado":
         return model_eq.astype(float)
     if force_synthetic_profile_vol:
         return scale_model_equity_to_profile_vol(
-            model_eq, bench_eq, profile_key, has_profile_file=False
+            model_eq, bench_eq, pk, has_profile_file=False
         )
     if client_embed:
         return model_eq.astype(float)
     return scale_model_equity_to_profile_vol(
-        model_eq, bench_eq, profile_key, has_profile_file=False
+        model_eq, bench_eq, pk, has_profile_file=False
     )
 
 
@@ -198,6 +295,7 @@ HTML_TEMPLATE = """
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
+    <meta name="decide-kpi-build" content="{{ kpi_build_tag }}">
     <title>DECIDE</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -1792,7 +1890,7 @@ HTML_TEMPLATE = """
       .kpi-card-details summary{
         cursor: pointer;
         list-style: none;
-        font-size: 0.72rem;
+        font-size: 0.84rem;
         font-weight: 800;
         color: #5eead4;
         display: inline-flex;
@@ -1802,8 +1900,8 @@ HTML_TEMPLATE = """
       .kpi-card-details summary::-webkit-details-marker{ display: none; }
       .kpi-card-details .kpi-card-details-body{
         margin-top: 8px;
-        font-size: 0.72rem;
-        line-height: 1.45;
+        font-size: 0.9rem;
+        line-height: 1.5;
         color: #d4d4d8;
       }
       .kpi-bench-vs-rec{
@@ -1812,8 +1910,8 @@ HTML_TEMPLATE = """
         border-radius: 12px;
         background: rgba(24,24,27,0.72);
         border: 1px solid rgba(63,63,70,0.5);
-        font-size: 0.72rem;
-        line-height: 1.5;
+        font-size: 0.88rem;
+        line-height: 1.55;
         color: #d4d4d8;
       }
       .kpi-comparativo-pill{
@@ -2505,6 +2603,7 @@ HTML_TEMPLATE = """
     {% endif %}
     {% macro simulator_client_embed_panel() %}
       <div id="simApiContext"
+        data-browser-api-prefix="{% if client_embed %}/kpi-flask{% endif %}"
         data-cap15-only="{% if cap15_only %}1{% else %}0{% endif %}"
         data-client-embed="{% if client_embed %}1{% else %}0{% endif %}"
         data-model-key="{{ current_model }}"
@@ -2823,8 +2922,16 @@ HTML_TEMPLATE = """
       </div>
       {% endif %}
       <div class="grid{% if compare_cap100_kpis %} grid-has-plafonada{% endif %}">
+        {% if client_embed and cap15_only %}
+        <p class="kpi-embed-diag" style="grid-column:1/-1;font-size:0.68rem;color:#94a3b8;margin:0 0 6px 0;line-height:1.35;">
+          Decide KPI <code style="color:#cbd5e1;">{{ kpi_diag_build }}</code>
+          · bench <code style="color:#cbd5e1;">{{ kpi_diag_bench_file }}</code> ({{ kpi_diag_bench_rows }} linhas)
+          · raw <code style="color:#cbd5e1;">{{ kpi_diag_raw_file }}</code> ({{ kpi_diag_raw_rows }} linhas).
+          Se vires «Modelo teórico» ou bench ~0%, o browser não está a falar com este build — reinicia <code style="color:#cbd5e1;">npm run kpi</code> na pasta do repo com <code style="color:#cbd5e1;">kpi_server.py</code>.
+        </p>
+        {% endif %}
         <div class="card {{ 'col-3' if compare_cap100_kpis else 'col-4' }} kpi-advanced-only kpi-card-raw-model">
-          <div class="label">Modelo teórico (não investível)</div>
+          <div class="label">Modelo RAW / motor (não investível)</div>
           <div class="value positive">{{ (raw_kpis.cagr * 100) | round(2) }}% <span class="muted" style="font-size:0.75rem;">CAGR</span></div>
           <div class="kpi-line kpi-advanced-only">Vol {{ (raw_kpis.volatility * 100) | round(2) }}%</div>
           <div class="kpi-line kpi-simple-only">Risco esperado (vol.) {{ (raw_kpis.volatility * 100) | round(2) }}%</div>
@@ -2859,7 +2966,11 @@ HTML_TEMPLATE = """
           <details class="kpi-card-details">
             <summary>O que é isto? · <span style="font-weight:700;color:#99f6e4;">Saber mais</span></summary>
             <div class="kpi-card-details-body">
-              Histórico ilustrativo do <strong>Modelo CAP15</strong> com <strong>volatilidade alinhada ao perfil</strong> (0,75× / 1× / 1,25× à vol do benchmark, como no selector do topo). Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Os números incorporam <strong>custos de mercado estimados</strong> no backtest (comissão, slippage, FX sobre turnover) e pressupostos de <strong>execução realista</strong>; não incluem comissões DECIDE nem impostos. Informação indicativa — não é aconselhamento.
+              {% if current_profile == 'moderado' %}
+              Histórico ilustrativo do <strong>Modelo CAP15</strong>. No perfil <strong>moderado</strong>, a <strong>volatilidade</strong> mostrada é a <strong>realizada no backtest</strong> da série investível, <strong>sem</strong> reescala neste painel para igualar à do benchmark (no conservador e no dinâmico, a série é escalada a ≈0,75× e ≈1,25× da vol do referencial). Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Os números incorporam <strong>custos de mercado estimados</strong> no backtest (comissão, slippage, FX sobre turnover) e pressupostos de <strong>execução realista</strong>; não incluem comissões DECIDE nem impostos. Informação indicativa — não é aconselhamento.
+              {% else %}
+              Histórico ilustrativo do <strong>Modelo CAP15</strong> com <strong>volatilidade alinhada ao perfil</strong> relativamente ao benchmark (≈ <strong>0,75×</strong> no conservador, ≈ <strong>1,25×</strong> no dinâmico), conforme o selector do topo. Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Os números incorporam <strong>custos de mercado estimados</strong> no backtest (comissão, slippage, FX sobre turnover) e pressupostos de <strong>execução realista</strong>; não incluem comissões DECIDE nem impostos. Informação indicativa — não é aconselhamento.
+              {% endif %}
             </div>
           </details>
           {% endif %}
@@ -2902,7 +3013,7 @@ HTML_TEMPLATE = """
               {% else %}
               Exposição a risco limitada a <strong>100%</strong> do NAV (sem alavancagem além do capital).
               {% if current_profile == 'moderado' %}
-              A <strong>volatilidade</strong> desta série é a <strong>do próprio modelo</strong> no backtest (perfil moderado), <strong>sem</strong> reescala para igualar à do mercado de referência.
+              A <strong>volatilidade</strong> é a <strong>realizada no backtest</strong> do Modelo CAP15 investível, <strong>sem</strong> reescala neste painel para igualar à do benchmark. Pode ficar <strong>próxima</strong> da vol do referencial se a exposição efectiva e a caixa forem semelhantes às do índice — isso <strong>não</strong> significa que o KPI tenha forçado a vol do benchmark.
               {% elif current_profile == 'conservador' %}
               A volatilidade foi ajustada para ≈ <strong>0,75×</strong> a vol do benchmark (perfil conservador).
               {% else %}
@@ -2950,7 +3061,7 @@ HTML_TEMPLATE = """
           <details class="kpi-card-details">
             <summary>O que é isto? · <span style="font-weight:700;color:#99f6e4;">Saber mais</span></summary>
             <div class="kpi-card-details-body">
-              Referência <strong>passiva</strong> (série histórica em <code style="color:#e5e7eb;font-size:0.68rem;">{{ bench_path.name }}</code>) usada para comparar o modelo: retorno, risco, meses acima/abaixo e alpha rolling. Não é recomendação nem produto investível — é o «termómetro» de comparação no mesmo horizonte temporal.
+              Referência <strong>passiva</strong> (série histórica em <code style="color:#e5e7eb;font-size:0.82rem;">{{ bench_path.name }}</code>) usada para comparar o modelo: retorno, risco, meses acima/abaixo e alpha rolling. Não é recomendação nem produto investível — é o «termómetro» de comparação no mesmo horizonte temporal.
             </div>
           </details>
         </div>
@@ -2969,7 +3080,7 @@ HTML_TEMPLATE = """
       <div class="kpi-simple-summary">
         {% if client_embed and cap15_only %}
         <strong style="color:#e5e7eb;">Resumo:</strong> o cartão <strong style="color:#5eead4;">«Recomendado para o seu perfil»</strong> alinha o horizonte ao seu nível de risco.
-        Na vista avançada, o <strong style="color:#e5e7eb;">modelo teórico</strong> é só referência técnica (não investível). O <strong style="color:#e5e7eb;">Modelo CAP15</strong> é a versão otimizada para implementação real: <strong>custos de mercado estimados e execução realista</strong> no backtest, exposição ≤100% NV e vol conforme o perfil.
+        Na vista avançada, o <strong style="color:#e5e7eb;">modelo teórico</strong> é só referência técnica (não investível). O <strong style="color:#e5e7eb;">Modelo CAP15</strong> é a versão otimizada para implementação real: <strong>custos de mercado estimados e execução realista</strong> no backtest, exposição ≤100% NV; no <strong>moderado</strong> a vol mostrada é a do backtest, <strong>sem</strong> alvo pós-processo ao benchmark (só conservador/dinâmico têm alvo 0,75× / 1,25×).
         Informação indicativa — não é aconselhamento nem promessa de resultados futuros.
         {% elif cap15_only %}
         Vista avançada: <strong style="color:#e5e7eb;">modelo teórico</strong> (não investível) vs <strong style="color:#e5e7eb;">Modelo CAP15</strong> com custos de mercado estimados e execução realista no backtest. Perfil no topo; no <strong>moderado</strong> a vol é a <strong>do modelo</strong>; em conservador/dinâmico, vol <strong>alvo vs benchmark</strong> (0,75× / 1,25×). O benchmark mantém a sua vol de mercado.
@@ -5234,9 +5345,25 @@ HTML_TEMPLATE = """
 
       /* Simples/Avançado: definido no servidor (?kpi_view=) pelo dashboard Next — sem botões nem localStorage no iframe. */
 
+      function kpiPublicApiPath(apiPath) {
+        /* Prefixo injectado pelo servidor no embed (`/kpi-flask`) — não depender só do pathname (Turbopack / basePath). */
+        const ctx = document.getElementById('simApiContext');
+        const ap = (apiPath && apiPath.charAt(0) === '/') ? apiPath : ('/' + apiPath);
+        const fromServer = ctx && ctx.dataset.browserApiPrefix != null ? String(ctx.dataset.browserApiPrefix).trim() : '';
+        if (fromServer) {
+          var b = String(fromServer);
+          while (b.endsWith('/')) { b = b.slice(0, -1); }
+          return b + ap;
+        }
+        const p = String(window.location.pathname || '');
+        if (p === '/kpi-flask' || p.startsWith('/kpi-flask/')) {
+          return '/kpi-flask' + ap;
+        }
+        return ap;
+      }
       function buildSimulatorSeriesUrl(profile) {
         const ctx = document.getElementById('simApiContext');
-        const u = new URL('/api/equity_series_for_simulator', window.location.origin);
+        const u = new URL(kpiPublicApiPath('/api/equity_series_for_simulator'), window.location.origin);
         u.searchParams.set('profile', profile);
         if (ctx && ctx.dataset.cap15Only === '1') u.searchParams.set('cap15_only', '1');
         if (ctx && ctx.dataset.clientEmbed === '1') u.searchParams.set('client_embed', '1');
@@ -5790,6 +5917,344 @@ def load_equity_curve(path: Path, equity_col: str):
     df = df.sort_values("date")
     equity = df[equity_col].astype(float)
     return df["date"].iloc[0], df["date"].iloc[-1], equity, df["date"]
+
+
+def model_equity_csv_is_stub(path: Path) -> bool:
+    """
+    Alguns freezes têm `model_equity_final_20y_moderado.csv` com ~60 linhas (artefacto curto).
+    KPIs sobre ~60 dias vs benchmark longo distorcem CAGR/vol e duplicam cartões.
+    Critérios alinhados a `resolve_benchmark_equity_csv_path` (stub).
+    """
+    if not path.exists():
+        return True
+    try:
+        n = len(pd.read_csv(path, usecols=["date"]))
+    except Exception:
+        return True
+    try:
+        df = pd.read_csv(path, usecols=["date"], parse_dates=["date"])
+        if len(df) < 2:
+            span = 0
+        else:
+            span = int((df["date"].max() - df["date"].min()).days)
+    except Exception:
+        span = 0
+    return n < 500 or (0 < span < 400)
+
+
+def pick_model_equity_path_for_profile(
+    base_path: Path,
+    profile_key: str,
+    *,
+    force_synthetic_profile_vol: bool,
+) -> tuple[Path, bool]:
+    """
+    Preferir `model_equity_final_20y_{perfil}.csv` quando tiver histórico longo;
+    caso contrário `model_equity_final_20y.csv` + política de vol sintética se aplicável.
+    """
+    model_path_default = base_path / "model_equity_final_20y.csv"
+    model_path_by_profile = base_path / f"model_equity_final_20y_{profile_key}.csv"
+    if force_synthetic_profile_vol:
+        return model_path_default, False
+    if model_path_by_profile.exists() and not model_equity_csv_is_stub(model_path_by_profile):
+        return model_path_by_profile, True
+    if model_path_default.exists():
+        return model_path_default, False
+    if model_path_by_profile.exists():
+        return model_path_by_profile, True
+    return model_path_default, False
+
+
+def pick_plafonado_smooth_model_equity_path(
+    base_path: Path,
+    profile_key: str,
+    *,
+    force_synthetic_profile_vol: bool,
+) -> tuple[Path, bool]:
+    """
+    CAP15 plafonado (smooth / MAX100EXP): **moderado** usa sempre `model_equity_final_20y.csv`
+    (vol do motor no backtest), nunca `model_equity_final_20y_moderado.csv` — esse ficheiro pode
+    ser artefacto ou curva já alinhada a vol vs benchmark. Conservador/dinâmico mantêm a lógica
+    de `pick_model_equity_path_for_profile` quando `force_synthetic_profile_vol` está off.
+    """
+    pk = normalize_risk_profile_key(profile_key)
+    model_path_default = base_path / "model_equity_final_20y.csv"
+    if force_synthetic_profile_vol:
+        return model_path_default, False
+    if pk == "moderado":
+        return model_path_default, False
+    return pick_model_equity_path_for_profile(
+        base_path, profile_key, force_synthetic_profile_vol=force_synthetic_profile_vol
+    )
+
+
+def resolve_benchmark_equity_csv_path(model_outputs_dir: Path) -> Path:
+    """
+    Usa `benchmark_equity_final_20y.csv` em `model_outputs_dir` quando tem histórico completo.
+    Se for um ficheiro curto (stub) ou calendário muito curto, prefere `model_outputs_from_clone/`
+    no mesmo freeze; se a pasta clone não existir, tenta caminhos de fallback no repositório.
+    """
+    primary = model_outputs_dir / "benchmark_equity_final_20y.csv"
+    clone = model_outputs_dir.parent / "model_outputs_from_clone" / "benchmark_equity_final_20y.csv"
+
+    def _n_rows(p: Path) -> int:
+        if not p.exists():
+            return 0
+        try:
+            return len(pd.read_csv(p, usecols=["date"]))
+        except Exception:
+            return 0
+
+    def _date_span_days(p: Path) -> int:
+        if not p.exists():
+            return 0
+        try:
+            df = pd.read_csv(p, usecols=["date"], parse_dates=["date"])
+            if len(df) < 2:
+                return 0
+            return int((df["date"].max() - df["date"].min()).days)
+        except Exception:
+            return 0
+
+    np = _n_rows(primary)
+    nc = _n_rows(clone)
+    span_p = _date_span_days(primary)
+    # Stub típico: ~60 linhas / ~2 meses; evita alinhar ao índice longo do modelo e «achatar» CAGR/vol.
+    primary_stub = np < 500 or (0 < span_p < 400)
+    if nc >= 500 and primary_stub:
+        return clone
+    if np >= 500 and not primary_stub:
+        return primary
+    if nc > 0 and (np == 0 or nc > np * 3):
+        return clone
+    if primary_stub:
+        for fb in _fallback_benchmark_equity_csv_list():
+            if _n_rows(fb) >= 500:
+                return fb
+        # Checkout parcial: sem `model_outputs_from_clone/` ao lado do modelo — procurar no `freeze/`.
+        for root in _freeze_search_roots():
+            freeze = root / "freeze"
+            if not freeze.is_dir():
+                continue
+            try:
+                for d in freeze.rglob("model_outputs_from_clone"):
+                    if not d.is_dir():
+                        continue
+                    cand = d / "benchmark_equity_final_20y.csv"
+                    if _n_rows(cand) >= 500:
+                        return cand
+            except OSError:
+                continue
+    return clone if nc > 0 else primary
+
+
+def coerce_long_benchmark_csv_path(initial: Path, model_outputs_dir: Path) -> Path:
+    """
+    Garante ficheiro de benchmark com histórico longo (≥500 datas).
+    Se `resolve_benchmark_equity_csv_path` cair num stub (~60 linhas) porque falta `model_outputs_from_clone`
+    e os fallbacks absolutos não existem nesse checkout, procura em `freeze/**/model_outputs_from_clone/`.
+    Um stub alinhado por ffill a milhares de dias úteis produz CAGR/vol ~0 no cartão «Mercado».
+    """
+    try:
+        n0 = len(pd.read_csv(initial, usecols=["date"]))
+    except Exception:
+        n0 = 0
+    if n0 >= 500:
+        return initial
+
+    clone = model_outputs_dir.parent / "model_outputs_from_clone" / "benchmark_equity_final_20y.csv"
+    candidates: list[Path] = [clone, *_fallback_benchmark_equity_csv_list()]
+    for p in candidates:
+        if not p.exists():
+            continue
+        try:
+            if len(pd.read_csv(p, usecols=["date"])) >= 500:
+                return p
+        except Exception:
+            continue
+
+    for root in _freeze_search_roots():
+        freeze = root / "freeze"
+        if not freeze.is_dir():
+            continue
+        try:
+            for d in freeze.rglob("model_outputs_from_clone"):
+                if not d.is_dir():
+                    continue
+                cand = d / "benchmark_equity_final_20y.csv"
+                if not cand.exists():
+                    continue
+                try:
+                    if len(pd.read_csv(cand, usecols=["date"])) >= 500:
+                        return cand
+                except Exception:
+                    continue
+        except OSError:
+            continue
+    return initial
+
+
+def resolve_coerced_benchmark_equity_csv_path(model_outputs_dir: Path) -> Path:
+    """`resolve_benchmark` + `coerce_long` — usar em todo o código que calcula KPIs vs benchmark (não só em `index`)."""
+    p = resolve_benchmark_equity_csv_path(model_outputs_dir)
+    return coerce_long_benchmark_csv_path(p, model_outputs_dir)
+
+
+def resolve_theoretical_model_equity_csv_path(base_path: Path) -> Path | None:
+    """
+    Curva «motor bruto» para o cartão teórico: ao lado do modelo activo; se faltar (clone parcial),
+    tenta o freeze V2.3 smooth em cada raiz conhecida (`REPO_ROOT` e pasta do `kpi_server.py`).
+    """
+    p = base_path / "model_equity_theoretical_20y.csv"
+    if p.exists():
+        return p
+    for root in _freeze_search_roots():
+        fb = root / "freeze" / "DECIDE_MODEL_V5_V2_3_SMOOTH" / "model_outputs" / "model_equity_theoretical_20y.csv"
+        if fb.exists():
+            return fb
+    return None
+
+
+def _csv_date_row_count(path: Path) -> int:
+    if not path.exists():
+        return 0
+    try:
+        return int(len(pd.read_csv(path, usecols=["date"])))
+    except Exception:
+        return 0
+
+
+def resolve_canon_smooth_benchmark_clone_csv() -> Path | None:
+    """
+    Benchmark longo no freeze V2.3 smooth (`model_outputs_from_clone`).
+    Percorre `REPO_ROOT` e a pasta do `kpi_server.py` — com `DECIDE_PROJECT_ROOT` noutro clone,
+    fixar só `_kpi_package_dir()/freeze/...` falha e deixa stub ~60 linhas → CAGR/vol ~0 no cartão «Mercado».
+    """
+    for root in _freeze_search_roots():
+        p = (
+            root
+            / "freeze"
+            / "DECIDE_MODEL_V5_V2_3_SMOOTH"
+            / "model_outputs_from_clone"
+            / "benchmark_equity_final_20y.csv"
+        )
+        if _csv_date_row_count(p) >= 500:
+            return p
+    return None
+
+
+def resolve_canon_smooth_theoretical_equity_csv() -> Path | None:
+    """`model_equity_theoretical_20y.csv` do smooth em qualquer root conhecido (evita RAW = plafonado)."""
+    for root in _freeze_search_roots():
+        p = (
+            root
+            / "freeze"
+            / "DECIDE_MODEL_V5_V2_3_SMOOTH"
+            / "model_outputs"
+            / "model_equity_theoretical_20y.csv"
+        )
+        if p.is_file():
+            return p
+    return None
+
+
+def resolve_cap15_embed_raw_motor_equity_csv_path(model_path: Path, base_path: Path) -> Path | None:
+    """
+    Cartão esquerdo do iframe: série **RAW / motor** (não o plafonado `model_path`).
+    Ordem: teórico ao lado do modelo → teórico no freeze V2.3 smooth (sem fallback para outros modelos).
+    Nunca devolve o mesmo ficheiro que `model_path` (evita duplicar KPIs com o CAP15 plafonado).
+    """
+    candidates: list[Path] = []
+    th = resolve_theoretical_model_equity_csv_path(base_path)
+    if th is not None:
+        candidates.append(th)
+    candidates.append(base_path / "model_equity_theoretical_20y.csv")
+    for root in _freeze_search_roots():
+        candidates.append(
+            root / "freeze" / "DECIDE_MODEL_V5_V2_3_SMOOTH" / "model_outputs" / "model_equity_theoretical_20y.csv",
+        )
+    seen: set[str] = set()
+    for cand in candidates:
+        if not cand.exists():
+            continue
+        try:
+            key = str(cand.resolve())
+        except OSError:
+            key = str(cand)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if model_path.exists() and cand.resolve().samefile(model_path.resolve()):
+                continue
+        except OSError:
+            pass
+        return cand
+    return None
+
+
+def reinforce_long_benchmark_csv_path(bench_path: Path, model_outputs_dir: Path) -> Path:
+    """
+    Garante CSV de benchmark com histórico longo (≥500 datas) antes de `load_equity_curve`.
+    Reforço em cadeia se `resolve_coerced_benchmark` ainda cair num stub (~60 linhas).
+    """
+    if _csv_date_row_count(bench_path) >= 500:
+        return bench_path
+    clone = model_outputs_dir.parent / "model_outputs_from_clone" / "benchmark_equity_final_20y.csv"
+    for p in (clone, *_fallback_benchmark_equity_csv_list()):
+        if _csv_date_row_count(p) >= 500:
+            return p
+    for root in _freeze_search_roots():
+        fz = root / "freeze"
+        if not fz.is_dir():
+            continue
+        try:
+            for d in fz.rglob("model_outputs_from_clone"):
+                if not d.is_dir():
+                    continue
+                cand = d / "benchmark_equity_final_20y.csv"
+                if _csv_date_row_count(cand) >= 500:
+                    return cand
+        except OSError:
+            continue
+    return bench_path
+
+
+def resolve_cap15_margin_model_csv(
+    profile_key: str,
+    *,
+    force_synthetic_profile_vol: bool,
+    main_model_path: Path | None = None,
+) -> tuple[Path, bool] | None:
+    """
+    Série «com margem» para o comparativo CAP15 no iframe: **só** freeze V2.3 smooth
+    (`DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs`). Sem fallback para `v5_overlay_cap15` nem outros freezes.
+    """
+    _ = force_synthetic_profile_vol  # API estável; só se usam CSVs `*_margin` no smooth.
+    smooth_base = MODEL_PATHS.get("v5_overlay_cap15_max100exp")
+    if smooth_base is None:
+        return None
+
+    def _ok(p: Path) -> bool:
+        if not p.exists():
+            return False
+        if main_model_path is None:
+            return True
+        try:
+            return not p.resolve().samefile(main_model_path.resolve())
+        except OSError:
+            return True
+
+    pk = normalize_risk_profile_key(profile_key)
+    # CSVs `*_margin` são variantes explícitas — usar sempre o sufixo do perfil quando existir,
+    # mesmo com vol sintética no modelo principal (iframe).
+    p_prof = smooth_base / f"model_equity_final_20y_{pk}_margin.csv"
+    if _ok(p_prof):
+        return (p_prof, True)
+    p_def_margin = smooth_base / "model_equity_final_20y_margin.csv"
+    if _ok(p_def_margin):
+        return (p_def_margin, False)
+    return None
 
 
 def align_equity_series_to_target_dates(
@@ -7613,6 +8078,7 @@ def load_scaled_model_equity_series(
 
     Política de vol: ver `apply_model_equity_profile_policy` e `kpi_force_synthetic_vol`.
     """
+    profile_key = normalize_risk_profile_key(profile_key)
     base_path = MODEL_PATHS.get(model_key)
     if not base_path:
         return None
@@ -7621,19 +8087,24 @@ def load_scaled_model_equity_series(
         if force_synthetic_profile_vol is None
         else bool(force_synthetic_profile_vol)
     )
-    model_path_by_profile = base_path / f"model_equity_final_20y_{profile_key}.csv"
+    strict_cap15_vol = model_key in CAP15_VOL_TARGET_MODEL_KEYS
     model_path_default = base_path / "model_equity_final_20y.csv"
-    if fs:
+    if strict_cap15_vol:
+        model_path, used_profile_file = pick_plafonado_smooth_model_equity_path(
+            base_path, profile_key, force_synthetic_profile_vol=fs
+        )
+    elif fs:
         model_path = model_path_default
         used_profile_file = False
     else:
-        model_path = model_path_by_profile if model_path_by_profile.exists() else model_path_default
-        used_profile_file = model_path_by_profile.exists()
+        model_path, used_profile_file = pick_model_equity_path_for_profile(
+            base_path, profile_key, force_synthetic_profile_vol=fs
+        )
     if not model_path.exists():
         return None
     _, _, model_eq, dates = load_equity_curve(model_path, "model_equity")
     bench_eq: pd.Series | None = None
-    bench_path = base_path / "benchmark_equity_final_20y.csv"
+    bench_path = resolve_coerced_benchmark_equity_csv_path(base_path)
     if bench_path.exists():
         _, _, bench_eq, bench_dates = load_equity_curve(bench_path, "benchmark_equity")
         bench_eq = align_equity_series_to_target_dates(bench_eq, bench_dates, dates)
@@ -7644,6 +8115,7 @@ def load_scaled_model_equity_series(
             used_profile_file=used_profile_file,
             client_embed=client_embed,
             force_synthetic_profile_vol=fs,
+            strict_cap15_vol_targets=strict_cap15_vol,
         )
     return model_eq.astype(float), dates, bench_eq.astype(float) if bench_eq is not None else None
 
@@ -7691,7 +8163,7 @@ def rescale_hedged_equity_to_profile_vol(
     Moderado: sem reescala adicional (série hedged tal como calculada). Conservador/dinâmico:
     realinham vol vs benchmark após o hedge.
     """
-    pk = (profile_key or "moderado").strip().lower()
+    pk = normalize_risk_profile_key(profile_key)
     if bench_eq is None:
         return hedged_eq
     n = min(len(hedged_eq), len(bench_eq))
@@ -7701,7 +8173,7 @@ def rescale_hedged_equity_to_profile_vol(
     if pk == "moderado":
         return h
     b = bench_eq.iloc[:n].reset_index(drop=True)
-    return scale_model_equity_to_profile_vol(h, b, profile_key, has_profile_file=False)
+    return scale_model_equity_to_profile_vol(h, b, pk, has_profile_file=False)
 
 
 def apply_fx_hedge_to_equity_series(
@@ -7734,20 +8206,18 @@ def cap15_margin_equity_list_aligned(
     *,
     force_synthetic_profile_vol: bool,
     client_embed: bool,
+    main_model_path: Path | None = None,
 ) -> list[float] | None:
     """Série «com margem» alinhada ao calendário do CAP15 plafonado (mesma lógica que o comparativo do iframe)."""
-    margem_base = MODEL_PATHS.get("v5_overlay_cap15")
-    if margem_base is None:
+    profile_key = normalize_risk_profile_key(profile_key)
+    resolved = resolve_cap15_margin_model_csv(
+        profile_key,
+        force_synthetic_profile_vol=force_synthetic_profile_vol,
+        main_model_path=main_model_path,
+    )
+    if resolved is None:
         return None
-    if force_synthetic_profile_vol:
-        margem_path = margem_base / "model_equity_final_20y.csv"
-        margem_used_profile_file = False
-    else:
-        margem_path_by = margem_base / f"model_equity_final_20y_{profile_key}.csv"
-        margem_path = margem_path_by if margem_path_by.exists() else margem_base / "model_equity_final_20y.csv"
-        margem_used_profile_file = margem_path_by.exists()
-    if not margem_path.exists():
-        return None
+    margem_path, margem_used_profile_file = resolved
     try:
         _, _, margem_eq_file, margem_dates_s = load_equity_curve(margem_path, "model_equity")
         dt_m = pd.to_datetime(dates)
@@ -7763,6 +8233,7 @@ def cap15_margin_equity_list_aligned(
             used_profile_file=margem_used_profile_file,
             client_embed=client_embed,
             force_synthetic_profile_vol=force_synthetic_profile_vol,
+            strict_cap15_vol_targets=True,
         )
         return [float(x) for x in margin_series.values]
     except Exception:
@@ -7780,19 +8251,22 @@ def equity_series_bundle_for_simulator(
     Séries modelo/benchmark para o simulador, com a mesma lógica de vol que a página principal.
     Permite pedir outro perfil via API sem recarregar o URL do topo.
     """
-    allowed_profiles = {p[0] for p in PROFILE_OPTIONS}
-    if profile_key not in allowed_profiles:
-        profile_key = "moderado"
+    profile_key = normalize_risk_profile_key(profile_key)
     base_path = MODEL_PATHS.get(model_key) or MODEL_PATHS["v5_overlay"]
-    model_path_by_profile = base_path / f"model_equity_final_20y_{profile_key}.csv"
+    strict_cap15_vol = model_key in CAP15_VOL_TARGET_MODEL_KEYS
     model_path_default = base_path / "model_equity_final_20y.csv"
-    if force_synthetic_profile_vol:
+    if strict_cap15_vol:
+        model_path, used_profile_file = pick_plafonado_smooth_model_equity_path(
+            base_path, profile_key, force_synthetic_profile_vol=force_synthetic_profile_vol
+        )
+    elif force_synthetic_profile_vol:
         model_path = model_path_default
         used_profile_file = False
     else:
-        model_path = model_path_by_profile if model_path_by_profile.exists() else model_path_default
-        used_profile_file = model_path_by_profile.exists()
-    bench_path = base_path / "benchmark_equity_final_20y.csv"
+        model_path, used_profile_file = pick_model_equity_path_for_profile(
+            base_path, profile_key, force_synthetic_profile_vol=force_synthetic_profile_vol
+        )
+    bench_path = resolve_coerced_benchmark_equity_csv_path(base_path)
     if not model_path.exists() or not bench_path.exists():
         return None
     _, _, model_eq, dates = load_equity_curve(model_path, "model_equity")
@@ -7805,6 +8279,7 @@ def equity_series_bundle_for_simulator(
         used_profile_file=used_profile_file,
         client_embed=client_embed,
         force_synthetic_profile_vol=force_synthetic_profile_vol,
+        strict_cap15_vol_targets=strict_cap15_vol,
     )
     dates_list = [d.strftime("%Y-%m-%d") for d in dates]
     bench_list = [float(x) for x in bench_eq.astype(float)]
@@ -7816,13 +8291,9 @@ def equity_series_bundle_for_simulator(
     use_plafonada = False
     if model_key == "v5_overlay_cap15":
         m100_base = MODEL_PATHS["v5_overlay_cap15_max100exp"]
-        if force_synthetic_profile_vol:
-            m100_path = m100_base / "model_equity_final_20y.csv"
-            m100_used_profile_file = False
-        else:
-            m100_path_by = m100_base / f"model_equity_final_20y_{profile_key}.csv"
-            m100_path = m100_path_by if m100_path_by.exists() else m100_base / "model_equity_final_20y.csv"
-            m100_used_profile_file = m100_path_by.exists()
+        m100_path, m100_used_profile_file = pick_plafonado_smooth_model_equity_path(
+            m100_base, profile_key, force_synthetic_profile_vol=force_synthetic_profile_vol
+        )
         if m100_path.exists():
             try:
                 _, _, m100_eq_file, m100_dates_s = load_equity_curve(m100_path, "model_equity")
@@ -7838,6 +8309,7 @@ def equity_series_bundle_for_simulator(
                         used_profile_file=m100_used_profile_file,
                         client_embed=client_embed,
                         force_synthetic_profile_vol=force_synthetic_profile_vol,
+                        strict_cap15_vol_targets=True,
                     )
                     sim_model = [float(x) for x in m100_series.values]
                     sim_label = "Modelo CAP15"
@@ -7865,6 +8337,7 @@ def equity_series_bundle_for_simulator(
             profile_key,
             force_synthetic_profile_vol=force_synthetic_profile_vol,
             client_embed=client_embed,
+            main_model_path=model_path,
         )
         if mlist is not None and len(mlist) == len(dates_list):
             out["sim_margin_equity"] = mlist
@@ -7881,9 +8354,7 @@ def compute_hedged_cap15_kpis_embed(profile_key: str, pair: str, hedge_pct: floa
     KPIs hedged para o HTML do iframe cliente (aba Resumo) — série única «Modelo CAP15»
     (MAX100EXP alinhada ao calendário CAP15, sem variante com margem).
     """
-    allowed_profiles = {p[0] for p in PROFILE_OPTIONS}
-    if profile_key not in allowed_profiles:
-        profile_key = "moderado"
+    profile_key = normalize_risk_profile_key(profile_key)
     safe_pair = "".join(c for c in str(pair).upper() if c.isalnum()) or "EURUSD"
     try:
         hp = float(hedge_pct)
@@ -7929,9 +8400,21 @@ def compute_hedged_cap15_kpis_embed(profile_key: str, pair: str, hedge_pct: floa
 def api_health():
     """Health check — mesmo path que o serviço FastAPI no Render; GET/HEAD com 200."""
     if request.method == "HEAD":
-        return Response(status=200)
-    r = jsonify({"ok": True, "app": "DecideAI KPI Flask"})
+        rr = Response(status=200)
+        rr.headers["X-Decide-Kpi-Build"] = KPI_SERVER_BUILD_TAG
+        rr.headers["Access-Control-Allow-Origin"] = "*"
+        rr.headers["Access-Control-Expose-Headers"] = "X-Decide-Kpi-Build"
+        return rr
+    # Corpo JSON explícito (evita confusão com builds antigos que só tinham ok+app no jsonify).
+    _health_payload = {"ok": True, "app": "DecideAI KPI Flask", "build": KPI_SERVER_BUILD_TAG}
+    r = Response(
+        json.dumps(_health_payload, separators=(",", ":")),
+        status=200,
+        mimetype="application/json",
+    )
     r.headers["Access-Control-Allow-Origin"] = "*"
+    r.headers["X-Decide-Kpi-Build"] = KPI_SERVER_BUILD_TAG
+    r.headers["Access-Control-Expose-Headers"] = "X-Decide-Kpi-Build"
     return r
 
 
@@ -7973,38 +8456,22 @@ def compute_client_embed_plafonado_kpis(profile_key: str) -> dict | None:
     KPIs do cartão «Modelo CAP15» — série MAX100EXP alinhada ao calendário CAP15,
     mesma regra de vol que o iframe (`kpi_force_synthetic_vol`).
     """
-    pk = (profile_key or "moderado").strip().lower()
-    if pk not in ("conservador", "moderado", "dinamico"):
-        pk = "moderado"
-    model_key = "v5_overlay_cap15"
-    base_path = MODEL_PATHS.get(model_key)
-    if base_path is None:
+    pk = normalize_risk_profile_key(profile_key)
+    smooth_base = MODEL_PATHS.get("v5_overlay_cap15_max100exp")
+    if smooth_base is None:
         return None
     fs = kpi_force_synthetic_vol(client_embed=True)
-    cap_model_path_by = base_path / f"model_equity_final_20y_{pk}.csv"
-    cap_model_path_default = base_path / "model_equity_final_20y.csv"
-    if fs:
-        cap_model_path = cap_model_path_default
-    else:
-        cap_model_path = cap_model_path_by if cap_model_path_by.exists() else cap_model_path_default
-    bench_path = base_path / "benchmark_equity_final_20y.csv"
-    if not cap_model_path.exists() or not bench_path.exists():
+    m100_base = smooth_base
+    m100_path, m100_used_profile_file = pick_plafonado_smooth_model_equity_path(
+        m100_base, pk, force_synthetic_profile_vol=fs
+    )
+    bench_path = resolve_coerced_benchmark_equity_csv_path(smooth_base)
+    if not m100_path.exists() or not bench_path.exists():
         return None
     try:
-        _, _, _, dates = load_equity_curve(cap_model_path, "model_equity")
+        _, _, _, dates = load_equity_curve(m100_path, "model_equity")
         _, _, bench_eq, bench_dates = load_equity_curve(bench_path, "benchmark_equity")
         bench_eq = align_equity_series_to_target_dates(bench_eq, bench_dates, dates)
-        m100_base = MODEL_PATHS["v5_overlay_cap15_max100exp"]
-        m100_path_by = m100_base / f"model_equity_final_20y_{pk}.csv"
-        m100_path_default = m100_base / "model_equity_final_20y.csv"
-        if fs:
-            m100_path = m100_path_default
-            m100_used_profile_file = False
-        else:
-            m100_path = m100_path_by if m100_path_by.exists() else m100_path_default
-            m100_used_profile_file = m100_path_by.exists()
-        if not m100_path.exists():
-            return None
         _, _, m100_eq_file, m100_dates_s = load_equity_curve(m100_path, "model_equity")
         dt_m = pd.to_datetime(dates)
         s_f = pd.Series(np.asarray(m100_eq_file, dtype=float), index=pd.to_datetime(m100_dates_s))
@@ -8020,6 +8487,7 @@ def compute_client_embed_plafonado_kpis(profile_key: str) -> dict | None:
             used_profile_file=m100_used_profile_file,
             client_embed=True,
             force_synthetic_profile_vol=fs,
+            strict_cap15_vol_targets=True,
         )
         compare_cap100_kpis, _ = compute_kpis(m100_series)
         cagr_pct = round(float(compare_cap100_kpis.cagr) * 100.0, 2)
@@ -8051,9 +8519,7 @@ def compute_client_embed_plafonado_cagr_pct(profile_key: str) -> float | None:
 @app.get("/api/embed-cap15-cagr")
 def api_embed_cap15_cagr():
     """CAGR % e KPIs do «Modelo CAP15» — alinhados ao iframe cliente (série MAX100EXP)."""
-    pk = (request.args.get("profile") or "moderado").strip().lower()
-    if pk not in ("conservador", "moderado", "dinamico"):
-        pk = "moderado"
+    pk = normalize_risk_profile_key(request.args.get("profile") or "moderado")
     k = compute_client_embed_cap15_overlay_kpis(pk)
     if k is None:
         r = jsonify({"ok": False, "profile": pk, "error": "no_cap15_overlay_series"})
@@ -8066,9 +8532,7 @@ def api_embed_cap15_cagr():
 @app.get("/api/embed-plafonado-cagr")
 def api_embed_plafonado_cagr():
     """JSON com CAGR e KPIs do «Modelo CAP15» (alias retrocompatível de `/api/embed-cap15-cagr`)."""
-    pk = (request.args.get("profile") or "moderado").strip().lower()
-    if pk not in ("conservador", "moderado", "dinamico"):
-        pk = "moderado"
+    pk = normalize_risk_profile_key(request.args.get("profile") or "moderado")
     k = compute_client_embed_plafonado_kpis(pk)
     if k is None:
         r = jsonify({"ok": False, "profile": pk, "error": "no_plafonado_series"})
@@ -8085,9 +8549,7 @@ def index():
     if request.method == "HEAD":
         return Response(status=200)
     model_key = request.args.get("model", "v5_overlay")
-    profile_key = request.args.get("profile", "moderado").strip().lower()
-    if profile_key not in [p[0] for p in PROFILE_OPTIONS]:
-        profile_key = "moderado"
+    profile_key = normalize_risk_profile_key(request.args.get("profile", "moderado"))
 
     # Vista embutida no dashboard Next: sem comparativo extra nem selector de modelo no topo.
     client_embed = _truthy_query_param(request.args.get("client_embed"))
@@ -8099,18 +8561,27 @@ def index():
         model_key = "v5_overlay_cap15_max100exp"
 
     base_path = MODEL_PATHS.get(model_key) or MODEL_PATHS["v5_overlay"]
-    # Curva por perfil (vol target): model_equity_final_20y_conservador.csv etc.; fallback = model_equity_final_20y.csv
-    model_path_by_profile = base_path / f"model_equity_final_20y_{profile_key}.csv"
+    # Curva por perfil quando o CSV tem histórico longo; ignorar placeholders (~60 linhas, ex. moderado).
     model_path_default = base_path / "model_equity_final_20y.csv"
-    # Iframe: regra de vol 0,75× / 1× / 1,25× por defeito; `DECIDE_KPI_REAL_EQUITY=1` = CSV sem reescala.
+    # Iframe: por defeito usa `model_equity_final_20y.csv` para todos; `DECIDE_KPI_REAL_EQUITY=1` permite CSV por perfil.
     force_synthetic_profile_vol = kpi_force_synthetic_vol(client_embed=client_embed)
-    if force_synthetic_profile_vol:
+    if model_key in CAP15_VOL_TARGET_MODEL_KEYS:
+        model_path, used_profile_file = pick_plafonado_smooth_model_equity_path(
+            base_path, profile_key, force_synthetic_profile_vol=force_synthetic_profile_vol
+        )
+    elif force_synthetic_profile_vol:
         model_path = model_path_default
         used_profile_file = False
     else:
-        model_path = model_path_by_profile if model_path_by_profile.exists() else model_path_default
-        used_profile_file = model_path_by_profile.exists()
-    bench_path = base_path / "benchmark_equity_final_20y.csv"
+        model_path, used_profile_file = pick_model_equity_path_for_profile(
+            base_path, profile_key, force_synthetic_profile_vol=force_synthetic_profile_vol
+        )
+    bench_path = resolve_coerced_benchmark_equity_csv_path(base_path)
+    bench_path = reinforce_long_benchmark_csv_path(bench_path, base_path)
+    if client_embed and cap15_only:
+        canon_bench_csv = resolve_canon_smooth_benchmark_clone_csv()
+        if canon_bench_csv is not None and _csv_date_row_count(bench_path) < 500:
+            bench_path = canon_bench_csv
 
     if not model_path.exists():
         return (
@@ -8118,41 +8589,100 @@ def index():
             f"Corra o backtest V5 com --out freeze/DECIDE_MODEL_V5 (ou OVERLAY) para gerar os dados.",
             404,
         )
+    if not bench_path.exists():
+        return (
+            f"Ficheiro não encontrado: {bench_path}. "
+            f"Gere `benchmark_equity_final_20y.csv` no freeze do modelo (ou `model_outputs_from_clone/`).",
+            404,
+        )
     _, _, model_eq, dates = load_equity_curve(model_path, "model_equity")
     _, _, bench_eq, bench_dates = load_equity_curve(bench_path, "benchmark_equity")
     bench_eq = align_equity_series_to_target_dates(bench_eq, bench_dates, dates)
+    if client_embed and cap15_only and _csv_date_row_count(bench_path) < 500:
+        canon_bench_csv = resolve_canon_smooth_benchmark_clone_csv()
+        if canon_bench_csv is not None:
+            bench_path = canon_bench_csv
+            _, _, bench_eq, bench_dates = load_equity_curve(bench_path, "benchmark_equity")
+            bench_eq = align_equity_series_to_target_dates(bench_eq, bench_dates, dates)
 
-    run_model_snapshot = load_run_model_snapshot(profile_key)
-    raw_kpis_snapshot = run_model_snapshot.get("raw_kpis") if run_model_snapshot else None
+    # Iframe dashboard: nunca usar `tmp_diag/run_model_live.json` para a curva/KPIs «teóricos» —
+    # esse snapshot costuma repetir a série plafonada (CAGR/vol iguais ao CAP15).
+    if client_embed:
+        run_model_snapshot = None
+        raw_kpis_snapshot = None
+    else:
+        run_model_snapshot = load_run_model_snapshot(profile_key)
+        raw_kpis_snapshot = run_model_snapshot.get("raw_kpis") if run_model_snapshot else None
 
-    # --- «Modelo teórico (não investível)» / raw_kpis (~35% CAGR típico) ---
-    # Curva: `model_equity_final_20y.csv` no mesmo freeze que o modelo activo (CAP15:
-    # `freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/`), coluna `model_equity`.
+    # --- «Modelo RAW / motor (não investível)» / raw_kpis — nunca o mesmo CSV que o plafonado no embed CAP15.
+    # Curva preferida: `model_equity_theoretical_20y.csv` (ilustrativo «motor bruto», ver script de geração);
+    # senão `model_equity_final_20y.csv` no freeze do modelo activo.
     # KPIs: `compute_kpis(raw_eq)` sem escala de vol ao benchmark (contrasta com model_eq).
-    # Se existir `tmp_diag/run_model_live.json` (ou tmp_run_model_*.json) com `series.equity_raw`
-    # e `raw_kpis`, estes substituem o CSV para alinhar ao motor em tempo real.
-    raw_path = base_path / "model_equity_final_20y.csv"
+    # Página completa (não embed): opcionalmente `series.equity_raw` + `raw_kpis` em run_model snapshot.
+    # Override explícito: `DECIDE_KPI_USE_RAW_KPI_SNAPSHOT=1`.
+    raw_eq_from_snapshot = False
+    theoretical_path = resolve_theoretical_model_equity_csv_path(base_path)
+    if client_embed and cap15_only:
+        _rpm = resolve_cap15_embed_raw_motor_equity_csv_path(model_path, base_path)
+        raw_path = _rpm if _rpm is not None else (base_path / "model_equity_theoretical_20y.csv")
+        if _rpm is None:
+            print(
+                "[kpi_server] embed CAP15: não foi encontrado CSV RAW/motor distinto do plafonado — "
+                "cartão esquerdo pode coincidir com o CAP15. Confirme `freeze/.../model_equity_theoretical_20y.csv`.",
+                file=sys.stderr,
+            )
+    else:
+        raw_path = theoretical_path if theoretical_path is not None else (base_path / "model_equity_final_20y.csv")
+
+    if client_embed and cap15_only and raw_path.exists() and model_path.exists():
+        try:
+            if raw_path.resolve().samefile(model_path.resolve()):
+                for root in _freeze_search_roots():
+                    ow = root / "freeze" / "DECIDE_MODEL_V5_OVERLAY" / "model_outputs" / "model_equity_final_20y.csv"
+                    if ow.exists():
+                        try:
+                            if ow.resolve().samefile(model_path.resolve()):
+                                continue
+                        except OSError:
+                            pass
+                        raw_path = ow
+                        break
+        except OSError:
+            pass
+
     if run_model_snapshot and isinstance(run_model_snapshot.get("series"), dict):
         raw_series_values = run_model_snapshot["series"].get("equity_raw") or []
         if len(raw_series_values) > 1:
             raw_eq = pd.Series([float(x) for x in raw_series_values], dtype=float)
+            raw_eq_from_snapshot = True
         elif raw_path.exists():
-            _, _, raw_eq, _ = load_equity_curve(raw_path, "model_equity")
+            _, _, raw_eq, raw_dates = load_equity_curve(raw_path, "model_equity")
+            raw_eq = align_equity_series_to_target_dates(raw_eq, raw_dates, dates)
         else:
             raw_eq = model_eq.copy()
     elif raw_path.exists():
-        _, _, raw_eq, _ = load_equity_curve(raw_path, "model_equity")
+        _, _, raw_eq, raw_dates = load_equity_curve(raw_path, "model_equity")
+        raw_eq = align_equity_series_to_target_dates(raw_eq, raw_dates, dates)
     else:
         raw_eq = model_eq.copy()
 
-    # Série «raw» / teórico: mesmo calendário que o modelo activo. O CSV por perfil
-    # (ex. dinâmico) pode ter N linhas ≠ `model_equity_final_20y.csv` → evita 500 no template/KPIs.
+    # Série «raw» / teórico: mesmo calendário que o modelo activo (snapshot ou séries com N≠len(dates)).
     if len(raw_eq) != len(dates):
         if raw_path.exists():
             _, _, raw_eq, raw_dates = load_equity_curve(raw_path, "model_equity")
             raw_eq = align_equity_series_to_target_dates(raw_eq, raw_dates, dates)
         else:
             raw_eq = model_eq.copy()
+
+    if client_embed and cap15_only:
+        canon_raw_csv = resolve_canon_smooth_theoretical_equity_csv()
+        if canon_raw_csv is not None and len(raw_eq) == len(model_eq):
+            ra = np.asarray(raw_eq, dtype=float)
+            mo = np.asarray(model_eq, dtype=float)
+            if bool(np.allclose(ra, mo, rtol=0.0, atol=1e-5)):
+                _, _, raw_eq, rdt = load_equity_curve(canon_raw_csv, "model_equity")
+                raw_eq = align_equity_series_to_target_dates(raw_eq, rdt, dates)
+                raw_path = canon_raw_csv
 
     # CAP15 e restantes: ver `apply_model_equity_profile_policy`.
     model_eq = apply_model_equity_profile_policy(
@@ -8162,6 +8692,7 @@ def index():
         used_profile_file=used_profile_file,
         client_embed=client_embed,
         force_synthetic_profile_vol=force_synthetic_profile_vol,
+        strict_cap15_vol_targets=(model_key in CAP15_VOL_TARGET_MODEL_KEYS),
     )
 
     profile_source_note = (
@@ -8176,23 +8707,30 @@ def index():
     if cap15_only:
         profile_source_note = (
             "Modelo CAP15: exposição a risco limitada ao capital (≤100% NV), sem alavancagem além do NAV. "
-            "Vol ajustada ao benchmark conforme o perfil (conservador 0,75× · moderado 1× · dinâmico 1,25×)."
+            "Moderado: vol realizada no backtest investível (CSV base), sem reescala no KPI para igualar ao benchmark "
+            "(pode aproximar-se numericamente do referencial por construção da carteira). "
+            "Conservador/dinâmico: após a mesma série base, alvo ≈ 0,75× / 1,25× da vol do benchmark."
         )
         if force_synthetic_profile_vol:
             profile_source_note += (
-                f" Perfil «{profile_key}» no selector aplica o multiplicador de vol à curva do modelo."
+                " Conservador/dinâmico usam a curva base comum antes do ajuste de vol vs benchmark."
             )
         elif client_embed and kpi_env_real_equity():
             profile_source_note += (
-                " No iframe: modo «equity real» (DECIDE_KPI_REAL_EQUITY=1) — curvas do CSV sem reescala de vol. "
-                "Com `model_equity_final_20y_{perfil}.csv` por perfil, o selector troca de ficheiro."
+                " No iframe: DECIDE_KPI_REAL_EQUITY=1 — o selector pode carregar `model_equity_final_20y_{perfil}.csv` "
+                "quando existir; conservador e dinâmico mantêm o alvo de vol vs benchmark (0,75× / 1,25×)."
             )
 
     num_days = len(model_eq)
     num_years = num_days / TRADING_DAYS_PER_YEAR
 
     raw_kpis, raw_drawdowns = compute_kpis(raw_eq)
-    if raw_kpis_snapshot:
+    _snap_raw = os.environ.get("DECIDE_KPI_USE_RAW_KPI_SNAPSHOT", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if raw_kpis_snapshot and (raw_eq_from_snapshot or _snap_raw):
         raw_kpis = type(
             "KPIs",
             (),
@@ -8248,13 +8786,9 @@ def index():
     m100_series = None
     if model_key == "v5_overlay_cap15":
         m100_base = MODEL_PATHS["v5_overlay_cap15_max100exp"]
-        if force_synthetic_profile_vol:
-            m100_path = m100_base / "model_equity_final_20y.csv"
-            m100_used_profile_file = False
-        else:
-            m100_path_by = m100_base / f"model_equity_final_20y_{profile_key}.csv"
-            m100_path = m100_path_by if m100_path_by.exists() else m100_base / "model_equity_final_20y.csv"
-            m100_used_profile_file = m100_path_by.exists()
+        m100_path, m100_used_profile_file = pick_plafonado_smooth_model_equity_path(
+            m100_base, profile_key, force_synthetic_profile_vol=force_synthetic_profile_vol
+        )
         if m100_path.exists():
             try:
                 _, _, m100_eq_file, m100_dates_s = load_equity_curve(m100_path, "model_equity")
@@ -8270,6 +8804,7 @@ def index():
                         used_profile_file=m100_used_profile_file,
                         client_embed=client_embed,
                         force_synthetic_profile_vol=force_synthetic_profile_vol,
+                        strict_cap15_vol_targets=True,
                     )
                     compare_cap100_kpis, m100_dd_s = compute_kpis(m100_series)
                     compare_max100_equity = [float(x) for x in m100_series.values]
@@ -8286,17 +8821,16 @@ def index():
             except Exception:
                 show_max100_compare = False
 
-    # Iframe cliente (cap15_only): principal = plafonado — reintroduz comparativo com série «com margem» (freeze OVERLAY_CAP15).
+    # Iframe cliente (cap15_only): principal = plafonado — comparativo «com margem» só em CSVs `*_margin` do smooth V2.3.
     elif model_key == "v5_overlay_cap15_max100exp" and cap15_only:
-        margem_base = MODEL_PATHS["v5_overlay_cap15"]
-        if force_synthetic_profile_vol:
-            margem_path = margem_base / "model_equity_final_20y.csv"
-            margem_used_profile_file = False
-        else:
-            margem_path_by = margem_base / f"model_equity_final_20y_{profile_key}.csv"
-            margem_path = margem_path_by if margem_path_by.exists() else margem_base / "model_equity_final_20y.csv"
-            margem_used_profile_file = margem_path_by.exists()
-        if margem_path.exists():
+        resolved_m = resolve_cap15_margin_model_csv(
+            profile_key,
+            force_synthetic_profile_vol=force_synthetic_profile_vol,
+            main_model_path=model_path,
+        )
+        margem_path = resolved_m[0] if resolved_m else None
+        margem_used_profile_file = resolved_m[1] if resolved_m else False
+        if margem_path is not None and margem_path.exists():
             try:
                 _, _, margem_eq_file, margem_dates_s = load_equity_curve(margem_path, "model_equity")
                 dt_m = pd.to_datetime(dates)
@@ -8311,6 +8845,7 @@ def index():
                         used_profile_file=margem_used_profile_file,
                         client_embed=client_embed,
                         force_synthetic_profile_vol=force_synthetic_profile_vol,
+                        strict_cap15_vol_targets=True,
                     )
                     compare_cap100_kpis, margin_dd_s = compute_kpis(margin_series)
                     compare_max100_equity = [float(x) for x in margin_series.values]
@@ -8325,7 +8860,8 @@ def index():
                         bench_eq,
                         dates,
                     )
-            except Exception:
+            except Exception as exc:
+                print(f"[kpi_server] cap15 margin compare failed: {exc}", file=sys.stderr)
                 show_max100_compare = False
                 compare_cap100_is_margin = False
                 compare_cap100_kpis = None
@@ -8439,8 +8975,20 @@ def index():
 
     profile_label_pt = PROFILE_LABEL_PT_SHORT.get(profile_key, profile_key)
 
-    return render_template_string(
+    kpi_diag_build = KPI_SERVER_BUILD_TAG
+    kpi_diag_bench_file = bench_path.name
+    kpi_diag_bench_rows = _csv_date_row_count(bench_path)
+    kpi_diag_raw_file = raw_path.name if raw_path.exists() else "—"
+    kpi_diag_raw_rows = _csv_date_row_count(raw_path) if raw_path.exists() else 0
+
+    html_out = render_template_string(
         HTML_TEMPLATE,
+        kpi_build_tag=KPI_SERVER_BUILD_TAG,
+        kpi_diag_build=kpi_diag_build,
+        kpi_diag_bench_file=kpi_diag_bench_file,
+        kpi_diag_bench_rows=kpi_diag_bench_rows,
+        kpi_diag_raw_file=kpi_diag_raw_file,
+        kpi_diag_raw_rows=kpi_diag_raw_rows,
         raw_kpis=raw_kpis,
         model_kpis=model_kpis,
         bench_kpis=bench_kpis,
@@ -8507,6 +9055,23 @@ def index():
         charts_embed_context=charts_embed_context,
         diagnostics=diagnostics_payload or {},
     )
+    resp = make_response(html_out)
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["X-Decide-Kpi-Build"] = KPI_SERVER_BUILD_TAG
+    try:
+        resp.headers["X-Decide-Kpi-Bench-Rows"] = str(int(len(bench_dates)))
+    except Exception:
+        pass
+    try:
+        resp.headers["X-Decide-Kpi-Bench-Csv-Rows"] = str(
+            int(len(pd.read_csv(bench_path, usecols=["date"]))),
+        )
+    except Exception:
+        pass
+    resp.headers["X-Decide-Kpi-Bench-File"] = bench_path.name
+    resp.headers["X-Decide-Kpi-Raw-File"] = raw_path.name if raw_path.exists() else "missing"
+    return resp
 
 
 @app.get("/api/kpis-hedged-cap15")
@@ -8520,10 +9085,7 @@ def api_kpis_hedged_cap15():
     sem hedge: remove só o factor FX da série diária; o CAGR pode subir ou descer consoante, no
     período, o FX tenha contribuído em média negativa ou positiva para o retorno em EUR.
     """
-    profile_key = request.args.get("profile", "moderado").strip().lower()
-    allowed_profiles = {p[0] for p in PROFILE_OPTIONS}
-    if profile_key not in allowed_profiles:
-        profile_key = "moderado"
+    profile_key = normalize_risk_profile_key(request.args.get("profile", "moderado"))
     pair = request.args.get("pair", "EURUSD").strip().upper()
     try:
         hedge_pct = float(request.args.get("hedge_pct", "100"))
@@ -8588,10 +9150,7 @@ def api_kpis_hedged_cap15():
 def api_kpis():
     """JSON para o dashboard Next (CORS aberto em GET)."""
     model_key = request.args.get("model", "v5_overlay_cap15_max100exp").strip()
-    profile_key = request.args.get("profile", "moderado").strip().lower()
-    allowed_profiles = {p[0] for p in PROFILE_OPTIONS}
-    if profile_key not in allowed_profiles:
-        profile_key = "moderado"
+    profile_key = normalize_risk_profile_key(request.args.get("profile", "moderado"))
     if model_key not in MODEL_PATHS:
         r = jsonify({"ok": False, "error": "unknown_model"})
         r.headers["Access-Control-Allow-Origin"] = "*"
@@ -8621,10 +9180,7 @@ def api_kpis():
 @app.get("/api/equity_series_for_simulator")
 def api_equity_series_for_simulator():
     """Séries completas para o simulador (perfil independente do selector do topo)."""
-    profile_key = request.args.get("profile", "moderado").strip().lower()
-    allowed_profiles = {p[0] for p in PROFILE_OPTIONS}
-    if profile_key not in allowed_profiles:
-        profile_key = "moderado"
+    profile_key = normalize_risk_profile_key(request.args.get("profile", "moderado"))
     cap15_only = _truthy_query_param(request.args.get("cap15_only"))
     client_embed = _truthy_query_param(request.args.get("client_embed"))
     if cap15_only:
@@ -8669,10 +9225,7 @@ def api_diagnostics_rolling():
         model_key = "v5_overlay_cap15_max100exp"
     else:
         model_key = (request.args.get("model") or "v5_overlay").strip()
-    profile_key = (request.args.get("profile") or "moderado").strip().lower()
-    allowed_profiles = {p[0] for p in PROFILE_OPTIONS}
-    if profile_key not in allowed_profiles:
-        profile_key = "moderado"
+    profile_key = normalize_risk_profile_key(request.args.get("profile") or "moderado")
     if model_key not in MODEL_PATHS:
         r = jsonify({"ok": False, "error": "unknown_model", "model": model_key})
         r.headers["Access-Control-Allow-Origin"] = "*"
@@ -8744,6 +9297,11 @@ def api_diagnostics_rolling():
 
 
 if __name__ == "__main__":
+    print(
+        f"[kpi_server] Arranque: build={KPI_SERVER_BUILD_TAG!r} — GET /api/health deve incluir «build» no JSON.",
+        file=sys.stderr,
+        flush=True,
+    )
     # Render / Docker: variável PORT e escuta em 0.0.0.0 (127.0.0.1 só aceita ligações locais → proxy Render não liga).
     _port = int(os.environ.get("PORT", "5000"))
     _host = os.environ.get("KPI_BIND_HOST") or (
