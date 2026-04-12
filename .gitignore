@@ -40,6 +40,7 @@ next-cache/
 /backend/*
 !/backend/main.py
 !/backend/app_main.py
+!/backend/app_ibkr.py
 !/backend/app_shared.py
 !/backend/core.py
 !/backend/engine_v2.py
