@@ -345,6 +345,7 @@ function KpiEmbedIframe({
         key={`kpi-${tab}-${iframeSrcEffective}`}
         ref={iframeRef as RefObject<HTMLIFrameElement>}
         src={iframeSrcEffective}
+        loading="eager"
         title={isFees ? "Custos DECIDE" : "KPIs DECIDE (Flask)"}
         allowFullScreen
         className={`decide-app-kpi-iframe${loaded ? " decide-app-kpi-iframe--visible" : ""}`}
