@@ -296,6 +296,9 @@ export function normalizeKpiEmbedBaseUrl(input: string): string {
 
   if (!s) return "";
 
+  /* `/kpi-flask` + `https://` → `https:///kpi-flask` → host fictício `kpi-flask` no iframe. */
+  if (s.startsWith("/")) return s.replace(/\/+$/, "") || "/";
+
   try {
 
     const hasScheme = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(s);
