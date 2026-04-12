@@ -8559,6 +8559,10 @@ def index():
     cap15_only = _truthy_query_param(request.args.get("cap15_only")) or client_embed
     if cap15_only:
         model_key = "v5_overlay_cap15_max100exp"
+    elif model_key == "v5_overlay":
+        # Deploys with only `freeze/DECIDE_MODEL_V5_V2_3_SMOOTH` (no legacy `DECIDE_MODEL_V5_OVERLAY/`).
+        if not (MODEL_PATHS["v5_overlay"] / "model_equity_final_20y.csv").exists():
+            model_key = "v5_overlay_cap15_max100exp"
 
     base_path = MODEL_PATHS.get(model_key) or MODEL_PATHS["v5_overlay"]
     # Curva por perfil quando o CSV tem histórico longo; ignorar placeholders (~60 linhas, ex. moderado).
