@@ -68,6 +68,10 @@ next-cache/
 /backend/data/*
 !/backend/data/prices_close.csv
 !/backend/data/prices_close_20y_global_index_proxy_from_tws.csv
+# Histórico de recomendações (`/api/client/recommendations-history`, embed histórico)
+!/backend/data/weights_by_rebalance.csv
+!/backend/data/weights_by_rebalance_full.csv
+!/backend/data/weights_by_rebalance_normalized_long.csv
 /backend/data/backups/
 # KPI Flask (iframe do client-dashboard) — ficheiro na raiz; dados em freeze/ (deploy separado ou disco)
 !/kpi_server.py
