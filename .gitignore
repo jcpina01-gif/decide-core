@@ -40,7 +40,6 @@ next-cache/
 /backend/*
 !/backend/main.py
 !/backend/app_main.py
-!/backend/app_ibkr.py
 !/backend/app_shared.py
 !/backend/core.py
 !/backend/engine_v2.py
@@ -78,8 +77,14 @@ next-cache/
 !/requirements-kpi.txt
 # Permite `pip install -r requirements.txt` no Render (serviço KPI na raiz); conteúdo = -r requirements-kpi.txt
 !/requirements.txt
-# Freeze mínimo para KPI Flask (Render) — CAP15 V2.3 smooth
+
+# Freeze mínimo CAP15 (V5_V2_3_SMOOTH): liquidez por data + KPIs no histórico (`recommendations-history.ts`)
 !/freeze/
+/freeze/*
 !/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/
+/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/*
 !/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/
-!/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/**
+/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/*
+!/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/cash_sleeve_daily.csv
+!/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/v5_kpis.json
+!/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y.csv
