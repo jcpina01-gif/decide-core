@@ -386,7 +386,8 @@ function KpiEmbedIframe({
         {...(isFees
           ? {}
           : {
-              sandbox: "allow-scripts allow-same-origin allow-forms allow-popups allow-downloads",
+              sandbox:
+                "allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-top-navigation-by-user-activation",
             })}
       />
     </div>
