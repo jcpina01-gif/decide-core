@@ -1,6 +1,7 @@
 import type { GetServerSideProps } from "next";
 import Head from "next/head";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import {
   useCallback,
   useEffect,
@@ -15,7 +16,12 @@ import ClientFlowDashboardButton from "../../components/ClientFlowDashboardButto
 import InlineLoadingDots from "../../components/InlineLoadingDots";
 import { isFxHedgeOnboardingApplicable, syncFeeSegmentFromNavEur } from "../../lib/clientSegment";
 import { isHedgeOnboardingDone, readFxHedgePrefs } from "../../lib/fxHedgePrefs";
+import {
+  clearDecideClientLocalTestState,
+  isDecidePlanoDevResetVisibleInBrowser,
+} from "../../lib/decideClientDevReset";
 import { DECIDE_APP_FONT_FAMILY, DECIDE_DASHBOARD } from "../../lib/decideClientTheme";
+import { getNextOnboardingHref } from "../../lib/onboardingProgress";
 import {
   recordCancelOpenOrdersPaperResponse,
   recordExecutionSnapshotFromSyncedFills,
@@ -901,7 +907,100 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
   return getClientReportServerSideProps(ctx);
 };
 
+type PlanoDevResetPlacement = "inline" | "fixed";
+
+function PlanoDevResetTestPanel({ placement }: { placement: PlanoDevResetPlacement }) {
+  const isFixed = placement === "fixed";
+  return (
+    <div
+      style={{
+        ...(isFixed
+          ? {
+              position: "fixed",
+              bottom: 14,
+              right: 14,
+              zIndex: 2147483646,
+              maxWidth: 380,
+              boxShadow: "0 12px 40px rgba(0,0,0,0.55)",
+            }
+          : { marginTop: 16, maxWidth: 640 }),
+        padding: "12px 14px",
+        borderRadius: 12,
+        border: "1px solid rgba(251,191,36,0.55)",
+        background: "rgba(251,191,36,0.12)",
+        fontSize: 13,
+        lineHeight: 1.5,
+        color: "#fef3c7",
+      }}
+    >
+      <strong style={{ color: "#fde68a" }}>Teste (só este browser)</strong>
+      {!isFixed ? (
+        <>
+          {" — "}Limpa passos de onboarding, montante, MiFID/KYC em cache, hedge, aprovação do plano e o registo local do
+          Plano/Atividade. <strong>Não</strong> altera a conta IBKR nem o servidor. Para <strong>ocultar</strong> este bloco
+          (ex. site público final):{" "}
+          <code style={{ color: "#e2e8f0" }}>NEXT_PUBLIC_DECIDE_PLANO_DEV_RESET=0</code> no deploy.
+        </>
+      ) : (
+        <div style={{ fontSize: 11, color: "#fde68a", marginTop: 4, opacity: 0.95 }}>
+          Reset local de onboarding / plano (não altera IBKR).
+        </div>
+      )}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
+        <button
+          type="button"
+          onClick={() => {
+            if (
+              !window.confirm(
+                "Repor onboarding e estado local do plano neste browser? Continua com a mesma sessão de login."
+              )
+            ) {
+              return;
+            }
+            clearDecideClientLocalTestState();
+            window.location.assign(getNextOnboardingHref());
+          }}
+          style={{
+            cursor: "pointer",
+            borderRadius: 10,
+            border: "1px solid rgba(52,211,153,0.5)",
+            background: "rgba(16,185,129,0.2)",
+            color: "#d1fae5",
+            fontWeight: 700,
+            fontSize: 13,
+            padding: "8px 12px",
+          }}
+        >
+          Repor onboarding (manter login)
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (!window.confirm("Repor tudo e sair da sessão demo? Será enviado para o login do cliente.")) {
+              return;
+            }
+            clearDecideClientLocalTestState({ logout: true, redirectToLogin: true });
+          }}
+          style={{
+            cursor: "pointer",
+            borderRadius: 10,
+            border: "1px solid rgba(248,113,113,0.55)",
+            background: "rgba(239,68,68,0.15)",
+            color: "#fecaca",
+            fontWeight: 700,
+            fontSize: 13,
+            padding: "8px 12px",
+          }}
+        >
+          Repor + sair (como cliente novo)
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ClientReportPage({ reportData }: PageProps) {
+  const router = useRouter();
   const isClientB = reportData.feeSegment === "B";
   const tbillIb = reportData.tbillProxyIbTicker;
   const excludedTickers = reportData.excludedTickersApplied || [];
@@ -950,6 +1049,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
   /** Preferências de hedge após hidratação (useMemo [] falhava no SSR e fixava null). */
   const [fxHedgePrefsClient, setFxHedgePrefsClient] = useState<ReturnType<typeof readFxHedgePrefs> | null>(null);
   const [monthlyPdfBusy, setMonthlyPdfBusy] = useState(false);
+  const [planoDevResetUi, setPlanoDevResetUi] = useState(false);
 
   type PlanPageTab = "resumo" | "alteracoes" | "execucao" | "documentos";
   const [planTab, setPlanTab] = useState<PlanPageTab>("resumo");
@@ -989,6 +1089,10 @@ export default function ClientReportPage({ reportData }: PageProps) {
       setShowHedgeOnboardingCta(false);
     }
   }, []);
+
+  useEffect(() => {
+    setPlanoDevResetUi(isDecidePlanoDevResetVisibleInBrowser());
+  }, [router.asPath]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2089,6 +2193,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   Aviso backend: {reportData.backendError}
                 </div>
               ) : null}
+              {planoDevResetUi ? <PlanoDevResetTestPanel placement="inline" /> : null}
             </div>
 
             <div
@@ -4583,6 +4688,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
           </>
         </div>
       </div>
+      {planoDevResetUi ? <PlanoDevResetTestPanel placement="fixed" /> : null}
     </>
   );
 }
