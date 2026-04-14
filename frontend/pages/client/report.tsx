@@ -568,6 +568,40 @@ type SyncPaperExecMeta = {
   ib_client_id?: number;
 };
 
+/**
+ * FastAPI devolve muitas falhas de negócio com **HTTP 200** + JSON `{ status: "rejected", error: "…" }`.
+ * O fallback antigo «Falha (200)» aparecia quando `error`/`detail` não eram string ou `fills` não era lista.
+ */
+function formatSyncPaperExecResponseFailure(
+  res: Response,
+  data: { status?: string; error?: unknown; detail?: unknown; fills?: unknown },
+  raw: string,
+): string {
+  const http = res.status;
+  const err = data.error;
+  if (typeof err === "string" && err.trim()) {
+    const core = err.trim();
+    if (res.ok && typeof data.status === "string" && data.status !== "ok") {
+      return `${core} Nota: HTTP ${http} com status JSON «${data.status}» — o FastAPI usa 200 mesmo quando a IBKR ou a ligação falham; o importante é o texto acima.`;
+    }
+    return `${core} (HTTP ${http})`;
+  }
+  const detail = data.detail;
+  if (typeof detail === "string" && detail.trim()) {
+    return `${detail.trim()} (HTTP ${http})`;
+  }
+  if (Array.isArray(detail) && detail.length > 0) {
+    return `${JSON.stringify(detail).slice(0, 400)} (HTTP ${http})`;
+  }
+  const st = typeof data.status === "string" ? data.status : "—";
+  const fillsOk = Array.isArray(data.fills);
+  const snippet = raw.replace(/\s+/g, " ").trim().slice(0, 260);
+  if (!fillsOk) {
+    return `Resposta inválida: campo «fills» não é uma lista (HTTP ${http}; status JSON: «${st}»). Trecho: ${snippet || "—"}`;
+  }
+  return `Sincronização não concluída (HTTP ${http}; status JSON: «${st}»). Trecho: ${snippet || "—"}`;
+}
+
 /** POST /api/sync-paper-exec-lines no browser — alinha a tabela de execução com ordens/execuções na IBKR. */
 async function postSyncPaperExecLinesBrowser(
   fills: ReportExecFillRow[],
@@ -585,6 +619,7 @@ async function postSyncPaperExecLinesBrowser(
     error?: string;
     fills?: ReportExecFillRow[];
     meta?: SyncPaperExecMeta;
+    detail?: unknown;
   };
   try {
     data = JSON.parse(raw) as typeof data;
@@ -592,7 +627,7 @@ async function postSyncPaperExecLinesBrowser(
     throw new Error(raw.slice(0, 200) || `Resposta inválida (${res.status})`);
   }
   if (!res.ok || data.status !== "ok" || !Array.isArray(data.fills)) {
-    throw new Error(typeof data.error === "string" && data.error ? data.error : `Falha (${res.status})`);
+    throw new Error(formatSyncPaperExecResponseFailure(res, data, raw));
   }
   return { fills: data.fills, meta: data.meta };
 }
@@ -4171,6 +4206,12 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           </p>
                         ) : null}
                         <p style={{ margin: "10px 0 0 0", fontSize: 11, color: "#71717a", lineHeight: 1.45, maxWidth: 620 }}>
+                          <strong style={{ color: "#94a3b8" }}>Significado de «Em curso»:</strong> na grelha significa que a
+                          última leitura (ou linha provisória após timeout do envio) indica ordem ainda activa na IB
+                          (Submitted, PreSubmitted, Pending, etc.) <strong style={{ color: "#a1a1aa" }}>ou</strong> que ainda
+                          não temos confirmação fiável — <strong style={{ color: "#a1a1aa" }}>não</strong> implica por si só
+                          que a IB já registou uma ordem; após timeout use sempre «Actualizar estado».
+                          <span style={{ display: "block", marginTop: 8 }} />
                           <strong style={{ color: "#94a3b8" }}>Actualizar estado:</strong> lê ordens abertas e execuções
                           recentes na conta paper — útil quando já executou na TWS mas a tabela ainda mostra «Em curso».
                           <span style={{ color: "#64748b" }}> </span>
