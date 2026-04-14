@@ -920,10 +920,13 @@ function PlanoDevResetTestPanel({ placement }: { placement: PlanoDevResetPlaceme
         ...(isFixed
           ? {
               position: "fixed",
-              bottom: 14,
+              top: "max(96px, calc(env(safe-area-inset-top, 0px) + 72px))",
               right: 14,
+              bottom: "auto",
               zIndex: 2147483646,
               maxWidth: 380,
+              maxHeight: "min(420px, calc(100vh - 120px))",
+              overflowY: "auto",
               boxShadow: "0 12px 40px rgba(0,0,0,0.55)",
             }
           : { marginTop: 16, maxWidth: 640 }),
