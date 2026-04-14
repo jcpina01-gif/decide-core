@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from math import sqrt
 from pathlib import Path
 import json
@@ -21,22 +22,78 @@ try:
 except ValueError:
     RISK_FREE_ANNUAL = 0.0
 
+def _smooth_v5_kpis_path(root: Path) -> Path:
+    return root / "freeze" / "DECIDE_MODEL_V5_V2_3_SMOOTH" / "model_outputs" / "v5_kpis.json"
+
+
+def _smooth_data_end_date(root: Path) -> date | None:
+    """Última data de série no meta do freeze smooth (se existir)."""
+    p = _smooth_v5_kpis_path(root)
+    if not p.is_file():
+        return None
+    try:
+        meta = json.loads(p.read_text(encoding="utf-8"))
+        raw = str(meta.get("data_end") or "").strip()[:10]
+        if len(raw) != 10 or raw[4] != "-" or raw[7] != "-":
+            return None
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+
+
 def _resolve_kpi_repo_root() -> Path:
-    """Pasta do monorepo com `freeze/` — permite apontar para `decide-core` mesmo com `kpi_server.py` doutro clone."""
-    for key in ("DECIDE_KPI_REPO_ROOT", "DECIDE_PROJECT_ROOT"):
-        raw = (os.environ.get(key) or "").strip()
-        if not raw:
-            continue
-        p = Path(raw).expanduser().resolve()
-        if p.is_dir() and (p / "freeze").is_dir():
-            return p
-    return Path(__file__).resolve().parent
+    """Pasta do monorepo com `freeze/`.
+
+    Por omissão considera `DECIDE_KPI_REPO_ROOT`, `DECIDE_PROJECT_ROOT` e a pasta do `kpi_server.py`.
+    Se `DECIDE_KPI_STRICT_REPO_ROOT` não estiver activo, **escolhe o candidato com `data_end` mais recente**
+    em `freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/v5_kpis.json` — evita gráficos presos a um clone
+    antigo (ex. 19‑03) quando o `kpi_server.py` actualizado e o freeze fresco estão no checkout canónico.
+    """
+    strict = os.environ.get("DECIDE_KPI_STRICT_REPO_ROOT", "").strip().lower() in {"1", "true", "yes", "on"}
+    here = Path(__file__).resolve().parent
+
+    def _ordered_candidates() -> list[Path]:
+        out: list[Path] = []
+        seen: set[str] = set()
+        for key in ("DECIDE_KPI_REPO_ROOT", "DECIDE_PROJECT_ROOT"):
+            raw = (os.environ.get(key) or "").strip()
+            if not raw:
+                continue
+            p = Path(raw).expanduser().resolve()
+            if not p.is_dir() or not (p / "freeze").is_dir():
+                continue
+            k = str(p)
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(p)
+        k0 = str(here)
+        if k0 not in seen and here.is_dir() and (here / "freeze").is_dir():
+            out.append(here)
+        return out
+
+    cands = _ordered_candidates()
+    if not cands:
+        return here
+
+    if strict:
+        return cands[0]
+
+    scored: list[tuple[tuple[int, date], Path]] = []
+    for c in cands:
+        de = _smooth_data_end_date(c)
+        if de is not None:
+            scored.append(((1, de), c))
+        else:
+            scored.append(((0, date.min), c))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return scored[0][1]
 
 
 REPO_ROOT = _resolve_kpi_repo_root()
 BACKEND_META_PATH = REPO_ROOT / "backend" / "data" / "company_meta_global_enriched.csv"
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
-KPI_SERVER_BUILD_TAG = "decide-kpi-2026-04-embed-diag-canon-v13"
+KPI_SERVER_BUILD_TAG = "decide-kpi-2026-04-repo-root-pick-latest-v14"
 
 
 def _kpi_package_dir() -> Path:
@@ -8406,7 +8463,17 @@ def api_health():
         rr.headers["Access-Control-Expose-Headers"] = "X-Decide-Kpi-Build"
         return rr
     # Corpo JSON explícito (evita confusão com builds antigos que só tinham ok+app no jsonify).
-    _health_payload = {"ok": True, "app": "DecideAI KPI Flask", "build": KPI_SERVER_BUILD_TAG}
+    _health_payload: dict = {"ok": True, "app": "DecideAI KPI Flask", "build": KPI_SERVER_BUILD_TAG}
+    _health_payload["kpi_repo_root"] = str(REPO_ROOT)
+    try:
+        _vk = _PLAFONADO_CAP15_OUTPUTS / "v5_kpis.json"
+        if _vk.is_file():
+            _meta = json.loads(_vk.read_text(encoding="utf-8"))
+            _de = str(_meta.get("data_end") or "").strip()
+            if _de:
+                _health_payload["smooth_plafonado_data_end"] = _de[:10]
+    except Exception:
+        pass
     r = Response(
         json.dumps(_health_payload, separators=(",", ":")),
         status=200,
@@ -9301,8 +9368,11 @@ def api_diagnostics_rolling():
 
 
 if __name__ == "__main__":
+    _de = _smooth_data_end_date(REPO_ROOT)
     print(
-        f"[kpi_server] Arranque: build={KPI_SERVER_BUILD_TAG!r} — GET /api/health deve incluir «build» no JSON.",
+        f"[kpi_server] Arranque: build={KPI_SERVER_BUILD_TAG!r} repo_root={REPO_ROOT!s} "
+        f"smooth_data_end={_de.isoformat() if _de else '—'} — "
+        f"GET /api/health inclui kpi_repo_root e smooth_plafonado_data_end.",
         file=sys.stderr,
         flush=True,
     )

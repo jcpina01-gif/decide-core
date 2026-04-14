@@ -2,10 +2,11 @@
  * Gate de versão do `kpi_server.py` vs o que o dashboard espera.
  * Manter alinhado com `KPI_SERVER_BUILD_TAG` em `kpi_server.py` (substring estável por release).
  */
-export const KPI_FLASK_BUILD_MIN_TOKEN = "embed-diag-canon-v13";
+/** Alinhado com `KPI_SERVER_BUILD_TAG` em `kpi_server.py` (prefixo estável `decide-kpi-2026-04-*`). */
+export const KPI_FLASK_BUILD_MIN_TOKEN = "decide-kpi-2026-04";
 
 /**
- * `NEXT_PUBLIC_KPI_FLASK_MIN_BUILD` — substring obrigatória no campo `build` de `/api/health` (ex. `embed-diag-canon-v13`).
+ * `NEXT_PUBLIC_KPI_FLASK_MIN_BUILD` — substring obrigatória no campo `build` de `/api/health` (ex. `decide-kpi-2026-04`).
  * Em desenvolvimento, se não estiver definida, usa-se `KPI_FLASK_BUILD_MIN_TOKEN` para evitar iframe preso a Flask antigo.
  */
 export function kpiFlaskMinBuildToken(): string {

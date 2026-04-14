@@ -15,6 +15,7 @@ import {
   readPlafonadoM100CagrDisplayPercent,
 } from "./readPlafonadoFreezeCagr";
 import { readHeroKpiFreezeContext } from "./readHeroKpiFreezeContext";
+import { resolveDecideProjectRoot } from "./decideProjectRoot";
 import { FREEZE_PLAFONADO_MODEL_DIR, PLAFONADO_MODEL_DISPLAY_NAME_PT } from "../freezePlafonadoDir";
 import {
   estimateUsdNotionalForBuyFxHedge,
@@ -662,7 +663,8 @@ function loadFreezeRunModelSnapshot(projectRoot: string): any | null {
 
 export const getClientReportServerSideProps: GetServerSideProps<PageProps> = async (ctx) => {
   const frontRoot = process.cwd();
-  const projectRoot = path.resolve(frontRoot, "..");
+  /** Evita `..` errado quando o Next corre com `cwd` = raiz do monorepo (não `frontend/`). */
+  const projectRoot = resolveDecideProjectRoot(frontRoot);
   const tmpDir = path.join(projectRoot, "tmp_diag");
   const eurMmSym = eurMmIbTicker();
 

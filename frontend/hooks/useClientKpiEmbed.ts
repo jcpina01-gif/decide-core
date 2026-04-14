@@ -170,7 +170,7 @@ export function useClientKpiEmbed({ profile, loggedIn, iframeRefresh }: UseClien
       hedgeQs += `&hedge_pair=${encodeURIComponent(prefs?.pair || "EURUSD")}`;
     }
     /** Força novo HTML do Flask após mudanças em `kpi_server.py` (evita iframe «preso» a processo antigo). */
-    const embedRev = "&embed_src_rev=16";
+    const embedRev = "&embed_src_rev=17";
     return `${base}/?client_embed=1&profile=${encodeURIComponent(profile)}&embed_tab=${encodeURIComponent(
       tab,
     )}&kpi_view=${encodeURIComponent(kpiViewMode)}${embedRev}${t}${hedgeQs}`;

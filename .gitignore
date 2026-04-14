@@ -62,6 +62,15 @@ next-cache/
 !/backend/routers/flatten_portfolio.py
 !/backend/routers/cancel_open_orders_paper.py
 !/backend/routers/sync_paper_exec_lines.py
+# Pipeline KPI: regenerar freeze / sync preços / tarefa diária (whitelisted)
+!/backend/scripts/
+/backend/scripts/*
+!/backend/scripts/regenerate_smooth_freeze_outputs.py
+!/backend/scripts/update_prices_close_yfinance.py
+!/backend/scripts/run_daily_freeze_update.ps1
+!/backend/scripts/restart_decide_kpi_server.ps1
+!/backend/scripts/register_windows_daily_freeze_task.ps1
+!/backend/scripts/sync_prices_close_between_repos.ps1
 # Preços para o motor (run-model). CSV podem ser grandes — Git LFS se necessário.
 !/backend/data/
 /backend/data/*

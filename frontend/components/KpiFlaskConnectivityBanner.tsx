@@ -131,7 +131,8 @@ export default function KpiFlaskConnectivityBanner({ bump = 0 }: Props) {
           <li>
             Para na porta <strong style={{ color: "#fff" }}>5000</strong> o processo antigo, depois na{" "}
             <strong style={{ color: "#fff" }}>raiz do decide-core</strong> onde está o <code style={{ color: "#fef3c7" }}>kpi_server.py</code>{" "}
-            actual: <code style={{ color: "#fef3c7" }}>npm run kpi</code>.
+            actual: <code style={{ color: "#fef3c7" }}>npm run kpi</code> (ou{" "}
+            <code style={{ color: "#fef3c7" }}>backend/scripts/restart_decide_kpi_server.ps1</code> após o job das 22h).
           </li>
           <li>
             Confirma <code style={{ color: "#fef3c7" }}>DECIDE_PROJECT_ROOT</code> / <code style={{ color: "#fef3c7" }}>DECIDE_KPI_REPO_ROOT</code>{" "}

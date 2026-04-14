@@ -21,8 +21,9 @@ const repoRoot = path.resolve(__dirname, "..", "..");
 const kpiPy = path.join(repoRoot, "kpi_server.py");
 
 /** Alinhado com `KPI_FLASK_BUILD_MIN_TOKEN` no frontend (substring dentro do tag). */
+/** Prefixo comum aos tags `decide-kpi-2026-04-*` (v13, v14, …) — evita falha quando o build muda o sufixo. */
 const MIN_BUILD_SUBSTRING =
-  String(process.env.DECIDE_KPI_MIN_BUILD_SUBSTRING || "embed-diag-canon-v13").trim() || "embed-diag-canon-v13";
+  String(process.env.DECIDE_KPI_MIN_BUILD_SUBSTRING || "decide-kpi-2026-04").trim() || "decide-kpi-2026-04";
 
 function pickPythonExe() {
   const fromEnv = (process.env.KPI_PYTHON || process.env.PYTHON || "").trim();
