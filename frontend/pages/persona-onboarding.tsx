@@ -855,7 +855,9 @@ export default function PersonaOnboardingPage({
     }
   }
 
-  const canConfirmKyc = effectiveFullName.length > 0;
+  /** Nome manual ou da Persona; se a Persona concluiu mas não devolveu nome, ainda há `inquiryId` — não obrigar a refazer o fluxo completo só por falta de texto. */
+  const lastInquiryId = (lastPersonaCompleteRef.current?.inquiryId || "").trim();
+  const canConfirmKyc = effectiveFullName.length > 0 || Boolean(lastInquiryId && backendSaveConfirmed);
   const personaConfigOk = Boolean(templateId.trim() && environmentId.trim() && referenceId);
 
   const personaPrepIssue = useMemo((): "session" | "config" | null => {
@@ -921,7 +923,8 @@ export default function PersonaOnboardingPage({
       href="/client/ibkr-prep"
       onClick={() => {
         try {
-          window.localStorage.setItem("decide_persona_verified_full_name_v1", effectiveFullName);
+          const nm = effectiveFullName.trim();
+          if (nm) window.localStorage.setItem("decide_persona_verified_full_name_v1", nm);
         } catch {
           // ignore
         }

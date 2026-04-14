@@ -9,6 +9,7 @@ import { buildPersonaReferenceIdFromSession } from "../../lib/personaReference";
 import { extractDisplayNameFromPersonaRecord } from "../../lib/personaDisplayName";
 import { isFxHedgeOnboardingApplicable } from "../../lib/clientSegment";
 import { isHedgeOnboardingDone } from "../../lib/fxHedgePrefs";
+import { personaRecordAllowsIbkrPrep } from "../../lib/personaKycGate";
 
 function safeNumber(x: unknown, fallback = 0): number {
   if (typeof x === "number") return Number.isFinite(x) ? x : fallback;
@@ -105,7 +106,7 @@ export default function IbkrPrepPage() {
   const [kycDone, setKycDone] = useState(false);
   /** Passos posteriores no funil implicam MiFID percorrido — alinha com `OnboardingFlowBar` quando `step2` falha no LS. */
   const [approveDone, setApproveDone] = useState(false);
-  /** null = a verificar no backend; só true se existir registo Persona com status completed. */
+  /** null = a verificar no backend; true se existir registo Persona com estado suficiente (ver `personaRecordAllowsIbkrPrep`). */
   const [serverKycOk, setServerKycOk] = useState<boolean | null>(null);
   /** Nome no registo de identidade (servidor DECIDE), quando existir. */
   const [personaNameOnRecord, setPersonaNameOnRecord] = useState<string | null>(null);
@@ -260,8 +261,7 @@ export default function IbkrPrepPage() {
         const j = await r.json().catch(() => ({}));
         if (cancelled) return;
         const rec = j?.record;
-        const st = String(rec?.status ?? "").toLowerCase();
-        const verified = Boolean(j?.ok && rec && st === "completed");
+        const verified = Boolean(j?.ok && rec && personaRecordAllowsIbkrPrep(rec));
         /** `name` na BD pode estar vazio mesmo com Persona concluído — o nome vem muitas vezes só em `fields`. */
         const nm = extractDisplayNameFromPersonaRecord(rec);
         setPersonaNameOnRecord(verified && nm ? nm : verified ? "" : null);

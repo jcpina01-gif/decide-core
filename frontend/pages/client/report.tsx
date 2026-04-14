@@ -9,10 +9,13 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import ClientFlowDashboardButton from "../../components/ClientFlowDashboardButton";
+import { ONBOARDING_STORAGE_KEYS } from "../../components/OnboardingFlowBar";
 import InlineLoadingDots from "../../components/InlineLoadingDots";
 import { isFxHedgeOnboardingApplicable, syncFeeSegmentFromNavEur } from "../../lib/clientSegment";
 import { isHedgeOnboardingDone, readFxHedgePrefs } from "../../lib/fxHedgePrefs";
@@ -1050,6 +1053,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
   const [fxHedgePrefsClient, setFxHedgePrefsClient] = useState<ReturnType<typeof readFxHedgePrefs> | null>(null);
   const [monthlyPdfBusy, setMonthlyPdfBusy] = useState(false);
   const [planoDevResetUi, setPlanoDevResetUi] = useState(false);
+  /** Portal de CTA para `document.body` — evita `position:fixed` preso a antepassado com transform/overflow. */
+  const [execUiMounted, setExecUiMounted] = useState(false);
 
   type PlanPageTab = "resumo" | "alteracoes" | "execucao" | "documentos";
   const [planTab, setPlanTab] = useState<PlanPageTab>("resumo");
@@ -1095,6 +1100,10 @@ export default function ClientReportPage({ reportData }: PageProps) {
   }, [router.asPath]);
 
   useEffect(() => {
+    setExecUiMounted(true);
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       const params = new URLSearchParams(window.location.search);
@@ -1114,40 +1123,53 @@ export default function ClientReportPage({ reportData }: PageProps) {
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
+    let restoredFromSession = false;
     try {
       const raw = sessionStorage.getItem(EXEC_STATE_STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as {
-        v?: number;
-        accountCode?: string;
-        stage?: PostApprovalStage;
-        executionMessage?: string;
-        execSummary?: ExecSummary;
-        execFills?: ExecFill[];
-        lastExecBatchResidual?: boolean;
-      };
-      if (parsed.v !== 1 || parsed.accountCode !== reportData.accountCode) return;
-      if (
-        parsed.stage !== "approved" &&
-        parsed.stage !== "ready" &&
-        parsed.stage !== "executing" &&
-        parsed.stage !== "done" &&
-        parsed.stage !== "failed"
-      ) {
-        return;
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          v?: number;
+          accountCode?: string;
+          stage?: PostApprovalStage;
+          executionMessage?: string;
+          execSummary?: ExecSummary;
+          execFills?: ExecFill[];
+          lastExecBatchResidual?: boolean;
+        };
+        if (parsed.v === 1 && parsed.accountCode === reportData.accountCode) {
+          if (
+            parsed.stage === "approved" ||
+            parsed.stage === "ready" ||
+            parsed.stage === "executing" ||
+            parsed.stage === "done" ||
+            parsed.stage === "failed"
+          ) {
+            let stage = parsed.stage;
+            let msg = typeof parsed.executionMessage === "string" ? parsed.executionMessage : "";
+            if (stage === "executing") {
+              stage = "ready";
+              msg =
+                "A página foi recarregada durante o envio. Confirme no IB Gateway ou na TWS se as ordens concluíram; pode usar «Executar ordens» se algo ficou incompleto.";
+            }
+            setPostApprovalStage(stage);
+            if (msg) setExecutionMessage(msg);
+            if (parsed.execSummary !== undefined) setExecSummary(parsed.execSummary);
+            if (Array.isArray(parsed.execFills)) setExecFills(parsed.execFills);
+            if (typeof parsed.lastExecBatchResidual === "boolean") setLastExecBatchResidual(parsed.lastExecBatchResidual);
+            restoredFromSession = true;
+          }
+        }
       }
-      let stage = parsed.stage;
-      let msg = typeof parsed.executionMessage === "string" ? parsed.executionMessage : "";
-      if (stage === "executing") {
-        stage = "ready";
-        msg =
-          "A página foi recarregada durante o envio. Confirme no IB Gateway ou na TWS se as ordens concluíram; pode usar «Executar ordens» se algo ficou incompleto.";
+    } catch {
+      /* ignore */
+    }
+
+    /** Após `/client/approve` o LS `step4` fica a 1, mas este ecrã não sabia — ficava sem «Executar ordens». */
+    if (restoredFromSession) return;
+    try {
+      if (window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.approve) === "1") {
+        setPostApprovalStage("ready");
       }
-      setPostApprovalStage(stage);
-      if (msg) setExecutionMessage(msg);
-      if (parsed.execSummary !== undefined) setExecSummary(parsed.execSummary);
-      if (Array.isArray(parsed.execFills)) setExecFills(parsed.execFills);
-      if (typeof parsed.lastExecBatchResidual === "boolean") setLastExecBatchResidual(parsed.lastExecBatchResidual);
     } catch {
       /* ignore */
     }
@@ -2078,6 +2100,34 @@ export default function ClientReportPage({ reportData }: PageProps) {
 
   const sectorTop10 = sectorWeights.slice(0, 10);
 
+  const runExecuteOrdersFromUi = () => {
+    if (postApprovalStage === "executing") return;
+    if (
+      !window.confirm(
+        "Enviar as ordens propostas deste plano à Interactive Brokers (paper)?\n\nConfirme: IB Gateway ou TWS ligado, backend DECIDE acessível.",
+      )
+    ) {
+      return;
+    }
+    setPlanTab("execucao");
+    void executeOrdersNow();
+  };
+
+  const executeIbkrButtonStyle: CSSProperties = {
+    background: "linear-gradient(180deg, #0d9488 0%, #0f766e 100%)",
+    border: "2px solid #fde68a",
+    color: "#ecfdf5",
+    borderRadius: 12,
+    padding: "10px 16px",
+    fontWeight: 800,
+    fontSize: 14,
+    cursor: postApprovalStage === "executing" ? "wait" : "pointer",
+    boxShadow: "0 4px 22px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.12)",
+    fontFamily: "inherit",
+    whiteSpace: "nowrap",
+    opacity: postApprovalStage === "executing" ? 0.75 : 1,
+  };
+
   return (
     <>
       <Head>
@@ -2205,6 +2255,14 @@ export default function ClientReportPage({ reportData }: PageProps) {
               }}
             >
               <ClientFlowDashboardButton />
+              <button
+                type="button"
+                disabled={postApprovalStage === "executing"}
+                onClick={runExecuteOrdersFromUi}
+                style={executeIbkrButtonStyle}
+              >
+                {postApprovalStage === "executing" ? "A enviar ordens…" : "Executar ordens na IBKR"}
+              </button>
               {showHedgeOnboardingCta ? (
                 <Link
                   href="/client/fx-hedge-onboarding"
@@ -2402,6 +2460,45 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 </button>
               );
             })}
+          </div>
+
+          <div
+            id="decide-execute-cta-strip"
+            role="region"
+            aria-label="Enviar plano à Interactive Brokers"
+            style={{
+              position: "relative",
+              zIndex: 20,
+              marginBottom: 22,
+              padding: "16px 18px",
+              borderRadius: 16,
+              border: "2px solid #fbbf24",
+              background: "linear-gradient(135deg, rgba(6, 78, 74, 0.55) 0%, rgba(30, 41, 59, 0.92) 100%)",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 14,
+              alignItems: "center",
+              justifyContent: "space-between",
+              boxShadow: "0 8px 28px rgba(0,0,0,0.35)",
+            }}
+          >
+            <div style={{ fontSize: 14, color: "#ecfdf5", fontWeight: 700, lineHeight: 1.45, maxWidth: "min(100%, 560px)" }}>
+              <span style={{ color: "#fde68a" }}>Corretora (paper):</span> envio das ordens deste plano à IBKR. Visível em{" "}
+              <strong>todos</strong> os separadores — não depende do passo «Aprovar plano» acima.
+            </div>
+            <button
+              type="button"
+              disabled={postApprovalStage === "executing"}
+              onClick={runExecuteOrdersFromUi}
+              style={{
+                ...executeIbkrButtonStyle,
+                flexShrink: 0,
+                fontSize: 16,
+                padding: "14px 22px",
+              }}
+            >
+              {postApprovalStage === "executing" ? "A enviar ordens…" : "Executar ordens na IBKR"}
+            </button>
           </div>
 
           {planTab === "resumo" ? (
@@ -3421,6 +3518,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
           <div
             id="decisao-final"
             style={{
+              position: "relative",
+              zIndex: 10,
               marginTop: 8,
               padding: "32px 28px 36px",
               borderRadius: 20,
@@ -4689,6 +4788,50 @@ export default function ClientReportPage({ reportData }: PageProps) {
         </div>
       </div>
       {planoDevResetUi ? <PlanoDevResetTestPanel placement="fixed" /> : null}
+      {execUiMounted && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              style={{
+                position: "fixed",
+                left: "max(12px, env(safe-area-inset-left, 0px))",
+                bottom: "max(16px, env(safe-area-inset-bottom, 0px))",
+                zIndex: 2147483647,
+                maxWidth: "min(94vw, 360px)",
+                pointerEvents: "none",
+              }}
+            >
+              <div style={{ pointerEvents: "auto" }}>
+                <button
+                  type="button"
+                  disabled={postApprovalStage === "executing"}
+                  onClick={runExecuteOrdersFromUi}
+                  style={{
+                    ...executeIbkrButtonStyle,
+                    display: "block",
+                    width: "100%",
+                    padding: "16px 20px",
+                    fontSize: 16,
+                  }}
+                >
+                  {postApprovalStage === "executing" ? "A enviar ordens…" : "Executar ordens na IBKR"}
+                </button>
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 11,
+                    color: "#e4e4e7",
+                    lineHeight: 1.4,
+                    textAlign: "center",
+                    textShadow: "0 1px 2px rgba(0,0,0,0.9)",
+                  }}
+                >
+                  Botão fixo (portal) — mesmo efeito que no topo ao lado do dashboard.
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }
