@@ -9,11 +9,9 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
 import ClientFlowDashboardButton from "../../components/ClientFlowDashboardButton";
 import { ONBOARDING_STORAGE_KEYS } from "../../components/OnboardingFlowBar";
 import InlineLoadingDots from "../../components/InlineLoadingDots";
@@ -961,7 +959,13 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
 
 type PlanoDevResetPlacement = "inline" | "fixed";
 
-function PlanoDevResetTestPanel({ placement }: { placement: PlanoDevResetPlacement }) {
+type PlanoDevResetTestPanelProps = {
+  placement: PlanoDevResetPlacement;
+  onExecuteIbkr?: () => void;
+  executeBusy?: boolean;
+};
+
+function PlanoDevResetTestPanel({ placement, onExecuteIbkr, executeBusy }: PlanoDevResetTestPanelProps) {
   const isFixed = placement === "fixed";
   return (
     <div
@@ -1001,6 +1005,35 @@ function PlanoDevResetTestPanel({ placement }: { placement: PlanoDevResetPlaceme
           Reset local de onboarding / plano (não altera IBKR).
         </div>
       )}
+      {onExecuteIbkr ? (
+        <div style={{ marginTop: 12 }}>
+          <button
+            type="button"
+            disabled={executeBusy}
+            onClick={onExecuteIbkr}
+            style={{
+              cursor: executeBusy ? "wait" : "pointer",
+              borderRadius: 10,
+              border: "2px solid #fde68a",
+              background: "linear-gradient(180deg, #0d9488 0%, #0f766e 100%)",
+              color: "#ecfdf5",
+              fontWeight: 800,
+              fontSize: 13,
+              padding: "8px 14px",
+              fontFamily: "inherit",
+              width: "100%",
+              maxWidth: 280,
+              opacity: executeBusy ? 0.75 : 1,
+              boxShadow: "0 2px 12px rgba(0,0,0,0.35)",
+            }}
+          >
+            {executeBusy ? "A enviar ordens…" : "Executar ordens na IBKR"}
+          </button>
+          <div style={{ fontSize: 11, color: "#fde68a", marginTop: 6, lineHeight: 1.4, opacity: 0.92 }}>
+            Paper — confirme IB Gateway/TWS e backend; abre o separador Execução antes do envio.
+          </div>
+        </div>
+      ) : null}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
         <button
           type="button"
@@ -1105,8 +1138,6 @@ export default function ClientReportPage({ reportData }: PageProps) {
   const [fxHedgePrefsClient, setFxHedgePrefsClient] = useState<ReturnType<typeof readFxHedgePrefs> | null>(null);
   const [monthlyPdfBusy, setMonthlyPdfBusy] = useState(false);
   const [planoDevResetUi, setPlanoDevResetUi] = useState(false);
-  /** Portal de CTA para `document.body` — evita `position:fixed` preso a antepassado com transform/overflow. */
-  const [execUiMounted, setExecUiMounted] = useState(false);
 
   type PlanPageTab = "resumo" | "alteracoes" | "execucao" | "documentos";
   const [planTab, setPlanTab] = useState<PlanPageTab>("resumo");
@@ -1150,10 +1181,6 @@ export default function ClientReportPage({ reportData }: PageProps) {
   useEffect(() => {
     setPlanoDevResetUi(isDecidePlanoDevResetVisibleInBrowser());
   }, [router.asPath]);
-
-  useEffect(() => {
-    setExecUiMounted(true);
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2170,21 +2197,6 @@ export default function ClientReportPage({ reportData }: PageProps) {
     void executeOrdersNow();
   };
 
-  const executeIbkrButtonStyle: CSSProperties = {
-    background: "linear-gradient(180deg, #0d9488 0%, #0f766e 100%)",
-    border: "2px solid #fde68a",
-    color: "#ecfdf5",
-    borderRadius: 12,
-    padding: "10px 16px",
-    fontWeight: 800,
-    fontSize: 14,
-    cursor: postApprovalStage === "executing" ? "wait" : "pointer",
-    boxShadow: "0 4px 22px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.12)",
-    fontFamily: "inherit",
-    whiteSpace: "nowrap",
-    opacity: postApprovalStage === "executing" ? 0.75 : 1,
-  };
-
   return (
     <>
       <Head>
@@ -2300,7 +2312,13 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   Aviso backend: {reportData.backendError}
                 </div>
               ) : null}
-              {planoDevResetUi ? <PlanoDevResetTestPanel placement="inline" /> : null}
+              {planoDevResetUi ? (
+                <PlanoDevResetTestPanel
+                  placement="inline"
+                  onExecuteIbkr={runExecuteOrdersFromUi}
+                  executeBusy={postApprovalStage === "executing"}
+                />
+              ) : null}
             </div>
 
             <div
@@ -2312,14 +2330,6 @@ export default function ClientReportPage({ reportData }: PageProps) {
               }}
             >
               <ClientFlowDashboardButton />
-              <button
-                type="button"
-                disabled={postApprovalStage === "executing"}
-                onClick={runExecuteOrdersFromUi}
-                style={executeIbkrButtonStyle}
-              >
-                {postApprovalStage === "executing" ? "A enviar ordens…" : "Executar ordens na IBKR"}
-              </button>
               {showHedgeOnboardingCta ? (
                 <Link
                   href="/client/fx-hedge-onboarding"
@@ -2517,45 +2527,6 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 </button>
               );
             })}
-          </div>
-
-          <div
-            id="decide-execute-cta-strip"
-            role="region"
-            aria-label="Enviar plano à Interactive Brokers"
-            style={{
-              position: "relative",
-              zIndex: 20,
-              marginBottom: 22,
-              padding: "16px 18px",
-              borderRadius: 16,
-              border: "2px solid #fbbf24",
-              background: "linear-gradient(135deg, rgba(6, 78, 74, 0.55) 0%, rgba(30, 41, 59, 0.92) 100%)",
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 14,
-              alignItems: "center",
-              justifyContent: "space-between",
-              boxShadow: "0 8px 28px rgba(0,0,0,0.35)",
-            }}
-          >
-            <div style={{ fontSize: 14, color: "#ecfdf5", fontWeight: 700, lineHeight: 1.45, maxWidth: "min(100%, 560px)" }}>
-              <span style={{ color: "#fde68a" }}>Corretora (paper):</span> envio das ordens deste plano à IBKR. Visível em{" "}
-              <strong>todos</strong> os separadores — não depende do passo «Aprovar plano» acima.
-            </div>
-            <button
-              type="button"
-              disabled={postApprovalStage === "executing"}
-              onClick={runExecuteOrdersFromUi}
-              style={{
-                ...executeIbkrButtonStyle,
-                flexShrink: 0,
-                fontSize: 16,
-                padding: "14px 22px",
-              }}
-            >
-              {postApprovalStage === "executing" ? "A enviar ordens…" : "Executar ordens na IBKR"}
-            </button>
           </div>
 
           {planTab === "resumo" ? (
@@ -3644,9 +3615,10 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 <br />
                 <br />
                 <strong style={{ color: "#fffbeb" }}>Onde “comprar” na DECIDE:</strong> não é no dashboard de KPIs. Abra o{" "}
-                <strong style={{ color: "#fffbeb" }}>plano</strong> (esta página), secção{" "}
-                <strong style={{ color: "#fffbeb" }}>Decisão final</strong>: primeiro <strong>Aprovar plano</strong> →
-                depois o botão verde <strong>Executar ordens</strong> (envia ordens para o IB Gateway ou TWS). Só aparece após aprovar.
+                <strong style={{ color: "#fffbeb" }}>plano</strong> (esta página), separador{" "}
+                <strong style={{ color: "#fffbeb" }}>Execução</strong>, secção <strong style={{ color: "#fffbeb" }}>Decisão final</strong>:{" "}
+                primeiro <strong>Aprovar plano</strong> → depois o botão <strong>Executar ordens</strong> (envia para o IB
+                Gateway ou TWS). Com o painel amarelo de teste visível, o mesmo envio está também nesse bloco.
               </div>
             )}
             {postApprovalStage === "idle" ? (
@@ -4850,51 +4822,13 @@ export default function ClientReportPage({ reportData }: PageProps) {
           </>
         </div>
       </div>
-      {planoDevResetUi ? <PlanoDevResetTestPanel placement="fixed" /> : null}
-      {execUiMounted && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              style={{
-                position: "fixed",
-                left: "max(12px, env(safe-area-inset-left, 0px))",
-                bottom: "max(16px, env(safe-area-inset-bottom, 0px))",
-                zIndex: 2147483647,
-                maxWidth: "min(94vw, 360px)",
-                pointerEvents: "none",
-              }}
-            >
-              <div style={{ pointerEvents: "auto" }}>
-                <button
-                  type="button"
-                  disabled={postApprovalStage === "executing"}
-                  onClick={runExecuteOrdersFromUi}
-                  style={{
-                    ...executeIbkrButtonStyle,
-                    display: "block",
-                    width: "100%",
-                    padding: "16px 20px",
-                    fontSize: 16,
-                  }}
-                >
-                  {postApprovalStage === "executing" ? "A enviar ordens…" : "Executar ordens na IBKR"}
-                </button>
-                <div
-                  style={{
-                    marginTop: 8,
-                    fontSize: 11,
-                    color: "#e4e4e7",
-                    lineHeight: 1.4,
-                    textAlign: "center",
-                    textShadow: "0 1px 2px rgba(0,0,0,0.9)",
-                  }}
-                >
-                  Botão fixo (portal) — mesmo efeito que no topo ao lado do dashboard.
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      {planoDevResetUi ? (
+        <PlanoDevResetTestPanel
+          placement="fixed"
+          onExecuteIbkr={runExecuteOrdersFromUi}
+          executeBusy={postApprovalStage === "executing"}
+        />
+      ) : null}
     </>
   );
 }
