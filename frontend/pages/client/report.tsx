@@ -833,6 +833,20 @@ const EXEC_STATE_STORAGE_KEY = "decide_report_exec_v1";
 /** Alinhado ao timeout do proxy `pages/api/send-orders.ts` (120s) + margem — evita UI presa em «A processar…». */
 const SEND_ORDERS_FETCH_MS = 125_000;
 
+/**
+ * O proxy `pages/api/send-orders.ts` devolve 503 + JSON quando o upstream faz timeout — o browser **não** recebe
+ * `AbortError`. Sem isto, a grelha mantém instantâneos antigos (ex. «Executada») embora este envio tenha falhado.
+ */
+function sendOrdersErrorLooksLikeUpstreamTimeout(msg: string): boolean {
+  const m = String(msg ?? "").toLowerCase();
+  if (!m.includes("timeout")) return false;
+  return (
+    m.includes("contactar o backend") ||
+    m.includes("ligação ao backend falhou") ||
+    m.includes("/api/send-orders")
+  );
+}
+
 /** Rótulo DECIDE/Yahoo: IB usa «BRK B»; alinhamos a BRK.B na UI. */
 function displayTickerLabel(ticker: string): string {
   const t = ticker.trim().toUpperCase();
@@ -1750,6 +1764,10 @@ export default function ClientReportPage({ reportData }: PageProps) {
     setLastExecBatchResidual(Boolean(override && override.length > 0));
 
     setExecSummary(null);
+    /** Envio completo: não mostrar linhas de um envio anterior (session/sync) enquanto este POST está em curso ou se falhar sem `fills`. */
+    if (!override || override.length === 0) {
+      setExecFills([]);
+    }
     executeCancelRequestedRef.current = false;
     setExecutionMessage("A enviar ordens para a corretora… (até ~2 min — IB Gateway/TWS + várias ordens + FX opcional)");
     setPostApprovalStage("executing");
@@ -1863,8 +1881,9 @@ export default function ClientReportPage({ reportData }: PageProps) {
       const raw = e instanceof Error ? e.message : String(e);
       const lower = raw.toLowerCase();
       const isFullPlanSend = !override || override.length === 0;
+      const looksLikeUpstreamTimeout = sendOrdersErrorLooksLikeUpstreamTimeout(raw);
       let bootstrappedAfterTimeout = false;
-      if (isAbort && isFullPlanSend) {
+      if (isFullPlanSend && (isAbort || looksLikeUpstreamTimeout)) {
         const bootstrap = buildBootstrapExecFillsFromProposedTrades(proposedTradesFiltered, resolveIbkrSendTicker);
         if (bootstrap.length > 0) {
           setExecFills(bootstrap);
@@ -1872,8 +1891,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
           bootstrappedAfterTimeout = true;
         }
       }
-      const msg = isAbort
-        ? `Tempo limite (~${Math.round(SEND_ORDERS_FETCH_MS / 1000)}s) — o servidor não concluiu a tempo. Confirme: IB Gateway ou TWS ligado (paper, porta 7497), backend FastAPI a correr (BACKEND_URL no .env.local), e tente de novo. Se o IB Gateway ou a TWS estiver bloqueado num diálogo, feche-o e volte a executar.${
+      const msg = isAbort || looksLikeUpstreamTimeout
+        ? `${looksLikeUpstreamTimeout && !isAbort ? `Timeout ao contactar o backend — ${raw}` : `Tempo limite (~${Math.round(SEND_ORDERS_FETCH_MS / 1000)}s) — o servidor não concluiu a tempo.`} Confirme: IB Gateway ou TWS ligado (paper, porta 7497), backend FastAPI a correr (BACKEND_URL no .env.local), e tente de novo. Se o IB Gateway ou a TWS estiver bloqueado num diálogo, feche-o e volte a executar.${
             bootstrappedAfterTimeout
               ? " Foram criadas linhas provisórias na tabela (a partir do plano) — na grelha abaixo use primeiro «Actualizar estado (IBKR)»; se após sincronizar aparecer quantidade em falta, use «Completar ordens pendentes» em vez de reenviar o lote completo."
               : ""
