@@ -4822,13 +4822,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
           </>
         </div>
       </div>
-      {planoDevResetUi ? (
-        <PlanoDevResetTestPanel
-          placement="fixed"
-          onExecuteIbkr={runExecuteOrdersFromUi}
-          executeBusy={postApprovalStage === "executing"}
-        />
-      ) : null}
+      {planoDevResetUi ? <PlanoDevResetTestPanel placement="fixed" /> : null}
     </>
   );
 }
