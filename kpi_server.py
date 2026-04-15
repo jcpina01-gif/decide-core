@@ -93,7 +93,7 @@ def _resolve_kpi_repo_root() -> Path:
 REPO_ROOT = _resolve_kpi_repo_root()
 BACKEND_META_PATH = REPO_ROOT / "backend" / "data" / "company_meta_global_enriched.csv"
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
-KPI_SERVER_BUILD_TAG = "decide-kpi-2026-04-moderado-skip-overlay-vol-v18"
+KPI_SERVER_BUILD_TAG = "decide-kpi-2026-04-margin-csv-and-kpi-loader-v20"
 
 
 def _kpi_package_dir() -> Path:
@@ -129,9 +129,9 @@ def _fallback_benchmark_equity_csv_list() -> list[Path]:
         )
     return paths
 
-# CAP15 plafonado (≤100% NAV): freeze V2.3 smooth (`model_outputs`).
-# Série «com margem» / teórico: `model_equity_final_20y[_perfil]_margin.csv`, `model_equity_theoretical_20y.csv`
-# (`scripts/generate_smooth_margin_equity_csvs.py`). Sem fallback para outro freeze de modelo.
+# CAP15 plafonado (≤100% NAV): freeze V2.3 smooth (`model_outputs`) via `equity_overlayed`.
+# «Com margem» (mesmo motor + custos, sem teto 100%): `model_equity_final_20y[_perfil]_margin.csv` (`export_smooth_freeze_from_v5.py`).
+# Teórico cru: `model_equity_theoretical_20y.csv`.
 # Benchmark: se `model_outputs/benchmark_equity_final_20y.csv` for um stub curto, usar `model_outputs_from_clone/` (mesmo calendário que o modelo).
 _PLAFONADO_CAP15_OUTPUTS = REPO_ROOT / "freeze" / "DECIDE_MODEL_V5_V2_3_SMOOTH" / "model_outputs"
 
@@ -2661,7 +2661,9 @@ HTML_TEMPLATE = """
     {% endif %}
     {% macro simulator_client_embed_panel() %}
       <div id="simApiContext"
-        data-browser-api-prefix="{% if client_embed %}/kpi-flask{% endif %}"
+        {# Prefixo `/kpi-flask` só quando o documento do iframe está nesse path (Next → Flask). Não injectar
+           aqui: em `127.0.0.1:5000` ou num host KPI público na raiz, `/kpi-flask/api/...` dá 404. O JS usa
+           `window.location.pathname` (`kpiPublicApiPath`) como fallback. #}
         data-cap15-only="{% if cap15_only %}1{% else %}0{% endif %}"
         data-client-embed="{% if client_embed %}1{% else %}0{% endif %}"
         data-model-key="{{ current_model }}"
@@ -2983,9 +2985,10 @@ HTML_TEMPLATE = """
         {% if client_embed and cap15_only %}
         <p class="kpi-embed-diag" style="grid-column:1/-1;font-size:0.68rem;color:#94a3b8;margin:0 0 6px 0;line-height:1.35;">
           Decide KPI <code style="color:#cbd5e1;">{{ kpi_diag_build }}</code>
+          · repo <code style="color:#cbd5e1;">{{ kpi_diag_repo }}</code>
           · bench <code style="color:#cbd5e1;">{{ kpi_diag_bench_file }}</code> ({{ kpi_diag_bench_rows }} linhas)
           · raw <code style="color:#cbd5e1;">{{ kpi_diag_raw_file }}</code> ({{ kpi_diag_raw_rows }} linhas).
-          Se vires «Modelo teórico» ou bench ~0%, o browser não está a falar com este build — reinicia <code style="color:#cbd5e1;">npm run kpi</code> na pasta do repo com <code style="color:#cbd5e1;">kpi_server.py</code>.
+          Se o build não tiver sido actualizado (ex. ainda «v18») ou vires bench ~0%, o Flask na porta 5000 é antigo ou outro repo — termina esse processo e corre <code style="color:#cbd5e1;">npm run kpi</code> na raiz do <code style="color:#cbd5e1;">decide-core</code> onde está este <code style="color:#cbd5e1;">kpi_server.py</code>; opcional <code style="color:#cbd5e1;">DECIDE_KPI_REPO_ROOT</code> se tens vários checkouts.
         </p>
         {% endif %}
         <div class="card {{ 'col-3' if compare_cap100_kpis else 'col-4' }} kpi-advanced-only kpi-card-raw-model">
@@ -6352,7 +6355,8 @@ def load_cap15_margin_series_distinct_from_plafonado(
 ) -> tuple[pd.Series, Path] | None:
     """
     Carrega a série «com margem» alinhada a `dates`, com a mesma política de vol que o CAP15 plafonado
-    (`strict_cap15_vol_targets`). Percorre várias raízes se a curva for cópia do plafonado (artefacto legado).
+    (`strict_cap15_vol_targets`). Percorre raízes em `_iter_smooth_margin_equity_csv_paths` até conseguir ler
+    um CSV válido (o primeiro candidato válido ganha).
     """
     profile_key = normalize_risk_profile_key(profile_key)
     dt_m = pd.to_datetime(dates)
@@ -6374,12 +6378,8 @@ def load_cap15_margin_series_distinct_from_plafonado(
                 force_synthetic_profile_vol=force_synthetic_profile_vol,
                 strict_cap15_vol_targets=True,
             )
-            if _cap15_equity_series_is_plafonado_duplicate(margin_series, model_eq):
-                print(
-                    f"[kpi_server] margem coincide com plafonado em {margem_path} — tenta próximo candidato.",
-                    file=sys.stderr,
-                )
-                continue
+            # Não rejeitar se coincidir com o plafonado: com `equity_overlay_margin` do motor V5, nos dias em
+            # que o teto NAV 100% não activa, as duas curvas são a mesma série — isso é correcto.
             return margin_series, margem_path
         except Exception as exc:
             print(f"[kpi_server] falha ao ler margem {margem_path}: {exc}", file=sys.stderr)
@@ -9154,6 +9154,7 @@ def index():
     profile_label_pt = PROFILE_LABEL_PT_SHORT.get(profile_key, profile_key)
 
     kpi_diag_build = KPI_SERVER_BUILD_TAG
+    kpi_diag_repo = str(REPO_ROOT.resolve())
     kpi_diag_bench_file = bench_path.name
     kpi_diag_bench_rows = _csv_date_row_count(bench_path)
     kpi_diag_raw_file = raw_path.name if raw_path.exists() else "—"
@@ -9163,6 +9164,7 @@ def index():
         HTML_TEMPLATE,
         kpi_build_tag=KPI_SERVER_BUILD_TAG,
         kpi_diag_build=kpi_diag_build,
+        kpi_diag_repo=kpi_diag_repo,
         kpi_diag_bench_file=kpi_diag_bench_file,
         kpi_diag_bench_rows=kpi_diag_bench_rows,
         kpi_diag_raw_file=kpi_diag_raw_file,
