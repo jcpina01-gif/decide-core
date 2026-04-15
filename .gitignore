@@ -48,6 +48,7 @@ next-cache/
 !/backend/ib_socket_env.py
 !/backend/ib_insync_thread_loop.py
 !/backend/ibkr_paper_checks.py
+!/backend/ibkr_internal_routing.py
 !/backend/server.py
 !/backend/requirements.txt
 # Rotas incluídas em app_main (uvicorn main:app)
