@@ -1621,6 +1621,18 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
     navEur * 0.05
   );
 
+  const usingOfficialWeightsForPlan =
+    !preferLiveWeights && !!officialMonth?.rows?.length;
+  const planWeightsProvenance: PlanWeightsProvenance = {
+    mode: usingOfficialWeightsForPlan ? "official_csv" : "model_fallback",
+    rebalanceDate: usingOfficialWeightsForPlan
+      ? String(officialMonth!.date || "").slice(0, 10)
+      : modelPayloadAsOfDateYmd(modelPayload) ?? undefined,
+    mergeSourcePath: builtWeights?.sourcePath,
+    officialHistoryMonthsLoaded: builtWeights?.months.length ?? 0,
+    recommendedLineCount: recommendedPositions.length,
+  };
+
   const reportData: ReportData = {
     generatedAt: new Date().toISOString(),
     accountCode,
