@@ -69,6 +69,43 @@ def _median_theoretical_over_model(legacy_mod: Path, legacy_theo: Path) -> float
     return ratio
 
 
+def _median_equity_csv_ratio(num_path: Path, den_path: Path) -> float | None:
+    """Mediana(num/den) alinhado por data (primeira coluna = data)."""
+    if not num_path.is_file() or not den_path.is_file():
+        return None
+    num = pd.read_csv(num_path)
+    den = pd.read_csv(den_path)
+    n0, d0 = num.columns[0], den.columns[0]
+    num[n0] = pd.to_datetime(num[n0], errors="coerce")
+    den[d0] = pd.to_datetime(den[d0], errors="coerce")
+    nn = num.set_index(n0).iloc[:, 0].astype(float)
+    dd = den.set_index(d0).iloc[:, 0].astype(float)
+    joined = pd.DataFrame({"n": nn, "d": dd}).dropna()
+    joined = joined[joined["d"] > 0]
+    if joined.empty:
+        return None
+    ratio = float((joined["n"] / joined["d"]).median())
+    if not np.isfinite(ratio) or ratio <= 0:
+        return None
+    return ratio
+
+
+def _median_pointwise_ratio_list(num: list[float], den: list[float]) -> float | None:
+    """Mediana(num[i]/den[i]) quando os dois vectores têm o mesmo comprimento (motor ev2)."""
+    if len(num) != len(den) or not num:
+        return None
+    ratios: list[float] = []
+    for a, b in zip(num, den):
+        if b > 0 and np.isfinite(a) and np.isfinite(b):
+            ratios.append(float(a / b))
+    if not ratios:
+        return None
+    r = float(np.median(ratios))
+    if not np.isfinite(r) or r <= 0:
+        return None
+    return r
+
+
 def _extend_cash_sleeve(new_date_strs: list[str]) -> None:
     cash_path = FREEZE_OUT / "cash_sleeve_daily.csv"
     legacy = pd.read_csv(cash_path)
@@ -97,6 +134,13 @@ def main() -> int:
         FREEZE_OUT / "model_equity_final_20y_moderado.csv",
         FREEZE_OUT / "model_equity_theoretical_20y.csv",
     )
+
+    legacy_margin_ratio: dict[str, float | None] = {}
+    for _mk in ("moderado", "conservador", "dinamico"):
+        legacy_margin_ratio[_mk] = _median_equity_csv_ratio(
+            FREEZE_OUT / f"model_equity_final_20y_{_mk}_margin.csv",
+            FREEZE_OUT / f"model_equity_final_20y_{_mk}.csv",
+        )
 
     prices = pd.read_csv(PRICES_CSV)
     first_col = prices.columns[0]
@@ -135,23 +179,39 @@ def main() -> int:
     dates_m, eq_m, bench_m = curves["moderado"]
     date_days = [d[:10] for d in dates_m]
 
+    eq_dino = curves["dinamico"][1]
+    fallback_theo_ratio = _median_pointwise_ratio_list(eq_dino, eq_m)
+    mult_theo = legacy_theo_ratio if legacy_theo_ratio is not None else fallback_theo_ratio
+    if mult_theo is None or mult_theo <= 1.0:
+        mult_theo = max(1.01, float(fallback_theo_ratio or 1.0))
+
+    margin_eq_by_profile: dict[str, list[float]] = {}
     for key, (d_h, eq, _) in curves.items():
         pd.DataFrame({"date": d_h, "model_equity": eq}).to_csv(
             FREEZE_OUT / f"model_equity_final_20y_{key}.csv", index=False
         )
+        mr = legacy_margin_ratio.get(key)
+        if mr is None or mr <= 1.0:
+            mr = _median_pointwise_ratio_list(eq_dino, eq)
+        if mr is None or mr <= 1.0:
+            mr = 1.12
+        margin_eq = [float(x) * float(mr) for x in eq]
+        margin_eq_by_profile[key] = margin_eq
         pd.DataFrame(
-            {"date": [_fmt_margin_date(x) for x in d_h], "model_equity": eq}
+            {"date": [_fmt_margin_date(x) for x in d_h], "model_equity": margin_eq}
         ).to_csv(FREEZE_OUT / f"model_equity_final_20y_{key}_margin.csv", index=False)
 
     pd.DataFrame({"date": dates_m, "model_equity": eq_m}).to_csv(
         FREEZE_OUT / "model_equity_final_20y.csv", index=False
     )
     pd.DataFrame(
-        {"date": [_fmt_margin_date(x) for x in dates_m], "model_equity": eq_m}
+        {
+            "date": [_fmt_margin_date(x) for x in dates_m],
+            "model_equity": margin_eq_by_profile["moderado"],
+        }
     ).to_csv(FREEZE_OUT / "model_equity_final_20y_margin.csv", index=False)
 
-    mult_theo = legacy_theo_ratio if legacy_theo_ratio is not None else 1.0
-    theo_vals = [float(x) * mult_theo for x in eq_m]
+    theo_vals = [float(x) * float(mult_theo) for x in eq_m]
     pd.DataFrame({"date": dates_m, "model_equity": theo_vals}).to_csv(
         FREEZE_OUT / "model_equity_theoretical_20y.csv", index=False
     )
