@@ -4,11 +4,16 @@ import asyncio
 import os
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from ib_insync import IB, ContractDetails, Stock
 from pydantic import BaseModel
 
 from ib_socket_env import ib_socket_host, ib_socket_port
+from ibkr_internal_routing import (
+    ibkr_per_request_routing_enabled,
+    ibkr_routing_secret_configured,
+    verify_signed_ibkr_route,
+)
 from ibkr_paper_checks import ibkr_require_paper_env, is_paper_account
 
 router = APIRouter(tags=["ibkr-snapshot"])
@@ -150,7 +155,7 @@ class IbkrSnapshotRequest(BaseModel):
     paper_mode: bool = True
 
 
-def _connect_ib() -> IB:
+def _connect_ib(host: str, port: int, client_id: int) -> IB:
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -160,7 +165,7 @@ def _connect_ib() -> IB:
             asyncio.set_event_loop(asyncio.new_event_loop())
 
     ib = IB()
-    ib.connect(ib_socket_host(), ib_socket_port(), clientId=IBKR_CLIENT_ID, timeout=8)
+    ib.connect(host, port, clientId=client_id, timeout=8)
     ib.reqMarketDataType(IBKR_MARKET_DATA_TYPE)
     return ib
 
@@ -338,8 +343,19 @@ def _enrich_position_row(ib: IB, contract: Any, row: dict[str, Any]) -> bool:
     return got_name
 
 
+def _snapshot_rejected(msg: str) -> dict:
+    return {
+        "status": "rejected",
+        "error": msg,
+        "net_liquidation": 0.0,
+        "net_liquidation_ccy": "",
+        "account_code": "",
+        "positions": [],
+    }
+
+
 @router.post("/api/ibkr-snapshot")
-def ibkr_snapshot(req: IbkrSnapshotRequest) -> dict:
+def ibkr_snapshot(request: Request, req: IbkrSnapshotRequest) -> dict:
     if not req.paper_mode:
         return {
             "status": "rejected",
@@ -350,10 +366,24 @@ def ibkr_snapshot(req: IbkrSnapshotRequest) -> dict:
             "positions": [],
         }
 
+    if ibkr_per_request_routing_enabled():
+        if not ibkr_routing_secret_configured():
+            return _snapshot_rejected(
+                "DECIDE_IBKR_PER_REQUEST_ROUTING is enabled but DECIDE_IBKR_INTERNAL_HMAC_SECRET is not set"
+            )
+        routed = verify_signed_ibkr_route(request, paper_mode=req.paper_mode)
+        if not routed:
+            return _snapshot_rejected(
+                "Missing or invalid signed IBKR routing headers (HMAC, timestamp skew, or allowlist)"
+            )
+        ib_host, ib_port, ib_client_id = routed
+    else:
+        ib_host, ib_port, ib_client_id = ib_socket_host(), ib_socket_port(), IBKR_CLIENT_ID
+
     try:
-        ib = _connect_ib()
+        ib = _connect_ib(ib_host, ib_port, ib_client_id)
     except Exception as e:
-        loc = f"{ib_socket_host()}:{ib_socket_port()} (clientId={IBKR_CLIENT_ID})"
+        loc = f"{ib_host}:{ib_port} (clientId={ib_client_id})"
         detail = (str(e) or "").strip() or repr(e) or type(e).__name__
         return {
             "status": "rejected",

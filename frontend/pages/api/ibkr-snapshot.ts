@@ -1,5 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getBackendBase, productionBackendLocalhostHint } from "../../lib/apiProxy";
+import {
+  buildIbkrRoutingHeaders,
+  ibkrPerRequestRoutingEnabled,
+  resolveIbkrSocketRoute,
+} from "../../lib/server/ibkrInternalRouting";
 import { tryBuildIbkrSnapshotFromTmpDiag } from "../../lib/server/ibkrSnapshotTmpDiagFallback";
 
 /** Snapshot pode incluir reqContractDetails por posição (nome, sector, zona) — precisa de margem. */
@@ -38,14 +43,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const t = setTimeout(() => ac.abort(), UPSTREAM_MS);
 
   try {
+    const bodyObj =
+      typeof req.body === "object" && req.body !== null ? (req.body as Record<string, unknown>) : null;
+    const paperMode = bodyObj && typeof bodyObj.paper_mode === "boolean" ? bodyObj.paper_mode : true;
     const payload =
       typeof req.body === "object" && req.body !== null
         ? JSON.stringify(req.body)
         : JSON.stringify({ paper_mode: true });
 
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (ibkrPerRequestRoutingEnabled()) {
+      const route = resolveIbkrSocketRoute();
+      const rh = route ? buildIbkrRoutingHeaders(route, paperMode) : null;
+      if (!route || !rh) {
+        res.status(503).json({
+          status: "rejected",
+          error:
+            "DECIDE_IBKR_PER_REQUEST_ROUTING is enabled but Next cannot resolve a route: set DECIDE_IBKR_INTERNAL_HMAC_SECRET and DECIDE_IBKR_ROUTE_MAP_JSON (and DECIDE_IBKR_ROUTE_KEY if not «default»).",
+        });
+        return;
+      }
+      Object.assign(headers, rh);
+    }
+
     const upstream = await fetch(targetUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: payload,
       signal: ac.signal,
     });
