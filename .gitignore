@@ -72,6 +72,7 @@ next-cache/
 !/backend/scripts/restart_decide_kpi_server.ps1
 !/backend/scripts/register_windows_daily_freeze_task.ps1
 !/backend/scripts/sync_prices_close_between_repos.ps1
+!/backend/scripts/export_smooth_freeze_from_v5.py
 # Preços para o motor (run-model). CSV podem ser grandes — Git LFS se necessário.
 !/backend/data/
 /backend/data/*
