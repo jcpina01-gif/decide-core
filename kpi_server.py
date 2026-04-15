@@ -93,7 +93,7 @@ def _resolve_kpi_repo_root() -> Path:
 REPO_ROOT = _resolve_kpi_repo_root()
 BACKEND_META_PATH = REPO_ROOT / "backend" / "data" / "company_meta_global_enriched.csv"
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
-KPI_SERVER_BUILD_TAG = "decide-kpi-2026-04-distinct-smooth-series-v15"
+KPI_SERVER_BUILD_TAG = "decide-kpi-2026-04-margin-no-double-vol-v16"
 
 
 def _kpi_package_dir() -> Path:
@@ -297,8 +297,10 @@ def apply_model_equity_profile_policy(
     - **Moderado:** sem reescala de vol vs benchmark (série tal como vem do modelo / CSV).
     - **Conservador / dinâmico:** alvo ≈ 0,75× / 1,25× vol do benchmark quando a reescala está activa.
 
-    Com `strict_cap15_vol_targets=True` (CAP15 plafonado, série m100 alinhada, com margem): conservador/dinâmico
-    aplicam sempre esse alvo (ignora `used_profile_file` e opt-out de embed); moderado mantém-se cru.
+    Com `strict_cap15_vol_targets=True` (CAP15 plafonado investível, e série MAX100 alinhada no comparativo
+    clássico): conservador/dinâmico aplicam sempre esse alvo (ignora `used_profile_file` e opt-out de embed);
+    moderado mantém-se cru. **Não** usar para a curva «com margem» do smooth: esse CSV já reflecte o perfil
+    no motor — uma segunda reescala vs benchmark inverte ordens de CAGR (ex.: moderado > dinâmico).
 
     Com `strict_cap15_vol_targets=False` (outros modelos v5): comportamento legado — `used_profile_file` isenta;
     no embed sem `force_synthetic_profile_vol` conservador/dinâmico ficam sem reescala.
@@ -3066,7 +3068,7 @@ HTML_TEMPLATE = """
             <summary>Nota · <span style="font-weight:700;color:#99f6e4;">Saber mais</span></summary>
             <div class="kpi-card-details-body">
               {% if compare_cap100_is_margin %}
-              Variante ilustrativa <strong>com margem</strong>: a exposição económica pode exceder <strong>100%</strong> do capital nos períodos em que o motor o aplica. <strong>Não corresponde</strong> ao produto plafonado (≤100% NAV) do cartão principal. Mesma regra de vol por perfil que os outros cartões, onde aplicável. Indicativo — não é aconselhamento.
+              Variante ilustrativa <strong>com margem</strong>: a exposição económica pode exceder <strong>100%</strong> do capital nos períodos em que o motor o aplica. <strong>Não corresponde</strong> ao produto plafonado (≤100% NAV) do cartão principal. A série é a do motor <strong>por perfil</strong> (ficheiro CSV desse perfil), <strong>sem</strong> segunda reescala de vol vs benchmark neste painel — ao contrário do cartão CAP15 investível, onde conservador/dinâmico têm alvo de vol face ao referencial. Indicativo — não é aconselhamento.
               {% else %}
               Exposição a risco limitada a <strong>100%</strong> do NAV (sem alavancagem além do capital).
               {% if current_profile == 'moderado' %}
@@ -6350,8 +6352,10 @@ def load_cap15_margin_series_distinct_from_plafonado(
     force_synthetic_profile_vol: bool,
 ) -> tuple[pd.Series, Path] | None:
     """
-    Carrega a série «com margem» alinhada a `dates`, aplicando a mesma política de vol CAP15.
-    Percorre várias raízes do repositório se a primeira curva for cópia do plafonado (artefacto legado).
+    Carrega a série «com margem» alinhada a `dates`.
+    O CSV (`model_equity_final_20y_{perfil}_margin.csv`) já vem do motor por perfil — **não** se aplica
+    `strict_cap15_vol_targets` aqui (evita segunda reescala de vol vs benchmark que penalizava dinâmico).
+    Percorre várias raízes se a curva for cópia do plafonado (artefacto legado).
     """
     profile_key = normalize_risk_profile_key(profile_key)
     dt_m = pd.to_datetime(dates)
@@ -6363,15 +6367,14 @@ def load_cap15_margin_series_distinct_from_plafonado(
             if len(s_aligned_m) != len(dt_m) or not bool(s_aligned_m.notna().all()):
                 continue
             margin_series = pd.Series([float(x) for x in s_aligned_m.values], dtype=float)
-            used_profile_file = margem_path.name != "model_equity_final_20y_margin.csv"
             margin_series = apply_model_equity_profile_policy(
                 margin_series,
                 bench_eq,
                 profile_key,
-                used_profile_file=used_profile_file,
+                used_profile_file=True,
                 client_embed=client_embed,
                 force_synthetic_profile_vol=force_synthetic_profile_vol,
-                strict_cap15_vol_targets=True,
+                strict_cap15_vol_targets=False,
             )
             if _cap15_equity_series_is_plafonado_duplicate(margin_series, model_eq):
                 print(
@@ -8398,7 +8401,7 @@ def cap15_margin_equity_list_aligned(
     )
     if resolved is None:
         return None
-    margem_path, margem_used_profile_file = resolved
+    margem_path, _margem_used_profile_file = resolved
     try:
         _, _, margem_eq_file, margem_dates_s = load_equity_curve(margem_path, "model_equity")
         dt_m = pd.to_datetime(dates)
@@ -8411,10 +8414,10 @@ def cap15_margin_equity_list_aligned(
             margin_series,
             bench_eq,
             profile_key,
-            used_profile_file=margem_used_profile_file,
+            used_profile_file=True,
             client_embed=client_embed,
             force_synthetic_profile_vol=force_synthetic_profile_vol,
-            strict_cap15_vol_targets=True,
+            strict_cap15_vol_targets=False,
         )
         return [float(x) for x in margin_series.values]
     except Exception:
