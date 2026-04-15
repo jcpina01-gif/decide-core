@@ -7,12 +7,12 @@ artificiais sobre a curva plafonada.
 Mapeamento (alinhado ao código em ``engine_research_v5.py``):
 
 - ``model_equity_final_20y[_perfil].csv`` e ``model_equity_final_20y.csv`` → **``equity_overlayed``**
-  (CAP15 investível neste script: **sem** ``max_effective_exposure`` por omissão — alinhado ao histórico do hero).
+  com ``max_effective_exposure=1.0`` (teto **≤100% NAV** na perna arriscada vs caixa/T-Bill; mesmo custos).
 - ``model_equity_theoretical_20y.csv`` → **``equity_raw``** (perfil **moderado**): motor com custos,
   **antes** da pilha breadth/trend/vol-overlay do CAP15.
 - ``model_equity_final_20y_*_margin.csv`` / ``model_equity_final_20y_margin.csv`` → **``equity_overlay_margin``**:
-  mesmo pipeline CAP15 + custos que ``equity_overlayed``, **sempre** antes de um eventual teto
-  ``max_effective_exposure``; quando o teto não se aplica, coincide numericamente com ``equity_overlayed``.
+  mesma corrida do motor, **sem** esse teto — exposição efectiva pode exceder 100%; CAGR/vol podem
+  diferir do plafonado quando o teto encaixa.
 
 Requisitos
 -----------
@@ -134,12 +134,12 @@ def main() -> int:
     last_dates: list[str] | None = None
 
     for pk in profiles:
-        # Omissão de `max_effective_exposure`: alinha o CSV principal ao CAP15 histórico (hero). Para export
-        # explícito com teto NAV 100% na perna arriscada, chama `run_research_v1(..., max_effective_exposure=1.0)`.
         kwargs: dict = {
             "prices_path": str(prices_path),
             "profile": pk,
             "cap_per_ticker": 0.15,
+            # Uma corrida: plafonado = `equity_overlayed` (teto 100% NAV); margem = `equity_overlay_margin` (sem teto).
+            "max_effective_exposure": 1.0,
         }
         if pk == "moderado":
             kwargs["emit_weights_csv"] = str(data_weights)

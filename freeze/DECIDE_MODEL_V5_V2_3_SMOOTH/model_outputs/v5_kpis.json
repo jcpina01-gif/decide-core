@@ -1,7 +1,7 @@
 {
   "benchmark_cagr": 0.08524236918012007,
-  "overlayed_cagr": 0.2800483835437828,
-  "overlayed_sharpe": 1.068638647678547,
+  "overlayed_cagr": 0.25893383434882056,
+  "overlayed_sharpe": 1.0965614993561952,
   "data_start": "2006-03-15",
   "data_end": "2026-04-14",
   "profile": "moderado",
@@ -15,7 +15,7 @@
   "avg_trend_exposure": 0.9706906788046704,
   "risk_on_exposure": 1.1,
   "cash_proxy_ticker": "TBILL_PROXY",
-  "max_effective_exposure": null,
+  "max_effective_exposure": 1.0,
   "top_q": 20,
   "rank_in": 15,
   "rank_out": 25,
