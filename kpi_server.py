@@ -93,7 +93,7 @@ def _resolve_kpi_repo_root() -> Path:
 REPO_ROOT = _resolve_kpi_repo_root()
 BACKEND_META_PATH = REPO_ROOT / "backend" / "data" / "company_meta_global_enriched.csv"
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
-KPI_SERVER_BUILD_TAG = "decide-kpi-2026-04-margin-vol-as-plafonado-v17"
+KPI_SERVER_BUILD_TAG = "decide-kpi-2026-04-moderado-skip-overlay-vol-v18"
 
 
 def _kpi_package_dir() -> Path:
@@ -3025,7 +3025,7 @@ HTML_TEMPLATE = """
             <summary>O que é isto? · <span style="font-weight:700;color:#99f6e4;">Saber mais</span></summary>
             <div class="kpi-card-details-body">
               {% if current_profile == 'moderado' %}
-              Histórico ilustrativo do <strong>Modelo CAP15</strong>. No perfil <strong>moderado</strong>, a <strong>volatilidade</strong> mostrada é a <strong>realizada no backtest</strong> da série investível, <strong>sem</strong> reescala neste painel para igualar à do benchmark (no conservador e no dinâmico, a série é escalada a ≈0,75× e ≈1,25× da vol do referencial). Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Os números incorporam <strong>custos de mercado estimados</strong> no backtest (comissão, slippage, FX sobre turnover) e pressupostos de <strong>execução realista</strong>; não incluem comissões DECIDE nem impostos. Informação indicativa — não é aconselhamento.
+              Histórico ilustrativo do <strong>Modelo CAP15</strong>. No perfil <strong>moderado</strong>, a <strong>volatilidade</strong> mostrada é a <strong>realizada no backtest</strong> da série investível. No motor V5, o moderado <strong>não</strong> aplica o segundo escalão de vol vs benchmark na perna overlay (vol natural após breadth/trend/etc.); na perna crua mantém-se o alvo <strong>1×</strong> a vol do referencial. <strong>Sem</strong> reescala neste painel para igualar ao benchmark (no conservador e no dinâmico, o cartão investível é escalado a ≈0,75× e ≈1,25× da vol do referencial). Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Os números incorporam <strong>custos de mercado estimados</strong> no backtest (comissão, slippage, FX sobre turnover) e pressupostos de <strong>execução realista</strong>; não incluem comissões DECIDE nem impostos. Informação indicativa — não é aconselhamento.
               {% else %}
               Histórico ilustrativo do <strong>Modelo CAP15</strong> com <strong>volatilidade alinhada ao perfil</strong> relativamente ao benchmark (≈ <strong>0,75×</strong> no conservador, ≈ <strong>1,25×</strong> no dinâmico), conforme o selector do topo. Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Os números incorporam <strong>custos de mercado estimados</strong> no backtest (comissão, slippage, FX sobre turnover) e pressupostos de <strong>execução realista</strong>; não incluem comissões DECIDE nem impostos. Informação indicativa — não é aconselhamento.
               {% endif %}
@@ -3071,7 +3071,7 @@ HTML_TEMPLATE = """
               {% else %}
               Exposição a risco limitada a <strong>100%</strong> do NAV (sem alavancagem além do capital).
               {% if current_profile == 'moderado' %}
-              A <strong>volatilidade</strong> é a <strong>realizada no backtest</strong> do Modelo CAP15 investível, <strong>sem</strong> reescala neste painel para igualar à do benchmark. Pode ficar <strong>próxima</strong> da vol do referencial se a exposição efectiva e a caixa forem semelhantes às do índice — isso <strong>não</strong> significa que o KPI tenha forçado a vol do benchmark.
+              A <strong>volatilidade</strong> é a <strong>realizada no backtest</strong> do Modelo CAP15 investível; no motor, o moderado <strong>não</strong> aplica o segundo escalão de vol vs benchmark na perna overlay. <strong>Sem</strong> reescala neste painel para igualar à do benchmark. Pode ficar <strong>próxima</strong> da vol do referencial por construção da carteira — isso <strong>não</strong> significa que o KPI tenha forçado a vol do benchmark.
               {% elif current_profile == 'conservador' %}
               A volatilidade foi ajustada para ≈ <strong>0,75×</strong> a vol do benchmark (perfil conservador).
               {% else %}
@@ -3138,10 +3138,10 @@ HTML_TEMPLATE = """
       <div class="kpi-simple-summary">
         {% if client_embed and cap15_only %}
         <strong style="color:#e5e7eb;">Resumo:</strong> o cartão <strong style="color:#5eead4;">«Recomendado para o seu perfil»</strong> alinha o horizonte ao seu nível de risco.
-        Na vista avançada, o <strong style="color:#e5e7eb;">modelo teórico</strong> é só referência técnica (não investível). O <strong style="color:#e5e7eb;">Modelo CAP15</strong> é a versão otimizada para implementação real: <strong>custos de mercado estimados e execução realista</strong> no backtest, exposição ≤100% NV; no <strong>moderado</strong> a vol mostrada é a do backtest, <strong>sem</strong> alvo pós-processo ao benchmark (só conservador/dinâmico têm alvo 0,75× / 1,25×).
+        Na vista avançada, o <strong style="color:#e5e7eb;">modelo teórico</strong> é só referência técnica (não investível). O <strong style="color:#e5e7eb;">Modelo CAP15</strong> é a versão otimizada para implementação real: <strong>custos de mercado estimados e execução realista</strong> no backtest, exposição ≤100% NV; no <strong>moderado</strong> o motor <strong>não</strong> aplica o segundo ajuste de vol vs benchmark na perna overlay (vol natural); neste painel <strong>sem</strong> reescala extra; conservador/dinâmico têm alvo 0,75× / 1,25× no cartão investível.
         Informação indicativa — não é aconselhamento nem promessa de resultados futuros.
         {% elif cap15_only %}
-        Vista avançada: <strong style="color:#e5e7eb;">modelo teórico</strong> (não investível) vs <strong style="color:#e5e7eb;">Modelo CAP15</strong> com custos de mercado estimados e execução realista no backtest. Perfil no topo; no <strong>moderado</strong> a vol é a <strong>do modelo</strong>; em conservador/dinâmico, vol <strong>alvo vs benchmark</strong> (0,75× / 1,25×). O benchmark mantém a sua vol de mercado.
+        Vista avançada: <strong style="color:#e5e7eb;">modelo teórico</strong> (não investível) vs <strong style="color:#e5e7eb;">Modelo CAP15</strong> com custos de mercado estimados e execução realista no backtest. Perfil no topo; no <strong>moderado</strong> a vol investível reflecte o motor <strong>sem</strong> o segundo escalão de vol vs benchmark na perna overlay; em conservador/dinâmico, vol <strong>alvo vs benchmark</strong> (0,75× / 1,25×) também no painel. O benchmark mantém a sua vol de mercado.
         {% else %}
         Comparação em horizonte longo com <strong style="color:#e5e7eb;">volatilidade alinhada ao benchmark</strong> (0,75× / 1× / 1,25× conforme o perfil).
         <strong style="color:#e5e7eb;">CAGR</strong> e <strong style="color:#e5e7eb;">queda máxima</strong> lado a lado com o benchmark{% if compare_cap100_kpis %} e com o <strong style="color:#e5e7eb;">modelo CAP15</strong>{% endif %}.
