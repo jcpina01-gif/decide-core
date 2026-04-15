@@ -93,7 +93,7 @@ def _resolve_kpi_repo_root() -> Path:
 REPO_ROOT = _resolve_kpi_repo_root()
 BACKEND_META_PATH = REPO_ROOT / "backend" / "data" / "company_meta_global_enriched.csv"
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
-KPI_SERVER_BUILD_TAG = "decide-kpi-2026-04-repo-root-pick-latest-v14"
+KPI_SERVER_BUILD_TAG = "decide-kpi-2026-04-distinct-smooth-series-v15"
 
 
 def _kpi_package_dir() -> Path:
@@ -6200,21 +6200,6 @@ def resolve_canon_smooth_benchmark_clone_csv() -> Path | None:
     return None
 
 
-def resolve_canon_smooth_theoretical_equity_csv() -> Path | None:
-    """`model_equity_theoretical_20y.csv` do smooth em qualquer root conhecido (evita RAW = plafonado)."""
-    for root in _freeze_search_roots():
-        p = (
-            root
-            / "freeze"
-            / "DECIDE_MODEL_V5_V2_3_SMOOTH"
-            / "model_outputs"
-            / "model_equity_theoretical_20y.csv"
-        )
-        if p.is_file():
-            return p
-    return None
-
-
 def resolve_cap15_embed_raw_motor_equity_csv_path(model_path: Path, base_path: Path) -> Path | None:
     """
     Cartão esquerdo do iframe: série **RAW / motor** (não o plafonado `model_path`).
@@ -6312,6 +6297,132 @@ def resolve_cap15_margin_model_csv(
     if _ok(p_def_margin):
         return (p_def_margin, False)
     return None
+
+
+def _cap15_equity_series_is_plafonado_duplicate(candidate: pd.Series, plafonado: pd.Series) -> bool:
+    """True se a série alinhada coincide numericamente com o investível plafonado (freeze errado / cópia)."""
+    if len(candidate) != len(plafonado):
+        return False
+    a = np.asarray(candidate, dtype=float)
+    b = np.asarray(plafonado, dtype=float)
+    return bool(np.allclose(a, b, rtol=0.0, atol=1e-5))
+
+
+def _iter_smooth_margin_equity_csv_paths(profile_key: str, main_model_path: Path | None) -> list[Path]:
+    """
+    Todas as variantes `*_margin.csv` conhecidas em cada raíz com freeze smooth, por ordem:
+    perfil específico → `model_equity_final_20y_margin.csv`. Ignora samefile que o CSV plafonado activo.
+    """
+    pk = normalize_risk_profile_key(profile_key)
+    out: list[Path] = []
+    seen: set[str] = set()
+    for root in _freeze_search_roots():
+        base = root / "freeze" / "DECIDE_MODEL_V5_V2_3_SMOOTH" / "model_outputs"
+        for fname in (f"model_equity_final_20y_{pk}_margin.csv", "model_equity_final_20y_margin.csv"):
+            p = base / fname
+            if not p.is_file():
+                continue
+            if main_model_path is not None:
+                try:
+                    if p.resolve().samefile(main_model_path.resolve()):
+                        continue
+                except OSError:
+                    pass
+            try:
+                key = str(p.resolve())
+            except OSError:
+                key = str(p)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(p)
+    return out
+
+
+def load_cap15_margin_series_distinct_from_plafonado(
+    profile_key: str,
+    dates: pd.Series,
+    model_eq: pd.Series,
+    bench_eq: pd.Series,
+    *,
+    main_model_path: Path,
+    client_embed: bool,
+    force_synthetic_profile_vol: bool,
+) -> tuple[pd.Series, Path] | None:
+    """
+    Carrega a série «com margem» alinhada a `dates`, aplicando a mesma política de vol CAP15.
+    Percorre várias raízes do repositório se a primeira curva for cópia do plafonado (artefacto legado).
+    """
+    profile_key = normalize_risk_profile_key(profile_key)
+    dt_m = pd.to_datetime(dates)
+    for margem_path in _iter_smooth_margin_equity_csv_paths(profile_key, main_model_path):
+        try:
+            _, _, margem_eq_file, margem_dates_s = load_equity_curve(margem_path, "model_equity")
+            s_fm = pd.Series(np.asarray(margem_eq_file, dtype=float), index=pd.to_datetime(margem_dates_s))
+            s_aligned_m = s_fm.reindex(dt_m).ffill().bfill()
+            if len(s_aligned_m) != len(dt_m) or not bool(s_aligned_m.notna().all()):
+                continue
+            margin_series = pd.Series([float(x) for x in s_aligned_m.values], dtype=float)
+            used_profile_file = margem_path.name != "model_equity_final_20y_margin.csv"
+            margin_series = apply_model_equity_profile_policy(
+                margin_series,
+                bench_eq,
+                profile_key,
+                used_profile_file=used_profile_file,
+                client_embed=client_embed,
+                force_synthetic_profile_vol=force_synthetic_profile_vol,
+                strict_cap15_vol_targets=True,
+            )
+            if _cap15_equity_series_is_plafonado_duplicate(margin_series, model_eq):
+                print(
+                    f"[kpi_server] margem coincide com plafonado em {margem_path} — tenta próximo candidato.",
+                    file=sys.stderr,
+                )
+                continue
+            return margin_series, margem_path
+        except Exception as exc:
+            print(f"[kpi_server] falha ao ler margem {margem_path}: {exc}", file=sys.stderr)
+            continue
+    return None
+
+
+def resolve_distinct_smooth_theoretical_vs_plafonado(
+    dates: pd.Series,
+    model_eq: pd.Series,
+    raw_eq: pd.Series,
+    raw_path: Path,
+) -> tuple[pd.Series, Path]:
+    """
+    Se o teórico alinhado coincide com o plafonado (cópia errada no freeze), tenta
+    `model_equity_theoretical_20y.csv` noutras raízes (`_freeze_search_roots`), como no benchmark longo.
+    """
+    if len(raw_eq) != len(model_eq) or not _cap15_equity_series_is_plafonado_duplicate(raw_eq, model_eq):
+        return raw_eq, raw_path
+    for root in _freeze_search_roots():
+        p = (
+            root
+            / "freeze"
+            / "DECIDE_MODEL_V5_V2_3_SMOOTH"
+            / "model_outputs"
+            / "model_equity_theoretical_20y.csv"
+        )
+        if not p.is_file():
+            continue
+        try:
+            if raw_path.is_file() and p.resolve().samefile(raw_path.resolve()):
+                continue
+        except OSError:
+            pass
+        try:
+            _, _, seq, sdt = load_equity_curve(p, "model_equity")
+            seq = align_equity_series_to_target_dates(seq, sdt, dates)
+            if len(seq) == len(model_eq) and not _cap15_equity_series_is_plafonado_duplicate(seq, model_eq):
+                print(f"[kpi_server] RAW/teórico distinto carregado de {p}", file=sys.stderr)
+                return seq, p
+        except Exception as exc:
+            print(f"[kpi_server] falha ao ler teórico candidato {p}: {exc}", file=sys.stderr)
+            continue
+    return raw_eq, raw_path
 
 
 def align_equity_series_to_target_dates(
@@ -8264,9 +8375,22 @@ def cap15_margin_equity_list_aligned(
     force_synthetic_profile_vol: bool,
     client_embed: bool,
     main_model_path: Path | None = None,
+    plafonado_eq: pd.Series | None = None,
 ) -> list[float] | None:
     """Série «com margem» alinhada ao calendário do CAP15 plafonado (mesma lógica que o comparativo do iframe)."""
     profile_key = normalize_risk_profile_key(profile_key)
+    if main_model_path is not None and plafonado_eq is not None:
+        loaded = load_cap15_margin_series_distinct_from_plafonado(
+            profile_key,
+            dates,
+            plafonado_eq,
+            bench_eq,
+            main_model_path=main_model_path,
+            client_embed=client_embed,
+            force_synthetic_profile_vol=force_synthetic_profile_vol,
+        )
+        if loaded is not None:
+            return [float(x) for x in loaded[0].values]
     resolved = resolve_cap15_margin_model_csv(
         profile_key,
         force_synthetic_profile_vol=force_synthetic_profile_vol,
@@ -8395,6 +8519,7 @@ def equity_series_bundle_for_simulator(
             force_synthetic_profile_vol=force_synthetic_profile_vol,
             client_embed=client_embed,
             main_model_path=model_path,
+            plafonado_eq=model_eq,
         )
         if mlist is not None and len(mlist) == len(dates_list):
             out["sim_margin_equity"] = mlist
@@ -8745,15 +8870,8 @@ def index():
         else:
             raw_eq = model_eq.copy()
 
-    if client_embed and cap15_only:
-        canon_raw_csv = resolve_canon_smooth_theoretical_equity_csv()
-        if canon_raw_csv is not None and len(raw_eq) == len(model_eq):
-            ra = np.asarray(raw_eq, dtype=float)
-            mo = np.asarray(model_eq, dtype=float)
-            if bool(np.allclose(ra, mo, rtol=0.0, atol=1e-5)):
-                _, _, raw_eq, rdt = load_equity_curve(canon_raw_csv, "model_equity")
-                raw_eq = align_equity_series_to_target_dates(raw_eq, rdt, dates)
-                raw_path = canon_raw_csv
+    if cap15_only and model_key == "v5_overlay_cap15_max100exp" and len(raw_eq) == len(model_eq):
+        raw_eq, raw_path = resolve_distinct_smooth_theoretical_vs_plafonado(dates, model_eq, raw_eq, raw_path)
 
     # CAP15 e restantes: ver `apply_model_equity_profile_policy`.
     model_eq = apply_model_equity_profile_policy(
@@ -8892,45 +9010,33 @@ def index():
             except Exception:
                 show_max100_compare = False
 
-    # Iframe cliente (cap15_only): principal = plafonado — comparativo «com margem» só em CSVs `*_margin` do smooth V2.3.
+    # Vista CAP15 (embed ou ?cap15_only=1): comparativo «com margem» via CSVs smooth; rejeita cópia do plafonado.
     elif model_key == "v5_overlay_cap15_max100exp" and cap15_only:
-        resolved_m = resolve_cap15_margin_model_csv(
+        loaded_m = load_cap15_margin_series_distinct_from_plafonado(
             profile_key,
-            force_synthetic_profile_vol=force_synthetic_profile_vol,
+            dates,
+            model_eq,
+            bench_eq,
             main_model_path=model_path,
+            client_embed=client_embed,
+            force_synthetic_profile_vol=force_synthetic_profile_vol,
         )
-        margem_path = resolved_m[0] if resolved_m else None
-        margem_used_profile_file = resolved_m[1] if resolved_m else False
-        if margem_path is not None and margem_path.exists():
+        if loaded_m is not None:
+            margin_series, _margem_src = loaded_m
             try:
-                _, _, margem_eq_file, margem_dates_s = load_equity_curve(margem_path, "model_equity")
-                dt_m = pd.to_datetime(dates)
-                s_fm = pd.Series(np.asarray(margem_eq_file, dtype=float), index=pd.to_datetime(margem_dates_s))
-                s_aligned_m = s_fm.reindex(dt_m).ffill().bfill()
-                if len(s_aligned_m) == len(model_eq) and bool(s_aligned_m.notna().all()):
-                    margin_series = pd.Series([float(x) for x in s_aligned_m.values], dtype=float)
-                    margin_series = apply_model_equity_profile_policy(
-                        margin_series,
-                        bench_eq,
-                        profile_key,
-                        used_profile_file=margem_used_profile_file,
-                        client_embed=client_embed,
-                        force_synthetic_profile_vol=force_synthetic_profile_vol,
-                        strict_cap15_vol_targets=True,
-                    )
-                    compare_cap100_kpis, margin_dd_s = compute_kpis(margin_series)
-                    compare_max100_equity = [float(x) for x in margin_series.values]
-                    compare_max100_drawdowns = [float(x) for x in margin_dd_s]
-                    _, alpha_margin = compute_rolling_alpha(margin_series, bench_eq, dates)
-                    compare_max100_alpha_vals = [float(x) for x in alpha_margin]
-                    show_max100_compare = True
-                    compare_cap100_is_margin = True
-                    yearly_bar_payload = build_yearly_bar_chart_payload(
-                        margin_series,
-                        model_eq,
-                        bench_eq,
-                        dates,
-                    )
+                compare_cap100_kpis, margin_dd_s = compute_kpis(margin_series)
+                compare_max100_equity = [float(x) for x in margin_series.values]
+                compare_max100_drawdowns = [float(x) for x in margin_dd_s]
+                _, alpha_margin = compute_rolling_alpha(margin_series, bench_eq, dates)
+                compare_max100_alpha_vals = [float(x) for x in alpha_margin]
+                show_max100_compare = True
+                compare_cap100_is_margin = True
+                yearly_bar_payload = build_yearly_bar_chart_payload(
+                    margin_series,
+                    model_eq,
+                    bench_eq,
+                    dates,
+                )
             except Exception as exc:
                 print(f"[kpi_server] cap15 margin compare failed: {exc}", file=sys.stderr)
                 show_max100_compare = False
