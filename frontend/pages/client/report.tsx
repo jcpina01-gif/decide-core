@@ -105,6 +105,15 @@ export type LiveIbkrStructure = {
   financingCcy: string;
 };
 
+/** Diagnóstico SSR: de onde vêm os pesos-alvo da grelha (evita cache/CDN a mostrar HTML antigo). */
+export type PlanWeightsProvenance = {
+  mode: "official_csv" | "model_fallback";
+  rebalanceDate?: string;
+  mergeSourcePath?: string;
+  officialHistoryMonthsLoaded: number;
+  recommendedLineCount: number;
+};
+
 export type ReportData = {
   generatedAt: string;
   accountCode: string;
@@ -164,6 +173,12 @@ export type ReportData = {
   tbillProxyIbTicker: string;
   /** Carteira/NAV via POST ao FastAPI quando não há tmp_diag (ex. Vercel → VM com IB Gateway). */
   initialIbkrStructure?: LiveIbkrStructure;
+  /**
+   * Data ISO (`YYYY-MM-DD`) de referência dos pesos-alvo: `rebalance_date` do CSV oficial em vigor,
+   * ou `as_of_date` do motor quando a geração «de hoje» ainda não está no ficheiro de pesos.
+   */
+  planTargetRebalanceDate?: string;
+  planWeightsProvenance?: PlanWeightsProvenance;
 };
 
 export type PageProps = {
@@ -863,8 +878,8 @@ function applyPaperCancelRowsToExecFills(
 /** Mantém o passo «Decisão final» (ex.: concluído / ver carteira) após refresh ou re-fetch da página. */
 const EXEC_STATE_STORAGE_KEY = "decide_report_exec_v1";
 
-/** Alinhado ao timeout do proxy `pages/api/send-orders.ts` (120s) + margem — evita UI presa em «A processar…». */
-const SEND_ORDERS_FETCH_MS = 125_000;
+/** Alinhado ao timeout do proxy `pages/api/send-orders.ts` (300s) + margem — o browser aborta depois do proxy. */
+const SEND_ORDERS_FETCH_MS = 310_000;
 
 /**
  * O proxy `pages/api/send-orders.ts` devolve 503 + JSON quando o upstream faz timeout — o browser **não** recebe
@@ -1831,7 +1846,9 @@ export default function ClientReportPage({ reportData }: PageProps) {
       setExecFills([]);
     }
     executeCancelRequestedRef.current = false;
-    setExecutionMessage("A enviar ordens para a corretora… (até ~2 min — IB Gateway/TWS + várias ordens + FX opcional)");
+    setExecutionMessage(
+      "A enviar ordens para a corretora… (até ~5 min com muitas linhas — IB Gateway/TWS + qualificação + FX opcional)",
+    );
     setPostApprovalStage("executing");
 
     const ac = new AbortController();
@@ -2287,6 +2304,32 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   <>
                     {" "}
                     · Close até: {reportData.closeAsOfDate}
+                  </>
+                ) : null}
+                {reportData.planWeightsProvenance ? (
+                  <>
+                    {" "}
+                    · Pesos-alvo SSR:{" "}
+                    <strong style={{ color: "#fde68a" }}>
+                      {reportData.planWeightsProvenance.mode === "official_csv"
+                        ? "CSV oficial"
+                        : "motor (fallback)"}
+                    </strong>
+                    {reportData.planWeightsProvenance.rebalanceDate
+                      ? ` · data ${reportData.planWeightsProvenance.rebalanceDate}`
+                      : ""}
+                    {reportData.planWeightsProvenance.mergeSourcePath ? (
+                      <>
+                        {" "}
+                        · merge:{" "}
+                        <span style={{ color: "#a3a3a3", wordBreak: "break-all" }}>
+                          {reportData.planWeightsProvenance.mergeSourcePath}
+                        </span>
+                      </>
+                    ) : null}
+                    {" "}
+                    · meses no histórico: {reportData.planWeightsProvenance.officialHistoryMonthsLoaded} · linhas
+                    grelha: {reportData.planWeightsProvenance.recommendedLineCount}
                   </>
                 ) : null}
               </div>
@@ -3101,6 +3144,16 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 «% só títulos» na carteira IBKR à esquerda — aí as percentagens devem aproximar-se, salvo drift e títulos
                 que ainda não tem na conta.
               </p>
+              {reportData.planTargetRebalanceDate ? (
+                <p style={{ margin: "0 0 14px 0", fontSize: 12, color: "#86efac", lineHeight: 1.5, maxWidth: 720 }}>
+                  Data de referência do alvo:{" "}
+                  <strong style={{ color: "#bbf7d0" }}>{reportData.planTargetRebalanceDate}</strong>. Ordem: (1)
+                  pesos oficiais com <code style={{ color: "#d9f99d" }}>rebalance_date</code> = hoje; (2) senão o
+                  último rebalance no CSV ≤ hoje. Só com{" "}
+                  <code style={{ color: "#d9f99d" }}>DECIDE_PLAN_USE_LIVE_MODEL_WHEN_OFFICIAL_DATE_BEFORE_TODAY=1</code>{" "}
+                  no deploy se usa o motor em vez do CSV quando o último export ainda não inclui o dia corrente.
+                </p>
+              ) : null}
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                 <thead>
                   <tr style={{ color: "#a1a1aa", textAlign: "left" }}>
@@ -3950,6 +4003,20 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           : showPlanVsExecResponseMismatch
                           ? "Resposta da corretora (este envio — não é o plano completo)"
                           : "Detalhe das ordens deste envio"}
+                        <div
+                          style={{
+                            marginTop: 8,
+                            fontWeight: 400,
+                            fontSize: 11,
+                            color: "#71717a",
+                            lineHeight: 1.45,
+                          }}
+                        >
+                          Esta grelha reflecta apenas o último «Executar ordens» do plano (envio via{" "}
+                          <code style={{ color: "#a1a1aa" }}>send-orders</code>). «Zerar posições na paper» e «Cancelar
+                          ordens não executadas» usam outros endpoints — o resultado aparece na mensagem do bloco
+                          temporário (testes) e na TWS, não substitui automaticamente as linhas aqui.
+                        </div>
                       </div>
                       <div style={{ overflowX: "auto" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>

@@ -56,7 +56,10 @@ const nextConfig = {
     /** Plano de aprovação (freeze + CSVs) em deploy Vercel com root `frontend/`. */
     "/api/client/approval-plan": ["../freeze/**/*", "../backend/data/**/*"],
     "/api/client/plan-decision-kpis": ["../freeze/**/*", "../backend/data/**/*"],
+    /** Histórico de pesos + SSR do relatório leem `weights_by_rebalance*` (mesmo merge que o API). */
+    "/api/client/recommendations-history": ["../freeze/**/*", "../backend/data/**/*"],
     "/client/approve": ["../freeze/**/*", "../backend/data/**/*"],
+    "/client/report": ["../freeze/**/*", "../backend/data/**/*"],
   },
 
   typescript: {

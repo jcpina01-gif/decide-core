@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import unicodedata
+from urllib.parse import urlparse
 
 import numpy as np
 import pandas as pd
@@ -168,6 +169,58 @@ CAP15_VOL_TARGET_MODEL_KEYS = frozenset({"v5_overlay_cap15_max100exp", "v5_overl
 # Frontend Next.js base URL (para links rápidos no dashboard Flask)
 # Ex.: http://127.0.0.1:4701
 FRONTEND_URL = (os.environ.get("FRONTEND_URL") or "http://127.0.0.1:4701").rstrip("/")
+
+
+def _normalize_frontend_base_for_next_embeds(scheme: str, netloc: str) -> str:
+    """
+    Rotas `/embed/*` (FAQ, histórico) vivem no Next (Vercel), não no processo Flask do KPI.
+    Quando o HTML do KPI é servido em `kpi.*`, o Referer pode ser esse host — não usar como base do iframe.
+    """
+    h = (netloc or "").lower()
+    if "@" in h:
+        h = h.rsplit("@", 1)[-1]
+    host_only = h.split(":")[0]
+    port = ""
+    if ":" in h:
+        port = ":" + h.split(":", 1)[1]
+    if host_only == "kpi.decidepoweredbyai.com" or host_only == "decidepoweredbyai.com":
+        return f"{scheme}://www.decidepoweredbyai.com{port}"
+    return f"{scheme}://{netloc}"
+
+
+def resolve_frontend_url_for_embed(req) -> str:
+    """
+    Base do Next para iframes (FAQ, histórico de decisões). `FRONTEND_URL` no ambiente tem prioridade.
+    Se não estiver definido, tenta `Referer` / `Origin` (página que embute o KPI) — evita iframe para
+    127.0.0.1 em produção quando o deploy esqueceu o env.
+    """
+    explicit = (os.environ.get("FRONTEND_URL") or "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    fallback_public = (os.environ.get("DECIDE_PUBLIC_WEB_URL") or "").strip().rstrip("/")
+    if fallback_public:
+        return fallback_public
+    for hdr in ("Referer", "Origin"):
+        raw = (req.headers.get(hdr) or "").strip()
+        if not raw.startswith(("http://", "https://")):
+            continue
+        try:
+            p = urlparse(raw)
+            if not p.scheme or not p.netloc:
+                continue
+            host = p.netloc.lower()
+            if "@" in host:
+                host = host.rsplit("@", 1)[-1]
+            host_no_port = host.split(":")[0]
+            if (
+                "decidepoweredbyai.com" in host
+                or host_no_port == "localhost"
+                or host_no_port.startswith("127.0.0.1")
+            ):
+                return _normalize_frontend_base_for_next_embeds(p.scheme, p.netloc)
+        except Exception:
+            continue
+    return FRONTEND_URL
 # Conservador/dinâmico: alvo de vol vs benchmark; moderado: série do modelo sem reescala (ver `apply_model_equity_profile_policy`).
 PROFILE_OPTIONS = [
     ("conservador", "Conservador (0,75× vol bench)"),
@@ -4084,9 +4137,11 @@ HTML_TEMPLATE = """
     <!-- ABA 5: FAQs (embed Next — DecideFaqPanel) -->
     <div id="tab-faq" class="tab-content{% if tab_default == 'faq' %} active{% endif %}">
       <div class="muted" style="font-size: .78rem; margin-bottom: 10px; line-height: 1.45;">
-        Perguntas frequentes e glossário — conteúdo servido pelo dashboard DECIDE (Next). Confirme que o frontend está a correr
-        e que <code style="color:#e5e7eb;">FRONTEND_URL</code> no arranque do <code style="color:#e5e7eb;">kpi_server</code>
-        coincide com o URL que usas no browser.
+        Perguntas frequentes e glossário — conteúdo servido pelo dashboard DECIDE (Next). Se o quadro ficar vazio: defina
+        <code style="color:#e5e7eb;">FRONTEND_URL=https://www.decidepoweredbyai.com</code> no serviço do
+        <code style="color:#e5e7eb;">kpi_server</code> (Render → Environment), ou
+        <code style="color:#e5e7eb;">DECIDE_PUBLIC_WEB_URL</code> com o mesmo valor, ou deixe ambos vazios para inferir
+        a partir do referer (o host <code style="color:#e5e7eb;">kpi.*</code> é mapeado para <code style="color:#e5e7eb;">www.*</code>).
       </div>
       <iframe
         src="{{ frontend_url }}/embed/decide-faq"
@@ -9207,7 +9262,7 @@ def index():
         current_profile=profile_key,
         profile_label_pt=profile_label_pt,
         profile_source_note=profile_source_note,
-        frontend_url=FRONTEND_URL,
+        frontend_url=resolve_frontend_url_for_embed(request),
         risk_info=risk_info,
         rebalance_info=rebalance_info,
         close_as_of_date=close_as_of_date,

@@ -1,8 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getBackendBase } from "../../lib/apiProxy";
 
-/** Ordens podem demorar (vários contratos + IB Gateway/TWS). */
-const UPSTREAM_MS = 120_000;
+/** Ordens podem demorar (vários contratos + qualificação + FX + IB Gateway/TWS). */
+const UPSTREAM_MS = 300_000;
 
 /**
  * Proxy explícito para POST /api/send-orders no FastAPI.

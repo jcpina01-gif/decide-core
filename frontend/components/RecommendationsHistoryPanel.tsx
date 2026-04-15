@@ -368,6 +368,23 @@ export default function RecommendationsHistoryPanel() {
                   )}
 
                   {hasFlow ? (
+                    <>
+                      <p
+                        style={{
+                          fontSize: 12,
+                          color: "#71717a",
+                          lineHeight: 1.5,
+                          margin: "8px 0 10px 0",
+                          maxWidth: 720,
+                        }}
+                      >
+                        <strong style={{ color: "#a1a1aa" }}>Comparativo entre rebalances do modelo:</strong>{" "}
+                        <strong>Saídas</strong> são títulos que tinham peso no{" "}
+                        <strong>mês anterior desta série</strong> e <strong>deixam de existir</strong> nesta data (saem
+                        por completo do alvo). <strong>Entradas</strong> são títulos <strong>novos</strong> nesta data.
+                        Reduções de peso sem o ticker desaparecer <strong>não</strong> aparecem nestas listas — só a
+                        tabela completa abaixo reflecte o alvo do mês.
+                      </p>
                     <div
                       style={{
                         display: "grid",
@@ -434,6 +451,7 @@ export default function RecommendationsHistoryPanel() {
                         )}
                       </div>
                     </div>
+                    </>
                   ) : (
                     <div style={{ fontSize: 12, color: "#71717a", marginBottom: 10 }}>
                       Sem comparativo de entradas/saídas (primeira data do histórico ou um único mês).

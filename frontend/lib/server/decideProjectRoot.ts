@@ -19,12 +19,25 @@ function hasRepoRootMarkers(root: string): boolean {
  * `DECIDE_PROJECT_ROOT` (absoluto): força a pasta do repo canónico quando o Next corre noutro clone
  * (ex. `DECIDE_CORE22_CLONE`) mas os dados de freeze / tmp_diag estão em `decide-core`.
  */
+function findRepoRootWalkingUp(startDir: string, maxHops: number): string | null {
+  let cur = path.resolve(startDir);
+  for (let hop = 0; hop < maxHops; hop += 1) {
+    if (hasRepoRootMarkers(cur)) return cur;
+    const up = path.resolve(cur, "..");
+    if (up === cur) break;
+    cur = up;
+  }
+  return null;
+}
+
 export function resolveDecideProjectRoot(cwd: string = process.cwd()): string {
   const env = (process.env.DECIDE_PROJECT_ROOT || "").trim();
   if (env) {
     const r = path.resolve(env);
     if (hasRepoRootMarkers(r)) return r;
   }
+  const walked = findRepoRootWalkingUp(cwd, 8);
+  if (walked) return walked;
   const parent = path.resolve(cwd, "..");
   if (hasRepoRootMarkers(cwd)) return cwd;
   if (hasRepoRootMarkers(parent)) return parent;

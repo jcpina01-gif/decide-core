@@ -16,6 +16,14 @@ import {
 } from "./readPlafonadoFreezeCagr";
 import { readHeroKpiFreezeContext } from "./readHeroKpiFreezeContext";
 import { resolveDecideProjectRoot } from "./decideProjectRoot";
+import {
+  buildOfficialRecommendationMonthsThroughToday,
+  pickPlanMonthPreferringTodayFromMonths,
+  shouldUseLiveModelWeightsInsteadOfOfficialBook,
+  modelPayloadAsOfDateYmd,
+  sumCashSleeveWeight,
+} from "./buildRecommendationOfficialHistory";
+import { supplementClosePricesMapFromLegacyWideCsv } from "./supplementClosePricesFromLegacyWideCsv";
 import { FREEZE_PLAFONADO_MODEL_DIR, PLAFONADO_MODEL_DISPLAY_NAME_PT } from "../freezePlafonadoDir";
 import {
   estimateUsdNotionalForBuyFxHedge,
@@ -27,6 +35,7 @@ import type {
   ActualPosition,
   LiveIbkrStructure,
   PageProps,
+  PlanWeightsProvenance,
   ProposedTrade,
   RecommendedPosition,
   ReportData,
@@ -662,6 +671,9 @@ function loadFreezeRunModelSnapshot(projectRoot: string): any | null {
 }
 
 export const getClientReportServerSideProps: GetServerSideProps<PageProps> = async (ctx) => {
+  if (ctx.res) {
+    ctx.res.setHeader("Cache-Control", "private, no-store, max-age=0, must-revalidate");
+  }
   const frontRoot = process.cwd();
   /** Evita `..` errado quando o Next corre com `cwd` = raiz do monorepo (não `frontend/`). */
   const projectRoot = resolveDecideProjectRoot(frontRoot);
@@ -822,6 +834,7 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
   } catch {
     // If close CSV fails to parse, keep closeAsOfDate empty and close prices as 0.
   }
+  supplementClosePricesMapFromLegacyWideCsv(closePricesByTicker, projectRoot);
 
   const clearExclusions =
     safeString(ctx.query.clear, "") === "1" ||
@@ -1009,54 +1022,89 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
     }
   }
 
-  const cashSleeveFracRaw = safeNumber(
+  const cashSleeveFracRawModel = safeNumber(
     modelPayload?.kpis?.latest_cash_sleeve ??
       modelPayload?.meta?.latest_cash_sleeve ??
       modelPayload?.summary?.latest_cash_sleeve,
     0
   );
-  const cashSleeveFrac =
-    cashSleeveFracRaw >= 0 && cashSleeveFracRaw <= 0.95 ? cashSleeveFracRaw : 0;
-  const investedFrac = 1 - cashSleeveFrac;
+  let cashSleeveFrac =
+    cashSleeveFracRawModel >= 0 && cashSleeveFracRawModel <= 0.95 ? cashSleeveFracRawModel : 0;
 
-  const recommendedRaw: RecommendedPosition[] = Array.isArray(
-    modelPayload?.current_portfolio?.positions
-  )
-    ? modelPayload.current_portfolio.positions.map((p: any) => ({
-        ticker: (() => {
-          const t = safeString(p.ticker).toUpperCase();
-          return t;
-        })(),
-        nameShort: (() => {
-          const t = safeString(p.ticker).toUpperCase();
-          const m = metaForTicker(t);
-          return pickBestDisplayName(
-            t,
-            safeString(p.name_short || p.short_name || p.ticker),
-            safeString(m?.nameShort, "")
-          );
-        })(),
-        region: (() => {
-          const t = safeString(p.ticker).toUpperCase();
-          const m = metaForTicker(t);
-          return safeString(p.region || m?.region, "");
-        })(),
-        sector: (() => {
-          const t = safeString(p.ticker).toUpperCase();
-          const m = metaForTicker(t);
-          return pickRecommendedSector(p, m?.sector);
-        })(),
-        industry: (() => {
-          const t = safeString(p.ticker).toUpperCase();
-          const m = metaForTicker(t);
-          return pickRecommendedIndustry(p, m?.industry);
-        })(),
-        score: safeNumber(p.score, 0),
-        weightPct: safeNumber(p.weight_pct, 0) * investedFrac,
-        originalWeightPct: safeNumber(p.weight_pct, 0) * investedFrac,
+  const builtWeights = buildOfficialRecommendationMonthsThroughToday(projectRoot);
+  const officialMonth = builtWeights
+    ? pickPlanMonthPreferringTodayFromMonths(builtWeights.months)
+    : null;
+  const preferLiveWeights = shouldUseLiveModelWeightsInsteadOfOfficialBook(officialMonth, modelPayload);
+  let planTargetRebalanceDate: string | undefined;
+
+  let recommendedRaw: RecommendedPosition[];
+  if (!preferLiveWeights && officialMonth?.rows?.length) {
+    planTargetRebalanceDate = String(officialMonth.date || "").slice(0, 10);
+    const cashFromRows = sumCashSleeveWeight(officialMonth.rows);
+    if (cashFromRows >= 0 && cashFromRows <= 0.95) {
+      cashSleeveFrac = cashFromRows;
+    }
+    recommendedRaw = officialMonth.rows.map((row) => {
+      const t = row.ticker.trim().toUpperCase();
+      const m = metaForTicker(t);
+      return {
+        ticker: t,
+        nameShort: pickBestDisplayName(
+          t,
+          safeString(row.company || row.ticker, row.ticker),
+          safeString(m?.nameShort, "")
+        ),
+        region: safeString(m?.region, ""),
+        sector: pickRecommendedSector({ sector: row.sector }, m?.sector),
+        industry: pickRecommendedIndustry({}, m?.industry),
+        score: safeNumber(row.score, 0),
+        weightPct: safeNumber(row.weightPct, 0),
+        originalWeightPct: safeNumber(row.weightPct, 0),
         excluded: false,
-      }))
-    : [];
+      };
+    });
+  } else {
+    const investedFrac = 1 - cashSleeveFrac;
+    recommendedRaw = Array.isArray(modelPayload?.current_portfolio?.positions)
+      ? modelPayload.current_portfolio.positions.map((p: any) => ({
+          ticker: (() => {
+            const t = safeString(p.ticker).toUpperCase();
+            return t;
+          })(),
+          nameShort: (() => {
+            const t = safeString(p.ticker).toUpperCase();
+            const m = metaForTicker(t);
+            return pickBestDisplayName(
+              t,
+              safeString(p.name_short || p.short_name || p.ticker),
+              safeString(m?.nameShort, "")
+            );
+          })(),
+          region: (() => {
+            const t = safeString(p.ticker).toUpperCase();
+            const m = metaForTicker(t);
+            return safeString(p.region || m?.region, "");
+          })(),
+          sector: (() => {
+            const t = safeString(p.ticker).toUpperCase();
+            const m = metaForTicker(t);
+            return pickRecommendedSector(p, m?.sector);
+          })(),
+          industry: (() => {
+            const t = safeString(p.ticker).toUpperCase();
+            const m = metaForTicker(t);
+            return pickRecommendedIndustry(p, m?.industry);
+          })(),
+          score: safeNumber(p.score, 0),
+          weightPct: safeNumber(p.weight_pct, 0) * investedFrac,
+          originalWeightPct: safeNumber(p.weight_pct, 0) * investedFrac,
+          excluded: false,
+        }))
+      : [];
+    planTargetRebalanceDate =
+      modelPayloadAsOfDateYmd(modelPayload) ?? planTargetRebalanceDate;
+  }
 
   // Remover duplicados exatos por ticker (mantém o maior peso).
   const dedupByTicker = new Map<string, RecommendedPosition>();
@@ -1614,6 +1662,8 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
     estimatedPerformanceFeeEur,
     tbillProxyIbTicker: eurMmSym,
     ...(initialIbkrStructure ? { initialIbkrStructure } : {}),
+    ...(planTargetRebalanceDate ? { planTargetRebalanceDate } : {}),
+    planWeightsProvenance,
   };
 
   return {

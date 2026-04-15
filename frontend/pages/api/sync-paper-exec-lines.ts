@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getBackendBase } from "../../lib/apiProxy";
 
-const UPSTREAM_MS = 90_000;
+/** Sincronização: open orders + execuções + posições — pode demorar com TWS ocupada. */
+const UPSTREAM_MS = 150_000;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") {

@@ -807,9 +807,10 @@ def send_orders(body: SendOrdersBody) -> dict[str, Any]:
             fx_row = _place_eurusd_hedge(ib, fx_est)
             fills.append(fx_row)
     except Exception as e:
+        err = (str(e) or "").strip() or f"{type(e).__name__} (sem mensagem da excepção)"
         return {
             "status": "rejected",
-            "error": str(e),
+            "error": err,
             "fills": fills,
         }
     finally:

@@ -4,6 +4,7 @@
  */
 import fs from "fs";
 import path from "path";
+import { supplementClosePricesMapFromLegacyWideCsv } from "./supplementClosePricesFromLegacyWideCsv";
 import {
   fetchPlafonadoCagrPctFromKpiServer,
   planPlafonadoModeradoCagrFallbackPct,
@@ -17,6 +18,12 @@ import {
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
 import { isBuyMissingEquityClosePrice } from "../approvalPlanTradeDisplay";
 import { seedMetaMapFromCompanyMeta } from "../companyMeta";
+import {
+  buildOfficialRecommendationMonthsThroughToday,
+  pickPlanMonthPreferringTodayFromMonths,
+  shouldUseLiveModelWeightsInsteadOfOfficialBook,
+  sumCashSleeveWeight,
+} from "./buildRecommendationOfficialHistory";
 
 export type ApprovalProposedTrade = {
   ticker: string;
@@ -669,6 +676,7 @@ export async function loadApprovalAlignedProposedTrades(
   } catch {
     /* ignore */
   }
+  supplementClosePricesMapFromLegacyWideCsv(closePricesByTicker, projectRoot);
   void closeAsOfDate;
 
   const excludedTickersApplied: string[] = [];
@@ -732,40 +740,74 @@ export async function loadApprovalAlignedProposedTrades(
   });
 
   const mp0 = modelPayload as Record<string, unknown> | null;
-  const cashSleeveFracRaw = safeNumber(
+  const cashSleeveFracRawModel = safeNumber(
     (mp0?.kpis as Record<string, unknown> | undefined)?.latest_cash_sleeve ??
       (mp0?.meta as Record<string, unknown> | undefined)?.latest_cash_sleeve ??
       (mp0?.summary as Record<string, unknown> | undefined)?.latest_cash_sleeve,
     0,
   );
-  const cashSleeveFrac = cashSleeveFracRaw >= 0 && cashSleeveFracRaw <= 0.95 ? cashSleeveFracRaw : 0;
-  const investedFrac = 1 - cashSleeveFrac;
+  let cashSleeveFrac =
+    cashSleeveFracRawModel >= 0 && cashSleeveFracRawModel <= 0.95 ? cashSleeveFracRawModel : 0;
+
+  const builtWeights = buildOfficialRecommendationMonthsThroughToday(projectRoot);
+  const officialMonth = builtWeights
+    ? pickPlanMonthPreferringTodayFromMonths(builtWeights.months)
+    : null;
+  const preferLiveWeights = shouldUseLiveModelWeightsInsteadOfOfficialBook(officialMonth, modelPayload);
 
   const mp = modelPayload as Record<string, unknown> | null;
-  const positionsRaw = Array.isArray((mp?.current_portfolio as Record<string, unknown> | undefined)?.positions)
-    ? ((mp?.current_portfolio as Record<string, unknown>).positions as unknown[])
-    : [];
+  let recommendedRaw: RecommendedPosition[];
 
-  const recommendedRaw: RecommendedPosition[] = positionsRaw.map((p: unknown) => {
-    const pp = p as Record<string, unknown>;
-    const t = safeString(pp.ticker).toUpperCase();
-    const m = metaForTicker(t);
-    return {
-      ticker: t,
-      nameShort: pickBestDisplayName(
-        t,
-        safeString(pp.name_short || pp.short_name || pp.ticker),
-        safeString(m?.nameShort, ""),
-      ),
-      region: safeString(pp.region || m?.region, ""),
-      sector: pickRecommendedSector(pp as { sector?: unknown }, m?.sector),
-      industry: pickRecommendedIndustry(pp as { industry?: unknown }, m?.industry),
-      score: safeNumber(pp.score, 0),
-      weightPct: safeNumber(pp.weight_pct, 0) * investedFrac,
-      originalWeightPct: safeNumber(pp.weight_pct, 0) * investedFrac,
-      excluded: false,
-    };
-  });
+  if (!preferLiveWeights && officialMonth?.rows?.length) {
+    const cashFromRows = sumCashSleeveWeight(officialMonth.rows);
+    if (cashFromRows >= 0 && cashFromRows <= 0.95) {
+      cashSleeveFrac = cashFromRows;
+    }
+    recommendedRaw = officialMonth.rows.map((row) => {
+      const t = row.ticker.trim().toUpperCase();
+      const m = metaForTicker(t);
+      return {
+        ticker: t,
+        nameShort: pickBestDisplayName(
+          t,
+          safeString(row.company || row.ticker, row.ticker),
+          safeString(m?.nameShort, ""),
+        ),
+        region: safeString(m?.region, ""),
+        sector: pickRecommendedSector({ sector: row.sector }, m?.sector),
+        industry: pickRecommendedIndustry({}, m?.industry),
+        score: safeNumber(row.score, 0),
+        weightPct: safeNumber(row.weightPct, 0),
+        originalWeightPct: safeNumber(row.weightPct, 0),
+        excluded: false,
+      };
+    });
+  } else {
+    const investedFrac = 1 - cashSleeveFrac;
+    const positionsRaw = Array.isArray((mp?.current_portfolio as Record<string, unknown> | undefined)?.positions)
+      ? ((mp?.current_portfolio as Record<string, unknown>).positions as unknown[])
+      : [];
+    recommendedRaw = positionsRaw.map((p: unknown) => {
+      const pp = p as Record<string, unknown>;
+      const t = safeString(pp.ticker).toUpperCase();
+      const m = metaForTicker(t);
+      return {
+        ticker: t,
+        nameShort: pickBestDisplayName(
+          t,
+          safeString(pp.name_short || pp.short_name || pp.ticker),
+          safeString(m?.nameShort, ""),
+        ),
+        region: safeString(pp.region || m?.region, ""),
+        sector: pickRecommendedSector(pp as { sector?: unknown }, m?.sector),
+        industry: pickRecommendedIndustry(pp as { industry?: unknown }, m?.industry),
+        score: safeNumber(pp.score, 0),
+        weightPct: safeNumber(pp.weight_pct, 0) * investedFrac,
+        originalWeightPct: safeNumber(pp.weight_pct, 0) * investedFrac,
+        excluded: false,
+      };
+    });
+  }
 
   const dedupByTicker = new Map<string, RecommendedPosition>();
   for (const p of recommendedRaw) {

@@ -153,7 +153,8 @@ def sync_paper_exec_lines_post(body: SyncPaperExecBody) -> dict[str, Any]:
     try:
         ib = _connect_ib()
     except Exception as e:
-        return {"status": "rejected", "error": str(e), "fills": lines}
+        err = (str(e) or "").strip() or f"{type(e).__name__} (sem mensagem da excepção)"
+        return {"status": "rejected", "error": err, "fills": lines}
 
     completed_trades: list[Any] = []
     pos_by_sym: dict[str, float] = {}
@@ -479,9 +480,10 @@ def sync_paper_exec_lines_post(body: SyncPaperExecBody) -> dict[str, Any]:
                     row["message"] = (prev + tag).strip() if prev else tag.strip()
 
     except Exception as e:
+        core = (str(e) or "").strip() or f"{type(e).__name__} (sem mensagem da excepção)"
         return {
             "status": "rejected",
-            "error": f"Erro ao sincronizar com a IBKR (sync-paper-exec-lines): {e}",
+            "error": f"Erro ao sincronizar com a IBKR (sync-paper-exec-lines): {core}",
             "fills": lines,
             "meta": {"sync_paper_exec_lines": SYNC_EXEC_BUILD_ID, "exception_type": type(e).__name__},
         }
