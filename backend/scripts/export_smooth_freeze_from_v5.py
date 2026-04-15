@@ -6,13 +6,13 @@ artificiais sobre a curva plafonada.
 
 Mapeamento (alinhado ao código em ``engine_research_v5.py``):
 
-- ``model_equity_final_20y[_perfil].csv`` e ``model_equity_final_20y.csv`` → série **``equity_overlayed``**
-  (CAP15 plafonado, custos e caixa/T-Bill após vol-target do overlay).
+- ``model_equity_final_20y[_perfil].csv`` e ``model_equity_final_20y.csv`` → **``equity_overlayed``**
+  (CAP15 investível neste script: **sem** ``max_effective_exposure`` por omissão — alinhado ao histórico do hero).
 - ``model_equity_theoretical_20y.csv`` → **``equity_raw``** (perfil **moderado**): motor com custos,
   **antes** da pilha breadth/trend/vol-overlay do CAP15.
-- ``model_equity_final_20y_*_margin.csv`` / ``model_equity_final_20y_margin.csv`` → **``equity_overlay_pre_vol``**
-  (mesmo perfil): retornos com exposição overlay (breadth, trend, vol-spike, drawdown) **sem** o escalão
-  ``vol_scale_overlay`` nem a recomposição final caixa/plafonado — série **distinta** do investível.
+- ``model_equity_final_20y_*_margin.csv`` / ``model_equity_final_20y_margin.csv`` → **``equity_overlay_margin``**:
+  mesmo pipeline CAP15 + custos que ``equity_overlayed``, **sempre** antes de um eventual teto
+  ``max_effective_exposure``; quando o teto não se aplica, coincide numericamente com ``equity_overlayed``.
 
 Requisitos
 -----------
@@ -20,8 +20,8 @@ Requisitos
 - ``DECIDE_V5_ENGINE_ROOT`` = pasta ``.../backend`` onde existe ``engine_research_v5.py``, **ou**
   repositório ``DECIDE_CORE22_CLONE`` ao lado de ``decide-core`` (caminho por omissão).
 
-- O clone deve incluir ``equity_overlay_pre_vol`` no dict devolvido por ``run_research_v1`` (commit recente
-  em ``engine_research_v5``). Se faltar, o script usa ``equity_raw_volmatched`` como fallback e avisa.
+- O clone deve incluir ``equity_overlay_margin`` no dict devolvido por ``run_research_v1``. Se faltar,
+  tenta ``equity_overlay_pre_vol`` (legado) e por fim ``equity_raw_volmatched``, com aviso em stderr.
 
 Uso (na raiz do ``decide-core``)::
 
@@ -80,11 +80,16 @@ def _write_equity_csv(path: Path, dates: list[str], nav: list[float]) -> None:
 
 
 def _margin_series_from_result(r: dict[str, object]) -> list[float]:
+    if "equity_overlay_margin" in r and isinstance(r["equity_overlay_margin"], list):
+        return [float(x) for x in r["equity_overlay_margin"]]  # type: ignore[arg-type]
     if "equity_overlay_pre_vol" in r and isinstance(r["equity_overlay_pre_vol"], list):
+        print(
+            "[export_smooth_freeze_from_v5] AVISO: sem equity_overlay_margin — a usar equity_overlay_pre_vol (legado).",
+            file=sys.stderr,
+        )
         return [float(x) for x in r["equity_overlay_pre_vol"]]  # type: ignore[arg-type]
     print(
-        "[export_smooth_freeze_from_v5] AVISO: resultado sem equity_overlay_pre_vol — "
-        "usa clone actualizado; fallback temporário: equity_raw_volmatched.",
+        "[export_smooth_freeze_from_v5] AVISO: sem série de margem — fallback: equity_raw_volmatched.",
         file=sys.stderr,
     )
     return [float(x) for x in r["equity_raw_volmatched"]]  # type: ignore[index]
@@ -129,6 +134,8 @@ def main() -> int:
     last_dates: list[str] | None = None
 
     for pk in profiles:
+        # Omissão de `max_effective_exposure`: alinha o CSV principal ao CAP15 histórico (hero). Para export
+        # explícito com teto NAV 100% na perna arriscada, chama `run_research_v1(..., max_effective_exposure=1.0)`.
         kwargs: dict = {
             "prices_path": str(prices_path),
             "profile": pk,

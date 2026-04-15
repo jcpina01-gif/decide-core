@@ -20,10 +20,11 @@ const { spawn, execSync } = require("child_process");
 const repoRoot = path.resolve(__dirname, "..", "..");
 const kpiPy = path.join(repoRoot, "kpi_server.py");
 
-/** Alinhado com `KPI_FLASK_BUILD_MIN_TOKEN` no frontend (substring dentro do tag). */
-/** Prefixo comum aos tags `decide-kpi-2026-04-*` (v13, v14, …) — evita falha quando o build muda o sufixo. */
+/** Substring obrigatória no header/JSON `build` de `/api/health` (força reload quando o Flask na porta é antigo). */
+/** Override: `DECIDE_KPI_MIN_BUILD_SUBSTRING=decide-kpi-2026-04` se precisares de um servidor intermédio. */
 const MIN_BUILD_SUBSTRING =
-  String(process.env.DECIDE_KPI_MIN_BUILD_SUBSTRING || "decide-kpi-2026-04").trim() || "decide-kpi-2026-04";
+  String(process.env.DECIDE_KPI_MIN_BUILD_SUBSTRING || "margin-csv-and-kpi-loader").trim() ||
+  "margin-csv-and-kpi-loader";
 
 function pickPythonExe() {
   const fromEnv = (process.env.KPI_PYTHON || process.env.PYTHON || "").trim();
@@ -149,7 +150,7 @@ async function main() {
   const probe = await probeExistingKpi(port);
   if (probe === "already") {
     console.log(
-      `[kpi] 127.0.0.1:${port} já tem Decide KPI com build ≥ ${MIN_BUILD_SUBSTRING}. Nada a arrancar.`,
+      `[kpi] 127.0.0.1:${port} já tem Decide KPI com build que inclui «${MIN_BUILD_SUBSTRING}». Nada a arrancar.`,
     );
     console.log("[kpi] Para recarregar código novo, para esse processo e volta a correr npm run kpi.");
     process.exit(0);

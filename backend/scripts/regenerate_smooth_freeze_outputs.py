@@ -7,7 +7,7 @@ Isto **não** replica byte-a-byte o backtest V5 histórico (custos, regras CAP15
 mas alinha o **calendário e o comprimento das séries** ao ficheiro de preços actual — os gráficos
 do KPI passam a usar o último fecho disponível no CSV.
 
-Para o **smooth canónico** (``equity_raw``, ``equity_overlay_pre_vol``, ``equity_overlayed`` do
+Para o **smooth canónico** (``equity_raw``, ``equity_overlay_margin``, ``equity_overlayed`` do
 ``engine_research_v5`` — **sem** multiplicadores sobre o plafonado), usa::
 
   python backend/scripts/export_smooth_freeze_from_v5.py

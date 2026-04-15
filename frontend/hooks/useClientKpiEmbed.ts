@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { isFxHedgeOnboardingApplicable } from "../lib/clientSegment";
 import { readFxHedgePrefs } from "../lib/fxHedgePrefs";
+import { KPI_IFRAME_SRC_REV } from "../lib/kpiFlaskBuildGate";
 import {
   ALLOWED_KPI_EMBED_TABS,
   FLASK_KPI_EMBED_TABS,
@@ -169,8 +170,8 @@ export function useClientKpiEmbed({ profile, loggedIn, iframeRefresh }: UseClien
       else hedgeQs += "&hedge_pct=100";
       hedgeQs += `&hedge_pair=${encodeURIComponent(prefs?.pair || "EURUSD")}`;
     }
-    /** Força novo HTML do Flask após mudanças em `kpi_server.py` (evita iframe «preso» a processo antigo). */
-    const embedRev = "&embed_src_rev=17";
+    /** Força novo URL do iframe após mudanças no Flask (cache agressivo / SW). Ver `KPI_IFRAME_SRC_REV`. */
+    const embedRev = `&embed_src_rev=${encodeURIComponent(KPI_IFRAME_SRC_REV)}`;
     return `${base}/?client_embed=1&profile=${encodeURIComponent(profile)}&embed_tab=${encodeURIComponent(
       tab,
     )}&kpi_view=${encodeURIComponent(kpiViewMode)}${embedRev}${t}${hedgeQs}`;

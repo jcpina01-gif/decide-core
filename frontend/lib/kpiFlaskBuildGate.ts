@@ -1,12 +1,18 @@
 /**
  * Gate de versão do `kpi_server.py` vs o que o dashboard espera.
- * Manter alinhado com `KPI_SERVER_BUILD_TAG` em `kpi_server.py` (substring estável por release).
+ * Manter alinhado com `MIN_BUILD_SUBSTRING` em `frontend/scripts/run-kpi.cjs`.
  */
-/** Alinhado com `KPI_SERVER_BUILD_TAG` em `kpi_server.py` (prefixo estável `decide-kpi-2026-04-*`). */
-export const KPI_FLASK_BUILD_MIN_TOKEN = "decide-kpi-2026-04";
+/** Fragmento presente em `KPI_SERVER_BUILD_TAG` desde a correcção margem vs plafonado (v19+). */
+export const KPI_FLASK_BUILD_MIN_TOKEN = "margin-csv-and-kpi-loader";
 
 /**
- * `NEXT_PUBLIC_KPI_FLASK_MIN_BUILD` — substring obrigatória no campo `build` de `/api/health` (ex. `decide-kpi-2026-04`).
+ * Query `embed_src_rev` no URL do iframe — alterar quando mudares o `KPI_SERVER_BUILD_TAG` no Flask
+ * e o browser mostrar HTML antigo (cache / SW). Manter em sintonia com o sufixo do build em produção.
+ */
+export const KPI_IFRAME_SRC_REV = "v20";
+
+/**
+ * `NEXT_PUBLIC_KPI_FLASK_MIN_BUILD` — substring obrigatória no campo `build` de `/api/health`.
  * Em desenvolvimento, se não estiver definida, usa-se `KPI_FLASK_BUILD_MIN_TOKEN` para evitar iframe preso a Flask antigo.
  */
 export function kpiFlaskMinBuildToken(): string {
