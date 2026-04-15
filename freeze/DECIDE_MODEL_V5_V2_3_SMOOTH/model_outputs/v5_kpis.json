@@ -1,9 +1,9 @@
 {
-  "benchmark_cagr": 0.08737549815125112,
-  "overlayed_cagr": 0.19540369639149735,
-  "overlayed_sharpe": 1.0303911392976521,
+  "benchmark_cagr": 0.08742650658585971,
+  "overlayed_cagr": 0.1955231817819567,
+  "overlayed_sharpe": 1.0306013872543742,
   "data_start": "2006-03-15",
-  "data_end": "2026-04-14",
+  "data_end": "2026-04-10",
   "profile": "moderado",
   "cap_per_ticker": 0.15,
   "n_rebalance_opportunities": 235,
@@ -50,9 +50,9 @@
   "vol_scale_floor": 0.75,
   "vol_scale_cap": 1.5,
   "overlay_target_vol_realization_boost": 1.0,
-  "data_file_used": "C:\\Users\\Joaquim\\Documents\\decide-core\\backend\\data\\prices_close.csv",
-  "n_obs": 4923,
-  "latest_portfolio_date": "2026-04-14",
+  "data_file_used": "C:\\Users\\Joaquim\\Documents\\DECIDE_CORE22_CLONE\\backend\\data\\prices_close.csv",
+  "n_obs": 4921,
+  "latest_portfolio_date": "2026-04-10",
   "latest_holdings_count": 20,
   "latest_weights_sum": 1.0
 }
