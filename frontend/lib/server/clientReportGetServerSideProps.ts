@@ -16,6 +16,7 @@ import {
 } from "./readPlafonadoFreezeCagr";
 import { readHeroKpiFreezeContext } from "./readHeroKpiFreezeContext";
 import { resolveDecideProjectRoot } from "./decideProjectRoot";
+import { remapJpListingToAdrTicker } from "./jpListingToAdrMap";
 import {
   buildOfficialRecommendationMonthsThroughToday,
   pickPlanMonthPreferringTodayFromMonths,
@@ -33,6 +34,7 @@ import { capPctDisplay, eurMmIbTicker, safeNumber, safeString } from "../clientR
 import { seedMetaMapFromCompanyMeta } from "../companyMeta";
 import type {
   ActualPosition,
+  ClientBuildDiagnostics,
   LiveIbkrStructure,
   PageProps,
   PlanWeightsProvenance,
@@ -857,10 +859,12 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
     excludedTickersApplied
   );
   modelPayload = normalizeBackendModelPayloadForReport(modelPayload);
+  let freezeSnapshotFallback = false;
   if (!hasUsableModelPayload(modelPayload)) {
     const snap = loadFreezeRunModelSnapshot(projectRoot);
     if (snap) {
       modelPayload = snap;
+      freezeSnapshotFallback = true;
       backendError = "";
     } else if (!backendError) {
       backendError = "Dados do backend incompletos (sem carteira/série).";
@@ -1046,7 +1050,7 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
       cashSleeveFrac = cashFromRows;
     }
     recommendedRaw = officialMonth.rows.map((row) => {
-      const t = row.ticker.trim().toUpperCase();
+      const t = remapJpListingToAdrTicker(row.ticker.trim().toUpperCase());
       const m = metaForTicker(t);
       return {
         ticker: t,
@@ -1069,11 +1073,11 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
     recommendedRaw = Array.isArray(modelPayload?.current_portfolio?.positions)
       ? modelPayload.current_portfolio.positions.map((p: any) => ({
           ticker: (() => {
-            const t = safeString(p.ticker).toUpperCase();
+            const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
             return t;
           })(),
           nameShort: (() => {
-            const t = safeString(p.ticker).toUpperCase();
+            const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
             const m = metaForTicker(t);
             return pickBestDisplayName(
               t,
@@ -1082,17 +1086,17 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
             );
           })(),
           region: (() => {
-            const t = safeString(p.ticker).toUpperCase();
+            const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
             const m = metaForTicker(t);
             return safeString(p.region || m?.region, "");
           })(),
           sector: (() => {
-            const t = safeString(p.ticker).toUpperCase();
+            const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
             const m = metaForTicker(t);
             return pickRecommendedSector(p, m?.sector);
           })(),
           industry: (() => {
-            const t = safeString(p.ticker).toUpperCase();
+            const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
             const m = metaForTicker(t);
             return pickRecommendedIndustry(p, m?.industry);
           })(),
@@ -1438,6 +1442,62 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
   }
 
+  const mpDiag = modelPayload as Record<string, unknown> | null;
+  const puDiag = mpDiag?.price_universe as Record<string, unknown> | undefined;
+  const metaDiag = mpDiag?.meta as Record<string, unknown> | undefined;
+  const selArrDiag = Array.isArray(mpDiag?.selection) ? (mpDiag.selection as unknown[]) : [];
+  const selectionTickersSample = selArrDiag
+    .slice(0, 14)
+    .map((x) => {
+      const o = x as Record<string, unknown>;
+      return safeString(o?.ticker, "").toUpperCase();
+    })
+    .filter(Boolean);
+  const recommendedTickersSample = recommendedPositions.slice(0, 14).map((p) => p.ticker);
+
+  let localPricesCloseHasJpAdrBundle = false;
+  try {
+    if (fs.existsSync(pricesClosePath)) {
+      const head = fs.readFileSync(pricesClosePath, "utf8").slice(0, 45000);
+      localPricesCloseHasJpAdrBundle =
+        head.includes("FRCOY") && head.includes("FANUY") && head.includes("MSBHF");
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const clientBuildDiagnostics: ClientBuildDiagnostics = {
+    vercelGitSha: (() => {
+      const s = safeString(process.env.VERCEL_GIT_COMMIT_SHA, "").trim();
+      return s.length >= 7 ? s.slice(0, 12) : undefined;
+    })(),
+    vercelEnv: (() => {
+      const s = safeString(process.env.VERCEL_ENV, "").trim();
+      return s || undefined;
+    })(),
+    jpRemapDisabled: String(process.env.DECIDE_DISABLE_JP_T_TO_ADR_REMAP || "").trim() === "1",
+    selectionTickersSample,
+    recommendedTickersSample,
+    backendEngineVersion: safeString(mpDiag?.engine_version, "") || undefined,
+    backendPriceFile: typeof puDiag?.price_file === "string" ? String(puDiag.price_file) : undefined,
+    backendJpListingDropped:
+      typeof puDiag?.jp_listing_columns_dropped_when_adr_present === "number"
+        ? (puDiag.jp_listing_columns_dropped_when_adr_present as number)
+        : null,
+    backendTseDotTDropped:
+      typeof puDiag?.tse_dot_t_columns_dropped === "number"
+        ? (puDiag.tse_dot_t_columns_dropped as number)
+        : null,
+    backendKeepTseDotT:
+      typeof puDiag?.keep_tse_dot_t_columns === "boolean"
+        ? (puDiag.keep_tse_dot_t_columns as boolean)
+        : undefined,
+    backendDataFileUsed:
+      typeof metaDiag?.data_file_used === "string" ? safeString(metaDiag.data_file_used, "") : undefined,
+    freezeSnapshotFallback,
+    localPricesCloseHasJpAdrBundle,
+  };
+
   const dates: string[] = Array.isArray(modelPayload?.series?.dates)
     ? modelPayload.series.dates
     : [];
@@ -1676,6 +1736,7 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
     ...(initialIbkrStructure ? { initialIbkrStructure } : {}),
     ...(planTargetRebalanceDate ? { planTargetRebalanceDate } : {}),
     planWeightsProvenance,
+    clientBuildDiagnostics,
   };
 
   return {

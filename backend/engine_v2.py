@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Optional, Dict, Any
 
 import numpy as np
 import pandas as pd
 
+from price_series_clean import sanitize_extreme_daily_closes
 
-ENGINE_VERSION = "DECIDE_ENGINE_V2_M1_RAW_LINEAR_SCORES_2026_04_16"
+
+ENGINE_VERSION = "DECIDE_ENGINE_V2_M1_RAW_LINEAR_SCORES_2026_04_17_JP_ADR"
+
+_TSE_DOT_T_COL = re.compile(r"^\d+\.[Tt]$|^\d+-[Tt]$")
 
 
 # ============================================================
@@ -42,7 +47,111 @@ def _candidate_path(*rels: str) -> Optional[Path]:
     return None
 
 
-def _load_prices_from_disk() -> pd.DataFrame:
+def _env_truthy(name: str) -> bool:
+    v = (os.environ.get(name) or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
+def _normalize_tse_listing_col(name: str) -> Optional[str]:
+    """``8035.T`` / ``8035-t`` / ``8035T`` → ``8035.T`` (chave do mapa ADR); senão None."""
+    s = str(name).strip().upper().replace(" ", "")
+    m = re.match(r"^(\d{3,5})\.[T]$", s)
+    if m:
+        return f"{m.group(1)}.T"
+    m = re.match(r"^(\d{3,5})-T$", s)
+    if m:
+        return f"{m.group(1)}.T"
+    m = re.match(r"^(\d{3,5})T$", s)
+    if m:
+        return f"{m.group(1)}.T"
+    return None
+
+
+# Alinhado a ``frontend/lib/server/jpListingToAdrMap.ts`` + ``jp_listing_to_adr.csv``.
+_BUILTIN_JP_LISTING_TO_ADR: Dict[str, str] = {
+    "8035.T": "TOELY",
+    "7974.T": "NTDOY",
+    "8411.T": "MFG",
+    "7203.T": "TM",
+    "6758.T": "SONY",
+    "8306.T": "MUFG",
+    "8316.T": "SMFG",
+    "9433.T": "KDDIY",
+    "9984.T": "SFTBY",
+    "6501.T": "HTHIY",
+    "9983.T": "FRCOY",
+    "6954.T": "FANUY",
+    "8002.T": "MARUY",
+    "8058.T": "MSBHF",
+    "6981.T": "MRAAY",
+}
+
+_JP_LISTING_TO_ADR_CACHE: Optional[Dict[str, str]] = None
+
+
+def _load_jp_listing_to_adr_map() -> Dict[str, str]:
+    global _JP_LISTING_TO_ADR_CACHE
+    if _JP_LISTING_TO_ADR_CACHE is not None:
+        return _JP_LISTING_TO_ADR_CACHE
+    m: Dict[str, str] = {k.upper(): v.upper() for k, v in _BUILTIN_JP_LISTING_TO_ADR.items()}
+    csv_path = _candidate_path(
+        "backend/data/jp_listing_to_adr.csv",
+        "data/jp_listing_to_adr.csv",
+    )
+    if csv_path is not None:
+        try:
+            text = csv_path.read_text(encoding="utf-8")
+            lines = [ln for ln in text.splitlines() if ln.strip()]
+            for ln in lines[1:]:
+                parts = ln.split(",")
+                if len(parts) < 2:
+                    continue
+                key = _normalize_tse_listing_col(parts[0])
+                adr = str(parts[1]).strip().upper()
+                if key and adr:
+                    m[key] = adr
+        except OSError:
+            pass
+    _JP_LISTING_TO_ADR_CACHE = m
+    return m
+
+
+def _drop_tse_listing_columns_when_adr_exists(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Com ``DECIDE_KEEP_TSE_DOT_T_COLUMNS=1`` o universo mantém ``NNNN.T``; o momentum pode escolher
+    a série Tóquio em vez do ADR já presente no CSV (duplicado). Remove só listagens com par ADR na grelha.
+    """
+    mp = _load_jp_listing_to_adr_map()
+    if not mp:
+        return df, 0
+    colset = {str(c).strip() for c in df.columns}
+    drop: list[str] = []
+    for c in list(df.columns):
+        key = _normalize_tse_listing_col(str(c))
+        if not key:
+            continue
+        adr = mp.get(key)
+        if adr and adr in colset and str(c) not in drop:
+            drop.append(str(c))
+    if not drop:
+        return df, 0
+    return df.drop(columns=drop, errors="ignore"), len(drop)
+
+
+def _drop_tse_dot_t_columns_if_prefer_adr(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Listagens Yahoo ``NNNN.T`` são Tóquio em JPY; não são ADRs. O CSV já tem ADRs/OTC USD (TM, SONY, …).
+
+    Por defeito **remove** essas colunas para o momentum/execução alinharem a USD (conta IBKR típica).
+    Para manter o universo completo com Tóquio local: ``DECIDE_KEEP_TSE_DOT_T_COLUMNS=1``.
+    """
+    if _env_truthy("DECIDE_KEEP_TSE_DOT_T_COLUMNS"):
+        return df, 0
+    drop = [c for c in df.columns if _TSE_DOT_T_COL.match(str(c).strip())]
+    if not drop:
+        return df, 0
+    return df.drop(columns=drop, errors="ignore"), len(drop)
+
+
+def _load_prices_from_disk() -> tuple[pd.DataFrame, dict]:
 
     price_path = _candidate_path(
         "freeze/DECIDE_MODEL_V1/data_prices/prices_close_20y_global_index_proxy_from_tws.csv",
@@ -70,8 +179,18 @@ def _load_prices_from_disk() -> pd.DataFrame:
 
     df = df.dropna(axis=1, how="all")
     df = df.ffill()
-
-    return df
+    # Glitches Yahoo em .T (saltos >100% num dia); TWS/IB costuma ser limpo — desactivar com ...=0
+    df = sanitize_extreme_daily_closes(df)
+    # Sempre que existir coluna ADR mapeada, retirar o duplicado ``NNNN.T`` (mesmo com KEEP_TSE=1).
+    df, n_jp_dup = _drop_tse_listing_columns_when_adr_exists(df)
+    df, n_dot_t = _drop_tse_dot_t_columns_if_prefer_adr(df)
+    meta = {
+        "price_file": str(price_path).replace("\\", "/"),
+        "jp_listing_columns_dropped_when_adr_present": int(n_jp_dup),
+        "tse_dot_t_columns_dropped": int(n_dot_t),
+        "keep_tse_dot_t_columns": _env_truthy("DECIDE_KEEP_TSE_DOT_T_COLUMNS"),
+    }
+    return df, meta
 
 
 # ============================================================
@@ -121,9 +240,20 @@ def compute_multi_horizon_score(prices_window: pd.DataFrame) -> pd.Series:
     idx_mid = max(0, len(prices_window) - 61)
     idx_short = max(0, len(prices_window) - 21)
 
-    ret_long = px_now / prices_window.iloc[idx_long] - 1
-    ret_mid = px_now / prices_window.iloc[idx_mid] - 1
-    ret_short = px_now / prices_window.iloc[idx_short] - 1
+    raw_long = px_now / prices_window.iloc[idx_long] - 1
+    raw_mid = px_now / prices_window.iloc[idx_mid] - 1
+    raw_short = px_now / prices_window.iloc[idx_short] - 1
+
+    try:
+        clip_h = float(os.environ.get("DECIDE_SCORE_HORIZON_RET_CLIP", "3.0"))
+    except ValueError:
+        clip_h = 3.0
+    if clip_h > 0:
+        ret_long = raw_long.clip(lower=-0.99, upper=clip_h)
+        ret_mid = raw_mid.clip(lower=-0.99, upper=clip_h)
+        ret_short = raw_short.clip(lower=-0.99, upper=clip_h)
+    else:
+        ret_long, ret_mid, ret_short = raw_long, raw_mid, raw_short
 
     score = (
         0.50 * ret_long
@@ -291,8 +421,9 @@ def run_model(
     **kwargs
 ):
 
+    price_universe_meta: dict = {}
     if prices is None:
-        prices = _load_prices_from_disk()
+        prices, price_universe_meta = _load_prices_from_disk()
 
     window = prices.ffill().dropna(how="all")
 
@@ -422,6 +553,7 @@ def run_model(
     result = {
         "ok": True,
         "engine_version": ENGINE_VERSION,
+        "price_universe": price_universe_meta,
         "selection": selection,
         "weights": weights.to_dict(),
         "kpis": kpis,

@@ -24,6 +24,7 @@ import {
   shouldUseLiveModelWeightsInsteadOfOfficialBook,
   sumCashSleeveWeight,
 } from "./buildRecommendationOfficialHistory";
+import { remapJpListingToAdrTicker } from "./jpListingToAdrMap";
 
 export type ApprovalProposedTrade = {
   ticker: string;
@@ -217,7 +218,7 @@ function normalizeBackendModelPayloadForReport(payload: unknown | null): unknown
   const builtPositions = sel.map((s: unknown) => {
     const si = s as Record<string, unknown>;
     return {
-      ticker: safeString(si.ticker, "").toUpperCase(),
+      ticker: remapJpListingToAdrTicker(safeString(si.ticker, "").toUpperCase()),
       weight_pct: safeNumber(si.weight, 0) * 100,
       score: safeNumber(si.score, 0),
       name_short: safeString(si.ticker, ""),
@@ -336,7 +337,7 @@ function loadFreezeRunModelSnapshot(projectRoot: string): unknown | null {
   const positions = holdings.map((h: unknown) => {
     const hh = h as Record<string, unknown>;
     return {
-      ticker: safeString(hh?.ticker, "").toUpperCase(),
+      ticker: remapJpListingToAdrTicker(safeString(hh?.ticker, "").toUpperCase()),
       name_short: safeString(hh?.company ?? hh?.ticker, String(hh?.ticker)),
       region: safeString(hh?.zone || hh?.country, ""),
       sector: safeString(hh?.sector, ""),
@@ -709,7 +710,7 @@ export async function loadApprovalAlignedProposedTrades(
 
   const tradePlanByTicker = new Map<string, Record<string, string>>();
   for (const row of tradePlanRows) {
-    const ticker = safeString(row.ticker).toUpperCase();
+    const ticker = remapJpListingToAdrTicker(safeString(row.ticker).toUpperCase());
     if (ticker) tradePlanByTicker.set(ticker, row);
   }
 
@@ -764,7 +765,7 @@ export async function loadApprovalAlignedProposedTrades(
       cashSleeveFrac = cashFromRows;
     }
     recommendedRaw = officialMonth.rows.map((row) => {
-      const t = row.ticker.trim().toUpperCase();
+      const t = remapJpListingToAdrTicker(row.ticker.trim().toUpperCase());
       const m = metaForTicker(t);
       return {
         ticker: t,
@@ -789,7 +790,7 @@ export async function loadApprovalAlignedProposedTrades(
       : [];
     recommendedRaw = positionsRaw.map((p: unknown) => {
       const pp = p as Record<string, unknown>;
-      const t = safeString(pp.ticker).toUpperCase();
+      const t = remapJpListingToAdrTicker(safeString(pp.ticker).toUpperCase());
       const m = metaForTicker(t);
       return {
         ticker: t,

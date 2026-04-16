@@ -19,6 +19,10 @@ import numpy as np
 import pandas as pd
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+from price_series_clean import sanitize_extreme_daily_closes  # noqa: E402
+
 CSV_PATH = BACKEND_DIR / "data" / "prices_close.csv"
 CHUNK = 35
 SLEEP_SEC = 1.25
@@ -158,6 +162,7 @@ def main() -> int:
     merged = merged.sort_index()
     merged = merged[~merged.index.duplicated(keep="last")]
     merged = merged.ffill()
+    merged = sanitize_extreme_daily_closes(merged)
 
     out = merged.reset_index()
     out["date"] = out["date"].dt.strftime("%Y-%m-%d")

@@ -10,6 +10,7 @@ import fs from "fs";
 import path from "path";
 
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
+import { remapJpListingToAdrTicker } from "./jpListingToAdrMap";
 
 export type FlowRow = {
   ticker: string;
@@ -488,6 +489,38 @@ type ParsedWeightsFile = {
   turnoverByDate: Map<string, number>;
 };
 
+function mergeRecommendationRowsByTicker(rows: RecommendationRow[]): RecommendationRow[] {
+  const m = new Map<string, RecommendationRow>();
+  for (const r of rows) {
+    const t = r.ticker.trim().toUpperCase();
+    const ex = m.get(t);
+    if (!ex) {
+      m.set(t, { ...r });
+      continue;
+    }
+    const nw = (typeof ex.weight === "number" ? ex.weight : 0) + (typeof r.weight === "number" ? r.weight : 0);
+    ex.weight = nw;
+    ex.weightPct = nw * 100;
+    const rs = r.score;
+    const es = ex.score;
+    if (typeof rs === "number" && Number.isFinite(rs) && (!Number.isFinite(es as number) || rs > (es as number))) {
+      ex.score = rs;
+    }
+    const rr = r.rank;
+    const er = ex.rank;
+    if (typeof rr === "number" && Number.isFinite(rr) && (er == null || !Number.isFinite(er as number) || rr < (er as number))) {
+      ex.rank = rr;
+    }
+    const c1 = (ex.company || "").trim();
+    const c2 = (r.company || "").trim();
+    if (c2.length > c1.length) ex.company = r.company;
+    const s1 = (ex.sector || "").trim();
+    const s2 = (r.sector || "").trim();
+    if (s2 && !s1) ex.sector = r.sector;
+  }
+  return [...m.values()].sort((a, b) => (b.weight || 0) - (a.weight || 0));
+}
+
 function parseWeightsFile(absPath: string, lookup: Map<string, { company?: string; sector?: string }>): ParsedWeightsFile | null {
   if (!fs.existsSync(absPath)) return null;
   let text: string;
@@ -518,7 +551,7 @@ function parseWeightsFile(absPath: string, lookup: Map<string, { company?: strin
     if (r.length <= Math.max(iDate, iTicker, iWeight)) continue;
     const d = normalizeDate(r[iDate] || "");
     if (!d || d.length < 8) continue;
-    const ticker = String(r[iTicker] || "").trim();
+    const ticker = remapJpListingToAdrTicker(String(r[iTicker] || "").trim());
     if (!ticker) continue;
     let w: number | null = null;
     if (iBaseWeight >= 0 && r[iBaseWeight]) {
@@ -552,6 +585,16 @@ function parseWeightsFile(absPath: string, lookup: Map<string, { company?: strin
     const enriched = enrichRow(row, lookup);
     if (!byDate.has(d)) byDate.set(d, []);
     byDate.get(d)!.push(enriched);
+  }
+
+  for (const d of byDate.keys()) {
+    const list = byDate.get(d);
+    if (!list?.length) continue;
+    const merged = mergeRecommendationRowsByTicker(list);
+    byDate.set(
+      d,
+      merged.map((row) => enrichRow({ ...row }, lookup)),
+    );
   }
 
   if (byDate.size === 0) return null;
