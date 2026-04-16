@@ -4,7 +4,7 @@
     Copia `backend/data/prices_close.csv` de um monorepo DECIDE para outro (mesma coluna de datas nos dois).
 .DESCRIPTION
     Usa quando a IB grava o CSV num clone e o deploy / freeze “oficial” vive noutro checkout (ex.: decide-core).
-    Depois de copiar, corre `python scripts/regenerate_smooth_freeze_outputs.py` na pasta **Destino** `backend/`
+    Depois de copiar, corre `python scripts/regenerate_smooth_freeze_outputs.py` na pasta **Destino** `backend/` (motor V5 smooth por defeito; ver script).
     (ou só no repo que fizeres deploy do KPI).
 .PARAMETER SourceRoot
     Repo onde o `prices_close.csv` está actual (ex.: export IB).

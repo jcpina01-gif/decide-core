@@ -150,7 +150,7 @@ REPO_ROOT = _resolve_kpi_repo_root()
 BACKEND_META_PATH = REPO_ROOT / "backend" / "data" / "company_meta_global_enriched.csv"
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
-    "decide-kpi-2026-04-margin-csv-and-kpi-loader-fx-eurusd-raw-linear-wl-v24"
+    "decide-kpi-2026-04-margin-csv-and-kpi-loader-smooth-default-health-v25"
 )
 
 
@@ -8710,6 +8710,9 @@ def api_health():
             _de = str(_meta.get("data_end") or "").strip()
             if _de:
                 _health_payload["smooth_plafonado_data_end"] = _de[:10]
+            _ce = str(_meta.get("curve_engine") or "").strip()
+            if _ce:
+                _health_payload["smooth_curve_engine"] = _ce
     except Exception:
         pass
     r = Response(

@@ -6,7 +6,9 @@
     Por defeito tenta primeiro `update_prices_close_yfinance.py` (Yahoo). Se actualizas preços **só pela IB**
     (TWS / export / outro fluxo) e já gravaste `backend/data/prices_close.csv`, define
     `$env:DECIDE_SKIP_PRICE_UPDATE = "1"` na tarefa agendada — assim só corre:
-    `regenerate_smooth_freeze_outputs.py` (alinhamento `freeze/.../model_outputs` ao CSV) e reinício local do KPI.
+    `regenerate_smooth_freeze_outputs.py` (por defeito **motor V5** `export_smooth_freeze_from_v5.py`;
+    requer `DECIDE_CORE22_CLONE` ou `DECIDE_V5_ENGINE_ROOT`; fallback: `DECIDE_FREEZE_FALLBACK_ENGINE_V2=1`
+    ou `--legacy-engine-v2`) e reinício local do KPI.
     Define `DECIDE_KPI_REPO_ROOT` / `DECIDE_PROJECT_ROOT` para a raiz do repo.
 .NOTES
     Log: `<repo>/logs/freeze_daily_update.log`

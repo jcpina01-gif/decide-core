@@ -32,6 +32,7 @@ Uso (na raiz do ``decide-core``)::
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -178,7 +179,14 @@ def main() -> int:
     bench_df.to_csv(FREEZE_OUT / "benchmark_equity_final_20y.csv", index=False)
     bench_df.to_csv(FREEZE_CLONE / "benchmark_equity_final_20y.csv", index=False)
 
-    print("OK — freeze smooth V5 em", FREEZE_OUT)
+    if v5_json.is_file():
+        meta = json.loads(v5_json.read_text(encoding="utf-8"))
+        meta["curve_engine"] = "engine_research_v5"
+        meta["curve_engine_script"] = "export_smooth_freeze_from_v5.py"
+        meta["prices_input"] = str(prices_path.resolve())
+        v5_json.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    print("OK: freeze smooth V5 em", FREEZE_OUT)
     print("     v5_kpis:", v5_json)
     print("     weights/cash (moderado):", data_weights, "|", data_cash)
     return 0
