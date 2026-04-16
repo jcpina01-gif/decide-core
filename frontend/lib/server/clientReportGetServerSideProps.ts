@@ -742,7 +742,7 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
     sector: "Conglomerados / Holdings financeiros",
     region: "US",
     nameShort: "Berkshire Hathaway (Classe B)",
-    industry: "",
+    industry: "Holding multi-setor (seguros, energia, transportes)",
   };
   {
     const nk = normalizeTickerKey("BRK.B");
