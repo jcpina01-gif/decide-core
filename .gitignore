@@ -100,3 +100,14 @@ next-cache/
 !/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/cash_sleeve_daily.csv
 !/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/v5_kpis.json
 !/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y.csv
+# KPI embed / Flask: sem estes ficheiros no repo, o Render não os recebe e o kpi_server cai em
+# raw_eq=model_eq ou margem em falta → três cartões com os mesmos KPIs.
+!/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_theoretical_20y.csv
+!/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/benchmark_equity_final_20y.csv
+!/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y_margin.csv
+!/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y_moderado_margin.csv
+!/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y_conservador_margin.csv
+!/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y_dinamico_margin.csv
+!/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y_moderado.csv
+!/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y_conservador.csv
+!/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y_dinamico.csv

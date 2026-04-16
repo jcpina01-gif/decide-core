@@ -7,6 +7,11 @@ Isto **não** replica byte-a-byte o backtest V5 histórico (custos, regras CAP15
 mas alinha o **calendário e o comprimento das séries** ao ficheiro de preços actual — os gráficos
 do KPI passam a usar o último fecho disponível no CSV.
 
+**Importante:** o teórico (cartão RAW) usa o perfil ``raw`` do ``engine_v2`` — mesma profundidade
+``top_q`` que o investível, ``cap_per_ticker=1.0`` (sem CAP15), **sem** alvo de vol vs benchmark, e
+clip de retornos diários por ativo na agregação (±100%) para mitigar prints corruptos. Para
+``equity_raw`` canónico do motor V5, usa ``export_smooth_freeze_from_v5.py``.
+
 Para o **smooth canónico** (``equity_raw``, ``equity_overlay_margin``, ``equity_overlayed`` do
 ``engine_research_v5`` — **sem** multiplicadores sobre o plafonado), usa::
 
@@ -37,6 +42,31 @@ V5_KPIS = FREEZE_OUT / "v5_kpis.json"
 
 CAP = 0.15
 TOP_Q = 20
+# Alavancagem alvo (L-1 = % emprestado) e custo anual do empréstimo na série com margem (proxy).
+MARGIN_LEVERAGE = 1.12
+MARGIN_BORROW_APY = 0.04
+
+
+def _margin_equity_compounded(
+    eq: list[float],
+    leverage: float,
+    borrow_apy: float,
+) -> list[float]:
+    """NAV com alavancagem L sobre os retornos do modelo sem margem e custo diário sobre (L-1)."""
+    L = float(leverage)
+    if L <= 1.0:
+        L = MARGIN_LEVERAGE
+    daily_br = float(borrow_apy) / 252.0
+    out: list[float] = []
+    if not eq:
+        return out
+    out.append(float(eq[0]))
+    for i in range(1, len(eq)):
+        r = float(eq[i] / eq[i - 1] - 1.0)
+        prev = out[-1]
+        g = L * r - (L - 1.0) * daily_br
+        out.append(prev * (1.0 + g))
+    return out
 
 
 def _fmt_main_date(d: str) -> str:
@@ -51,27 +81,6 @@ def _fmt_main_date(d: str) -> str:
 
 def _fmt_margin_date(d: str) -> str:
     return d.strip()[:10]
-
-
-def _median_theoretical_over_model(legacy_mod: Path, legacy_theo: Path) -> float | None:
-    """Mediana(theoretical/model) no legado; None se não for possível."""
-    if not legacy_mod.is_file() or not legacy_theo.is_file():
-        return None
-    m = pd.read_csv(legacy_mod)
-    t = pd.read_csv(legacy_theo)
-    m0, t0 = m.columns[0], t.columns[0]
-    m[m0] = pd.to_datetime(m[m0], errors="coerce")
-    t[t0] = pd.to_datetime(t[t0], errors="coerce")
-    mm = m.set_index(m0).iloc[:, 0].astype(float)
-    tt = t.set_index(t0).iloc[:, 0].astype(float)
-    joined = pd.DataFrame({"m": mm, "t": tt}).dropna()
-    joined = joined[joined["m"] > 0]
-    if joined.empty:
-        return None
-    ratio = float((joined["t"] / joined["m"]).median())
-    if not np.isfinite(ratio) or ratio <= 0:
-        return None
-    return ratio
 
 
 def _median_equity_csv_ratio(num_path: Path, den_path: Path) -> float | None:
@@ -93,22 +102,6 @@ def _median_equity_csv_ratio(num_path: Path, den_path: Path) -> float | None:
     if not np.isfinite(ratio) or ratio <= 0:
         return None
     return ratio
-
-
-def _median_pointwise_ratio_list(num: list[float], den: list[float]) -> float | None:
-    """Mediana(num[i]/den[i]) quando os dois vectores têm o mesmo comprimento (motor ev2)."""
-    if len(num) != len(den) or not num:
-        return None
-    ratios: list[float] = []
-    for a, b in zip(num, den):
-        if b > 0 and np.isfinite(a) and np.isfinite(b):
-            ratios.append(float(a / b))
-    if not ratios:
-        return None
-    r = float(np.median(ratios))
-    if not np.isfinite(r) or r <= 0:
-        return None
-    return r
 
 
 def _extend_cash_sleeve(new_date_strs: list[str]) -> None:
@@ -134,11 +127,6 @@ def main() -> int:
 
     FREEZE_OUT.mkdir(parents=True, exist_ok=True)
     FREEZE_CLONE.mkdir(parents=True, exist_ok=True)
-
-    legacy_theo_ratio = _median_theoretical_over_model(
-        FREEZE_OUT / "model_equity_final_20y_moderado.csv",
-        FREEZE_OUT / "model_equity_theoretical_20y.csv",
-    )
 
     legacy_margin_ratio: dict[str, float | None] = {}
     for _mk in ("moderado", "conservador", "dinamico"):
@@ -184,11 +172,25 @@ def main() -> int:
     dates_m, eq_m, bench_m = curves["moderado"]
     date_days = [d[:10] for d in dates_m]
 
-    eq_dino = curves["dinamico"][1]
-    fallback_theo_ratio = _median_pointwise_ratio_list(eq_dino, eq_m)
-    mult_theo = legacy_theo_ratio if legacy_theo_ratio is not None else fallback_theo_ratio
-    if mult_theo is None or mult_theo <= 1.0:
-        mult_theo = max(1.01, float(fallback_theo_ratio or 1.0))
+    res_raw = ev2.run_model(
+        profile="raw",
+        prices=prices,
+        top_q=TOP_Q,
+        cap_per_ticker=CAP,
+        benchmark=None,
+    )
+    ser_raw = res_raw.get("series") or {}
+    raw_dates = [str(x) for x in ser_raw.get("dates") or []]
+    dates_raw = [_fmt_main_date(d) for d in raw_dates]
+    eq_raw = [float(x) for x in ser_raw.get("equity_overlayed") or []]
+    if len(dates_raw) != len(eq_raw) or len(eq_raw) != len(eq_m):
+        print(
+            "Série RAW vs moderado: comprimentos",
+            len(eq_raw),
+            len(eq_m),
+            file=sys.stderr,
+        )
+        return 1
 
     margin_eq_by_profile: dict[str, list[float]] = {}
     for key, (d_h, eq, _) in curves.items():
@@ -196,11 +198,9 @@ def main() -> int:
             FREEZE_OUT / f"model_equity_final_20y_{key}.csv", index=False
         )
         mr = legacy_margin_ratio.get(key)
-        if mr is None or mr <= 1.0:
-            mr = _median_pointwise_ratio_list(eq_dino, eq)
-        if mr is None or mr <= 1.0:
-            mr = 1.12
-        margin_eq = [float(x) * float(mr) for x in eq]
+        if mr is None or mr <= 1.0 or mr > 2.5:
+            mr = MARGIN_LEVERAGE
+        margin_eq = _margin_equity_compounded(eq, mr, MARGIN_BORROW_APY)
         margin_eq_by_profile[key] = margin_eq
         pd.DataFrame(
             {"date": [_fmt_margin_date(x) for x in d_h], "model_equity": margin_eq}
@@ -216,8 +216,7 @@ def main() -> int:
         }
     ).to_csv(FREEZE_OUT / "model_equity_final_20y_margin.csv", index=False)
 
-    theo_vals = [float(x) * float(mult_theo) for x in eq_m]
-    pd.DataFrame({"date": dates_m, "model_equity": theo_vals}).to_csv(
+    pd.DataFrame({"date": dates_m, "model_equity": eq_raw}).to_csv(
         FREEZE_OUT / "model_equity_theoretical_20y.csv", index=False
     )
 

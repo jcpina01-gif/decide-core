@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 
-ENGINE_VERSION = "DECIDE_ENGINE_V2_M1_MONTHLY_VOL_TARGET_2026_03_10"
+ENGINE_VERSION = "DECIDE_ENGINE_V2_M1_RAW_TOPQ_UNCAPPED_2026_04_15"
 
 
 # ============================================================
@@ -226,7 +226,7 @@ def _compute_kpis(equity: pd.Series):
 
 def _profile_multiplier(profile):
 
-    p = str(profile).lower()
+    p = str(profile or "").lower().strip()
 
     if p == "conservador":
         return 0.75
@@ -235,6 +235,37 @@ def _profile_multiplier(profile):
         return 1.25
 
     return 1.0
+
+
+def _profile_uses_benchmark_vol_target(profile) -> bool:
+    """Só conservador e dinâmico escalam retornos para um alvo de vol vs benchmark."""
+    p = str(profile or "").lower().strip()
+    return p == "conservador" or p in ("dinamico", "dinâmico")
+
+
+def _is_raw_profile(profile: Optional[str]) -> bool:
+    """Motor teórico «sem produto»: todo o universo com score > 0, sem CAP15 nem alvo de vol."""
+    p = str(profile or "").lower().strip()
+    return p in ("raw", "cru", "theoretical", "teorico", "teórico", "equity_raw")
+
+
+def _effective_cap_for_profile(profile: Optional[str], cap_per_ticker: float) -> float:
+    if _is_raw_profile(profile):
+        return 1.0
+    return float(cap_per_ticker)
+
+
+# No perfil ``raw``, clip por ativo no retorno diário antes da soma ponderada (evita um print
+# corrupto dominar; ±100% já é extremo para um único dia). Não afecta moderado/conservador/dinâmico.
+RAW_ALIGNED_DAILY_CLIP = 1.0
+
+
+def _align_returns_for_profile(
+    profile: Optional[str], aligned: pd.Series
+) -> pd.Series:
+    if not _is_raw_profile(profile):
+        return aligned
+    return aligned.clip(lower=-RAW_ALIGNED_DAILY_CLIP, upper=RAW_ALIGNED_DAILY_CLIP)
 
 
 # ============================================================
@@ -259,9 +290,11 @@ def run_model(
 
     scores = compute_multi_horizon_score(window)
 
-    selected = scores.iloc[:top_q]
+    cap_use = _effective_cap_for_profile(profile, cap_per_ticker)
+    n_univ = max(1, int(top_q))
+    selected = scores.iloc[:n_univ]
 
-    weights = build_weights(selected, cap_per_ticker)
+    weights = build_weights(selected, cap_use)
 
     selection = []
 
@@ -297,7 +330,8 @@ def run_model(
 
     vol_window = 60
 
-    mult = _profile_multiplier(profile)
+    use_vol_target = _profile_uses_benchmark_vol_target(profile)
+    mult = _profile_multiplier(profile) if use_vol_target else 1.0
 
     for i in range(min_start + 1, len(window)):
 
@@ -310,40 +344,47 @@ def run_model(
 
             hist_scores = compute_multi_horizon_score(hist)
 
-            selected_hist = hist_scores.iloc[:top_q]
+            selected_hist = hist_scores.iloc[:n_univ]
 
-            current_weights = build_weights(selected_hist, cap_per_ticker)
+            current_weights = build_weights(selected_hist, cap_use)
 
-            model_rets = []
+            if use_vol_target:
 
-            for j in range(i - vol_window, i):
+                model_rets = []
 
-                if j < 1:
-                    continue
+                for j in range(i - vol_window, i):
 
-                d = window.index[j]
+                    if j < 1:
+                        continue
 
-                aligned = rets.loc[d, current_weights.index].fillna(0)
+                    d = window.index[j]
 
-                model_rets.append((aligned * current_weights).sum())
+                    aligned = rets.loc[d, current_weights.index].fillna(0)
+                    aligned = _align_returns_for_profile(profile, aligned)
 
-            model_vol = np.std(model_rets) * np.sqrt(252)
+                    model_rets.append((aligned * current_weights).sum())
 
-            bench_vol = benchmark_rets.iloc[i - vol_window:i].std() * np.sqrt(252)
+                model_vol = np.std(model_rets) * np.sqrt(252)
 
-            target_vol = bench_vol * mult
+                bench_vol = benchmark_rets.iloc[i - vol_window:i].std() * np.sqrt(252)
 
-            if model_vol > 0:
-                scale = target_vol / model_vol
+                target_vol = bench_vol * mult
+
+                if model_vol > 0:
+                    scale = target_vol / model_vol
+                else:
+                    scale = 1
+
+                scale = np.clip(scale, 0.5, 1.5)
             else:
-                scale = 1
-
-            scale = np.clip(scale, 0.5, 1.5)
+                # Moderado (e perfis não mapeados): sem escalação de vol para o benchmark.
+                scale = 1.0
 
         if current_weights.empty:
             day_ret = 0
         else:
             aligned = rets.loc[dt, current_weights.index].fillna(0)
+            aligned = _align_returns_for_profile(profile, aligned)
 
             day_ret = (aligned * current_weights).sum()
 
