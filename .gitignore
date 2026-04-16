@@ -73,6 +73,7 @@ next-cache/
 !/backend/scripts/register_windows_daily_freeze_task.ps1
 !/backend/scripts/sync_prices_close_between_repos.ps1
 !/backend/scripts/export_smooth_freeze_from_v5.py
+!/backend/scripts/update_fx_pair_daily.py
 !/backend/scripts/run_cap15_window_mar2006_anchor.py
 # Preços para o motor (run-model). CSV podem ser grandes — Git LFS se necessário.
 !/backend/data/
@@ -83,6 +84,7 @@ next-cache/
 !/backend/data/weights_by_rebalance.csv
 !/backend/data/weights_by_rebalance_full.csv
 !/backend/data/weights_by_rebalance_normalized_long.csv
+!/backend/data/fx_EURUSD_daily.csv
 /backend/data/backups/
 # KPI Flask (iframe do client-dashboard) — ficheiro na raiz; dados em freeze/ (deploy separado ou disco)
 !/kpi_server.py

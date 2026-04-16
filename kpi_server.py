@@ -150,7 +150,7 @@ REPO_ROOT = _resolve_kpi_repo_root()
 BACKEND_META_PATH = REPO_ROOT / "backend" / "data" / "company_meta_global_enriched.csv"
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
-    "decide-kpi-2026-04-margin-csv-and-kpi-loader-freeze-git-whitelist-v23"
+    "decide-kpi-2026-04-margin-csv-and-kpi-loader-fx-eurusd-raw-linear-wl-v24"
 )
 
 

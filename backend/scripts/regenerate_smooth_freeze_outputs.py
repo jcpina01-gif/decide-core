@@ -8,9 +8,10 @@ mas alinha o **calendário e o comprimento das séries** ao ficheiro de preços 
 do KPI passam a usar o último fecho disponível no CSV.
 
 **Importante:** o teórico (cartão RAW) usa o perfil ``raw`` do ``engine_v2`` — mesma profundidade
-``top_q`` que o investível, ``cap_per_ticker=1.0`` (sem CAP15), **sem** alvo de vol vs benchmark, e
-clip de retornos diários por ativo na agregação (±100%) para mitigar prints corruptos. Para
-``equity_raw`` canónico do motor V5, usa ``export_smooth_freeze_from_v5.py``.
+``top_q`` que o investível, ``cap_per_ticker=1.0`` (sem CAP15), pesos **lineares** nos scores (o
+investível usa ``sqrt(score)`` + CAP, o que pode dar CAGR maior no plafonado se o raw fosse só
+sqrt sem cap), **sem** alvo de vol vs benchmark, e clip ±100% nos retornos por ativo na agregação.
+Para ``equity_raw`` canónico do motor V5, usa ``export_smooth_freeze_from_v5.py``.
 
 Para o **smooth canónico** (``equity_raw``, ``equity_overlay_margin``, ``equity_overlayed`` do
 ``engine_research_v5`` — **sem** multiplicadores sobre o plafonado), usa::

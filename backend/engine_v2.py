@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 
-ENGINE_VERSION = "DECIDE_ENGINE_V2_M1_RAW_TOPQ_UNCAPPED_2026_04_15"
+ENGINE_VERSION = "DECIDE_ENGINE_V2_M1_RAW_LINEAR_SCORES_2026_04_16"
 
 
 # ============================================================
@@ -179,16 +179,23 @@ def _cap_and_normalize(weights: pd.Series, cap: float) -> pd.Series:
     return weights.sort_values(ascending=False)
 
 
-def build_weights(scores: pd.Series, cap_per_ticker: float = 0.20) -> pd.Series:
-
-    base = np.sqrt(scores)
-
+def build_weights(
+    scores: pd.Series,
+    cap_per_ticker: float = 0.20,
+    *,
+    linear_score_weights: bool = False,
+) -> pd.Series:
+    """Pesos a partir de scores (long-only). ``linear_score_weights`` (perfil raw): mais peso nos
+    nomes com maior momentum — o ``sqrt`` dilui o #1 vs o CAP15 a 15%, o que podia fazer o «raw»
+    parecer mais fraco que o investível."""
+    s = pd.to_numeric(scores, errors="coerce").clip(lower=1e-12)
+    if linear_score_weights:
+        base = s
+    else:
+        base = np.sqrt(s)
     base = pd.Series(base, index=scores.index)
-
     base = base / base.sum()
-
     weights = _cap_and_normalize(base, cap_per_ticker)
-
     return weights
 
 
@@ -244,7 +251,8 @@ def _profile_uses_benchmark_vol_target(profile) -> bool:
 
 
 def _is_raw_profile(profile: Optional[str]) -> bool:
-    """Motor teórico «sem produto»: todo o universo com score > 0, sem CAP15 nem alvo de vol."""
+    """Motor teórico «sem produto»: mesmo top_q que o investível, sem CAP por nome, pesos lineares
+    nos scores (vs sqrt no CAP15), sem alvo de vol vs benchmark."""
     p = str(profile or "").lower().strip()
     return p in ("raw", "cru", "theoretical", "teorico", "teórico", "equity_raw")
 
@@ -293,8 +301,9 @@ def run_model(
     cap_use = _effective_cap_for_profile(profile, cap_per_ticker)
     n_univ = max(1, int(top_q))
     selected = scores.iloc[:n_univ]
+    linear_w = _is_raw_profile(profile)
 
-    weights = build_weights(selected, cap_use)
+    weights = build_weights(selected, cap_use, linear_score_weights=linear_w)
 
     selection = []
 
@@ -346,7 +355,7 @@ def run_model(
 
             selected_hist = hist_scores.iloc[:n_univ]
 
-            current_weights = build_weights(selected_hist, cap_use)
+            current_weights = build_weights(selected_hist, cap_use, linear_score_weights=linear_w)
 
             if use_vol_target:
 
