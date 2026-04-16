@@ -76,6 +76,7 @@ next-cache/
 !/backend/scripts/update_fx_pair_daily.py
 !/backend/scripts/run_cap15_window_mar2006_anchor.py
 !/backend/scripts/model_robustness_sweep.py
+!/backend/scripts/smooth_model_battery.py
 # Preços para o motor (run-model). CSV podem ser grandes — Git LFS se necessário.
 !/backend/data/
 /backend/data/*
