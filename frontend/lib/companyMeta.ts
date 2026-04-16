@@ -3,6 +3,8 @@ export type CompanyMetaEntry = {
   country: string;
   zone: string;
   sector: string;
+  /** GICS / sub-sector quando útil na grelha do plano. */
+  industry?: string;
 };
 
 export const COMPANY_META: Record<string, CompanyMetaEntry> = {
@@ -56,6 +58,27 @@ export const COMPANY_META: Record<string, CompanyMetaEntry> = {
   CCJ: { name: "Cameco", country: "Canada", zone: "CAN", sector: "Materials" },
   /** Diamondback Energy (NASDAQ) — presente no universo DECIDE (não confundir com índice FANG+). */
   FANG: { name: "Diamondback Energy", country: "USA", zone: "US", sector: "Energy" },
+  BDX: {
+    name: "Becton Dickinson",
+    country: "USA",
+    zone: "US",
+    sector: "Health Care",
+    industry: "Medical equipment & supplies",
+  },
+  AFL: {
+    name: "Aflac",
+    country: "USA",
+    zone: "US",
+    sector: "Financials",
+    industry: "Life & health insurance",
+  },
+  LIN: {
+    name: "Linde",
+    country: "USA",
+    zone: "US",
+    sector: "Materials",
+    industry: "Industrial gases",
+  },
 };
 
 /**
@@ -69,7 +92,7 @@ export function seedMetaMapFromCompanyMeta(upsertMeta: (row: Record<string, stri
       sector: entry.sector,
       zone: entry.zone,
       name_short: entry.name,
-      industry: "",
+      industry: entry.industry ?? "",
     });
   }
 }

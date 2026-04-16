@@ -114,26 +114,6 @@ export type PlanWeightsProvenance = {
   recommendedLineCount: number;
 };
 
-/** Visível no relatório — não depende de abrir Render/Vercel (commit injectado + meta do motor). */
-export type ClientBuildDiagnostics = {
-  vercelGitSha?: string;
-  vercelEnv?: string;
-  jpRemapDisabled: boolean;
-  /** Primeiros tickers devolvidos pelo motor (antes do remap ADR na UI). */
-  selectionTickersSample: string[];
-  /** Tickers na grelha após remap (primeiros). */
-  recommendedTickersSample: string[];
-  backendEngineVersion?: string;
-  backendPriceFile?: string;
-  backendJpListingDropped?: number | null;
-  backendTseDotTDropped?: number | null;
-  backendKeepTseDotT?: boolean;
-  backendDataFileUsed?: string;
-  freezeSnapshotFallback: boolean;
-  /** Cabeçalho local `prices_close.csv` contém colunas ADR JP recentes (FRCOY, FANUY, …). */
-  localPricesCloseHasJpAdrBundle: boolean;
-};
-
 export type ReportData = {
   generatedAt: string;
   accountCode: string;
@@ -199,8 +179,6 @@ export type ReportData = {
    */
   planTargetRebalanceDate?: string;
   planWeightsProvenance?: PlanWeightsProvenance;
-  /** Painel técnico no topo do relatório (detalhes HTML). */
-  clientBuildDiagnostics?: ClientBuildDiagnostics;
 };
 
 export type PageProps = {
@@ -2297,25 +2275,6 @@ export default function ClientReportPage({ reportData }: PageProps) {
               >
                 Plano do Cliente
               </h1>
-              <p
-                style={{
-                  margin: "6px 0 0 0",
-                  fontSize: 12,
-                  color: "#a3e635",
-                  fontWeight: 700,
-                  letterSpacing: 0.02,
-                }}
-                data-testid="decide-plano-build-stamp"
-              >
-                Build do relatório:{" "}
-                {reportData.clientBuildDiagnostics?.vercelGitSha
-                  ? `${reportData.clientBuildDiagnostics.vercelGitSha}${
-                      reportData.clientBuildDiagnostics.vercelEnv
-                        ? ` (${reportData.clientBuildDiagnostics.vercelEnv})`
-                        : ""
-                    }`
-                  : "sem commit Vercel — confirme deploy do frontend ou abra o JSON abaixo na faixa a largura total."}
-              </p>
               <div style={{ color: "#a1a1aa", marginTop: 10, fontSize: 15 }}>
                 Conta IBKR: {reportData.accountCode || "—"} · Perfil:{" "}
                 {reportData.profile || "moderado"} · {reportData.modelDisplayName} · Gerado em{" "}
@@ -2412,56 +2371,6 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 </Link>
               ) : null}
             </div>
-          </div>
-
-          <div
-            id="decide-plano-diagnostico-tecnico"
-            style={{
-              marginBottom: 18,
-              width: "100%",
-              boxSizing: "border-box",
-              borderRadius: 12,
-              border: "1px solid rgba(250,204,21,0.4)",
-              background: "rgba(39,39,42,0.95)",
-              padding: "12px 14px",
-              fontSize: 12,
-              color: "#e4e4e7",
-              lineHeight: 1.45,
-            }}
-          >
-            <div style={{ color: "#fde68a", fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
-              Diagnóstico técnico (motor + remap — largura total)
-            </div>
-            {reportData.clientBuildDiagnostics ? (
-              <>
-                <p style={{ margin: "0 0 8px 0", color: "#a1a1aa" }}>
-                  Copie o JSON para suporte. Se <code style={{ color: "#fde68a" }}>selectionTickersSample</code> mostrar
-                  Tóquio (<code>NNNN.T</code>), o KPI/backend ainda não está na versão nova.
-                </p>
-                <pre
-                  style={{
-                    margin: 0,
-                    maxHeight: 220,
-                    overflow: "auto",
-                    fontSize: 11,
-                    color: "#f5f5f5",
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-all",
-                    background: "rgba(0,0,0,0.25)",
-                    padding: 10,
-                    borderRadius: 8,
-                  }}
-                >
-                  {JSON.stringify(reportData.clientBuildDiagnostics, null, 2)}
-                </pre>
-              </>
-            ) : (
-              <p style={{ margin: 0, color: "#fecaca" }}>
-                <strong>Atenção:</strong> o servidor não enviou o objecto de diagnóstico — o HTML em produção é de uma
-                build antiga (antes desta funcionalidade) ou a resposta SSR foi truncada. É necessário{" "}
-                <strong>deploy no Vercel</strong> do commit actual e recarregar com <strong>Ctrl+F5</strong>.
-              </p>
-            )}
           </div>
 
           <div
