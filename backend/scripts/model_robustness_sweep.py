@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Varredura de robustez do motor ``engine_v2.run_model`` (momentum multi-horizonte + CAP + vol target por perfil).
+Varredura de robustez do motor ``engine_v2.run_model``.
+
+O motor devolve KPIs completos em ``kpis``, ``benchmark_kpis`` e ``relative_kpis`` (ver ``engine_v2._compute_kpis``).
 
 Executar a partir da pasta ``backend/``::
 
-    python scripts/model_robustness_sweep.py
     python scripts/model_robustness_sweep.py --quick
-    python scripts/model_robustness_sweep.py --csv ../tmp_diag/model_robustness.csv
+    python scripts/model_robustness_sweep.py --csv ../tmp_diag/model_robustness_kpis_full.csv
+    python scripts/model_robustness_sweep.py --json ../tmp_diag/model_robustness_summary.json
 
-Saída: KPIs do modelo vs benchmark, várias combinações de perfil / top_q / cap / benchmark explícito
-e sub-janelas temporais (últimos 5y / 10y de pregão aprox.) + um bloco leve de stress por remoção aleatória
-de colunas de preços (universo mais «espesso»).
+Por defeito grava CSV completo em ``../tmp_diag/model_robustness_kpis_full.csv`` se existir a pasta
+``tmp_diag`` no repositório (senão use ``--csv``). Use ``--no-auto-csv`` para desligar.
 """
 
 from __future__ import annotations
@@ -21,14 +22,12 @@ import json
 import os
 import random
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
 
-# Garantir imports como nos outros scripts (cwd = backend/)
 _BACKEND = Path(__file__).resolve().parent.parent
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
@@ -42,15 +41,6 @@ def _fmt(x: float, nd: int = 4) -> str:
     return f"{float(x):.{nd}f}"
 
 
-def _kpis(res: dict) -> tuple[dict[str, float], dict[str, float]]:
-    k = res.get("kpis") or {}
-    b = res.get("benchmark_kpis") or {}
-    return (
-        {kk: float(k[kk]) for kk in ("cagr", "vol", "sharpe", "max_drawdown") if kk in k},
-        {kk: float(b[kk]) for kk in ("cagr", "vol", "sharpe", "max_drawdown") if kk in b},
-    )
-
-
 def _top5_tickers(res: dict) -> str:
     sel = res.get("selection") or []
     out = []
@@ -60,6 +50,40 @@ def _top5_tickers(res: dict) -> str:
         if t:
             out.append(f"{t}:{w:.3f}")
     return "|".join(out)
+
+
+def _flatten_run(
+    *,
+    suite: str,
+    window: str,
+    profile: str,
+    top_q: int,
+    cap: float,
+    benchmark: str,
+    ok: bool,
+    err: str,
+    res: Optional[dict],
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "suite": suite,
+        "window": window,
+        "profile": profile,
+        "top_q": top_q,
+        "cap": cap,
+        "benchmark": benchmark,
+        "ok": ok,
+        "error": err,
+        "top5": _top5_tickers(res) if res else "",
+    }
+    if not ok or not res:
+        return row
+    for k, v in (res.get("kpis") or {}).items():
+        row[f"model_{k}"] = v
+    for k, v in (res.get("benchmark_kpis") or {}).items():
+        row[f"benchmark_{k}"] = v
+    for k, v in (res.get("relative_kpis") or {}).items():
+        row[f"relative_{k}"] = v
+    return row
 
 
 def _run_safe(
@@ -101,45 +125,20 @@ def _subwindow(prices: pd.DataFrame, tag: str) -> pd.DataFrame:
     return prices.iloc[-take:].copy()
 
 
-@dataclass
-class Row:
-    suite: str
-    window: str
-    profile: str
-    top_q: int
-    cap: float
-    benchmark: str
-    ok: bool
-    err: str
-    cagr: float
-    b_cagr: float
-    vol: float
-    sharpe: float
-    max_dd: float
-    top5: str
-
-    def cells(self) -> list[Any]:
-        ex = self.cagr - self.b_cagr if self.ok else float("nan")
-        return [
-            self.suite,
-            self.window,
-            self.profile,
-            self.top_q,
-            self.cap,
-            self.benchmark,
-            self.ok,
-            self.err,
-            _fmt(self.cagr),
-            _fmt(self.b_cagr),
-            _fmt(ex),
-            _fmt(self.vol),
-            _fmt(self.sharpe),
-            _fmt(self.max_dd),
-            self.top5,
-        ]
+def _collect_fieldnames(rows: list[dict[str, Any]]) -> list[str]:
+    keys: set[str] = set()
+    for r in rows:
+        keys.update(r.keys())
+    meta = ["suite", "window", "profile", "top_q", "cap", "benchmark", "ok", "error", "top5"]
+    front = [k for k in meta if k in keys]
+    mk = sorted(k for k in keys if k.startswith("model_"))
+    bk = sorted(k for k in keys if k.startswith("benchmark_"))
+    rk = sorted(k for k in keys if k.startswith("relative_"))
+    other = sorted(k for k in keys if k not in front and k not in mk and k not in bk and k not in rk)
+    return front + mk + bk + rk + other
 
 
-def _print_table(rows: list[Row]) -> None:
+def _print_table(rows: list[dict[str, Any]]) -> None:
     headers = [
         "suite",
         "window",
@@ -149,18 +148,56 @@ def _print_table(rows: list[Row]) -> None:
         "bench",
         "ok",
         "err",
-        "cagr",
+        "m_cagr",
         "b_cagr",
         "excess",
-        "vol",
-        "sharpe",
-        "max_dd",
+        "m_vol",
+        "m_sharpe",
+        "m_sortino",
+        "m_max_dd",
+        "rel_IR",
+        "rel_beta",
         "top5",
     ]
     widths = [len(h) for h in headers]
     data: list[list[str]] = []
+
+    def pick(r: dict[str, Any], key: str) -> str:
+        v = r.get(key)
+        if v is None:
+            return "—"
+        if isinstance(v, float) and (np.isnan(v) or np.isinf(v)):
+            return "—"
+        if isinstance(v, float):
+            return _fmt(v)
+        return str(v)[:80]
+
     for r in rows:
-        cells = [str(x) for x in r.cells()]
+        ok = bool(r.get("ok"))
+        m_c = float(r.get("model_cagr", float("nan"))) if ok else float("nan")
+        b_c = float(r.get("benchmark_cagr", float("nan"))) if ok else float("nan")
+        ex = m_c - b_c if ok else float("nan")
+        err = str(r.get("error", ""))[:40]
+        cells = [
+            str(r.get("suite", "")),
+            str(r.get("window", "")),
+            str(r.get("profile", "")),
+            str(r.get("top_q", "")),
+            str(r.get("cap", "")),
+            str(r.get("benchmark", "")),
+            "True" if ok else "False",
+            err,
+            pick(r, "model_cagr") if ok else "—",
+            pick(r, "benchmark_cagr") if ok else "—",
+            _fmt(ex) if ok else "—",
+            pick(r, "model_vol") if ok else "—",
+            pick(r, "model_sharpe") if ok else "—",
+            pick(r, "model_sortino") if ok else "—",
+            pick(r, "model_max_drawdown") if ok else "—",
+            pick(r, "relative_information_ratio") if ok else "—",
+            pick(r, "relative_beta_vs_benchmark") if ok else "—",
+            str(r.get("top5", ""))[:56],
+        ]
         data.append(cells)
         for i, c in enumerate(cells):
             widths[i] = max(widths[i], len(c))
@@ -174,58 +211,25 @@ def _print_table(rows: list[Row]) -> None:
         print(line(cs))
 
 
-def _write_csv(path: Path, rows: list[Row]) -> None:
+def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = _collect_fieldnames(rows)
     with path.open("w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(
-            [
-                "suite",
-                "window",
-                "profile",
-                "top_q",
-                "cap",
-                "benchmark",
-                "ok",
-                "error",
-                "cagr",
-                "bench_cagr",
-                "excess_cagr",
-                "vol",
-                "sharpe",
-                "max_drawdown",
-                "top5",
-            ]
-        )
+        w = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        w.writeheader()
         for r in rows:
-            ex = r.cagr - r.b_cagr if r.ok else float("nan")
-            w.writerow(
-                [
-                    r.suite,
-                    r.window,
-                    r.profile,
-                    r.top_q,
-                    r.cap,
-                    r.benchmark,
-                    r.ok,
-                    r.err,
-                    r.cagr if r.ok else "",
-                    r.b_cagr if r.ok else "",
-                    ex if r.ok else "",
-                    r.vol if r.ok else "",
-                    r.sharpe if r.ok else "",
-                    r.max_dd if r.ok else "",
-                    r.top5,
-                ]
-            )
+            out = {k: r.get(k, "") for k in fieldnames}
+            w.writerow(out)
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Robustez: varredura engine_v2.run_model")
-    ap.add_argument("--quick", action="store_true", help="Grelha mais pequena (mais rápido)")
-    ap.add_argument("--csv", type=str, default="", help="Escrever CSV para este caminho")
-    ap.add_argument("--json", type=str, default="", help="Escrever JSON com resumo agregado")
-    ap.add_argument("--seed", type=int, default=42, help="Semente RNG para stress de colunas")
+    ap = argparse.ArgumentParser(description="Robustez: varredura engine_v2.run_model (todos os KPIs no CSV)")
+    ap.add_argument("--quick", action="store_true", help="Grelha mais pequena")
+    ap.add_argument("--csv", type=str, default="", help="CSV com todas as colunas KPI")
+    ap.add_argument("--no-auto-csv", action="store_true", help="Não gravar CSV automático em tmp_diag")
+    ap.add_argument("--json", type=str, default="", help="JSON: resumo + lista de chaves KPI")
+    ap.add_argument("--jsonl", type=str, default="", help="Uma linha JSON por corrida (todas as chaves)")
+    ap.add_argument("--seed", type=int, default=42, help="Semente RNG (stress de colunas)")
     args = ap.parse_args()
 
     os.chdir(_BACKEND)
@@ -233,10 +237,10 @@ def main() -> int:
     n_cols = len(prices_full.columns)
     n_days = len(prices_full.index)
 
-    print("=== DECIDE engine_v2 robustness sweep ===", flush=True)
+    print("=== DECIDE engine_v2 robustness sweep (full KPIs) ===", flush=True)
     print(f"engine_version: {ev2.ENGINE_VERSION}", flush=True)
     print(f"price_universe: {json.dumps(meta, ensure_ascii=False)}", flush=True)
-    print(f"shape: {n_days} dias × {n_cols} séries", flush=True)
+    print(f"shape: {n_days} dias x {n_cols} series", flush=True)
 
     if args.quick:
         profiles = ["moderado", "conservador", "dinamico"]
@@ -255,7 +259,7 @@ def main() -> int:
         chaos_runs = 8
         drop_frac = 0.03
 
-    rows: list[Row] = []
+    rows_out: list[dict[str, Any]] = []
 
     def emit(
         suite: str,
@@ -275,46 +279,34 @@ def main() -> int:
             benchmark=benchmark,
         )
         if not ok:
-            rows.append(
-                Row(
-                    suite,
-                    window,
-                    profile,
-                    top_q,
-                    cap,
-                    bench_tag,
-                    False,
-                    str(r.get("error", "?"))[:120],
-                    float("nan"),
-                    float("nan"),
-                    float("nan"),
-                    float("nan"),
-                    float("nan"),
-                    "",
+            rows_out.append(
+                _flatten_run(
+                    suite=suite,
+                    window=window,
+                    profile=profile,
+                    top_q=top_q,
+                    cap=cap,
+                    benchmark=bench_tag,
+                    ok=False,
+                    err=str(r.get("error", "?"))[:200],
+                    res=None,
                 )
             )
             return
-        mk, bk = _kpis(r)
-        rows.append(
-            Row(
-                suite,
-                window,
-                profile,
-                top_q,
-                cap,
-                bench_tag,
-                True,
-                "",
-                float(mk.get("cagr", float("nan"))),
-                float(bk.get("cagr", float("nan"))),
-                float(mk.get("vol", float("nan"))),
-                float(mk.get("sharpe", float("nan"))),
-                float(mk.get("max_drawdown", float("nan"))),
-                _top5_tickers(r),
+        rows_out.append(
+            _flatten_run(
+                suite=suite,
+                window=window,
+                profile=profile,
+                top_q=top_q,
+                cap=cap,
+                benchmark=bench_tag,
+                ok=True,
+                err="",
+                res=r,
             )
         )
 
-    # --- Grelha principal ---
     for wtag in windows:
         px = _subwindow(prices_full, wtag)
         for prof in profiles:
@@ -323,7 +315,6 @@ def main() -> int:
                     for bench in benchmarks:
                         emit("grid", wtag, prof, tq, cap, bench, px)
 
-    # --- Stress: remover fração aleatória de colunas (mantendo sempre SPY se existir, para benchmark directo) ---
     cols_all = list(prices_full.columns)
     rng = random.Random(int(args.seed))
     for i in range(chaos_runs):
@@ -331,10 +322,8 @@ def main() -> int:
         n_drop = max(1, int(len(cols_all) * drop_frac))
         victims = rng.sample(cols_all, k=min(n_drop, len(cols_all)))
         for v in victims:
-            if v == "SPY" and "SPY" in cols_all:
-                # manter pelo menos um benchmark líquido na maior parte dos runs
-                if rng.random() < 0.65:
-                    continue
+            if v == "SPY" and "SPY" in cols_all and rng.random() < 0.65:
+                continue
             keep.discard(v)
         if len(keep) < 30:
             continue
@@ -349,12 +338,21 @@ def main() -> int:
             px_c,
         )
 
-    _print_table(rows)
+    _print_table(rows_out)
 
-    ok_n = sum(1 for r in rows if r.ok)
-    print(f"\nCorridas OK: {ok_n}/{len(rows)}", flush=True)
+    ok_n = sum(1 for r in rows_out if r.get("ok"))
+    print(f"\nCorridas OK: {ok_n}/{len(rows_out)}", flush=True)
 
-    # Resumo: estabilidade do CAGR «moderado» full vs 5y
+    kpi_sample: dict[str, Any] = {}
+    for r in rows_out:
+        if r.get("ok"):
+            kpi_sample = {k: v for k, v in r.items() if k.startswith(("model_", "benchmark_", "relative_"))}
+            break
+    print("\nChaves KPI exportadas no CSV (amostra 1 corrida):", flush=True)
+    print(json.dumps(sorted(kpi_sample.keys()), indent=2, ensure_ascii=False), flush=True)
+    print("\nValores KPI (amostra):", flush=True)
+    print(json.dumps(kpi_sample, indent=2, ensure_ascii=False), flush=True)
+
     def median(xs: list[float]) -> float:
         s = sorted(xs)
         if not s:
@@ -362,27 +360,53 @@ def main() -> int:
         m = len(s) // 2
         return float(s[m]) if len(s) % 2 else (s[m - 1] + s[m]) / 2
 
-    mod_full = [r.cagr for r in rows if r.ok and r.suite == "grid" and r.profile == "moderado" and r.window == "full"]
-    mod_5y = [r.cagr for r in rows if r.ok and r.suite == "grid" and r.profile == "moderado" and r.window == "5y"]
+    mod_full = [
+        float(r["model_cagr"])
+        for r in rows_out
+        if r.get("ok") and r.get("suite") == "grid" and r.get("profile") == "moderado" and r.get("window") == "full"
+    ]
+    mod_5y = [
+        float(r["model_cagr"])
+        for r in rows_out
+        if r.get("ok") and r.get("suite") == "grid" and r.get("profile") == "moderado" and r.get("window") == "5y"
+    ]
     summary = {
         "engine_version": ev2.ENGINE_VERSION,
         "price_universe": meta,
-        "runs_total": len(rows),
+        "runs_total": len(rows_out),
         "runs_ok": ok_n,
+        "kpi_column_groups": {
+            "model": sorted({k[7:] for r in rows_out for k in r if str(k).startswith("model_")}),
+            "benchmark": sorted({k[11:] for r in rows_out for k in r if str(k).startswith("benchmark_")}),
+            "relative": sorted({k[10:] for r in rows_out for k in r if str(k).startswith("relative_")}),
+        },
         "moderado_cagr_median_full_window": median(mod_full),
         "moderado_cagr_median_5y_window": median(mod_5y),
     }
-    print("\nResumo:", json.dumps(summary, indent=2, ensure_ascii=False), flush=True)
 
-    if args.csv:
-        _write_csv(Path(args.csv), rows)
-        print(f"\nCSV: {args.csv}", flush=True)
+    csv_path = args.csv.strip()
+    if not csv_path and not args.no_auto_csv:
+        auto = _BACKEND.parent / "tmp_diag" / "model_robustness_kpis_full.csv"
+        if auto.parent.is_dir():
+            csv_path = str(auto)
+    if csv_path:
+        _write_csv(Path(csv_path), rows_out)
+        print(f"\nCSV completo (todos os KPIs): {csv_path}", flush=True)
+
     if args.json:
         Path(args.json).parent.mkdir(parents=True, exist_ok=True)
         Path(args.json).write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
-        print(f"JSON: {args.json}", flush=True)
+        print(f"JSON resumo: {args.json}", flush=True)
 
-    return 0 if ok_n == len(rows) else 0
+    if args.jsonl:
+        p = Path(args.jsonl)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("w", encoding="utf-8") as jf:
+            for r in rows_out:
+                jf.write(json.dumps(r, ensure_ascii=False) + "\n")
+        print(f"JSONL: {args.jsonl}", flush=True)
+
+    return 0
 
 
 if __name__ == "__main__":

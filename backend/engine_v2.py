@@ -333,27 +333,155 @@ def build_weights(
 # KPI
 # ============================================================
 
-def _compute_kpis(equity: pd.Series):
+def _compute_kpis(equity: pd.Series) -> dict[str, float]:
+    """KPIs anualizados a partir da curva de equity (fecho diário / rebalance).
 
-    rets = equity.pct_change().dropna()
+    Mantém as chaves históricas ``cagr``, ``vol``, ``sharpe``, ``max_drawdown`` e acrescenta
+    métricas de cauda, assimetria e rácios clássicos para stress / robustez.
+    """
+    nan = float("nan")
+    s = pd.to_numeric(pd.Series(equity, dtype=float), errors="coerce").dropna()
+    if s.size < 2:
+        return {
+            "cagr": nan,
+            "vol": nan,
+            "sharpe": nan,
+            "max_drawdown": nan,
+            "total_return": nan,
+            "span_years": nan,
+            "sortino": nan,
+            "calmar": nan,
+            "hit_ratio_pct": nan,
+            "mean_daily_return": nan,
+            "worst_daily_return": nan,
+            "best_daily_return": nan,
+            "return_skewness": nan,
+            "return_excess_kurtosis": nan,
+            "var_95_daily": nan,
+            "cvar_95_daily": nan,
+            "omega_ratio": nan,
+        }
 
-    years = (equity.index[-1] - equity.index[0]).days / 365.25
+    rets = s.pct_change().dropna()
+    if rets.empty:
+        return {
+            "cagr": nan,
+            "vol": nan,
+            "sharpe": nan,
+            "max_drawdown": nan,
+            "total_return": nan,
+            "span_years": nan,
+            "sortino": nan,
+            "calmar": nan,
+            "hit_ratio_pct": nan,
+            "mean_daily_return": nan,
+            "worst_daily_return": nan,
+            "best_daily_return": nan,
+            "return_skewness": nan,
+            "return_excess_kurtosis": nan,
+            "var_95_daily": nan,
+            "cvar_95_daily": nan,
+            "omega_ratio": nan,
+        }
 
-    cagr = equity.iloc[-1] ** (1 / years) - 1
+    years = max((s.index[-1] - s.index[0]).days / 365.25, 1e-9)
+    start_v = float(s.iloc[0])
+    end_v = float(s.iloc[-1])
+    total_return = float(end_v / start_v - 1.0) if start_v > 0 else nan
+    cagr = float((end_v / start_v) ** (1.0 / years) - 1.0) if start_v > 0 else nan
 
-    vol = rets.std() * np.sqrt(252)
+    vol = float(rets.std(ddof=0) * np.sqrt(252))
+    mu_d = float(rets.mean())
+    mu_ann = float(mu_d * 252.0)
+    sharpe = float(mu_ann / vol) if vol > 1e-12 else 0.0
 
-    sharpe = (rets.mean() * 252) / vol if vol != 0 else 0
+    dd = s / s.cummax() - 1.0
+    max_dd = float(dd.min())
+    calmar = float(cagr / abs(max_dd)) if max_dd < -1e-12 else nan
 
-    dd = equity / equity.cummax() - 1
+    mar = 0.0
+    downside_mask = rets < mar
+    downside_sq_mean = float((rets.where(downside_mask, 0.0) ** 2).mean())
+    downside_vol = float(np.sqrt(downside_sq_mean * 252.0))
+    sortino = float(mu_ann / downside_vol) if downside_vol > 1e-12 else nan
 
-    max_dd = dd.min()
+    hit_ratio_pct = float((rets > 0).mean() * 100.0)
+    worst_daily_return = float(rets.min())
+    best_daily_return = float(rets.max())
+    return_skewness = float(rets.skew()) if len(rets) > 2 else nan
+    return_excess_kurtosis = float(rets.kurtosis()) if len(rets) > 3 else nan
+
+    var_95_daily = float(np.percentile(rets.to_numpy(dtype=float, copy=False), 5))
+    tail = rets[rets <= var_95_daily]
+    cvar_95_daily = float(tail.mean()) if len(tail) else nan
+
+    pos_sum = float(rets[rets > 0].sum())
+    neg_sum = float(rets[rets < 0].sum())
+    omega_ratio = float(pos_sum / abs(neg_sum)) if neg_sum < -1e-18 else nan
 
     return {
-        "cagr": float(cagr),
-        "vol": float(vol),
-        "sharpe": float(sharpe),
-        "max_drawdown": float(max_dd),
+        "cagr": cagr,
+        "vol": vol,
+        "sharpe": sharpe,
+        "max_drawdown": max_dd,
+        "total_return": total_return,
+        "span_years": float(years),
+        "sortino": sortino,
+        "calmar": calmar,
+        "hit_ratio_pct": hit_ratio_pct,
+        "mean_daily_return": mu_d,
+        "worst_daily_return": worst_daily_return,
+        "best_daily_return": best_daily_return,
+        "return_skewness": return_skewness,
+        "return_excess_kurtosis": return_excess_kurtosis,
+        "var_95_daily": var_95_daily,
+        "cvar_95_daily": cvar_95_daily,
+        "omega_ratio": omega_ratio,
+    }
+
+
+def _relative_kpis(model_eq: pd.Series, bench_eq: pd.Series) -> dict[str, float]:
+    """KPIs da carteira vs benchmark na mesma linha temporal (retornos alinhados)."""
+    nan = float("nan")
+    m = pd.to_numeric(pd.Series(model_eq, dtype=float), errors="coerce").dropna()
+    b = pd.to_numeric(pd.Series(bench_eq, dtype=float), errors="coerce").reindex(m.index).ffill()
+    r_m = m.pct_change().dropna()
+    r_b = b.pct_change().reindex(r_m.index).dropna()
+    r_m = r_m.loc[r_b.index]
+    if len(r_m) < 20 or len(r_b) < 20:
+        return {
+            "excess_cagr_vs_benchmark": nan,
+            "tracking_error_annual": nan,
+            "information_ratio": nan,
+            "beta_vs_benchmark": nan,
+            "correlation": nan,
+            "alpha_capm_annual": nan,
+        }
+
+    excess = r_m - r_b
+    te = float(excess.std(ddof=0) * np.sqrt(252.0))
+    ir = float(excess.mean() * 252.0 / te) if te > 1e-12 else nan
+    cov = float(np.cov(r_m.values, r_b.values, ddof=0)[0, 1])
+    vb = float(r_b.var(ddof=0))
+    beta = cov / vb if vb > 1e-18 else nan
+    corr = float(r_m.corr(r_b))
+    mu_m = float(r_m.mean() * 252.0)
+    mu_b = float(r_b.mean() * 252.0)
+    alpha_capm = float(mu_m - beta * mu_b)
+
+    ym = max((m.index[-1] - m.index[0]).days / 365.25, 1e-9)
+    yb = max((b.index[-1] - b.index[0]).days / 365.25, 1e-9)
+    cagr_m = float((m.iloc[-1] / m.iloc[0]) ** (1.0 / ym) - 1.0) if m.iloc[0] > 0 else nan
+    cagr_b = float((b.iloc[-1] / b.iloc[0]) ** (1.0 / yb) - 1.0) if b.iloc[0] > 0 else nan
+    excess_cagr = float(cagr_m - cagr_b)
+
+    return {
+        "excess_cagr_vs_benchmark": excess_cagr,
+        "tracking_error_annual": te,
+        "information_ratio": ir,
+        "beta_vs_benchmark": float(beta),
+        "correlation": corr,
+        "alpha_capm_annual": alpha_capm,
     }
 
 
@@ -416,7 +544,7 @@ def run_model(
     top_q: int = 20,
     cap_per_ticker: float = 0.20,
     benchmark: Optional[str] = None,
-    include_series: bool = False,
+    include_series: bool = True,
     lookback: int = 120,
     **kwargs
 ):
@@ -543,6 +671,7 @@ def run_model(
     kpis = _compute_kpis(equity_curve)
 
     bench_kpis = _compute_kpis(benchmark_curve)
+    relative_kpis = _relative_kpis(equity_curve, benchmark_curve)
 
     def _series_date_str(d) -> str:
         if hasattr(d, "strftime"):
@@ -550,7 +679,7 @@ def run_model(
         s = str(d)
         return s[:10] if len(s) >= 10 else s
 
-    result = {
+    result: dict[str, Any] = {
         "ok": True,
         "engine_version": ENGINE_VERSION,
         "price_universe": price_universe_meta,
@@ -558,12 +687,14 @@ def run_model(
         "weights": weights.to_dict(),
         "kpis": kpis,
         "benchmark_kpis": bench_kpis,
+        "relative_kpis": relative_kpis,
         "as_of_date": str(window.index[-1].date()),
-        "series": {
+    }
+    if include_series:
+        result["series"] = {
             "dates": [_series_date_str(d) for d in equity_curve.index],
             "equity_overlayed": [float(x) for x in equity_curve.values],
             "benchmark_equity": [float(x) for x in benchmark_curve.values],
-        },
-    }
+        }
 
     return result
