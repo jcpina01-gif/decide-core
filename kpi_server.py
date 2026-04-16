@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from datetime import date, datetime
 from math import sqrt
 from pathlib import Path
@@ -42,13 +43,52 @@ def _smooth_data_end_date(root: Path) -> date | None:
         return None
 
 
+def _smooth_model_equity_last_date(root: Path) -> date | None:
+    """Última data na primeira coluna de `model_equity_final_20y.csv` (fonte real do embed CAP15)."""
+    p = (
+        root
+        / "freeze"
+        / "DECIDE_MODEL_V5_V2_3_SMOOTH"
+        / "model_outputs"
+        / "model_equity_final_20y.csv"
+    )
+    if not p.is_file():
+        return None
+    try:
+        tail: deque[str] = deque(maxlen=8)
+        with p.open("r", encoding="utf-8-sig", errors="replace", newline="") as f:
+            for line in f:
+                s = line.strip()
+                if not s or s.lower().startswith("date"):
+                    continue
+                tail.append(s)
+        if not tail:
+            return None
+        first_cell = tail[-1].split(",", 1)[0].strip()
+        ts = pd.to_datetime(first_cell, errors="coerce")
+        if pd.isna(ts):
+            return None
+        return ts.date()
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _smooth_series_freshness(root: Path) -> date | None:
+    """Desempate entre clones: `max(última data no CSV de equity, data_end em v5_kpis)`."""
+    d_csv = _smooth_model_equity_last_date(root)
+    d_meta = _smooth_data_end_date(root)
+    if d_csv is not None and d_meta is not None:
+        return max(d_csv, d_meta)
+    return d_csv or d_meta
+
+
 def _resolve_kpi_repo_root() -> Path:
     """Pasta do monorepo com `freeze/`.
 
     Por omissão considera `DECIDE_KPI_REPO_ROOT`, `DECIDE_PROJECT_ROOT` e a pasta do `kpi_server.py`.
-    Se `DECIDE_KPI_STRICT_REPO_ROOT` não estiver activo, **escolhe o candidato com `data_end` mais recente**
-    em `freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/v5_kpis.json` — evita gráficos presos a um clone
-    antigo (ex. 19‑03) quando o `kpi_server.py` actualizado e o freeze fresco estão no checkout canónico.
+    Se `DECIDE_KPI_STRICT_REPO_ROOT` não estiver activo, **escolhe o candidato com série CAP15 mais recente**
+    (`model_equity_final_20y.csv` e `v5_kpis.json` — evita gráficos presos a um clone com meta desactualizada
+    ou equity truncada quando o checkout canónico já foi regenerado).
     """
     strict = os.environ.get("DECIDE_KPI_STRICT_REPO_ROOT", "").strip().lower() in {"1", "true", "yes", "on"}
     here = Path(__file__).resolve().parent
@@ -71,6 +111,21 @@ def _resolve_kpi_repo_root() -> Path:
         k0 = str(here)
         if k0 not in seen and here.is_dir() and (here / "freeze").is_dir():
             out.append(here)
+        # Mesmo directorio pai (ex.: `Documents/`): outro checkout para desempate de frescura
+        # quando se arranca `kpi_server.py` a partir do clone e o freeze canónico está em `decide-core/`.
+        try:
+            par = here.parent
+            for sib_name in ("decide-core", "DECIDE_CORE22_CLONE"):
+                sib = (par / sib_name).resolve()
+                if not sib.is_dir() or not (sib / "freeze").is_dir():
+                    continue
+                ks = str(sib)
+                if ks in seen:
+                    continue
+                seen.add(ks)
+                out.append(sib)
+        except OSError:
+            pass
         return out
 
     cands = _ordered_candidates()
@@ -82,7 +137,7 @@ def _resolve_kpi_repo_root() -> Path:
 
     scored: list[tuple[tuple[int, date], Path]] = []
     for c in cands:
-        de = _smooth_data_end_date(c)
+        de = _smooth_series_freshness(c)
         if de is not None:
             scored.append(((1, de), c))
         else:
@@ -94,7 +149,7 @@ def _resolve_kpi_repo_root() -> Path:
 REPO_ROOT = _resolve_kpi_repo_root()
 BACKEND_META_PATH = REPO_ROOT / "backend" / "data" / "company_meta_global_enriched.csv"
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
-KPI_SERVER_BUILD_TAG = "decide-kpi-2026-04-margin-csv-and-kpi-loader-v20"
+KPI_SERVER_BUILD_TAG = "decide-kpi-2026-04-margin-csv-and-kpi-loader-v22"
 
 
 def _kpi_package_dir() -> Path:
@@ -8795,7 +8850,19 @@ def index():
     # Render health-check usa HEAD /; sem isto a vista normal pode devolver 404 (ex.: freeze v5_overlay
     # ausente no deploy) e o deploy falha mesmo com /api/health OK.
     if request.method == "HEAD":
-        return Response(status=200)
+        try:
+            repo_hdr = str(REPO_ROOT.resolve())
+        except Exception:
+            repo_hdr = str(REPO_ROOT)
+        return Response(
+            "",
+            status=200,
+            headers={
+                "X-Decide-Kpi-Build": KPI_SERVER_BUILD_TAG,
+                "X-Decide-Kpi-Repo-Root": repo_hdr,
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            },
+        )
     model_key = request.args.get("model", "v5_overlay")
     profile_key = normalize_risk_profile_key(request.args.get("profile", "moderado"))
 
@@ -9215,6 +9282,8 @@ def index():
     kpi_diag_raw_file = raw_path.name if raw_path.exists() else "—"
     kpi_diag_raw_rows = _csv_date_row_count(raw_path) if raw_path.exists() else 0
 
+    model_dates_iso = [d.strftime("%Y-%m-%d") for d in dates]
+
     html_out = render_template_string(
         HTML_TEMPLATE,
         kpi_build_tag=KPI_SERVER_BUILD_TAG,
@@ -9233,7 +9302,7 @@ def index():
         bench_path=bench_path,
         num_days=num_days,
         num_years=num_years,
-        model_dates=[d.strftime("%Y-%m-%d") for d in dates],
+        model_dates=model_dates_iso,
         raw_drawdowns=[float(x) for x in raw_drawdowns],
         model_equity=list(model_eq.astype(float)),
         bench_equity=list(bench_eq.astype(float)),
@@ -9306,6 +9375,19 @@ def index():
         pass
     resp.headers["X-Decide-Kpi-Bench-File"] = bench_path.name
     resp.headers["X-Decide-Kpi-Raw-File"] = raw_path.name if raw_path.exists() else "missing"
+    try:
+        resp.headers["X-Decide-Kpi-Repo-Root"] = str(REPO_ROOT.resolve())
+    except Exception:
+        resp.headers["X-Decide-Kpi-Repo-Root"] = str(REPO_ROOT)
+    try:
+        if model_dates_iso:
+            resp.headers["X-Decide-Kpi-Model-Last-Date"] = str(model_dates_iso[-1])[:10]
+    except Exception:
+        pass
+    try:
+        resp.headers["X-Decide-Kpi-Model-Equity-Path"] = str(model_path.resolve())
+    except Exception:
+        resp.headers["X-Decide-Kpi-Model-Equity-Path"] = str(model_path)
     return resp
 
 

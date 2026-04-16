@@ -9,7 +9,7 @@ export const KPI_FLASK_BUILD_MIN_TOKEN = "margin-csv-and-kpi-loader";
  * Query `embed_src_rev` no URL do iframe — alterar quando mudares o `KPI_SERVER_BUILD_TAG` no Flask
  * e o browser mostrar HTML antigo (cache / SW). Manter em sintonia com o sufixo do build em produção.
  */
-export const KPI_IFRAME_SRC_REV = "v20";
+export const KPI_IFRAME_SRC_REV = "v22";
 
 /**
  * `NEXT_PUBLIC_KPI_FLASK_MIN_BUILD` — substring obrigatória no campo `build` de `/api/health`.

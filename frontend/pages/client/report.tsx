@@ -972,32 +972,17 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
   return getClientReportServerSideProps(ctx);
 };
 
-type PlanoDevResetPlacement = "inline" | "fixed";
-
 type PlanoDevResetTestPanelProps = {
-  placement: PlanoDevResetPlacement;
   onExecuteIbkr?: () => void;
   executeBusy?: boolean;
 };
 
-function PlanoDevResetTestPanel({ placement, onExecuteIbkr, executeBusy }: PlanoDevResetTestPanelProps) {
-  const isFixed = placement === "fixed";
+function PlanoDevResetTestPanel({ onExecuteIbkr, executeBusy }: PlanoDevResetTestPanelProps) {
   return (
     <div
       style={{
-        ...(isFixed
-          ? {
-              position: "fixed",
-              top: "max(96px, calc(env(safe-area-inset-top, 0px) + 72px))",
-              right: 14,
-              bottom: "auto",
-              zIndex: 2147483646,
-              maxWidth: 380,
-              maxHeight: "min(420px, calc(100vh - 120px))",
-              overflowY: "auto",
-              boxShadow: "0 12px 40px rgba(0,0,0,0.55)",
-            }
-          : { marginTop: 16, maxWidth: 640 }),
+        marginTop: 16,
+        maxWidth: 640,
         padding: "12px 14px",
         borderRadius: 12,
         border: "1px solid rgba(251,191,36,0.55)",
@@ -1008,18 +993,12 @@ function PlanoDevResetTestPanel({ placement, onExecuteIbkr, executeBusy }: Plano
       }}
     >
       <strong style={{ color: "#fde68a" }}>Teste (só este browser)</strong>
-      {!isFixed ? (
-        <>
-          {" — "}Limpa passos de onboarding, montante, MiFID/KYC em cache, hedge, aprovação do plano e o registo local do
-          Plano/Atividade. <strong>Não</strong> altera a conta IBKR nem o servidor. Para <strong>ocultar</strong> este bloco
-          (ex. site público final):{" "}
-          <code style={{ color: "#e2e8f0" }}>NEXT_PUBLIC_DECIDE_PLANO_DEV_RESET=0</code> no deploy.
-        </>
-      ) : (
-        <div style={{ fontSize: 11, color: "#fde68a", marginTop: 4, opacity: 0.95 }}>
-          Reset local de onboarding / plano (não altera IBKR).
-        </div>
-      )}
+      <>
+        {" — "}Limpa passos de onboarding, montante, MiFID/KYC em cache, hedge, aprovação do plano e o registo local do
+        Plano/Atividade. <strong>Não</strong> altera a conta IBKR nem o servidor. Para <strong>ocultar</strong> este bloco
+        (ex. site público final):{" "}
+        <code style={{ color: "#e2e8f0" }}>NEXT_PUBLIC_DECIDE_PLANO_DEV_RESET=0</code> no deploy.
+      </>
       {onExecuteIbkr ? (
         <div style={{ marginTop: 12 }}>
           <button
@@ -2357,7 +2336,6 @@ export default function ClientReportPage({ reportData }: PageProps) {
               ) : null}
               {planoDevResetUi ? (
                 <PlanoDevResetTestPanel
-                  placement="inline"
                   onExecuteIbkr={runExecuteOrdersFromUi}
                   executeBusy={postApprovalStage === "executing"}
                 />
@@ -3671,7 +3649,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 <strong style={{ color: "#fffbeb" }}>plano</strong> (esta página), separador{" "}
                 <strong style={{ color: "#fffbeb" }}>Execução</strong>, secção <strong style={{ color: "#fffbeb" }}>Decisão final</strong>:{" "}
                 primeiro <strong>Aprovar plano</strong> → depois o botão <strong>Executar ordens</strong> (envia para o IB
-                Gateway ou TWS). Com o painel amarelo de teste visível, o mesmo envio está também nesse bloco.
+                Gateway ou TWS).
               </div>
             )}
             {postApprovalStage === "idle" ? (
@@ -4889,7 +4867,6 @@ export default function ClientReportPage({ reportData }: PageProps) {
           </>
         </div>
       </div>
-      {planoDevResetUi ? <PlanoDevResetTestPanel placement="fixed" /> : null}
     </>
   );
 }
