@@ -34,6 +34,9 @@ next-cache/
 !/.gitignore
 !/README.md
 !/frontend/
+!/docs/
+/docs/*
+!/docs/MODELO_SMOOTH_HIPOTESES_STRESS_REGIMES.md
 # API FastAPI / Cloud Run: versionar o mínimo para `main:app` + Docker (`COPY backend/`).
 # O resto da pasta backend/ (milhares de .py de research, BAK, tools, logs) continua ignorado.
 !/backend/
