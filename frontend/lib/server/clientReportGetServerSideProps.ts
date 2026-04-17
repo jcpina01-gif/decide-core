@@ -18,8 +18,8 @@ import { readHeroKpiFreezeContext } from "./readHeroKpiFreezeContext";
 import { resolveDecideProjectRoot } from "./decideProjectRoot";
 import {
   isJpNumericListingTicker,
+  jpListingToAdrMap,
   normalizeJpListingKey,
-  remapAdrToJpListingTicker,
   remapJpListingToAdrTicker,
 } from "./jpListingToAdrMap";
 import { applyJapaneseEquityDisplayFallback } from "../tickerGeoFallback";
@@ -61,6 +61,24 @@ import type {
 
 function trimmedCell(x: unknown): string {
   return typeof x === "string" ? x.trim() : "";
+}
+
+/** ADR/OTC → listagem ``NNNN.T`` (inverso de ``jpListingToAdrMap``). Cache local — evita ``remapAdrToJpListingTicker`` undefined em alguns bundles Next. */
+let cachedAdrToJpListing: Map<string, string> | null = null;
+function reverseAdrToJpListingTicker(adrTicker: string): string | undefined {
+  const a = String(adrTicker || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\./g, "-");
+  if (!a) return undefined;
+  if (!cachedAdrToJpListing) {
+    const m = new Map<string, string>();
+    for (const [listing, adr] of jpListingToAdrMap()) {
+      m.set(String(adr || "").trim().toUpperCase(), listing);
+    }
+    cachedAdrToJpListing = m;
+  }
+  return cachedAdrToJpListing.get(a);
 }
 
 /** Evita página 500 no `/client/report` se algum passo do SSR lançar — o cliente vê `backendError` na UI. */
@@ -967,7 +985,7 @@ async function getClientReportServerSidePropsImpl(
       push(remapJpListingToAdrTicker(jpNorm));
     }
 
-    const listingFromAdr = remapAdrToJpListingTicker(k);
+    const listingFromAdr = reverseAdrToJpListingTicker(k);
     if (listingFromAdr) {
       push(listingFromAdr);
       push(normalizeTickerKey(listingFromAdr));
@@ -1524,7 +1542,7 @@ async function getClientReportServerSidePropsImpl(
       let z = canonZoneForCountryCap(r);
       if (z !== "OTHER") return z;
       const nk = normalizeTickerKey(ticker);
-      if (remapAdrToJpListingTicker(nk)) return "JP";
+      if (reverseAdrToJpListingTicker(nk)) return "JP";
       if (isJpNumericListingTicker(normalizeJpListingKey(ticker))) return "JP";
       if (/[-.]PA$/i.test(ticker.trim())) return "EU";
       return "OTHER";
@@ -1824,7 +1842,7 @@ async function getClientReportServerSidePropsImpl(
           meaningfulTextCell(m?.region) ||
           (b?.zone ?? "") ||
           (() => {
-            if (remapAdrToJpListingTicker(normalizeTickerKey(p.ticker))) return "JP";
+            if (reverseAdrToJpListingTicker(normalizeTickerKey(p.ticker))) return "JP";
             if (isJpNumericListingTicker(normalizeJpListingKey(p.ticker))) return "JP";
             if (/[-.]PA$/i.test(p.ticker.trim())) return "EU";
             return "";
