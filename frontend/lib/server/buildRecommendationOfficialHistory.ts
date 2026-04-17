@@ -10,11 +10,7 @@ import fs from "fs";
 import path from "path";
 
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
-import {
-  isJpNumericListingTicker,
-  remapAdrToJpListingTicker,
-  remapJpListingToAdrTicker,
-} from "./jpListingToAdrMap";
+import { isJpNumericListingTicker, jpListingToAdrMap, remapJpListingToAdrTicker } from "./jpListingToAdrMap";
 
 export type FlowRow = {
   ticker: string;
@@ -215,6 +211,28 @@ function loadCompanyLookup(root: string): Map<string, { company?: string; sector
   return m;
 }
 
+/**
+ * ADR → listagem ``NNNN.T`` para procurar ``company_meta`` indexado por Tóquio.
+ * Não reutilizar o import de ``remapAdrToJpListingTicker`` neste módulo: em alguns bundles Next o export
+ * chega como ``undefined`` (mesmo sintoma que ``clientReportGetServerSideProps`` documenta).
+ */
+let cachedAdrToJpListingForMeta: Map<string, string> | null = null;
+function reverseAdrToJpListingForMeta(adrTicker: string): string | undefined {
+  const a = String(adrTicker || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\./g, "-");
+  if (!a) return undefined;
+  if (!cachedAdrToJpListingForMeta) {
+    const m = new Map<string, string>();
+    for (const [listing, adr] of jpListingToAdrMap()) {
+      m.set(String(adr || "").trim().toUpperCase(), listing);
+    }
+    cachedAdrToJpListingForMeta = m;
+  }
+  return cachedAdrToJpListingForMeta.get(a);
+}
+
 function _csvSectorUsable(s: string | undefined): string | undefined {
   const t = String(s ?? "").trim();
   if (!t || t.toLowerCase() === "nan" || t === "-" || t === "—" || t.toLowerCase() === "n/a") return undefined;
@@ -224,7 +242,7 @@ function _csvSectorUsable(s: string | undefined): string | undefined {
 function enrichRow(row: RecommendationRow, lookup: Map<string, { company?: string; sector?: string }>): RecommendationRow {
   const k = row.ticker.trim().toUpperCase();
   const meta = lookup.get(k);
-  const jpList = remapAdrToJpListingTicker(k);
+  const jpList = reverseAdrToJpListingForMeta(k);
   const metaAlt = jpList ? lookup.get(jpList.trim().toUpperCase()) : undefined;
   const metaCompany = pickBetterCompany(meta?.company, metaAlt?.company, row.ticker);
   const out = { ...row };
