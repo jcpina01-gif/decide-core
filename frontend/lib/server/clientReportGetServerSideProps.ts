@@ -1,4 +1,4 @@
-import type { GetServerSideProps } from "next";
+import type { GetServerSideProps, GetServerSidePropsContext } from "next";
 import fs from "fs";
 import path from "path";
 import {
@@ -61,6 +61,68 @@ import type {
 
 function trimmedCell(x: unknown): string {
   return typeof x === "string" ? x.trim() : "";
+}
+
+/** Evita página 500 no `/client/report` se algum passo do SSR lançar — o cliente vê `backendError` na UI. */
+function buildSsrFailureReportData(backendError: string): ReportData {
+  const eurMmSym = eurMmIbTicker();
+  const entryMin = planEntryMinWeightPct();
+  return {
+    generatedAt: new Date().toISOString(),
+    accountCode: "",
+    profile: "moderado",
+    modelDisplayName: PLAFONADO_MODEL_DISPLAY_NAME_PT,
+    navEur: 0,
+    accountBaseCurrency: "EUR",
+    cashEur: 0,
+    currentValueEur: 0,
+    totalReturnPct: 0,
+    benchmarkTotalReturnPct: 0,
+    cagrPct: 0,
+    benchmarkCagrPct: 0,
+    sharpe: 0,
+    benchmarkSharpe: 0,
+    volatilityPct: 0,
+    benchmarkVolatilityPct: 0,
+    maxDrawdownPct: 0,
+    benchmarkMaxDrawdownPct: 0,
+    displayHorizonLabel: "—",
+    displayCagrModelSubLabel: "—",
+    displayCagrBenchmarkSubLabel: "—",
+    planSummary: {
+      strategyLabel: "Ações globais (DECIDE V2.3 smooth)",
+      riskLabel: "Moderado",
+      positionCount: 0,
+      turnoverPct: 0,
+      buyCount: 0,
+      sellCount: 0,
+    },
+    excludedTickersApplied: [],
+    exclusionCandidates: [],
+    tbillsProxyWeightPct: 0,
+    proposedTradesCoverageNote: "",
+    backendError: backendError.length > 500 ? `${backendError.slice(0, 500)}…` : backendError,
+    closeAsOfDate: "",
+    actualPositions: [],
+    recommendedPositions: [],
+    proposedTrades: [],
+    series: [],
+    feeSegment: "A",
+    monthlyFixedFeeEur: 20,
+    annualManagementFeePct: 0,
+    estimatedAnnualManagementFeeEur: 0,
+    estimatedMonthlyManagementFeeEur: 20,
+    estimatedPerformanceFeeEur: 0,
+    tbillProxyIbTicker: eurMmSym,
+    planWeightsProvenance: {
+      mode: "model_fallback",
+      officialHistoryMonthsLoaded: 0,
+      recommendedLineCount: 0,
+      planDustExitPct: planExitWeightPct(),
+      planEntryMinPct: entryMin,
+      planTableConsolidatePct: entryMin,
+    },
+  };
 }
 
 /** Células CSV/UI com ``-`` / ``—`` / ``n/a`` não devem sobrepor meta útil. */
@@ -757,6 +819,23 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
   if (ctx.res) {
     ctx.res.setHeader("Cache-Control", "private, no-store, max-age=0, must-revalidate");
   }
+  try {
+    return await getClientReportServerSidePropsImpl(ctx);
+  } catch (e: unknown) {
+    console.error("[client/report getServerSideProps]", e);
+    const msg =
+      e instanceof Error
+        ? `${e.name}: ${e.message}`
+        : typeof e === "string"
+          ? e
+          : "Erro desconhecido no servidor ao montar o plano.";
+    return { props: { reportData: buildSsrFailureReportData(msg) } };
+  }
+};
+
+async function getClientReportServerSidePropsImpl(
+  ctx: GetServerSidePropsContext,
+): Promise<{ props: PageProps }> {
   const frontRoot = process.cwd();
   /** Evita `..` errado quando o Next corre com `cwd` = raiz do monorepo (não `frontend/`). */
   const projectRoot = resolveDecideProjectRoot(frontRoot);
@@ -1236,8 +1315,10 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
     if (cashFromRows >= 0 && cashFromRows <= 0.95) {
       cashSleeveFrac = cashFromRows;
     }
-    recommendedRaw = officialMonth.rows.map((row) => {
-      const t = remapJpListingToAdrTicker(row.ticker.trim().toUpperCase());
+    recommendedRaw = officialMonth.rows
+      .filter((row) => Boolean(safeString((row as { ticker?: unknown })?.ticker, "").trim()))
+      .map((row) => {
+      const t = remapJpListingToAdrTicker(safeString(row.ticker, "").trim().toUpperCase());
       const m = metaForTicker(t);
       const b = lookupCompanyMetaEntry(t);
       const rowAny = row as {
@@ -2016,4 +2097,4 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
       reportData,
     },
   };
-};
+}
