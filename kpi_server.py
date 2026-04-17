@@ -3138,7 +3138,7 @@ HTML_TEMPLATE = """
             <summary>O que é isto? · <span style="font-weight:700;color:#99f6e4;">Saber mais</span></summary>
             <div class="kpi-card-details-body">
               {% if current_profile == 'moderado' %}
-              Histórico ilustrativo do <strong>Modelo CAP15</strong>. No perfil <strong>moderado</strong>, a <strong>volatilidade</strong> mostrada é a <strong>realizada no backtest</strong> da série investível. No motor V5, o moderado <strong>não</strong> aplica o segundo escalão de vol vs benchmark na perna overlay (vol natural após breadth/trend/etc.); na perna crua mantém-se o alvo <strong>1×</strong> a vol do referencial. <strong>Sem</strong> reescala neste painel para igualar ao benchmark (no conservador e no dinâmico, o cartão investível é escalado a ≈0,75× e ≈1,25× da vol do referencial). Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Os números incorporam <strong>custos de mercado estimados</strong> no backtest (comissão, slippage, FX sobre turnover) e pressupostos de <strong>execução realista</strong>; não incluem comissões DECIDE nem impostos. Informação indicativa — não é aconselhamento.
+              Histórico ilustrativo do <strong>Modelo CAP15</strong>. O freeze smooth usa <strong>momentum multi-horizonte prudente</strong> (<code>v2_prudent</code>) no motor V5. No perfil <strong>moderado</strong>, a <strong>volatilidade</strong> mostrada é a <strong>realizada no backtest</strong> da série investível. No motor V5, o moderado <strong>não</strong> aplica o segundo escalão de vol vs benchmark na perna overlay (vol natural após breadth/trend/etc.); na perna crua mantém-se o alvo <strong>1×</strong> a vol do referencial. <strong>Sem</strong> reescala neste painel para igualar ao benchmark (no conservador e no dinâmico, o cartão investível é escalado a ≈0,75× e ≈1,25× da vol do referencial). Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Os números incorporam <strong>custos de mercado estimados</strong> no backtest (comissão, slippage, FX sobre turnover) e pressupostos de <strong>execução realista</strong>; não incluem comissões DECIDE nem impostos. Informação indicativa — não é aconselhamento.
               {% else %}
               Histórico ilustrativo do <strong>Modelo CAP15</strong> com <strong>volatilidade alinhada ao perfil</strong> relativamente ao benchmark (≈ <strong>0,75×</strong> no conservador, ≈ <strong>1,25×</strong> no dinâmico), conforme o selector do topo. Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Os números incorporam <strong>custos de mercado estimados</strong> no backtest (comissão, slippage, FX sobre turnover) e pressupostos de <strong>execução realista</strong>; não incluem comissões DECIDE nem impostos. Informação indicativa — não é aconselhamento.
               {% endif %}
@@ -3358,6 +3358,42 @@ HTML_TEMPLATE = """
           </div>
         </div>
       </div>
+
+      {% if bear_low_vol_dash.show %}
+      <div class="kpi-advanced-only">
+      <h2>Protecção (bear + baixa vol)</h2>
+      <div class="stats-grid" style="margin-top:0;">
+        <div class="stat-box">
+          <div class="label">Dias em protecção (últimos 12 meses)</div>
+          <div class="num">
+            {% if bear_low_vol_dash.pct_last_12m is not none %}
+            {{ (bear_low_vol_dash.pct_last_12m) | round(2) }}%
+            {% else %}
+            —
+            {% endif %}
+          </div>
+          <div class="muted">Últimos 252 dias úteis na série do modelo</div>
+        </div>
+        <div class="stat-box">
+          <div class="label">Número de entradas em protecção (últimos 12 meses)</div>
+          <div class="num">
+            {% if bear_low_vol_dash.entries_last_12m is not none %}
+            {{ bear_low_vol_dash.entries_last_12m }}
+            {% else %}
+            —
+            {% endif %}
+          </div>
+          <div class="muted">Transições para exposição reduzida pelo overlay</div>
+        </div>
+      </div>
+      {% if bear_low_vol_dash.show_explain %}
+      <div class="card" style="margin-top:0.75rem; padding:0.85rem 1rem; max-width:52rem;">
+        <div class="label" style="margin-bottom:0.35rem;">Como interpretar</div>
+        <p class="muted" style="margin:0; font-size:0.88rem; line-height:1.55;">{{ bear_low_vol_dash.explain_pt }}</p>
+      </div>
+      {% endif %}
+      </div>
+      {% endif %}
 
       <div class="kpi-advanced-only">
       <h2>Rebalanceamento</h2>
@@ -8348,6 +8384,55 @@ def load_rebalance_info(
     }
 
 
+BEAR_LOW_VOL_EXPLAINABILITY_PT = (
+    "Em ambientes de bear market com volatilidade anormalmente baixa (frequente antes de stress), "
+    "reduzimos temporariamente a exposição. Usamos histerese para evitar 'pisca-pisca': só entramos "
+    "quando o sinal é forte e só saímos quando normaliza."
+)
+
+
+def load_bear_low_vol_dashboard(model_key: str, base_path: Path) -> dict:
+    """KPIs de transparência (últimos ~12 meses de pregão) a partir de ``v5_kpis.json``."""
+    empty: dict = {
+        "show": False,
+        "show_explain": False,
+        "pct_last_12m": None,
+        "entries_last_12m": None,
+        "explain_pt": BEAR_LOW_VOL_EXPLAINABILITY_PT,
+    }
+    if model_key not in V5_KPI_JSON_MODEL_KEYS:
+        return empty
+    kpi_path = base_path / "v5_kpis.json"
+    try:
+        with kpi_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, OSError, json.JSONDecodeError, TypeError):
+        return empty
+    if not bool(data.get("bear_low_vol_overlay_enabled")):
+        return empty
+    pct_raw = data.get("pct_days_bear_low_vol_protection_last_12m")
+    ent_raw = data.get("bear_low_vol_protection_entry_edges_last_12m")
+    pct_f: float | None
+    ent_i: int | None
+    try:
+        pct_f = float(pct_raw) if pct_raw is not None else None
+        if pct_f is not None and not np.isfinite(pct_f):
+            pct_f = None
+    except (TypeError, ValueError):
+        pct_f = None
+    try:
+        ent_i = int(ent_raw) if ent_raw is not None else None
+    except (TypeError, ValueError):
+        ent_i = None
+    return {
+        "show": True,
+        "show_explain": bool(data.get("bear_low_vol_hysteresis")),
+        "pct_last_12m": pct_f,
+        "entries_last_12m": ent_i,
+        "explain_pt": str(data.get("bear_low_vol_explainability_pt") or BEAR_LOW_VOL_EXPLAINABILITY_PT),
+    }
+
+
 def load_scaled_model_equity_series(
     model_key: str,
     profile_key: str,
@@ -9083,6 +9168,7 @@ def index():
                     df_h.groupby("sector")["weight_pct"].sum().reset_index().to_dict("records")
                 )
     rebalance_info = load_rebalance_info(model_key, base_path, num_years=num_years)
+    bear_low_vol_dash = load_bear_low_vol_dashboard(model_key, base_path)
 
     # Rolling 1Y alpha
     alpha_dates, alpha_vals = compute_rolling_alpha(model_eq, bench_eq, dates)
@@ -9339,6 +9425,7 @@ def index():
         frontend_url=resolve_frontend_url_for_embed(request),
         risk_info=risk_info,
         rebalance_info=rebalance_info,
+        bear_low_vol_dash=bear_low_vol_dash,
         close_as_of_date=close_as_of_date,
         cap15_only=cap15_only,
         client_embed=client_embed,

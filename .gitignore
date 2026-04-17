@@ -81,6 +81,13 @@ next-cache/
 !/backend/scripts/model_robustness_sweep.py
 !/backend/scripts/smooth_model_battery.py
 !/backend/scripts/smooth_stress_regimes_report.py
+!/backend/scripts/smooth_process_diligence_report.py
+!/backend/scripts/run_v5_bear_low_vol_ab.py
+!/backend/scripts/run_v5_bear_low_vol_tiered_rolling_report.py
+!/backend/scripts/run_v5_bear_low_vol_hysteresis_rolling_report.py
+!/backend/scripts/run_v5_sharpe_levers_battery.py
+!/backend/scripts/run_v5_cost_buffer_battery.py
+!/backend/scripts/run_v5_sharpe_hypothesis_audit.py
 # Preços para o motor (run-model). CSV podem ser grandes — Git LFS se necessário.
 !/backend/data/
 /backend/data/*

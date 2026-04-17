@@ -5,7 +5,7 @@ Actualiza o freeze ``DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs`` a partir de
 
 **Por defeito** usa o motor **smooth canónico** (``engine_research_v5.run_research_v1``) via
 ``export_smooth_freeze_from_v5.py`` — custos, CAP15, ``equity_raw`` / overlay / margem como no
-clone V5.
+clone V5; momentum do freeze smooth por defeito ``v2_prudent`` (ver export).
 
 Requisitos do motor V5
 ----------------------

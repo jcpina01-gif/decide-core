@@ -14,6 +14,13 @@ Mapeamento (alinhado ao código em ``engine_research_v5.py``):
   mesma corrida do motor, **sem** esse teto — exposição efectiva pode exceder 100%; CAGR/vol podem
   diferir do plafonado quando o teto encaixa.
 
+Overlay **bear + baixa vol** (smooth): por defeito **histerese** entrada/saída em quantis expansivos
+**p40 / p65**, **N = 10** dias seguidos na condição de saída em vol (ver ``ResearchConfig`` no motor).
+Use ``--no-bear-low-vol`` para export sem esta regra.
+
+**Momentum (produto smooth):** por defeito ``momentum_mode=v2_prudent`` (multi-horizonte 63/126/252).
+Use ``--momentum-mode default`` (ou ``v2_smooth``) para variantes.
+
 Requisitos
 -----------
 
@@ -110,6 +117,17 @@ def main() -> int:
         default="",
         help="Pasta backend do clone (default: env DECIDE_V5_ENGINE_ROOT ou ../DECIDE_CORE22_CLONE/backend)",
     )
+    ap.add_argument(
+        "--no-bear-low-vol",
+        action="store_true",
+        help="Desliga o overlay bear+baixa vol no motor V5 (export legado sem essa regra).",
+    )
+    ap.add_argument(
+        "--momentum-mode",
+        type=str,
+        default="v2_prudent",
+        help='Motor momentum_mode (default: v2_prudent). Ex.: "default", "v2_smooth".',
+    )
     args = ap.parse_args()
 
     prices_path = Path(args.prices.strip()).resolve()
@@ -141,7 +159,20 @@ def main() -> int:
             "cap_per_ticker": 0.15,
             # Uma corrida: plafonado = `equity_overlayed` (teto 100% NAV); margem = `equity_overlay_margin` (sem teto).
             "max_effective_exposure": 1.0,
+            "momentum_mode": str(args.momentum_mode).strip().lower(),
         }
+        if bool(getattr(args, "no_bear_low_vol", False)):
+            kwargs["bear_low_vol_overlay_enabled"] = False
+        else:
+            kwargs["bear_low_vol_hysteresis"] = True
+            kwargs["bear_low_vol_tiered"] = False
+            kwargs["bear_low_vol_hysteresis_entry_quantile"] = 0.40
+            kwargs["bear_low_vol_hysteresis_exit_quantile"] = 0.65
+            kwargs["bear_low_vol_hysteresis_exit_consecutive_days"] = 10
+            kwargs["bear_low_vol_hysteresis_bear_ma_window"] = 252
+            kwargs["bear_low_vol_quantile_min_periods"] = 252
+            kwargs["bear_low_vol_bench_vol_window"] = 63
+            kwargs["bear_low_vol_exposure_mult"] = 0.85
         if pk == "moderado":
             kwargs["emit_weights_csv"] = str(data_weights)
             kwargs["emit_cash_sleeve_daily_csv"] = str(data_cash)
@@ -184,6 +215,7 @@ def main() -> int:
         meta["curve_engine"] = "engine_research_v5"
         meta["curve_engine_script"] = "export_smooth_freeze_from_v5.py"
         meta["prices_input"] = str(prices_path.resolve())
+        meta["smooth_export_momentum_mode"] = str(args.momentum_mode).strip().lower()
         v5_json.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     print("OK: freeze smooth V5 em", FREEZE_OUT)

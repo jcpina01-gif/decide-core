@@ -1595,8 +1595,9 @@ export default function DecideLandingPage() {
                 maxWidth: 680,
               }}
             >
-              ~20 anos, <strong>Modelo CAP15</strong> (≤100% do NAV, freeze V2.3 smooth). No <strong>moderado</strong>, a
-              volatilidade da série segue o <strong>próprio modelo</strong> (sem reescala ao benchmark), alinhado ao painel KPI.
+              ~20 anos, <strong>Modelo CAP15</strong> (≤100% do NAV, freeze V2.3 smooth, momentum multi-horizonte prudente).
+              No <strong>moderado</strong>, a volatilidade da série segue o <strong>próprio modelo</strong> (sem reescala ao
+              benchmark), alinhado ao painel KPI.
               Indicativo.
             </p>
             <details style={{ marginBottom: 18, fontSize: 11, color: "#71717a" }}>
@@ -1612,7 +1613,8 @@ export default function DecideLandingPage() {
               </summary>
               <p style={{ marginTop: 10, lineHeight: 1.55, color: "#71717a" }}>
                 Base: freeze ~20Y{" "}
-                <code style={{ color: "#787f8a" }}>DECIDE_MODEL_V5_V2_3_SMOOTH</code>. A API da landing
+                <code style={{ color: "#787f8a" }}>DECIDE_MODEL_V5_V2_3_SMOOTH</code> (export com{" "}
+                <code style={{ color: "#787f8a" }}>momentum_mode=v2_prudent</code>). A API da landing
                 no <strong style={{ color: "#a1a1aa" }}>moderado</strong> usa a vol do modelo (sem igualar ao benchmark) para CAGR e
                 gráficos. No painel KPI (:5000): moderado com vol do modelo; conservador/dinâmico com alvo vs benchmark. Métricas avançadas na{" "}
                 <Link href="/client-dashboard" style={{ color: "#787f8a", textDecoration: "underline", textUnderlineOffset: 2 }}>
