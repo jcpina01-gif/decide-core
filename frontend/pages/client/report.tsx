@@ -131,6 +131,8 @@ export type PlanWeightsProvenance = {
   planEntryMinPct?: number;
   /** Limiar usado para fundir linhas na grelha (em geral = entrada, 1%). */
   planTableConsolidatePct?: number;
+  /** Tecto % por linha de risco (ex.: 15%) — ``DECIDE_PLAN_MAX_WEIGHT_PCT_PER_TICKER``. */
+  planPerTickerMaxPct?: number;
 };
 
 export type ReportData = {
@@ -3309,6 +3311,19 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   {formatPct(reportData.planWeightsProvenance.planTableConsolidatePct, 2)} para alinhar com o mínimo de
                   entrada; sugestão de compra (BUY) só para alvo estritamente superior a{" "}
                   {formatPct(reportData.planWeightsProvenance.planEntryMinPct, 2)}.
+                  {typeof reportData.planWeightsProvenance.planPerTickerMaxPct === "number" ? (
+                    <>
+                      {" "}
+                      (3) tecto por linha de risco{" "}
+                      {formatPct(reportData.planWeightsProvenance.planPerTickerMaxPct, 2)} — em cada passo{" "}
+                      <code style={{ color: "#d9f99d" }}>min(% NAV, % da soma do sleeve de risco)</code>; excesso
+                      redistribuído pelo <strong style={{ color: "#a1a1aa" }}>score</strong> do modelo (peso{" "}
+                      <code style={{ color: "#d9f99d" }}>√score</code>
+                      ), não para caixa/MM, excepto uma única linha de risco no plano.{" "}
+                      <code style={{ color: "#d9f99d" }}>DECIDE_PLAN_MAX_WEIGHT_PCT_PER_TICKER</code> (15 ou 0,15);{" "}
+                      <code style={{ color: "#d9f99d" }}>DECIDE_DISABLE_PLAN_PER_TICKER_MAX_CAP</code> para desligar.
+                    </>
+                  ) : null}
                 </p>
               ) : null}
               {recommendedFiltered.some((p) => String(p.ticker).toUpperCase() === "EURUSD") ? (

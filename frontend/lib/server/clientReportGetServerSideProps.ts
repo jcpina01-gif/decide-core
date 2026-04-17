@@ -37,15 +37,19 @@ import {
   isBuyMissingEquityClosePrice,
 } from "../approvalPlanTradeDisplay";
 import { capPctDisplay, eurMmIbTicker, safeNumber, safeString } from "../clientReportCoreUtils";
+import { isDecideCashSleeveBrokerSymbol } from "../decideCashSleeveDisplay";
 import { lookupCompanyMetaEntry, seedMetaMapFromCompanyMeta } from "../companyMeta";
 import { stripPlanBenchmarkIndexRows } from "../planStripBenchmarkIndexTickers";
 import {
+  applyPerTickerMaxWeightPct,
   applyZoneCapsVsBenchmark,
   benchmarkZoneWeightsFromPriceHeaders,
   canonZoneForCountryCap,
   consolidateWeightsBelowMinimum,
   planEntryMinWeightPct,
   planExitWeightPct,
+  planPerTickerMaxWeightPct,
+  planPerTickerMaxWeightPctDisabled,
   planZoneCapMultiplier,
 } from "./planWeightAdjustments";
 import type {
@@ -1569,6 +1573,11 @@ async function getClientReportServerSidePropsImpl(
       consolidateWeightsBelowMinimum(recommendedPositions, entryMinGrid, isPlanWeightProtected);
       recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     }
+    if (!planPerTickerMaxWeightPctDisabled()) {
+      const perTickerMax = planPerTickerMaxWeightPct() ?? 15;
+      applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtected);
+      recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    }
   }
 
   for (let i = recommendedPositions.length - 1; i >= 0; i -= 1) {
@@ -1826,6 +1835,18 @@ async function getClientReportServerSidePropsImpl(
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
   }
 
+  /** Segunda passagem: a grelha já pode ter CSH2/MM em vez de TBILL_PROXY — o sink do cap tem de encontrar caixa. EURUSD fica de fora (overlay). */
+  if (!planPerTickerMaxWeightPctDisabled()) {
+    const perTickerMax = planPerTickerMaxWeightPct() ?? 15;
+    const isPlanWeightProtectedAfterUi = (p: (typeof recommendedPositions)[number]) =>
+      !!p.excluded ||
+      String(p.ticker || "").trim().toUpperCase() === "EURUSD" ||
+      String(p.ticker || "").trim().toUpperCase() === "TBILL_PROXY" ||
+      isDecideCashSleeveBrokerSymbol(String(p.ticker || ""));
+    applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
+    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+  }
+
   {
     const skipDisplayEnrich = (t: string) => {
       const u = t.trim().toUpperCase();
@@ -2069,6 +2090,9 @@ async function getClientReportServerSidePropsImpl(
     planDustExitPct: planExitWeightPct(),
     planEntryMinPct: entryMinPct,
     planTableConsolidatePct: planEntryMinWeightPct(),
+    planPerTickerMaxPct: planPerTickerMaxWeightPctDisabled()
+      ? undefined
+      : (planPerTickerMaxWeightPct() ?? 15),
   };
 
   const reportData: ReportData = {

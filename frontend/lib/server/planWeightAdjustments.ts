@@ -2,7 +2,8 @@
  * Ajustes de pesos da carteira recomendada no relatório (SSR): teto por zona vs benchmark
  * e piso mínimo por linha — espelham a intenção de ``engine_v2.py`` no produto Next.
  */
-import { safeNumber } from "../clientReportCoreUtils";
+import { eurMmIbTicker, safeNumber } from "../clientReportCoreUtils";
+import { isDecideCashSleeveBrokerSymbol } from "../decideCashSleeveDisplay";
 
 const DEFAULT_COMPOSITE: readonly (readonly [string, number, "US" | "EU" | "JP" | "CAN"])[] = [
   ["SPY", 0.6, "US"],
@@ -126,12 +127,106 @@ export function planZoneCapDisabled(): boolean {
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
+export function planPerTickerMaxWeightPctDisabled(): boolean {
+  const v = (process.env.DECIDE_DISABLE_PLAN_PER_TICKER_MAX_CAP || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+/**
+ * Tecto em **pontos percentuais** (ex.: 15 = 15%) para o cap por linha na grelha do plano.
+ * Alinha ao CAP15 / ``cap_per_ticker`` do motor (fração do sleeve de risco, tipicamente 0,15).
+ *
+ * - Valor em ``(0,1]`` (ex.: ``0.15``) interpreta-se como **fração** → multiplica por 100.
+ * - Valores inválidos ou absurdos (≥ 100 ou > 40) voltam ao **15** por defeito — nunca ``99`` (isso anulava o cap:
+ * ``min(99, 0.99×S)`` ≈ 100% do sleeve e ninguém era cortado).
+ */
+export function planPerTickerMaxWeightPct(): number | null {
+  if (planPerTickerMaxWeightPctDisabled()) return null;
+  const raw = (process.env.DECIDE_PLAN_MAX_WEIGHT_PCT_PER_TICKER || "").trim();
+  let n = raw ? Number(raw) : 15;
+  if (!Number.isFinite(n) || n <= 0) n = 15;
+  /** ``0.15`` no deploy = 15% (fração); ``1`` = 1% (não multiplicar). */
+  if (n > 0 && n < 1) n *= 100;
+  if (n >= 100 || n > 40) n = 15;
+  return n;
+}
+
 export type MutablePlanWeightRow = {
   ticker: string;
   weightPct: number;
   originalWeightPct?: number;
   excluded?: boolean;
+  /** Momento / ranking do modelo (CSV ou payload) — usado na redistribuição do cap por ticker. */
+  score?: number;
 };
+
+/** Peso para alocar excesso do cap: ``sqrt(score)`` se ``score > 0``, senão uniforme mínima (alinhado a ``build_weights`` no motor). */
+function planRankAllocationWeight(r: MutablePlanWeightRow): number {
+  const s = safeNumber((r as { score?: unknown }).score, 0);
+  if (s > 1e-18) return Math.sqrt(s);
+  return 1e-6;
+}
+
+/**
+ * Redistribui ``excess`` só até cada linha atingir ``capLine``, com peso ``headroom × sqrt(score)``.
+ * Devolve o excesso que não coube (para sink ou nova ronda).
+ */
+function redistributeExcessBoundedByRank(
+  recipients: MutablePlanWeightRow[],
+  excess: number,
+  capLine: number,
+): number {
+  if (excess <= 1e-12 || recipients.length === 0) return excess;
+  let rem = excess;
+  for (let round = 0; round < 250 && rem > 1e-9; round += 1) {
+    const alloc = recipients.map((r) => {
+      const w = safeNumber(r.weightPct, 0);
+      const head = Math.max(0, capLine - w);
+      return head * planRankAllocationWeight(r);
+    });
+    const s = alloc.reduce((a, b) => a + b, 0);
+    if (s <= 1e-18) break;
+    let applied = 0;
+    for (let i = 0; i < recipients.length; i += 1) {
+      const r = recipients[i];
+      const w = safeNumber(r.weightPct, 0);
+      const head = Math.max(0, capLine - w);
+      if (head <= 1e-12) continue;
+      const proposal = rem * (alloc[i] / s);
+      const add = Math.min(proposal, head);
+      if (add <= 1e-12) continue;
+      r.weightPct = w + add;
+      if (r.originalWeightPct !== undefined) {
+        const ow = safeNumber(r.originalWeightPct, w);
+        r.originalWeightPct = ow + add * (ow / w || 1);
+      }
+      applied += add;
+    }
+    if (applied <= 1e-9) break;
+    rem -= applied;
+  }
+  return rem;
+}
+
+/** Linha onde acumular excesso do cap (TBILL no JSON, MM EUR na UI, BIL/SHV). */
+export function planWeightSinkRow(rows: MutablePlanWeightRow[]): MutablePlanWeightRow | undefined {
+  const u = (t: string) =>
+    String(t || "")
+      .trim()
+      .toUpperCase();
+  const want = (tickers: string[]) => {
+    for (const w of tickers) {
+      const hit = rows.find((r) => u(r.ticker) === w);
+      if (hit) return hit;
+    }
+    return undefined;
+  };
+  const mm = eurMmIbTicker();
+  return (
+    want(["TBILL_PROXY", "EUR_MM_PROXY", "BIL", "SHV", mm]) ||
+    rows.find((r) => isDecideCashSleeveBrokerSymbol(String(r.ticker || "")))
+  );
+}
 
 /**
  * Remove peso só de linhas **abaixo do limiar de saída** (default 0,5%) e redistribui pelas restantes.
@@ -263,6 +358,73 @@ export function applyZoneCapsVsBenchmark(
     if (r.originalWeightPct !== undefined) {
       const ow0 = safeNumber(r.originalWeightPct, oldW);
       r.originalWeightPct = oldW > 1e-9 ? (nw / oldW) * ow0 : nw;
+    }
+  }
+}
+
+/**
+ * Tecto por **ticker**: em cada passo ``capLine = min(maxPct, maxFrac × S)`` (NAV vs % do sleeve de risco).
+ * Corta linhas acima do tecto e redistribui o excesso com **ranking** (``headroom × sqrt(score)``), **sem** ultrapassar
+ * ``capLine`` na mesma ronda (evita devolver peso aos mesmos mega-cap). O que não couber vai para o sink de caixa.
+ */
+export function applyPerTickerMaxWeightPct(
+  rows: MutablePlanWeightRow[],
+  maxPct: number,
+  isProtected: (r: MutablePlanWeightRow) => boolean,
+): void {
+  const maxPctClamped = Math.min(Math.max(maxPct, 1e-6), 40);
+  if (!(maxPctClamped > 0) || maxPctClamped >= 100) return;
+  const maxFrac = maxPctClamped / 100;
+
+  for (let it = 0; it < 120; it += 1) {
+    const elig = rows.filter((r) => !isProtected(r) && safeNumber(r.weightPct, 0) > 1e-12);
+    if (elig.length === 0) break;
+
+    const sleeveSum = elig.reduce((a, r) => a + safeNumber(r.weightPct, 0), 0);
+    if (sleeveSum <= 1e-9) break;
+
+    const capLine = Math.min(maxPctClamped, maxFrac * sleeveSum);
+    const over = elig.filter((r) => safeNumber(r.weightPct, 0) > capLine + 1e-9);
+    if (over.length === 0) break;
+
+    let excess = 0;
+    for (const r of over) {
+      const w = safeNumber(r.weightPct, 0);
+      excess += w - capLine;
+      r.weightPct = capLine;
+      if (r.originalWeightPct !== undefined) {
+        const ow = safeNumber(r.originalWeightPct, w);
+        r.originalWeightPct = w > 1e-9 ? (capLine / w) * ow : capLine;
+      }
+    }
+
+    const under = elig.filter((r) => safeNumber(r.weightPct, 0) < capLine - 1e-9);
+    const recipients = under.length > 0 ? under : elig;
+
+    if (elig.length === 1) {
+      const tb = planWeightSinkRow(rows);
+      if (tb) {
+        const prevW = safeNumber(tb.weightPct, 0);
+        const prevOw = tb.originalWeightPct !== undefined ? safeNumber(tb.originalWeightPct, prevW) : undefined;
+        tb.weightPct = prevW + excess;
+        if (tb.originalWeightPct !== undefined) {
+          tb.originalWeightPct = (prevOw ?? prevW) + excess;
+        }
+      }
+      continue;
+    }
+
+    const leftover = redistributeExcessBoundedByRank(recipients, excess, capLine);
+    if (leftover > 1e-4) {
+      const tb = planWeightSinkRow(rows);
+      if (tb) {
+        const prevW = safeNumber(tb.weightPct, 0);
+        const prevOw = tb.originalWeightPct !== undefined ? safeNumber(tb.originalWeightPct, prevW) : undefined;
+        tb.weightPct = prevW + leftover;
+        if (tb.originalWeightPct !== undefined) {
+          tb.originalWeightPct = (prevOw ?? prevW) + leftover;
+        }
+      }
     }
   }
 }
