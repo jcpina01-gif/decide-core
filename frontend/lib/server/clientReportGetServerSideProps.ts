@@ -1152,166 +1152,171 @@ async function getClientReportServerSidePropsImpl(
     if (ticker) tradePlanByTicker.set(ticker, row);
   }
 
-  const rawPositions = Array.isArray(statusJson?.positions)
-    ? statusJson.positions
-    : Array.isArray(smokeJson?.selected?.positions)
-    ? smokeJson.selected.positions
-    : [];
-
-  let actualPositions: ActualPosition[] = rawPositions.map((p: any) => {
-    const ticker = safeString(p.ticker ?? p.symbol).toUpperCase();
-    const qty = safeNumber(p.position ?? p.qty, 0);
-    const tradePlanRow = tradePlanByTicker.get(ticker);
-    const marketPrice = safeNumber(tradePlanRow?.market_price, 0);
-    const value = qty * marketPrice;
-    const weightPct = navEur > 0 ? (value / navEur) * 100 : 0;
-    const closePrice = getClosePrice(ticker);
-    const m = metaForTicker(ticker);
-    const nameShort = pickBestDisplayName(
-      ticker,
-      safeString(p.name ?? p.companyName ?? p.short_name, ""),
-      safeString(m?.nameShort, ""),
-    );
-    const sector = trimmedCell(m?.sector) || trimmedCell(p.sector ?? p.gics_sector);
-    const industry = trimmedCell(m?.industry) || trimmedCell(p.industry ?? p.subcategory);
-    let country = trimmedCell(p.country) || trimmedCell(m?.country);
-    let zoneGeo = trimmedCell(p.zone) || trimmedCell(m?.geoZone);
-    let regionBench = trimmedCell(m?.region);
-    let sectorOut = sector;
-    const jpPatch = applyJapaneseEquityDisplayFallback(ticker, {
-      country,
-      zone: zoneGeo,
-      region: regionBench,
-      sector: sectorOut,
-    });
-    country = trimmedCell(jpPatch.country) || country;
-    zoneGeo = trimmedCell(jpPatch.zone) || zoneGeo;
-    regionBench = trimmedCell(jpPatch.region) || regionBench;
-    sectorOut = trimmedCell(jpPatch.sector) || sectorOut;
-
-    return {
-      ticker,
-      nameShort,
-      sector: sectorOut,
-      industry,
-      country,
-      zone: zoneGeo,
-      region: regionBench,
-      qty,
-      marketPrice,
-      closePrice: closePrice > 0 ? closePrice : null,
-      value,
-      weightPct,
-      currency: safeString(p.currency, safeString(tradePlanRow?.currency, "USD")),
-    };
-  });
-
-  actualPositions.sort((a, b) => b.value - a.value);
-
+  /**
+   * Preferir sempre o snapshot live `/api/ibkr-snapshot` (mesmo que na aba Carteira) quando o backend responde `ok`.
+   * Caso contrário, `tmp_diag/ibkr_order_status_and_cancel.json` pode listar dezenas de linhas de fluxo de ordens
+   * que não coincidem com as posições reais na conta (ex.: só 3 títulos detidos).
+   */
+  const liveIb = await loadIbkrSnapshotFromDecideBackend();
   let initialIbkrStructure: LiveIbkrStructure | null = null;
-  if (navEur <= 0 && actualPositions.length === 0) {
-    const ib = await loadIbkrSnapshotFromDecideBackend();
-    if (ib?.ok && Array.isArray(ib.positions)) {
-      const navCcy = safeString(ib.net_liquidation_ccy, "USD");
-      const nav = safeNumber(ib.net_liquidation, 0);
-      navEur = nav;
-      accountBaseCurrency = navCcy || accountBaseCurrency;
-      accountCode = safeString(ib.account_code, accountCode);
-      const cl = ib.cash_ledger;
-      if (cl && typeof cl.value === "number" && Number.isFinite(cl.value)) {
-        cashEur = safeNumber(cl.value, 0);
-      }
-      const grossPositionsValue = ib.positions.reduce(
-        (acc, p) => acc + Math.abs(safeNumber(p.value, 0)),
-        0,
-      );
-      let financing = 0;
-      let financingCcy = navCcy;
-      if (
-        cl &&
-        typeof cl.value === "number" &&
-        Number.isFinite(cl.value) &&
-        Math.abs(cl.value) > 1e-4
-      ) {
-        financing = cl.value;
-        financingCcy = safeString(cl.currency, navCcy);
-      }
-      initialIbkrStructure = {
-        netLiquidation: nav,
-        ccy: navCcy,
-        grossPositionsValue,
-        financing,
-        financingCcy,
-      };
-      actualPositions = ib.positions.map((p) => {
-        const ticker = safeString(p.ticker, "").toUpperCase();
-        const qty = safeNumber(p.qty, 0);
-        const marketPrice = safeNumber(p.market_price, 0);
-        const value = safeNumber(p.value, qty * marketPrice);
-        const weightPct = nav > 0 ? (value / nav) * 100 : 0;
-        const closePrice = getClosePrice(ticker);
-        const m = metaForTicker(ticker);
-        const nameShort = pickBestDisplayName(
-          ticker,
-          safeString(p.name, ""),
-          safeString(m?.nameShort, ""),
-        );
-        const sector = trimmedCell(m?.sector) || trimmedCell(p.sector);
-        const industry = trimmedCell(m?.industry) || trimmedCell(p.industry ?? p.subcategory);
-        let country = trimmedCell(p.country) || trimmedCell(m?.country);
-        let zoneGeo = trimmedCell(p.zone) || trimmedCell(m?.geoZone);
-        let regionBench = trimmedCell(m?.region);
-        let sectorOut = sector;
-        const jpPatch = applyJapaneseEquityDisplayFallback(ticker, {
-          country,
-          zone: zoneGeo,
-          region: regionBench,
-          sector: sectorOut,
-        });
-        country = trimmedCell(jpPatch.country) || country;
-        zoneGeo = trimmedCell(jpPatch.zone) || zoneGeo;
-        regionBench = trimmedCell(jpPatch.region) || regionBench;
-        sectorOut = trimmedCell(jpPatch.sector) || sectorOut;
-        return {
-          ticker,
-          nameShort,
-          sector: sectorOut,
-          industry,
-          country,
-          zone: zoneGeo,
-          region: regionBench,
-          qty,
-          marketPrice,
-          closePrice: closePrice > 0 ? closePrice : null,
-          value,
-          weightPct,
-          currency: safeString(p.currency, navCcy),
-        };
-      });
-      if (
-        cl &&
-        typeof cl.value === "number" &&
-        Number.isFinite(cl.value) &&
-        Math.abs(cl.value) > 1e-4
-      ) {
-        actualPositions.push({
-          ticker: "LIQUIDEZ",
-          nameShort: "Caixa e equivalentes",
-          sector: "Liquidez",
-          industry: "",
-          country: "",
-          zone: "",
-          region: "",
-          qty: 0,
-          marketPrice: 0,
-          closePrice: null,
-          value: cl.value,
-          weightPct: nav > 0 ? (cl.value / nav) * 100 : 0,
-          currency: financingCcy,
-        });
-      }
-      actualPositions.sort((a, b) => b.value - a.value);
+  let actualPositions: ActualPosition[] = [];
+
+  if (liveIb?.ok && Array.isArray(liveIb.positions)) {
+    const navCcy = safeString(liveIb.net_liquidation_ccy, "USD");
+    const nav = safeNumber(liveIb.net_liquidation, 0);
+    navEur = nav;
+    accountBaseCurrency = navCcy || accountBaseCurrency;
+    accountCode = safeString(liveIb.account_code, accountCode);
+    const cl = liveIb.cash_ledger;
+    if (cl && typeof cl.value === "number" && Number.isFinite(cl.value)) {
+      cashEur = safeNumber(cl.value, 0);
     }
+    const grossPositionsValue = liveIb.positions.reduce(
+      (acc, p) => acc + Math.abs(safeNumber(p.value, 0)),
+      0,
+    );
+    let financing = 0;
+    let financingCcy = navCcy;
+    if (
+      cl &&
+      typeof cl.value === "number" &&
+      Number.isFinite(cl.value) &&
+      Math.abs(cl.value) > 1e-4
+    ) {
+      financing = cl.value;
+      financingCcy = safeString(cl.currency, navCcy);
+    }
+    initialIbkrStructure = {
+      netLiquidation: nav,
+      ccy: navCcy,
+      grossPositionsValue,
+      financing,
+      financingCcy,
+    };
+    actualPositions = liveIb.positions.map((p) => {
+      const ticker = safeString(p.ticker, "").toUpperCase();
+      const qty = safeNumber(p.qty, 0);
+      const marketPrice = safeNumber(p.market_price, 0);
+      const value = safeNumber(p.value, qty * marketPrice);
+      const weightPct = nav > 0 ? (value / nav) * 100 : 0;
+      const closePrice = getClosePrice(ticker);
+      const m = metaForTicker(ticker);
+      const nameShort = pickBestDisplayName(
+        ticker,
+        safeString(p.name, ""),
+        safeString(m?.nameShort, ""),
+      );
+      const sector = trimmedCell(m?.sector) || trimmedCell(p.sector);
+      const industry = trimmedCell(m?.industry) || trimmedCell(p.industry ?? p.subcategory);
+      let country = trimmedCell(p.country) || trimmedCell(m?.country);
+      let zoneGeo = trimmedCell(p.zone) || trimmedCell(m?.geoZone);
+      let regionBench = trimmedCell(m?.region);
+      let sectorOut = sector;
+      const jpPatch = applyJapaneseEquityDisplayFallback(ticker, {
+        country,
+        zone: zoneGeo,
+        region: regionBench,
+        sector: sectorOut,
+      });
+      country = trimmedCell(jpPatch.country) || country;
+      zoneGeo = trimmedCell(jpPatch.zone) || zoneGeo;
+      regionBench = trimmedCell(jpPatch.region) || regionBench;
+      sectorOut = trimmedCell(jpPatch.sector) || sectorOut;
+      return {
+        ticker,
+        nameShort,
+        sector: sectorOut,
+        industry,
+        country,
+        zone: zoneGeo,
+        region: regionBench,
+        qty,
+        marketPrice,
+        closePrice: closePrice > 0 ? closePrice : null,
+        value,
+        weightPct,
+        currency: safeString(p.currency, navCcy),
+      };
+    });
+    if (
+      cl &&
+      typeof cl.value === "number" &&
+      Number.isFinite(cl.value) &&
+      Math.abs(cl.value) > 1e-4
+    ) {
+      actualPositions.push({
+        ticker: "LIQUIDEZ",
+        nameShort: "Caixa e equivalentes",
+        sector: "Liquidez",
+        industry: "",
+        country: "",
+        zone: "",
+        region: "",
+        qty: 0,
+        marketPrice: 0,
+        closePrice: null,
+        value: cl.value,
+        weightPct: nav > 0 ? (cl.value / nav) * 100 : 0,
+        currency: financingCcy,
+      });
+    }
+    actualPositions.sort((a, b) => b.value - a.value);
+  } else {
+    const rawPositions = Array.isArray(statusJson?.positions)
+      ? statusJson.positions
+      : Array.isArray(smokeJson?.selected?.positions)
+        ? smokeJson.selected.positions
+        : [];
+
+    actualPositions = rawPositions.map((p: any) => {
+      const ticker = safeString(p.ticker ?? p.symbol).toUpperCase();
+      const qty = safeNumber(p.position ?? p.qty, 0);
+      const tradePlanRow = tradePlanByTicker.get(ticker);
+      const marketPrice = safeNumber(tradePlanRow?.market_price, 0);
+      const value = qty * marketPrice;
+      const weightPct = navEur > 0 ? (value / navEur) * 100 : 0;
+      const closePrice = getClosePrice(ticker);
+      const m = metaForTicker(ticker);
+      const nameShort = pickBestDisplayName(
+        ticker,
+        safeString(p.name ?? p.companyName ?? p.short_name, ""),
+        safeString(m?.nameShort, ""),
+      );
+      const sector = trimmedCell(m?.sector) || trimmedCell(p.sector ?? p.gics_sector);
+      const industry = trimmedCell(m?.industry) || trimmedCell(p.industry ?? p.subcategory);
+      let country = trimmedCell(p.country) || trimmedCell(m?.country);
+      let zoneGeo = trimmedCell(p.zone) || trimmedCell(m?.geoZone);
+      let regionBench = trimmedCell(m?.region);
+      let sectorOut = sector;
+      const jpPatch = applyJapaneseEquityDisplayFallback(ticker, {
+        country,
+        zone: zoneGeo,
+        region: regionBench,
+        sector: sectorOut,
+      });
+      country = trimmedCell(jpPatch.country) || country;
+      zoneGeo = trimmedCell(jpPatch.zone) || zoneGeo;
+      regionBench = trimmedCell(jpPatch.region) || regionBench;
+      sectorOut = trimmedCell(jpPatch.sector) || sectorOut;
+
+      return {
+        ticker,
+        nameShort,
+        sector: sectorOut,
+        industry,
+        country,
+        zone: zoneGeo,
+        region: regionBench,
+        qty,
+        marketPrice,
+        closePrice: closePrice > 0 ? closePrice : null,
+        value,
+        weightPct,
+        currency: safeString(p.currency, safeString(tradePlanRow?.currency, "USD")),
+      };
+    });
+
+    actualPositions.sort((a, b) => b.value - a.value);
   }
 
   const cashSleeveFracRawModel = safeNumber(

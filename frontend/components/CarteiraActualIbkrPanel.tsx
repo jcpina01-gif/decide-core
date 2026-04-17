@@ -120,12 +120,14 @@ export default function CarteiraActualIbkrPanel({ refreshToken = 0 }: Props) {
         Activos (IBKR)
       </h2>
       <p style={{ margin: "0 0 16px", fontSize: 13, lineHeight: 1.5, color: "#a1a1aa", maxWidth: 820 }}>
-        Lista sincronizada com a sua conta na corretora (TWS / IB Gateway). Não é a carteira recomendada pelo{" "}
-        {PLAFONADO_MODEL_INLINE_PT} — use o <strong style={{ color: "#e4e4e7" }}>Dashboard</strong> para ver KPIs e
-        composição do plano
-        sugerido. O teto <strong style={{ color: "#e4e4e7" }}>CAP15</strong> (máx. 15% por título) aplica-se aos{" "}
-        <strong style={{ color: "#e4e4e7" }}>pesos-alvo do modelo</strong>, não a esta lista: aqui veja o que está
-        efectivamente na conta (compras manuais, execução parcial ou drift).
+        Lista sincronizada com a sua conta na corretora (TWS / IB Gateway), pelo mesmo{" "}
+        <strong style={{ color: "#e4e4e7" }}>snapshot IBKR</strong> que o Plano usa quando o backend responde — não
+        confunda com ficheiros <code style={{ color: "#a1a1aa" }}>tmp_diag</code> de testes ou com a grelha de{" "}
+        <strong style={{ color: "#e4e4e7" }}>alterações / ordens</strong> (muitas linhas). Não é a carteira recomendada
+        pelo {PLAFONADO_MODEL_INLINE_PT} — use o <strong style={{ color: "#e4e4e7" }}>Dashboard</strong> para ver KPIs
+        e composição do plano sugerido. O teto <strong style={{ color: "#e4e4e7" }}>CAP15</strong> (máx. 15% por
+        título) aplica-se aos <strong style={{ color: "#e4e4e7" }}>pesos-alvo do modelo</strong>, não a esta lista:
+        aqui veja o que está efectivamente na conta (compras manuais, execução parcial ou drift).
       </p>
       <p style={{ margin: "0 0 14px", fontSize: 12, lineHeight: 1.5, color: "#71717a", maxWidth: 820 }}>
         <strong style={{ color: "#a1a1aa" }}>Pesos:</strong> «Peso %» utiliza o património líquido total (NAV) como

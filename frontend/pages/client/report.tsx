@@ -2910,10 +2910,12 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 Carteira atual (IBKR real)
               </h2>
               <p style={{ margin: "0 0 14px 0", fontSize: 12, color: "#71717a", lineHeight: 1.5, maxWidth: 560 }}>
-                Por defeito mostra a última sincronização ao gerar o plano (dados em{" "}
-                <code style={{ color: "#a1a1aa" }}>tmp_diag</code>
-                ). Depois de executar ordens, use <strong style={{ color: "#a1a1aa" }}>Ver carteira atualizada</strong>{" "}
-                no bloco de execução: leva a este separador <strong style={{ color: "#a1a1aa" }}>Alterações</strong> ·{" "}
+                Quando o servidor alcança a API IBKR, esta tabela usa o <strong style={{ color: "#a1a1aa" }}>mesmo</strong>{" "}
+                snapshot live que a aba <strong style={{ color: "#a1a1aa" }}>Carteira</strong> — não a lista longa
+                de <code style={{ color: "#a1a1aa" }}>tmp_diag</code> (export de ordens / testes). Se o backend estiver
+                indisponível no carregamento inicial, o plano pode cair nesse fallback até sincronizar. Depois de
+                executar ordens, use <strong style={{ color: "#a1a1aa" }}>Ver carteira atualizada</strong> no bloco de
+                execução: leva a este separador <strong style={{ color: "#a1a1aa" }}>Alterações</strong> ·{" "}
                 <strong style={{ color: "#a1a1aa" }}>Carteira atual</strong>, sincroniza posições na IBKR e, se houver
                 linhas de execução nessa página, actualiza também «Em curso» / «Executada».
               </p>
