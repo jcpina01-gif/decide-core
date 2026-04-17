@@ -399,7 +399,12 @@ export default function RecommendationsHistoryPanel() {
                         por completo do alvo). <strong>Entradas</strong> são títulos <strong>novos</strong> nesta data.
                         Reduções de peso sem o ticker desaparecer <strong>não</strong> aparecem nestas listas — só a
                         tabela completa abaixo reflecte o alvo do mês. As caixas laterais só listam movimentos com |Δ| ≥
-                        1% (exceto liquidez); posições com entrada ou saída abaixo desse limiar continuam na tabela.
+                        1% (exceto liquidez); posições com entrada ou saída abaixo desse limiar continuam na tabela. Um
+                        ticker que <strong>já estava</strong> no mês anterior com peso relevante pode surgir com frações
+                        de % no alvo seguinte (sobra do modelo após CAP ou renormas) — isso não é uma «entrada»
+                        nova. Nomes que aparecem pela <strong>primeira vez</strong> nesta série de CSV (mesmo com
+                        &lt;1%) são entradas reais nesse snapshot do modelo. Resíduos de continuação abaixo de 0,05%
+                        do NAV são mostrados agregados na liquidez nesta vista.
                       </p>
                     <div
                       style={{

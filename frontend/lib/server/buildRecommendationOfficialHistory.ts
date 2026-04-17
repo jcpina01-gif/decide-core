@@ -510,6 +510,60 @@ function normalizeEquitySleeveWeightsOnly(
     .sort((a, b) => (b.weight || 0) - (a.weight || 0));
 }
 
+/** Sobra de NAV (fração) abaixo da qual um ticker «continuação» é agregado à liquidez no histórico só para leitura. */
+const OFFICIAL_HISTORY_CONTINUATION_DUST_W = 0.0005;
+/** No mês anterior tinha de ser material (≥1%) para tratar a sobra como resíduo de rebalance, não entrada nova. */
+const OFFICIAL_HISTORY_PREV_MATERIAL_W = 0.01;
+
+/**
+ * Remove linhas de acções com peso residual ínfimo quando o ticker já existia no mês anterior com peso material:
+ * evita LIN/BRK.B a 0,04% após CAP15 sem ser «saída» nem informação útil.
+ * Não afecta tickers novos (ausentes no mês anterior).
+ */
+function absorbContinuationDustIntoCash(
+  curRows: RecommendationRow[],
+  prevRows: RecommendationRow[],
+  lookup: Map<string, { company?: string; sector?: string }>,
+): RecommendationRow[] {
+  if (!curRows.length || !prevRows.length) return curRows;
+  const pm = weightMap(prevRows);
+  let dustTotal = 0;
+  const kept: RecommendationRow[] = [];
+  for (const r of curRows) {
+    const t = remapJpListingToAdrTicker(r.ticker).trim().toUpperCase();
+    if (CASH_SLEEVE_TICKERS.has(t)) {
+      kept.push(r);
+      continue;
+    }
+    const w = typeof r.weight === "number" && isFinite(r.weight) ? r.weight : 0;
+    const prevRow = pm.get(t);
+    const prevW =
+      prevRow && typeof prevRow.weight === "number" && isFinite(prevRow.weight) ? prevRow.weight : 0;
+    const isContinuationDust =
+      prevW >= OFFICIAL_HISTORY_PREV_MATERIAL_W && w > 0 && w < OFFICIAL_HISTORY_CONTINUATION_DUST_W;
+    if (isContinuationDust) {
+      dustTotal += w;
+      continue;
+    }
+    kept.push(r);
+  }
+  if (dustTotal <= 1e-15) return curRows;
+  const tbIdx = kept.findIndex((r) => r.ticker.trim().toUpperCase() === "TBILL_PROXY");
+  if (tbIdx >= 0) {
+    const tb = kept[tbIdx]!;
+    const nw = (typeof tb.weight === "number" && isFinite(tb.weight) ? tb.weight : 0) + dustTotal;
+    kept[tbIdx] = enrichRow({ ...tb, weight: nw, weightPct: nw * 100 }, lookup);
+  } else {
+    kept.push(
+      enrichRow(
+        { ticker: "TBILL_PROXY", weight: dustTotal, weightPct: dustTotal * 100, score: 0 },
+        lookup,
+      ),
+    );
+  }
+  return kept.sort((a, b) => (b.weight || 0) - (a.weight || 0));
+}
+
 function loadMonthlyReturns(root: string): { returns: Map<string, number>; sourceRel: string } | null {
   const abs = path.join(root, ...DEFAULT_MODEL_EQUITY_REL.split("/"));
   if (!fs.existsSync(abs)) return null;
@@ -803,6 +857,18 @@ function buildMonthsFromMerged(
   }
 
   const asc = [...months].sort((a, b) => a.date.localeCompare(b.date));
+
+  for (let i = 1; i < asc.length; i++) {
+    const curM = asc[i]!;
+    const prevM = asc[i - 1]!;
+    curM.rows = absorbContinuationDustIntoCash(curM.rows, prevM.rows, lookup);
+    const sleevePcts = computeSleeveDisplayPct(curM.rows);
+    if (sleevePcts) {
+      curM.tbillsTotalPct = sleevePcts.tbillsTotalPct;
+      curM.equitySleeveTotalPct = sleevePcts.equitySleeveTotalPct;
+    }
+  }
+
   const monthlyModel = loadMonthlyReturns(root);
 
   for (let i = 0; i < asc.length; i++) {
