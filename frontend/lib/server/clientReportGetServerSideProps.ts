@@ -1550,7 +1550,7 @@ async function getClientReportServerSidePropsImpl(
   for (let i = recommendedPositions.length - 1; i >= 0; i -= 1) {
     const p = recommendedPositions[i];
     if (p.excluded) continue;
-    const u = p.ticker.trim().toUpperCase();
+    const u = safeString(p.ticker, "").trim().toUpperCase();
     if (u === "TBILL_PROXY") continue;
     if (safeNumber(p.weightPct, 0) <= 1e-6) recommendedPositions.splice(i, 1);
   }

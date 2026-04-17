@@ -157,7 +157,20 @@ export function consolidateWeightsBelowMinimum(
       keepers.push(r);
     }
   }
-  if (dust <= 1e-9 || keepers.length === 0) return;
+  if (dust <= 1e-9) return;
+  /** Sem linhas ≥ limiar: o pó não pode evaporar — acumula no sleeve de caixa (TBILL) como no ``stripPlanBenchmarkIndexRows``. */
+  if (keepers.length === 0) {
+    const tb = rows.find((r) => String(r.ticker || "").trim().toUpperCase() === "TBILL_PROXY");
+    if (tb) {
+      const prevW = safeNumber(tb.weightPct, 0);
+      const prevOw = tb.originalWeightPct !== undefined ? safeNumber(tb.originalWeightPct, prevW) : undefined;
+      tb.weightPct = prevW + dust;
+      if (tb.originalWeightPct !== undefined) {
+        tb.originalWeightPct = (prevOw ?? prevW) + dust;
+      }
+    }
+    return;
+  }
   const sum = keepers.reduce((a, r) => a + safeNumber(r.weightPct, 0), 0);
   if (sum <= 1e-9) return;
   for (const r of keepers) {

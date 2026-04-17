@@ -62,6 +62,18 @@ function isCashSleeveTicker(ticker: string): boolean {
   return t === "TBILL_PROXY" || t === "BIL" || t === "SHV";
 }
 
+/** Igual ao piso de sugestão BUY no plano: entradas/saídas com |Δ| &lt; 1% são ruído na lista lateral. */
+const FLOW_SIDE_LIST_MIN_ABS_PCT = 1;
+
+function filterFlowSideList(rows: FlowRow[]): { shown: FlowRow[]; omitted: number } {
+  const shown = rows.filter((r) => {
+    if (isCashSleeveTicker(r.ticker)) return true;
+    const w = typeof r.weightPct === "number" && Number.isFinite(r.weightPct) ? Math.abs(r.weightPct) : 0;
+    return w >= FLOW_SIDE_LIST_MIN_ABS_PCT - 1e-9;
+  });
+  return { shown, omitted: rows.length - shown.length };
+}
+
 /** Mini-gráfico: retorno mensal do modelo (%) nos 3 meses civis antes do mês do rebalance. */
 function PriorThreeMonthChart({ bars }: { bars: PriorMonthBar[] }) {
   const w = 300;
@@ -297,8 +309,10 @@ export default function RecommendationsHistoryPanel() {
           monthsFiltered.map((mo, idx) => {
             const sumW = mo.rows.reduce((s, r) => s + r.weight, 0);
             const hasFlow = mo.entries !== undefined && mo.exits !== undefined;
-            const ent = mo.entries ?? [];
-            const ex = mo.exits ?? [];
+            const entAll = mo.entries ?? [];
+            const exAll = mo.exits ?? [];
+            const { shown: ent, omitted: entOmitted } = filterFlowSideList(entAll);
+            const { shown: ex, omitted: exOmitted } = filterFlowSideList(exAll);
             const chrono = mo.chronologicalIndex;
             const chartTooEarly = chrono != null && chrono < 2;
             const monthHeading = formatMonthHeadingPt(mo.date);
@@ -345,7 +359,7 @@ export default function RecommendationsHistoryPanel() {
                     {hasFlow ? (
                       <span style={{ color: "#71717a" }}>
                         {" "}
-                        · +{ent.length} entradas / −{ex.length} saídas
+                        · +{entAll.length} entradas / −{exAll.length} saídas
                       </span>
                     ) : null}
                   </div>
@@ -403,8 +417,18 @@ export default function RecommendationsHistoryPanel() {
                         }}
                       >
                         <div style={{ fontSize: 13, fontWeight: 800, color: "#d4d4d8", marginBottom: 6 }}>
-                          Entradas ({ent.length})
+                          Entradas ({ent.length}
+                          {entOmitted > 0 ? (
+                            <span style={{ fontWeight: 600, color: "#71717a" }}> · {entOmitted} &lt;1%</span>
+                          ) : null}
+                          )
                         </div>
+                        {entOmitted > 0 ? (
+                          <div style={{ fontSize: 11, color: "#52525b", marginBottom: 6, lineHeight: 1.4 }}>
+                            Lista lateral: só linhas com peso ≥1% (exc. liquidez). O total «+{entAll.length}» no cabeçalho
+                            inclui todas.
+                          </div>
+                        ) : null}
                         {ent.length === 0 ? (
                           <div style={{ fontSize: 12, color: "#71717a" }}>—</div>
                         ) : (
@@ -431,8 +455,18 @@ export default function RecommendationsHistoryPanel() {
                         }}
                       >
                         <div style={{ fontSize: 13, fontWeight: 800, color: "#a1a1aa", marginBottom: 6 }}>
-                          Saídas ({ex.length})
+                          Saídas ({ex.length}
+                          {exOmitted > 0 ? (
+                            <span style={{ fontWeight: 600, color: "#71717a" }}> · {exOmitted} &lt;1%</span>
+                          ) : null}
+                          )
                         </div>
+                        {exOmitted > 0 ? (
+                          <div style={{ fontSize: 11, color: "#52525b", marginBottom: 6, lineHeight: 1.4 }}>
+                            Lista lateral: só linhas com peso ≥1% (exc. liquidez). O total «−{exAll.length}» no cabeçalho
+                            inclui todas.
+                          </div>
+                        ) : null}
                         {ex.length === 0 ? (
                           <div style={{ fontSize: 12, color: "#71717a" }}>—</div>
                         ) : (
