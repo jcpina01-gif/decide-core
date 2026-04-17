@@ -129,7 +129,7 @@ export function readPlanRecommendedCagrDisplayPercent(
 
 /**
  * CAGR em % alinhado ao iframe / `buildPlafonadoEmbedLikeSeries`: mesma série (CAP15 + m100 + política de vol
- * moderado = série do freeze (motor com alvo 1× na overlay), sem filtro sintético extra; outros perfis com alvo vs benchmark quando aplicável), não `overlayed_cagr` do JSON isolado.
+ * moderado = série do freeze + alinhamento 1× vs benchmark no cliente (como KPI CAP15); outros perfis com alvo vs benchmark quando aplicável), não `overlayed_cagr` do JSON isolado.
  */
 export function readPlafonadoM100CagrDisplayPercent(
   projectRoot: string,

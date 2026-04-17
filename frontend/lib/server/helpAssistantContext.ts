@@ -19,7 +19,7 @@ const DECIDE_PRODUCT_CONTEXT = `
 - **Freeze**: curvas **versionadas** para comparabilidade entre ecrãs; não são preços ao vivo intradia.
 
 ## Perfil de risco e segmentos
-- **Conservador / dinâmico** aplicam escala de vol vs benchmark no KPI; **moderado** usa a série do freeze (alvo 1× na overlay no motor, sem reescala sintética extra no painel).
+- **Conservador / dinâmico** aplicam escala de vol vs benchmark no KPI; **moderado** usa a série do freeze (motor overlay ≈1×) e o painel CAP15 alinha o cartão a ≈1× vs benchmark.
 - **Segmento comercial** **Premium** vs **Private** (registo) alinha-se aos simuladores de fees.
 - **Fee A / B**: regra interna (ex.: **B** quando NAV modelo ≥ **50.000 €**) usada para fluxos como o passo opcional de **hedge cambial** nos KPIs.
 

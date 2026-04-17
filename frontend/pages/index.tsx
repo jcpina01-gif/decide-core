@@ -485,7 +485,7 @@ export default function DecideLandingPage() {
   }, []);
 
   /**
-   * Modelo CAP15: KPIs = série final do freeze API (moderado = alvo 1× vol bench no motor; sem reescala sintética extra se `vol_matched_for_landing`).
+   * Modelo CAP15: KPIs = série final do freeze API (moderado alvo 1× vol bench no motor + alinhamento no painel CAP15 se `vol_matched_for_landing`).
    * Fallback core-overlayed: aplicar ajuste de vol ao benchmark se necessário.
    */
   const displaySeries = useMemo((): SeriesPack | undefined => {
@@ -1616,7 +1616,7 @@ export default function DecideLandingPage() {
                 <code style={{ color: "#787f8a" }}>DECIDE_MODEL_V5_V2_3_SMOOTH</code> (export com{" "}
                 <code style={{ color: "#787f8a" }}>momentum_mode=v2_prudent</code>). A API da landing
                 no <strong style={{ color: "#a1a1aa" }}>moderado</strong> usa a série do freeze (motor com alvo ≈1× vol do referencial na overlay) para CAGR e
-                gráficos. No painel KPI (:5000): moderado sem reescala sintética extra; conservador/dinâmico com alvo vs benchmark. Métricas avançadas na{" "}
+                gráficos. No painel KPI (:5000) CAP15, o moderado alinha também a ≈1× vs benchmark no cartão; conservador/dinâmico com alvo vs benchmark. Métricas avançadas na{" "}
                 <Link href="/client-dashboard" style={{ color: "#787f8a", textDecoration: "underline", textUnderlineOffset: 2 }}>
                   área de cliente
                 </Link>

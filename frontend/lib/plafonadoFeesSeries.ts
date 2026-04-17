@@ -1,6 +1,6 @@
 /**
  * Série do simulador de custos alinhada ao Modelo CAP15 (`compute_client_embed_plafonado_kpis` no kpi_server):
- * calendário CAP15, valores m100 reindexados, depois política de vol no cliente (moderado: série do freeze, alvo 1× já no motor; conservador/dinâmico 0,75× / 1,25× vs benchmark no KPI quando aplicável).
+ * calendário CAP15, valores m100 reindexados, depois política de vol no cliente (moderado 1×; conservador/dinâmico 0,75× / 1,25× vs benchmark, alinhado ao `kpi_server` strict CAP15).
  */
 
 import fs from "fs";
@@ -190,7 +190,6 @@ function scaleModelEquityToProfileVol(
   profileKey: string,
 ): number[] {
   const pk = normalizeProfile(profileKey);
-  if (pk === "moderado") return modelEq.slice();
   const n = Math.min(modelEq.length, benchEq.length);
   if (n < 30) return modelEq.slice();
   const mult = PROFILE_VOL_MULT[pk] ?? 1.0;
@@ -239,13 +238,11 @@ function applyModelEquityProfilePolicy(
 ): number[] {
   void opts;
   const pk = normalizeProfile(profileKey);
-  if (pk === "moderado") return modelEq.slice();
   return scaleModelEquityToProfileVol(modelEq, benchEq, pk);
 }
 
 /**
- * Alinhado a `apply_model_equity_profile_policy` no kpi_server: moderado = série sem reescala sintética extra;
- * conservador/dinâmico = 0,75× / 1,25× vs benchmark (sempre que há benchmark alinhado).
+ * Alinhado ao CAP15 strict em `apply_model_equity_profile_policy` (kpi_server): moderado 1×; conservador/dinâmico 0,75× / 1,25×.
  */
 export function applyPlafonadoProfileVolPolicy(
   modelEq: number[],
