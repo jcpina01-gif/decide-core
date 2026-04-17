@@ -14,12 +14,12 @@ const DECIDE_PRODUCT_CONTEXT = `
 
 ## Séries e modelos nos KPIs (conceitos usados nas notas do painel)
 - **Modelo teórico (não investível)**: curva do motor **antes** das molduras do produto (CAP15, drawdown, vol por perfil). O **Modelo CAP15** é a versão investível, com custos de mercado estimados e execução realista no backtest.
-- **Modelo CAP15** (produto): exposição **≤ 100% NAV**; **moderado** com vol do modelo; **conservador/dinâmico** com alvo de vol vs benchmark (0,75× / 1,25×). Os cartões reflectem custos de mercado estimados e execução realista no backtest salvo nota em contrário.
+- **Modelo CAP15** (produto): exposição **≤ 100% NAV**; **moderado** com alvo **≈1×** vol do benchmark na perna overlay do motor; **conservador/dinâmico** com alvo de vol vs benchmark (0,75× / 1,25×). Os cartões reflectem custos de mercado estimados e execução realista no backtest salvo nota em contrário.
 - **Hedge cambial nos KPIs** (segmentos elegíveis): o cliente pode definir **par FX** e **%** para ver métricas históricas ajustadas; é **ilustrativo** nos números do dashboard — **não** executa ordens FX na IBKR. Com **0%** ou dados em falta pode não aparecer o bloco.
 - **Freeze**: curvas **versionadas** para comparabilidade entre ecrãs; não são preços ao vivo intradia.
 
 ## Perfil de risco e segmentos
-- **Conservador / dinâmico** aplicam escala de vol vs benchmark; **moderado** utiliza a vol da série do modelo.
+- **Conservador / dinâmico** aplicam escala de vol vs benchmark no KPI; **moderado** usa a série do freeze (alvo 1× na overlay no motor, sem reescala sintética extra no painel).
 - **Segmento comercial** **Premium** vs **Private** (registo) alinha-se aos simuladores de fees.
 - **Fee A / B**: regra interna (ex.: **B** quando NAV modelo ≥ **50.000 €**) usada para fluxos como o passo opcional de **hedge cambial** nos KPIs.
 

@@ -827,7 +827,7 @@ export default function DashboardPage() {
               >
                 Ajuste o valor e veja o impacto.
                 <span
-                  title="Valores baseados em histórico. O nível de risco no topo recarrega o modelo (moderado: vol do modelo; conservador/dinâmico: alvo vs benchmark). A curva segue o overlay dos KPIs. Os valores atualizam ao alterar os campos."
+                  title="Valores baseados em histórico. O nível de risco no topo recarrega o modelo (moderado: alvo ≈1× vol do referencial no motor; conservador/dinâmico: alvo vs benchmark). A curva segue o overlay dos KPIs. Os valores atualizam ao alterar os campos."
                   style={{
                     display: "inline-flex",
                     alignItems: "center",

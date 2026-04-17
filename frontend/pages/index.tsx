@@ -485,7 +485,7 @@ export default function DecideLandingPage() {
   }, []);
 
   /**
-   * Modelo CAP15: KPIs = série final do freeze API (moderado = vol do modelo; sem segundo filtro se `vol_matched_for_landing`).
+   * Modelo CAP15: KPIs = série final do freeze API (moderado = alvo 1× vol bench no motor; sem reescala sintética extra se `vol_matched_for_landing`).
    * Fallback core-overlayed: aplicar ajuste de vol ao benchmark se necessário.
    */
   const displaySeries = useMemo((): SeriesPack | undefined => {
@@ -663,7 +663,7 @@ export default function DecideLandingPage() {
         <title>DECIDE — Modelo CAP15 vs benchmark (histórico ilustrativo)</title>
         <meta
           name="description"
-          content="DECIDE: histórico ilustrativo do Modelo CAP15 (≤100% NAV) vs benchmark; no perfil moderado a vol segue o modelo. Recomendações com a sua aprovação."
+          content="DECIDE: histórico ilustrativo do Modelo CAP15 (≤100% NAV) vs benchmark; no perfil moderado alvo ≈1× vol do referencial no motor. Recomendações com a sua aprovação."
         />
         <style
           dangerouslySetInnerHTML={{
@@ -871,7 +871,7 @@ export default function DecideLandingPage() {
                 Histórico ilustrativo · Modelo CAP15 vs mercado de referência
               </span>
               <span style={{ fontSize: "0.42em", fontWeight: 700, color: "#a1a1aa", display: "block", marginBottom: 6 }}>
-                CAGR indicativo (moderado: vol do modelo, sem igualar ao benchmark)
+                CAGR indicativo (moderado: alvo ≈1× vol do referencial no motor)
               </span>
               <span style={{ color: "#86efac", fontSize: "0.5em", fontWeight: 700 }}>Modelo CAP15 </span>
               <span style={{ color: "#4ade80" }}>
@@ -1596,8 +1596,8 @@ export default function DecideLandingPage() {
               }}
             >
               ~20 anos, <strong>Modelo CAP15</strong> (≤100% do NAV, freeze V2.3 smooth, momentum multi-horizonte prudente).
-              No <strong>moderado</strong>, a volatilidade da série segue o <strong>próprio modelo</strong> (sem reescala ao
-              benchmark), alinhado ao painel KPI.
+              No <strong>moderado</strong>, a volatilidade reflecte o motor com alvo <strong>≈1×</strong> a vol do referencial na
+              perna overlay (sem multiplicador 0,75× / 1,25×), alinhado ao painel KPI.
               Indicativo.
             </p>
             <details style={{ marginBottom: 18, fontSize: 11, color: "#71717a" }}>
@@ -1615,8 +1615,8 @@ export default function DecideLandingPage() {
                 Base: freeze ~20Y{" "}
                 <code style={{ color: "#787f8a" }}>DECIDE_MODEL_V5_V2_3_SMOOTH</code> (export com{" "}
                 <code style={{ color: "#787f8a" }}>momentum_mode=v2_prudent</code>). A API da landing
-                no <strong style={{ color: "#a1a1aa" }}>moderado</strong> usa a vol do modelo (sem igualar ao benchmark) para CAGR e
-                gráficos. No painel KPI (:5000): moderado com vol do modelo; conservador/dinâmico com alvo vs benchmark. Métricas avançadas na{" "}
+                no <strong style={{ color: "#a1a1aa" }}>moderado</strong> usa a série do freeze (motor com alvo ≈1× vol do referencial na overlay) para CAGR e
+                gráficos. No painel KPI (:5000): moderado sem reescala sintética extra; conservador/dinâmico com alvo vs benchmark. Métricas avançadas na{" "}
                 <Link href="/client-dashboard" style={{ color: "#787f8a", textDecoration: "underline", textUnderlineOffset: 2 }}>
                   área de cliente
                 </Link>
@@ -1630,7 +1630,7 @@ export default function DecideLandingPage() {
                 gap: 14,
               }}
             >
-              <KpiCard title="Modelo CAP15" subtitle="≤100% NAV · moderado: vol do modelo">
+              <KpiCard title="Modelo CAP15" subtitle="≤100% NAV · moderado: alvo ≈1× vol ref.">
                 <div style={{ fontSize: 26, fontWeight: 900, color: "#fff" }}>{fmtPct(kpis?.modelCagr, 1)}</div>
                 <div style={{ fontSize: 12, color: "#a1a1aa", marginTop: 4 }}>Crescimento anualizado (indicativo)</div>
                 <div style={{ fontSize: 14, color: "#d4d4d8", marginTop: 10, lineHeight: 1.55 }}>

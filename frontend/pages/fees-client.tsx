@@ -1049,7 +1049,7 @@ export default function FeesClientPage() {
               padding: 12,
               fontSize: 16,
             }}
-            title="Freeze Modelo CAP15: moderado com vol do modelo; conservador/dinâmico com alvo vs benchmark (0,75× / 1,25×)."
+            title="Freeze Modelo CAP15: moderado com alvo ≈1× vol do referencial no motor; conservador/dinâmico com alvo vs benchmark (0,75× / 1,25×)."
           >
             <option value="moderado">Moderado</option>
             <option value="conservador">Conservador</option>

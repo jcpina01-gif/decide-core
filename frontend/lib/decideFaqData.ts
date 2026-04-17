@@ -301,7 +301,7 @@ export const FAQ_ITEMS: FaqEntry[] = [
     id: "cap15-plafonado",
     categoryId: "plataforma",
     term: "Modelo CAP15",
-    body: "Versão investível: overlay CAP15, exposição a risco limitada a 100% do NAV; no moderado a vol segue o modelo, em conservador/dinâmico há alvo de vol vs benchmark (0,75× / 1,25×). Os KPIs reflectem custos de mercado estimados e pressupostos de execução realista no backtest (não incluem comissões DECIDE nem impostos). Informação indicativa.",
+    body: "Versão investível: overlay CAP15, exposição a risco limitada a 100% do NAV; no moderado o motor aplica alvo ≈1× vol do benchmark na perna overlay, em conservador/dinâmico há alvo de vol vs benchmark (0,75× / 1,25×). Os KPIs reflectem custos de mercado estimados e pressupostos de execução realista no backtest (não incluem comissões DECIDE nem impostos). Informação indicativa.",
   },
   {
     id: "hedge-cambial-kpis",
@@ -373,7 +373,7 @@ export const FAQ_ITEMS: FaqEntry[] = [
     id: "perfil-risco-tres",
     categoryId: "risco",
     term: "Perfis conservador, moderado e dinâmico",
-    body: "Conservador: menor tolerância a oscilações, vol alvo ≈0,75× a do benchmark nos KPIs. Moderado: vol da série do modelo (sem esse filtro). Dinâmico: vol alvo ≈1,25× a do benchmark. A escolha afecta os cartões CAP15 e similares.",
+    body: "Conservador: menor tolerância a oscilações, vol alvo ≈0,75× a do benchmark nos KPIs. Moderado: alvo ≈1× a vol do benchmark no motor na overlay (sem multiplicador 0,75× / 1,25×). Dinâmico: vol alvo ≈1,25× a do benchmark. A escolha afecta os cartões CAP15 e similares.",
   },
   {
     id: "segmento-fee-a-b",

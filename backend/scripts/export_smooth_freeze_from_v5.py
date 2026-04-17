@@ -216,6 +216,7 @@ def main() -> int:
         meta["curve_engine_script"] = "export_smooth_freeze_from_v5.py"
         meta["prices_input"] = str(prices_path.resolve())
         meta["smooth_export_momentum_mode"] = str(args.momentum_mode).strip().lower()
+        meta["smooth_export_overlay_vol_moderado"] = True
         v5_json.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     print("OK: freeze smooth V5 em", FREEZE_OUT)

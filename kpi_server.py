@@ -278,10 +278,10 @@ def resolve_frontend_url_for_embed(req) -> str:
         except Exception:
             continue
     return FRONTEND_URL
-# Conservador/dinâmico: alvo de vol vs benchmark; moderado: série do modelo sem reescala (ver `apply_model_equity_profile_policy`).
+# Conservador/dinâmico: alvo de vol vs benchmark no KPI; moderado: alvo 1× no motor, sem reescala sintética extra no KPI (ver `apply_model_equity_profile_policy`).
 PROFILE_OPTIONS = [
     ("conservador", "Conservador (0,75× vol bench)"),
-    ("moderado", "Moderado (vol do modelo)"),
+    ("moderado", "Moderado (1× vol bench)"),
     ("dinamico", "Dinâmico (1,25× vol bench)"),
 ]
 PROFILE_VOL_MULTIPLIER = {"conservador": 0.75, "moderado": 1.0, "dinamico": 1.25}
@@ -322,7 +322,7 @@ def scale_model_equity_to_profile_vol(
 ) -> pd.Series:
     """
     Escala retornos para a vol anual da curva ficar ≈ multiplier × vol do benchmark
-    (conservador 0,75×; dinâmico 1,25×). O moderado não passa por aqui na política de cartões.
+    (conservador 0,75×; dinâmico 1,25×). O moderado não passa por aqui na política de cartões (alvo 1× já no motor).
     Se `has_profile_file=True`, devolve a série sem alterar (uso pontual por chamadores legados).
     """
     if has_profile_file:
@@ -404,11 +404,12 @@ def apply_model_equity_profile_policy(
     strict_cap15_vol_targets: bool = False,
 ) -> pd.Series:
     """
-    - **Moderado:** sem reescala de vol vs benchmark (série tal como vem do modelo / CSV).
+    - **Moderado:** série tal como vem do CSV do motor (já com alvo **1×** vol do benchmark na perna overlay V5);
+      **sem** reescala sintética adicional neste painel.
     - **Conservador / dinâmico:** alvo ≈ 0,75× / 1,25× vol do benchmark quando a reescala está activa.
 
     Com `strict_cap15_vol_targets=True` (CAP15 plafonado, série m100 alinhada, com margem): conservador/dinâmico
-    aplicam sempre esse alvo (ignora `used_profile_file` e opt-out de embed); moderado mantém-se cru.
+    aplicam sempre esse alvo (ignora `used_profile_file` e opt-out de embed); moderado devolve a série do ficheiro sem `scale_model_equity_to_profile_vol`.
     Se a vol natural da série for superior ao alvo (ex. 1,25× bench no dinâmico), a reescala baixa vol e CAGR.
 
     Com `strict_cap15_vol_targets=False` (outros modelos v5): comportamento legado — `used_profile_file` isenta;
@@ -3138,7 +3139,7 @@ HTML_TEMPLATE = """
             <summary>O que é isto? · <span style="font-weight:700;color:#99f6e4;">Saber mais</span></summary>
             <div class="kpi-card-details-body">
               {% if current_profile == 'moderado' %}
-              Histórico ilustrativo do <strong>Modelo CAP15</strong>. O freeze smooth usa <strong>momentum multi-horizonte prudente</strong> (<code>v2_prudent</code>) no motor V5. No perfil <strong>moderado</strong>, a <strong>volatilidade</strong> mostrada é a <strong>realizada no backtest</strong> da série investível. No motor V5, o moderado <strong>não</strong> aplica o segundo escalão de vol vs benchmark na perna overlay (vol natural após breadth/trend/etc.); na perna crua mantém-se o alvo <strong>1×</strong> a vol do referencial. <strong>Sem</strong> reescala neste painel para igualar ao benchmark (no conservador e no dinâmico, o cartão investível é escalado a ≈0,75× e ≈1,25× da vol do referencial). Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Os números incorporam <strong>custos de mercado estimados</strong> no backtest (comissão, slippage, FX sobre turnover) e pressupostos de <strong>execução realista</strong>; não incluem comissões DECIDE nem impostos. Informação indicativa — não é aconselhamento.
+              Histórico ilustrativo do <strong>Modelo CAP15</strong>. O freeze smooth usa <strong>momentum multi-horizonte prudente</strong> (<code>v2_prudent</code>) no motor V5. No perfil <strong>moderado</strong>, a <strong>volatilidade</strong> mostrada é a <strong>realizada no backtest</strong> da série investível. No motor V5, na perna overlay, o moderado aplica o <strong>mesmo escalão de vol vs referencial</strong> que os outros perfis, com alvo <strong>≈1×</strong> a vol do benchmark (na perna crua mantém-se também <strong>1×</strong>). <strong>Sem</strong> reescala sintética extra neste painel (no conservador e no dinâmico, o cartão investível é escalado a ≈0,75× e ≈1,25× da vol do referencial). Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Os números incorporam <strong>custos de mercado estimados</strong> no backtest (comissão, slippage, FX sobre turnover) e pressupostos de <strong>execução realista</strong>; não incluem comissões DECIDE nem impostos. Informação indicativa — não é aconselhamento.
               {% else %}
               Histórico ilustrativo do <strong>Modelo CAP15</strong> com <strong>volatilidade alinhada ao perfil</strong> relativamente ao benchmark (≈ <strong>0,75×</strong> no conservador, ≈ <strong>1,25×</strong> no dinâmico), conforme o selector do topo. Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Os números incorporam <strong>custos de mercado estimados</strong> no backtest (comissão, slippage, FX sobre turnover) e pressupostos de <strong>execução realista</strong>; não incluem comissões DECIDE nem impostos. Informação indicativa — não é aconselhamento.
               {% endif %}
@@ -3184,7 +3185,7 @@ HTML_TEMPLATE = """
               {% else %}
               Exposição a risco limitada a <strong>100%</strong> do NAV (sem alavancagem além do capital).
               {% if current_profile == 'moderado' %}
-              A <strong>volatilidade</strong> é a <strong>realizada no backtest</strong> do Modelo CAP15 investível; no motor, o moderado <strong>não</strong> aplica o segundo escalão de vol vs benchmark na perna overlay. <strong>Sem</strong> reescala neste painel para igualar à do benchmark. Pode ficar <strong>próxima</strong> da vol do referencial por construção da carteira — isso <strong>não</strong> significa que o KPI tenha forçado a vol do benchmark.
+              A <strong>volatilidade</strong> é a <strong>realizada no backtest</strong> do Modelo CAP15 investível; no motor, o moderado aplica na perna overlay alvo <strong>≈1×</strong> a vol do benchmark (sem o multiplicador 0,75× / 1,25× dos outros perfis). <strong>Sem</strong> reescala sintética adicional neste painel para igualar à do benchmark.
               {% elif current_profile == 'conservador' %}
               A volatilidade foi ajustada para ≈ <strong>0,75×</strong> a vol do benchmark (perfil conservador).
               {% else %}
@@ -3251,10 +3252,10 @@ HTML_TEMPLATE = """
       <div class="kpi-simple-summary">
         {% if client_embed and cap15_only %}
         <strong style="color:#e5e7eb;">Resumo:</strong> o cartão <strong style="color:#5eead4;">«Recomendado para o seu perfil»</strong> alinha o horizonte ao seu nível de risco.
-        Na vista avançada, o <strong style="color:#e5e7eb;">modelo teórico</strong> é só referência técnica (não investível). O <strong style="color:#e5e7eb;">Modelo CAP15</strong> é a versão otimizada para implementação real: <strong>custos de mercado estimados e execução realista</strong> no backtest, exposição ≤100% NV; no <strong>moderado</strong> o motor <strong>não</strong> aplica o segundo ajuste de vol vs benchmark na perna overlay (vol natural); neste painel <strong>sem</strong> reescala extra; conservador/dinâmico têm alvo 0,75× / 1,25× no cartão investível.
+        Na vista avançada, o <strong style="color:#e5e7eb;">modelo teórico</strong> é só referência técnica (não investível). O <strong style="color:#e5e7eb;">Modelo CAP15</strong> é a versão otimizada para implementação real: <strong>custos de mercado estimados e execução realista</strong> no backtest, exposição ≤100% NV; no <strong>moderado</strong> o motor aplica na perna overlay alvo <strong>≈1×</strong> vol do referencial; neste painel <strong>sem</strong> reescala sintética extra; conservador/dinâmico têm alvo 0,75× / 1,25× no cartão investível.
         Informação indicativa — não é aconselhamento nem promessa de resultados futuros.
         {% elif cap15_only %}
-        Vista avançada: <strong style="color:#e5e7eb;">modelo teórico</strong> (não investível) vs <strong style="color:#e5e7eb;">Modelo CAP15</strong> com custos de mercado estimados e execução realista no backtest. Perfil no topo; no <strong>moderado</strong> a vol investível reflecte o motor <strong>sem</strong> o segundo escalão de vol vs benchmark na perna overlay; em conservador/dinâmico, vol <strong>alvo vs benchmark</strong> (0,75× / 1,25×) também no painel. O benchmark mantém a sua vol de mercado.
+        Vista avançada: <strong style="color:#e5e7eb;">modelo teórico</strong> (não investível) vs <strong style="color:#e5e7eb;">Modelo CAP15</strong> com custos de mercado estimados e execução realista no backtest. Perfil no topo; no <strong>moderado</strong> a vol investível reflecte o motor com alvo <strong>≈1×</strong> na perna overlay vs benchmark; em conservador/dinâmico, vol <strong>alvo vs benchmark</strong> (0,75× / 1,25×) também no painel. O benchmark mantém a sua vol de mercado.
         {% else %}
         Comparação em horizonte longo com <strong style="color:#e5e7eb;">volatilidade alinhada ao benchmark</strong> (0,75× / 1× / 1,25× conforme o perfil).
         <strong style="color:#e5e7eb;">CAGR</strong> e <strong style="color:#e5e7eb;">queda máxima</strong> lado a lado com o benchmark{% if compare_cap100_kpis %} e com o <strong style="color:#e5e7eb;">modelo CAP15</strong>{% endif %}.
@@ -6182,9 +6183,8 @@ def pick_plafonado_smooth_model_equity_path(
 ) -> tuple[Path, bool]:
     """
     CAP15 plafonado (smooth / MAX100EXP): **moderado** usa sempre `model_equity_final_20y.csv`
-    (vol do motor no backtest), nunca `model_equity_final_20y_moderado.csv` — esse ficheiro pode
-    ser artefacto ou curva já alinhada a vol vs benchmark. Conservador/dinâmico mantêm a lógica
-    de `pick_model_equity_path_for_profile` quando `force_synthetic_profile_vol` está off.
+    (série investível canónica do freeze, corrida com perfil moderado no motor). Conservador/dinâmico
+    mantêm a lógica de `pick_model_equity_path_for_profile` quando `force_synthetic_profile_vol` está off.
     """
     pk = normalize_risk_profile_key(profile_key)
     model_path_default = base_path / "model_equity_final_20y.csv"
@@ -8526,7 +8526,7 @@ def rescale_hedged_equity_to_profile_vol(
 ) -> pd.Series:
     """Reaplica a mesma regra de vol do CAP15 à série já hedged (has_profile_file=False).
 
-    Moderado: sem reescala adicional (série hedged tal como calculada). Conservador/dinâmico:
+    Moderado: sem reescala sintética adicional no KPI (série hedged tal como calculada). Conservador/dinâmico:
     realinham vol vs benchmark após o hedge.
     """
     pk = normalize_risk_profile_key(profile_key)
@@ -9109,8 +9109,8 @@ def index():
     if cap15_only:
         profile_source_note = (
             "Modelo CAP15: exposição a risco limitada ao capital (≤100% NV), sem alavancagem além do NAV. "
-            "Moderado: vol realizada no backtest investível (CSV base), sem reescala no KPI para igualar ao benchmark "
-            "(pode aproximar-se numericamente do referencial por construção da carteira). "
+            "Moderado: vol realizada no backtest investível (CSV base), com alvo ≈1× vol do benchmark no motor na perna overlay; "
+            "sem reescala sintética adicional no KPI. "
             "Conservador/dinâmico: após a mesma série base, alvo ≈ 0,75× / 1,25× da vol do benchmark."
         )
         if force_synthetic_profile_vol:

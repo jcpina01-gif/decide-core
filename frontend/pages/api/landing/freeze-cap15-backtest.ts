@@ -1,6 +1,6 @@
 /**
  * Landing / simulador de custos: série alinhada ao Modelo CAP15 (`compute_client_embed_plafonado_kpis` no kpi_server)
- * (CAP15 + m100; moderado sem reescala de vol; conservador/dinâmico com alvo vs benchmark; no Flask `DECIDE_KPI_REAL_EQUITY=1` só mexe na escolha do CSV no embed).
+ * (CAP15 + m100; moderado com alvo 1× no motor, sem reescala sintética extra no cliente; conservador/dinâmico com alvo vs benchmark; no Flask `DECIDE_KPI_REAL_EQUITY=1` só mexe na escolha do CSV no embed).
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
@@ -46,7 +46,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       kind: "freeze_v5_plafonado_embed_aligned",
       profile: built.meta.profile,
       note:
-        "Mesma construção que o cartão «Modelo CAP15» / `/api/embed-plafonado-cagr` (kpi_server): CAP15 + m100 plafonado; moderado sem reescala de vol; conservador/dinâmico com alvo vs benchmark.",
+        "Mesma construção que o cartão «Modelo CAP15» / `/api/embed-plafonado-cagr` (kpi_server): CAP15 + m100 plafonado; moderado alvo ≈1× vol ref. no motor, sem reescala sintética extra; conservador/dinâmico com alvo vs benchmark.",
       aligned_cap15_m100: built.meta.aligned_cap15_m100,
       force_synthetic_vol: built.meta.force_synthetic_vol,
       used_m100_profile_file: built.meta.used_m100_profile_file,

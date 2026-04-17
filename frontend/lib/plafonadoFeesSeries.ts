@@ -1,6 +1,6 @@
 /**
  * Série do simulador de custos alinhada ao Modelo CAP15 (`compute_client_embed_plafonado_kpis` no kpi_server):
- * calendário CAP15, valores m100 reindexados, depois política de vol (moderado cru; conservador/dinâmico 0,75× / 1,25× vs benchmark).
+ * calendário CAP15, valores m100 reindexados, depois política de vol no cliente (moderado: série do freeze, alvo 1× já no motor; conservador/dinâmico 0,75× / 1,25× vs benchmark no KPI quando aplicável).
  */
 
 import fs from "fs";
@@ -244,7 +244,7 @@ function applyModelEquityProfilePolicy(
 }
 
 /**
- * Alinhado a `apply_model_equity_profile_policy` no kpi_server: moderado = série sem reescala;
+ * Alinhado a `apply_model_equity_profile_policy` no kpi_server: moderado = série sem reescala sintética extra;
  * conservador/dinâmico = 0,75× / 1,25× vs benchmark (sempre que há benchmark alinhado).
  */
 export function applyPlafonadoProfileVolPolicy(
