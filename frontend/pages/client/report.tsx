@@ -3303,13 +3303,12 @@ export default function ClientReportPage({ reportData }: PageProps) {
               {reportData.planWeightsProvenance?.planTableConsolidatePct != null &&
               reportData.planWeightsProvenance?.planEntryMinPct != null ? (
                 <p style={{ margin: "10px 0 0 0", fontSize: 11, color: "#71717a", lineHeight: 1.45, maxWidth: 720 }}>
-                  Regras de peso (servidor): na grelha, linhas com peso abaixo de{" "}
-                  {formatPct(reportData.planWeightsProvenance.planTableConsolidatePct, 2)} são fundidas no resto;
-                  sugestão de compra (BUY) só para alvo estritamente superior a{" "}
-                  {formatPct(reportData.planWeightsProvenance.planEntryMinPct, 2)}. Referência de saída (carteira
-                  real): abaixo de{" "}
-                  {formatPct(reportData.planWeightsProvenance.planDustExitPct ?? 0.5, 2)} —{" "}
-                  <code style={{ color: "#d9f99d" }}>DECIDE_PLAN_EXIT_WEIGHT_PCT</code>.
+                  Regras de peso (servidor): na grelha, (1) fundir pó abaixo de{" "}
+                  {formatPct(reportData.planWeightsProvenance.planDustExitPct ?? 0.5, 2)} (
+                  <code style={{ color: "#d9f99d" }}>DECIDE_PLAN_EXIT_WEIGHT_PCT</code>); (2) fundir linhas abaixo de{" "}
+                  {formatPct(reportData.planWeightsProvenance.planTableConsolidatePct, 2)} para alinhar com o mínimo de
+                  entrada; sugestão de compra (BUY) só para alvo estritamente superior a{" "}
+                  {formatPct(reportData.planWeightsProvenance.planEntryMinPct, 2)}.
                 </p>
               ) : null}
               {recommendedFiltered.some((p) => String(p.ticker).toUpperCase() === "EURUSD") ? (

@@ -1560,9 +1560,15 @@ async function getClientReportServerSidePropsImpl(
       planZoneCapMultiplier(),
       isPlanWeightProtected,
     );
-    /* Grelha: fundir pó abaixo do limiar de **saída** (0,5% por defeito). O >1% é só para sugestão BUY — ver ``planWeightAdjustments``. */
+    /* 1) Pó abaixo do limiar de **saída** (0,5%): fundir e redistribuir (histerese vs entrada). */
     consolidateWeightsBelowMinimum(recommendedPositions, planExitWeightPct(), isPlanWeightProtected);
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    /* 2) Grelha sem linhas &lt; **entrada** (1% por defeito): alinha com BUY sugerido e com o texto do relatório. */
+    const entryMinGrid = planEntryMinWeightPct();
+    if (entryMinGrid > planExitWeightPct() + 1e-9) {
+      consolidateWeightsBelowMinimum(recommendedPositions, entryMinGrid, isPlanWeightProtected);
+      recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    }
   }
 
   for (let i = recommendedPositions.length - 1; i >= 0; i -= 1) {
