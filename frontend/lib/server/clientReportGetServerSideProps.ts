@@ -1542,8 +1542,8 @@ async function getClientReportServerSidePropsImpl(
       planZoneCapMultiplier(),
       isPlanWeightProtected,
     );
-    /* Grelha do plano: fundir linhas < **entrada** (1% por defeito). O limiar de saída 0,5% aplica-se a outras regras (env). */
-    consolidateWeightsBelowMinimum(recommendedPositions, planEntryMinWeightPct(), isPlanWeightProtected);
+    /* Grelha: fundir pó abaixo do limiar de **saída** (0,5% por defeito). O >1% é só para sugestão BUY — ver ``planWeightAdjustments``. */
+    consolidateWeightsBelowMinimum(recommendedPositions, planExitWeightPct(), isPlanWeightProtected);
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
   }
 
