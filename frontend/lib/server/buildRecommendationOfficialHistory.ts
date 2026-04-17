@@ -10,7 +10,7 @@ import fs from "fs";
 import path from "path";
 
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
-import { remapJpListingToAdrTicker } from "./jpListingToAdrMap";
+import { isJpNumericListingTicker, remapJpListingToAdrTicker } from "./jpListingToAdrMap";
 
 export type FlowRow = {
   ticker: string;
@@ -147,6 +147,8 @@ function companyNameQuality(company: string | undefined, ticker: string): number
   const c = (company || "").trim();
   const t = ticker.trim().toUpperCase();
   if (!c) return 0;
+  /* Listagem Tóquio (ex. 8035.T) não é nome de empresa — não preferir a CSV vs. meta ADR. */
+  if (isJpNumericListingTicker(c)) return 0;
   const cu = c.toUpperCase();
   if (cu === t) return 1;
   if (cu.replace(/\./g, "") === t.replace(/\./g, "")) return 1;
@@ -184,17 +186,21 @@ function loadCompanyLookup(root: string): Map<string, { company?: string; sector
       const t = String(r[iT] || "").trim().toUpperCase();
       if (!t) continue;
       const co = iC >= 0 && r[iC] ? String(r[iC]).trim() : undefined;
-      const se = iS >= 0 && r[iS] && String(r[iS]).trim() !== "nan" ? String(r[iS]).trim() : undefined;
+      const seRaw = iS >= 0 && r[iS] ? String(r[iS]).trim() : undefined;
+      const se = _csvSectorUsable(seRaw);
       const prev = m.get(t) || {};
       const bestCo = pickBetterCompany(prev.company, co, t);
-      const bestSe =
-        prev.sector && prev.sector !== "nan"
-          ? prev.sector
-          : se || prev.sector;
+      const bestSe = _csvSectorUsable(prev.sector) || se;
       m.set(t, { company: bestCo, sector: bestSe });
     }
   }
   return m;
+}
+
+function _csvSectorUsable(s: string | undefined): string | undefined {
+  const t = String(s ?? "").trim();
+  if (!t || t.toLowerCase() === "nan" || t === "-" || t === "—" || t.toLowerCase() === "n/a") return undefined;
+  return t;
 }
 
 function enrichRow(row: RecommendationRow, lookup: Map<string, { company?: string; sector?: string }>): RecommendationRow {
@@ -202,8 +208,8 @@ function enrichRow(row: RecommendationRow, lookup: Map<string, { company?: strin
   const meta = lookup.get(k);
   const out = { ...row };
   out.company = pickBetterCompany(row.company, meta?.company, row.ticker);
-  const secRow = row.sector && row.sector !== "nan" ? row.sector : undefined;
-  const secMeta = meta?.sector && meta.sector !== "nan" ? meta.sector : undefined;
+  const secRow = _csvSectorUsable(row.sector);
+  const secMeta = _csvSectorUsable(meta?.sector);
   out.sector = secRow || secMeta;
   return out;
 }
@@ -476,9 +482,11 @@ function loadMonthlyReturns(root: string): { returns: Map<string, number>; sourc
   return { returns: monthlyModelReturns(monthEnd), sourceRel: DEFAULT_MODEL_EQUITY_REL };
 }
 
+/** Mapa por ticker canónico (ADR) para o diff entradas/saídas — evita falso “novo” entre 8035.T e TOELY. */
 function weightMap(rows: RecommendationRow[]): Map<string, RecommendationRow> {
+  const merged = mergeRecommendationRowsByTicker(rows);
   const m = new Map<string, RecommendationRow>();
-  for (const r of rows) {
+  for (const r of merged) {
     m.set(r.ticker.trim().toUpperCase(), r);
   }
   return m;
@@ -492,10 +500,10 @@ type ParsedWeightsFile = {
 function mergeRecommendationRowsByTicker(rows: RecommendationRow[]): RecommendationRow[] {
   const m = new Map<string, RecommendationRow>();
   for (const r of rows) {
-    const t = r.ticker.trim().toUpperCase();
+    const t = remapJpListingToAdrTicker(r.ticker).trim().toUpperCase();
     const ex = m.get(t);
     if (!ex) {
-      m.set(t, { ...r });
+      m.set(t, { ...r, ticker: t });
       continue;
     }
     const nw = (typeof ex.weight === "number" ? ex.weight : 0) + (typeof r.weight === "number" ? r.weight : 0);
@@ -819,9 +827,9 @@ function buildMonthsFromMerged(
     }
   }
 
-  /** Mais antigo primeiro — o histórico “começa” no 1.º mês; o mini-gráfico continua só quando há 3.º rebalance + equity. */
+  /** Ordem API / UI: mais recente primeiro. `chronologicalIndex` (0 = mais antigo) é atribuído em `buildOfficialRecommendationMonthsThroughToday`. */
   asc.sort((a, b) => a.date.localeCompare(b.date));
-  return asc;
+  return [...asc].reverse();
 }
 
 /** ISO YYYY-MM-DD (UTC) — comparação lexicográfica com `rebalance_date` do CSV. */
@@ -843,7 +851,7 @@ function formatMergeSourcePath(sourceFiles: string[]): string {
   return `merge:${sourceFiles.length} ficheiros (${sourceFiles.slice(0, 3).join(", ")}${sourceFiles.length > 3 ? "…" : ""})`;
 }
 
-/** Mesma sequência que o GET `/api/client/recommendations-history` (meses ≤ hoje, ordenados). */
+/** Mesma sequência que o GET `/api/client/recommendations-history` (meses ≤ hoje, mais recente primeiro). */
 export function buildOfficialRecommendationMonthsThroughToday(root: string): {
   months: RecommendationMonth[];
   sourcePath: string;
@@ -854,7 +862,8 @@ export function buildOfficialRecommendationMonthsThroughToday(root: string): {
   if (!pack || pack.merged.size === 0) return null;
   const monthsRaw = buildMonthsFromMerged(pack.merged, pack.turnoverByDate, lookup, root);
   const months = filterMonthsThroughToday(monthsRaw);
-  months.forEach((m, i) => {
+  const ascChrono = [...months].sort((a, b) => a.date.localeCompare(b.date));
+  ascChrono.forEach((m, i) => {
     m.chronologicalIndex = i;
   });
   return {
@@ -865,18 +874,19 @@ export function buildOfficialRecommendationMonthsThroughToday(root: string): {
 }
 
 /**
- * Escolhe o mês oficial a partir da lista já filtrada (≤ hoje):
+ * Escolhe o mês oficial a partir da lista já filtrada (≤ hoje), **independente da ordem** do array:
  * - `rebalance_date` **= hoje** (UTC) se existir;
- * - senão o último elemento (datas ascendentes).
+ * - senão o rebalance com data mais recente (≤ hoje).
  */
 export function pickPlanMonthPreferringTodayFromMonths(months: RecommendationMonth[]): RecommendationMonth | null {
   if (!months.length) return null;
   const today = utcTodayYmd();
-  for (let i = months.length - 1; i >= 0; i -= 1) {
-    const m = months[i]!;
+  const sorted = [...months].sort((a, b) => a.date.localeCompare(b.date));
+  for (let i = sorted.length - 1; i >= 0; i -= 1) {
+    const m = sorted[i]!;
     if (String(m.date || "").slice(0, 10) === today) return m;
   }
-  return months[months.length - 1] ?? null;
+  return sorted[sorted.length - 1] ?? null;
 }
 
 /**
