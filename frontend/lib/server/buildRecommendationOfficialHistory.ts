@@ -10,7 +10,11 @@ import fs from "fs";
 import path from "path";
 
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
-import { isJpNumericListingTicker, remapJpListingToAdrTicker } from "./jpListingToAdrMap";
+import {
+  isJpNumericListingTicker,
+  remapAdrToJpListingTicker,
+  remapJpListingToAdrTicker,
+} from "./jpListingToAdrMap";
 
 export type FlowRow = {
   ticker: string;
@@ -156,11 +160,25 @@ function companyNameQuality(company: string | undefined, ticker: string): number
   return 2 + Math.min(c.length, 200);
 }
 
+/**
+ * O CSV do motor por vezes traz a listagem Tóquio (ex. 8035.T) na coluna empresa para um ticker ADR (TOELY).
+ * Não usar isso como nome — senão `pickBetterCompany` empata em qualidade 0 com meta vazia e devolve o .T.
+ */
+function sanitizeCompanyCandidate(company: string | undefined, ticker: string): string | undefined {
+  const s = (company || "").trim();
+  if (!s) return undefined;
+  const t = ticker.trim().toUpperCase();
+  if (!isJpNumericListingTicker(t) && isJpNumericListingTicker(s)) return undefined;
+  return s;
+}
+
 function pickBetterCompany(a: string | undefined, b: string | undefined, ticker: string): string | undefined {
-  const qa = companyNameQuality(a, ticker);
-  const qb = companyNameQuality(b, ticker);
-  if (qb > qa) return (b || "").trim() || undefined;
-  return (a || "").trim() || undefined;
+  const aa = sanitizeCompanyCandidate(a, ticker);
+  const bb = sanitizeCompanyCandidate(b, ticker);
+  const qa = companyNameQuality(aa, ticker);
+  const qb = companyNameQuality(bb, ticker);
+  if (qb > qa) return bb;
+  return aa;
 }
 
 function loadCompanyLookup(root: string): Map<string, { company?: string; sector?: string }> {
@@ -206,10 +224,13 @@ function _csvSectorUsable(s: string | undefined): string | undefined {
 function enrichRow(row: RecommendationRow, lookup: Map<string, { company?: string; sector?: string }>): RecommendationRow {
   const k = row.ticker.trim().toUpperCase();
   const meta = lookup.get(k);
+  const jpList = remapAdrToJpListingTicker(k);
+  const metaAlt = jpList ? lookup.get(jpList.trim().toUpperCase()) : undefined;
+  const metaCompany = pickBetterCompany(meta?.company, metaAlt?.company, row.ticker);
   const out = { ...row };
-  out.company = pickBetterCompany(row.company, meta?.company, row.ticker);
+  out.company = pickBetterCompany(row.company, metaCompany, row.ticker);
   const secRow = _csvSectorUsable(row.sector);
-  const secMeta = _csvSectorUsable(meta?.sector);
+  const secMeta = _csvSectorUsable(meta?.sector) || _csvSectorUsable(metaAlt?.sector);
   out.sector = secRow || secMeta;
   return out;
 }
