@@ -96,6 +96,7 @@ function PriorThreeMonthChart({ bars }: { bars: PriorMonthBar[] }) {
     <div style={{ marginTop: 10, marginBottom: 6 }}>
       <div style={{ fontSize: 12, color: "#a1a1aa", fontWeight: 700, marginBottom: 4 }}>
         Retorno do modelo nos três meses anteriores a cada ajuste (indicativo)
+        <span style={{ fontWeight: 600, color: "#52525b" }}> · Mais recente à esquerda</span>
       </div>
       <svg width={w} height={h} style={{ display: "block", maxWidth: "100%" }} aria-hidden>
         <line
@@ -397,7 +398,8 @@ export default function RecommendationsHistoryPanel() {
                         <strong>mês anterior desta série</strong> e <strong>deixam de existir</strong> nesta data (saem
                         por completo do alvo). <strong>Entradas</strong> são títulos <strong>novos</strong> nesta data.
                         Reduções de peso sem o ticker desaparecer <strong>não</strong> aparecem nestas listas — só a
-                        tabela completa abaixo reflecte o alvo do mês.
+                        tabela completa abaixo reflecte o alvo do mês. As caixas laterais só listam movimentos com |Δ| ≥
+                        1% (exceto liquidez); posições com entrada ou saída abaixo desse limiar continuam na tabela.
                       </p>
                     <div
                       style={{
@@ -417,16 +419,19 @@ export default function RecommendationsHistoryPanel() {
                         }}
                       >
                         <div style={{ fontSize: 13, fontWeight: 800, color: "#d4d4d8", marginBottom: 6 }}>
-                          Entradas ({ent.length}
-                          {entOmitted > 0 ? (
-                            <span style={{ fontWeight: 600, color: "#71717a" }}> · {entOmitted} &lt;1%</span>
-                          ) : null}
-                          )
+                          Entradas{" "}
+                          <span style={{ fontWeight: 600, color: "#a1a1aa", fontSize: 12 }}>
+                            ({ent.length} com |Δ| ≥ 1%
+                            {entOmitted > 0 ? (
+                              <span style={{ color: "#71717a" }}> · +{entOmitted} só na tabela (&lt;1%)</span>
+                            ) : null}
+                            )
+                          </span>
                         </div>
                         {entOmitted > 0 ? (
                           <div style={{ fontSize: 11, color: "#52525b", marginBottom: 6, lineHeight: 1.4 }}>
-                            Lista lateral: só linhas com peso ≥1% (exc. liquidez). O total «+{entAll.length}» no cabeçalho
-                            inclui todas.
+                            O resumo do mês acima indica +{entAll.length} entradas no total; aqui mostram-se as de peso
+                            ≥1% (exc. liquidez).
                           </div>
                         ) : null}
                         {ent.length === 0 ? (
@@ -455,16 +460,19 @@ export default function RecommendationsHistoryPanel() {
                         }}
                       >
                         <div style={{ fontSize: 13, fontWeight: 800, color: "#a1a1aa", marginBottom: 6 }}>
-                          Saídas ({ex.length}
-                          {exOmitted > 0 ? (
-                            <span style={{ fontWeight: 600, color: "#71717a" }}> · {exOmitted} &lt;1%</span>
-                          ) : null}
-                          )
+                          Saídas{" "}
+                          <span style={{ fontWeight: 600, color: "#a1a1aa", fontSize: 12 }}>
+                            ({ex.length} com |Δ| ≥ 1%
+                            {exOmitted > 0 ? (
+                              <span style={{ color: "#71717a" }}> · +{exOmitted} só na tabela (&lt;1%)</span>
+                            ) : null}
+                            )
+                          </span>
                         </div>
                         {exOmitted > 0 ? (
                           <div style={{ fontSize: 11, color: "#52525b", marginBottom: 6, lineHeight: 1.4 }}>
-                            Lista lateral: só linhas com peso ≥1% (exc. liquidez). O total «−{exAll.length}» no cabeçalho
-                            inclui todas.
+                            O resumo do mês acima indica −{exAll.length} saídas no total; aqui mostram-se as de peso ≥1%
+                            (exc. liquidez).
                           </div>
                         ) : null}
                         {ex.length === 0 ? (

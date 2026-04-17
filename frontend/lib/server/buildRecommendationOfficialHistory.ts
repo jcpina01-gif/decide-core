@@ -9,6 +9,7 @@
 import fs from "fs";
 import path from "path";
 
+import { lookupCompanyMetaEntry } from "../companyMeta";
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
 import { isJpNumericListingTicker, jpListingToAdrMap, remapJpListingToAdrTicker } from "./jpListingToAdrMap";
 
@@ -250,6 +251,9 @@ function enrichRow(row: RecommendationRow, lookup: Map<string, { company?: strin
   const secRow = _csvSectorUsable(row.sector);
   const secMeta = _csvSectorUsable(meta?.sector) || _csvSectorUsable(metaAlt?.sector);
   out.sector = secRow || secMeta;
+  const fb = lookupCompanyMetaEntry(row.ticker);
+  if (!out.company?.trim() && fb?.name) out.company = fb.name;
+  if (!out.sector?.trim() && fb?.sector) out.sector = fb.sector;
   return out;
 }
 
@@ -834,7 +838,10 @@ function buildMonthsFromMerged(
       const prevCash = sumCashSleeveWeight(prev.rows);
       const curCash = sumCashSleeveWeight(cur.rows);
       const cashDeltaPct = (curCash - prevCash) * 100;
-      if (Math.abs(cashDeltaPct) >= 0.05 && !tbillInTickerFlows) {
+      /** Se já há linha de liquidez no alvo, a tabela reflecte o peso — não duplicar com «saída/entrada» sintética. */
+      const anyExplicitCashSleeve =
+        listHasExplicitCashSleeve(prev.rows) || listHasExplicitCashSleeve(cur.rows);
+      if (Math.abs(cashDeltaPct) >= 0.05 && !tbillInTickerFlows && !anyExplicitCashSleeve) {
         if (cashDeltaPct > 0) {
           entries.push({
             ticker: "TBILL_PROXY",
@@ -856,7 +863,8 @@ function buildMonthsFromMerged(
     }
 
     if (i >= 2 && monthlyModel) {
-      const yms = threeCalendarMonthsBeforeRebalance(cur.date);
+      /* Mais recente (mês civil imediatamente anterior ao rebalance) à esquerda do gráfico. */
+      const yms = threeCalendarMonthsBeforeRebalance(cur.date).slice().reverse();
       cur.priorThreeMonthReturns = yms.map((month) => ({
         month,
         label: formatMonthLabelPt(month),
