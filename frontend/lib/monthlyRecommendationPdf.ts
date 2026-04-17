@@ -20,6 +20,8 @@ export type MonthlyRecPdfPosition = {
   sector: string;
   industry: string;
   region: string;
+  country?: string;
+  geoZone?: string;
   excluded: boolean;
 };
 
@@ -360,17 +362,19 @@ export async function downloadMonthlyRecommendationPdf(
 
   const tableBody = input.recommendedPositions.map((p) => [
     displayTickerLabel(p.ticker),
-    String(p.nameShort || p.ticker).slice(0, 32),
+    String(p.nameShort || p.ticker).slice(0, 28),
+    String(p.country || "—").slice(0, 14),
+    String(p.geoZone || "—").slice(0, 12),
     `${p.weightPct.toFixed(2)}%`,
     p.excluded ? "Sim" : "Não",
-    String(p.sector || "—").slice(0, 22),
-    String(p.industry || "—").slice(0, 20),
-    String(p.region || "—").slice(0, 10),
+    String(p.sector || "—").slice(0, 18),
+    String(p.industry || "—").slice(0, 16),
+    String(p.region || "—").slice(0, 8),
   ]);
 
   autoTable(doc, {
     startY: y,
-    head: [["Ticker", "Empresa", "Peso", "Excl.", "Sector", "Ind.", "Reg."]],
+    head: [["Ticker", "Empresa", "País", "Zona", "Peso", "Excl.", "Sector", "Ind.", "Reg."]],
     body: tableBody,
     styles: { fontSize: 7, cellPadding: 1.2, textColor: [20, 20, 20] },
     headStyles: { fillColor: [30, 41, 59], textColor: 255 },

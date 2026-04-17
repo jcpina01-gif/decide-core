@@ -331,9 +331,22 @@ def _enrich_position_row(ib: IB, contract: Any, row: dict[str, Any]) -> bool:
             row["name"] = _short_company_name(ln)
             row["long_name"] = ln
             got_name = True
-        sec = _sector_from_details(cd)
-        if sec:
-            row["sector"] = sec
+        cat = (getattr(cd, "category", None) or "").strip()
+        ind = (getattr(cd, "industry", None) or "").strip()
+        sub = (getattr(cd, "subcategory", None) or "").strip()
+        if cat:
+            row["category"] = cat
+            row["sector"] = cat
+        if ind:
+            row["industry"] = ind
+            if not row.get("sector"):
+                row["sector"] = ind
+        if sub:
+            row["subcategory"] = sub
+        if not row.get("sector"):
+            sec = _sector_from_details(cd)
+            if sec:
+                row["sector"] = sec
 
     zone, country = _geo_zone_country(contract, cd, row_ccy)
     if zone:

@@ -88,7 +88,145 @@ export const COMPANY_META: Record<string, CompanyMetaEntry> = {
     industry: "Integrated oil & gas",
   },
   JXHLY: { name: "JX Holdings", country: "Japan", zone: "JP", sector: "Energy" },
-  TOELY: { name: "Toyota", country: "Japan", zone: "JP", sector: "Consumer Discretionary" },
+  /** ADR OTC — Tokyo Electron (8035.T); não confundir com Toyota (TM). */
+  TOELY: {
+    name: "Tokyo Electron",
+    country: "Japan",
+    zone: "JP",
+    sector: "Technology",
+    industry: "Semiconductor production equipment",
+  },
+  FRCOY: {
+    name: "Fast Retailing (Uniqlo)",
+    country: "Japan",
+    zone: "JP",
+    sector: "Consumer Discretionary",
+    industry: "Apparel retail",
+  },
+  NTDOY: {
+    name: "Nintendo",
+    country: "Japan",
+    zone: "JP",
+    sector: "Communication Services",
+    industry: "Interactive entertainment / games",
+  },
+  /** 8411.T — Mizuho Financial Group (ADR ``MFG``). */
+  MFG: {
+    name: "Mizuho Financial Group",
+    country: "Japan",
+    zone: "JP",
+    sector: "Financials",
+    industry: "Diversified banks",
+  },
+  FANUY: {
+    name: "Fanuc",
+    country: "Japan",
+    zone: "JP",
+    sector: "Industrials",
+    industry: "Industrial automation & robotics",
+  },
+  MARUY: {
+    name: "Marubeni",
+    country: "Japan",
+    zone: "JP",
+    sector: "Industrials",
+    industry: "Trading companies & distributors",
+  },
+  SMFG: {
+    name: "Sumitomo Mitsui Financial Group",
+    country: "Japan",
+    zone: "JP",
+    sector: "Financials",
+    industry: "Diversified banks",
+  },
+  HTHIY: {
+    name: "Hitachi",
+    country: "Japan",
+    zone: "JP",
+    sector: "Industrials",
+    industry: "Industrial conglomerate",
+  },
+  MSBHF: {
+    name: "Mitsubishi Corporation",
+    country: "Japan",
+    zone: "JP",
+    sector: "Industrials",
+    industry: "Trading companies & distributors",
+  },
+  /** 6981.T — Murata Manufacturing. */
+  MRAAY: {
+    name: "Murata Manufacturing",
+    country: "Japan",
+    zone: "JP",
+    sector: "Technology",
+    industry: "Electronic components",
+  },
+  SFTBY: {
+    name: "SoftBank Group",
+    country: "Japan",
+    zone: "JP",
+    sector: "Communication Services",
+    industry: "Telecommunications / holding",
+  },
+  TM: {
+    name: "Toyota Motor",
+    country: "Japan",
+    zone: "JP",
+    sector: "Consumer Discretionary",
+    industry: "Automobiles",
+  },
+  SONY: {
+    name: "Sony Group",
+    country: "Japan",
+    zone: "JP",
+    sector: "Technology",
+    industry: "Consumer electronics & entertainment",
+  },
+  MUFG: {
+    name: "Mitsubishi UFJ Financial Group",
+    country: "Japan",
+    zone: "JP",
+    sector: "Financials",
+    industry: "Diversified banks",
+  },
+  KDDIY: {
+    name: "KDDI",
+    country: "Japan",
+    zone: "JP",
+    sector: "Communication Services",
+    industry: "Wireless telecommunications",
+  },
+  /** Itochu (8001.T) quando o payload ainda usa a listagem Tóquio. */
+  "8001.T": {
+    name: "Itochu",
+    country: "Japan",
+    zone: "JP",
+    sector: "Industrials",
+    industry: "Trading companies & distributors",
+  },
+  /** Denso (6902.T). */
+  "6902.T": {
+    name: "Denso",
+    country: "Japan",
+    zone: "JP",
+    sector: "Consumer Discretionary",
+    industry: "Automotive components",
+  },
+  /** Hermès — Euronext Paris. */
+  "RMS.PA": {
+    name: "Hermès International",
+    country: "France",
+    zone: "EU",
+    sector: "Consumer Discretionary",
+    industry: "Luxury goods",
+  },
+  CSH2: {
+    name: "Money market UCITS (EUR)",
+    country: "European Economic Area",
+    zone: "EU",
+    sector: "Cash & equivalents",
+    industry: "Short-term EUR money market",
+  },
   XOM: {
     name: "Exxon Mobil",
     country: "USA",
@@ -182,8 +320,25 @@ export function seedMetaMapFromCompanyMeta(upsertMeta: (row: Record<string, stri
       ticker,
       sector: entry.sector,
       zone: entry.zone,
+      country: entry.country,
       name_short: entry.name,
       industry: entry.industry ?? "",
     });
   }
+}
+
+/** Lookup robusto (ADR, ``BRK-B``, ``8001.T``) para preencher grelha do plano / relatório. */
+export function lookupCompanyMetaEntry(ticker: string): CompanyMetaEntry | undefined {
+  const raw = String(ticker || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+  if (!raw) return undefined;
+  const tab = COMPANY_META as Record<string, CompanyMetaEntry>;
+  const keys = [raw, raw.replace(/\./g, "-"), raw.replace(/-/g, ".")];
+  for (const k of keys) {
+    const hit = tab[k];
+    if (hit) return hit;
+  }
+  return undefined;
 }

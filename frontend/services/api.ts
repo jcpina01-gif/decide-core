@@ -6,8 +6,15 @@ export type PortfolioPosition = {
   weight_pct: number;
   score: number | null;
   rank_momentum: number | null;
+  /** Zona geográfica (ex.: Ásia, Europa) quando existir nos dados do motor. */
+  zone: string;
+  /** País de constituição / domicílio ou etiqueta equivalente. */
+  country: string;
+  /** Bloco do modelo (US, EU, JP, CAN, …). */
   region: string;
   sector: string;
+  /** Indústria / sub-sector GICS quando existir. */
+  industry: string;
 };
 
 export type CurrentPortfolio = {
@@ -62,6 +69,8 @@ export type DashboardPayload = RunModelResponse;
 export type PortfolioPayload = CurrentPortfolio;
 export type KpiBlockType = KpiBlock;
 
+import { applyJapaneseEquityDisplayFallback } from "../lib/tickerGeoFallback";
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) {
@@ -93,8 +102,17 @@ function normalizePosition(row: any): PortfolioPosition {
     weight = weight / 100;
   }
 
+  const ticker = String(row?.ticker ?? "");
+  const merged = applyJapaneseEquityDisplayFallback(ticker, {
+    zone: row?.zone ?? row?.geo_zone ?? "",
+    country:
+      row?.country ?? row?.country_incorporation ?? row?.domicile_country ?? row?.incorporation_country ?? "",
+    region: row?.region ?? row?.country_group ?? row?.benchmark_zone ?? "",
+    sector: row?.sector ?? "",
+  });
+  const industryRaw = row?.industry ?? row?.subcategory ?? row?.gics_sub_industry ?? "";
   return {
-    ticker: String(row?.ticker ?? ""),
+    ticker,
     name_short: String(row?.name_short ?? row?.short_name ?? row?.name ?? row?.ticker ?? ""),
     name: String(row?.name ?? row?.name_short ?? row?.short_name ?? row?.ticker ?? ""),
     weight,
@@ -104,8 +122,11 @@ function normalizePosition(row: any): PortfolioPosition {
       row?.rank_momentum === null || row?.rank_momentum === undefined
         ? null
         : num(row.rank_momentum, 0),
-    region: String(row?.region ?? row?.country ?? ""),
-    sector: String(row?.sector ?? ""),
+    zone: String(merged.zone ?? ""),
+    country: String(merged.country ?? ""),
+    region: String(merged.region ?? ""),
+    sector: String(merged.sector ?? ""),
+    industry: String(industryRaw ?? ""),
   };
 }
 

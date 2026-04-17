@@ -16,7 +16,13 @@ import {
 } from "./readPlafonadoFreezeCagr";
 import { readHeroKpiFreezeContext } from "./readHeroKpiFreezeContext";
 import { resolveDecideProjectRoot } from "./decideProjectRoot";
-import { remapJpListingToAdrTicker } from "./jpListingToAdrMap";
+import {
+  isJpNumericListingTicker,
+  normalizeJpListingKey,
+  remapAdrToJpListingTicker,
+  remapJpListingToAdrTicker,
+} from "./jpListingToAdrMap";
+import { applyJapaneseEquityDisplayFallback } from "../tickerGeoFallback";
 import {
   buildOfficialRecommendationMonthsThroughToday,
   pickPlanMonthPreferringTodayFromMonths,
@@ -31,8 +37,17 @@ import {
   isBuyMissingEquityClosePrice,
 } from "../approvalPlanTradeDisplay";
 import { capPctDisplay, eurMmIbTicker, safeNumber, safeString } from "../clientReportCoreUtils";
-import { seedMetaMapFromCompanyMeta } from "../companyMeta";
+import { lookupCompanyMetaEntry, seedMetaMapFromCompanyMeta } from "../companyMeta";
 import { stripPlanBenchmarkIndexRows } from "../planStripBenchmarkIndexTickers";
+import {
+  applyZoneCapsVsBenchmark,
+  benchmarkZoneWeightsFromPriceHeaders,
+  canonZoneForCountryCap,
+  consolidateWeightsBelowMinimum,
+  planEntryMinWeightPct,
+  planExitWeightPct,
+  planZoneCapMultiplier,
+} from "./planWeightAdjustments";
 import type {
   ActualPosition,
   LiveIbkrStructure,
@@ -48,20 +63,76 @@ function trimmedCell(x: unknown): string {
   return typeof x === "string" ? x.trim() : "";
 }
 
+/** Células CSV/UI com ``-`` / ``—`` / ``n/a`` não devem sobrepor meta útil. */
+function meaningfulTextCell(x: unknown): string {
+  const s = trimmedCell(x);
+  if (!s || s === "-" || s === "—" || s.toLowerCase() === "n/a" || s.toLowerCase() === "nan") return "";
+  return s;
+}
+
 function pickRecommendedSector(p: { sector?: unknown }, metaSector: string | undefined): string {
-  const fromMeta = trimmedCell(metaSector);
-  const fromPayload = trimmedCell(
+  const fromMeta = meaningfulTextCell(metaSector);
+  const fromPayload = meaningfulTextCell(
     typeof p.sector === "string" ? p.sector : p.sector != null ? String(p.sector) : "",
   );
   return fromMeta || fromPayload || "";
 }
 
 function pickRecommendedIndustry(p: { industry?: unknown }, metaIndustry: string | undefined): string {
-  const fromMeta = trimmedCell(metaIndustry);
-  const fromPayload = trimmedCell(
+  const fromMeta = meaningfulTextCell(metaIndustry);
+  const fromPayload = meaningfulTextCell(
     typeof p.industry === "string" ? p.industry : p.industry != null ? String(p.industry) : "",
   );
   return fromMeta || fromPayload || "";
+}
+
+/** CSV oficial muitas vezes traz sector vazio ou errado; meta CSV pode falhar — builtin ``COMPANY_META`` a seguir. */
+function displaySectorTriplet(
+  payloadSector: unknown,
+  metaSector: string | undefined,
+  builtin: ReturnType<typeof lookupCompanyMetaEntry>,
+): string {
+  return (
+    meaningfulTextCell(metaSector) ||
+    meaningfulTextCell(builtin?.sector) ||
+    meaningfulTextCell(
+      typeof payloadSector === "string" ? payloadSector : payloadSector != null ? String(payloadSector) : "",
+    )
+  );
+}
+
+function displayIndustryTriplet(
+  payloadIndustry: unknown,
+  metaIndustry: string | undefined,
+  builtin: ReturnType<typeof lookupCompanyMetaEntry>,
+): string {
+  return (
+    meaningfulTextCell(metaIndustry) ||
+    meaningfulTextCell(builtin?.industry) ||
+    meaningfulTextCell(
+      typeof payloadIndustry === "string"
+        ? payloadIndustry
+        : payloadIndustry != null
+          ? String(payloadIndustry)
+          : "",
+    )
+  );
+}
+
+/** Bloco US / EU / JP / CAN / FX do plano — não confundir com país (nome) nem zona geográfica. */
+function displayRegionTriplet(
+  metaRegion: string | undefined,
+  rowBenchZone: unknown,
+  rowCountryGroup: unknown,
+  builtin: ReturnType<typeof lookupCompanyMetaEntry>,
+): string {
+  return (
+    meaningfulTextCell(metaRegion) ||
+    meaningfulTextCell(builtin?.zone) ||
+    meaningfulTextCell(typeof rowBenchZone === "string" ? rowBenchZone : "") ||
+    meaningfulTextCell(typeof rowCountryGroup === "string" ? rowCountryGroup : "") ||
+    ""
+  );
 }
 
 function fallbackEurMmPriceEur(ticker: string): number {
@@ -198,6 +269,10 @@ async function loadIbkrSnapshotFromDecideBackend(): Promise<{
     ticker?: string;
     name?: string;
     sector?: string;
+    industry?: string;
+    subcategory?: string;
+    country?: string;
+    zone?: string;
     qty?: number;
     market_price?: number;
     value?: number;
@@ -337,8 +412,11 @@ function normalizeBackendModelPayloadForReport(payload: any | null): any | null 
     weight_pct: safeNumber(s.weight, 0) * 100,
     score: safeNumber(s.score, 0),
     name_short: safeString(s.ticker, ""),
+    country: "",
+    zone: "",
     region: "",
     sector: "",
+    industry: "",
   }));
 
   return {
@@ -619,8 +697,11 @@ function loadFreezeRunModelSnapshot(projectRoot: string): any | null {
   const positions = holdings.map((h: any) => ({
     ticker: safeString(h?.ticker, "").toUpperCase(),
     name_short: safeString(h?.company ?? h?.ticker, h?.ticker),
-    region: safeString(h?.zone || h?.country, ""),
+    country: safeString(h?.country || h?.domicile_country, ""),
+    zone: safeString(h?.geo_zone || h?.continent, ""),
+    region: safeString(h?.region || h?.country_group || h?.zone, ""),
     sector: safeString(h?.sector, ""),
+    industry: safeString(h?.industry || h?.gics_sub_industry, ""),
     score: safeNumber(h?.score, 0),
     weight_pct: safeNumber(h?.weight_pct, 0),
   }));
@@ -703,51 +784,77 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
   const companyMetaGlobalRows = readCsvIfExists(companyMetaGlobalPath);
   const companyMetaGlobalEnrichedRows = readCsvIfExists(companyMetaGlobalEnrichedPath);
 
-  const metaByTicker = new Map<
-    string,
-    { sector: string; region: string; nameShort: string; industry: string }
-  >();
+  type RowMeta = {
+    sector: string;
+    region: string;
+    nameShort: string;
+    industry: string;
+    country: string;
+    geoZone: string;
+  };
+  const emptyMeta = (): RowMeta => ({
+    sector: "",
+    region: "",
+    nameShort: "",
+    industry: "",
+    country: "",
+    geoZone: "",
+  });
+  const metaByTicker = new Map<string, RowMeta>();
   const upsertMeta = (row: Record<string, string>) => {
     const tRaw = safeString(row.ticker || row.symbol).toUpperCase();
     const t = normalizeTickerKey(tRaw);
     if (!t) return;
-    const curr = metaByTicker.get(t) || { sector: "", region: "", nameShort: "", industry: "" };
-    const sectorFromRow = trimmedCell(row.sector || row.gics_sector || row.sector_name);
-    const industryFromRow = trimmedCell(row.industry || row.gics_sub_industry || row.sub_industry || "");
+    const curr = metaByTicker.get(t) || emptyMeta();
+    const sectorFromRow = meaningfulTextCell(row.sector || row.gics_sector || row.sector_name);
+    const industryFromRow = meaningfulTextCell(row.industry || row.gics_sub_industry || row.sub_industry || "");
     const nameCandidate = trimmedCell(row.name_short || row.name || row.company || "");
     const nameWeak =
       !nameCandidate ||
       normalizeTickerKey(nameCandidate) === t ||
       normalizeTickerKey(nameCandidate) === exclusionTickerGroup(t);
     const nextName = nameWeak ? curr.nameShort || nameCandidate : nameCandidate;
-    const regionCandidate = trimmedCell(row.region || row.zone || row.country_group || "");
+    const regionCandidate = meaningfulTextCell(
+      row.region || row.benchmark_zone || row.country_group || row.zone || "",
+    );
+    const countryFromRow = meaningfulTextCell(
+      row.country || row.domicile_country || row.country_name || row.incorporation_country || "",
+    );
+    const geoFromRow = meaningfulTextCell(
+      row.geo_zone || row.continent || row.continent_pt || row.zone_label || "",
+    );
     const next = {
       sector: sectorFromRow || curr.sector,
       region: regionCandidate || curr.region,
       nameShort: nextName,
       industry: industryFromRow || curr.industry,
+      country: countryFromRow || curr.country,
+      geoZone: geoFromRow || curr.geoZone,
     };
     metaByTicker.set(t, next);
     // Also index the dot/dash variant to avoid lookup misses (e.g. BRK.B vs BRK-B).
     const alt = t.includes("-") ? t.replace(/-/g, ".") : t.replace(/\./g, "-");
     if (alt && alt !== t) metaByTicker.set(alt, next);
   };
-  seedMetaMapFromCompanyMeta(upsertMeta);
   for (const row of companyMetaGlobalRows) upsertMeta(row);
   for (const row of companyMetaGlobalEnrichedRows) upsertMeta(row);
   for (const row of companyMetaV3Rows) upsertMeta(row);
   for (const row of companyMetaRows) upsertMeta(row);
+  /** Por último: CSVs frequentemente trazem ``-`` ou sectores errados; o builtin prevalece onde definido. */
+  seedMetaMapFromCompanyMeta(upsertMeta);
 
-  const brkMeta = {
+  const brkMeta: RowMeta = {
     sector: "Conglomerados / Holdings financeiros",
     region: "US",
     nameShort: "Berkshire Hathaway (Classe B)",
     industry: "Holding multi-setor (seguros, energia, transportes)",
+    country: "Estados Unidos",
+    geoZone: "",
   };
   {
     const nk = normalizeTickerKey("BRK.B");
-    const cur = metaByTicker.get(nk) || { sector: "", region: "", nameShort: "", industry: "" };
-    const merged = {
+    const cur = metaByTicker.get(nk) || emptyMeta();
+    const merged: RowMeta = {
       sector: cur.sector || brkMeta.sector,
       region: cur.region || brkMeta.region,
       industry: cur.industry || brkMeta.industry,
@@ -755,20 +862,58 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
         cur.nameShort && cur.nameShort !== nk && cur.nameShort !== "BRK.B"
           ? cur.nameShort
           : brkMeta.nameShort,
+      country: cur.country || brkMeta.country,
+      geoZone: cur.geoZone || brkMeta.geoZone,
     };
     metaByTicker.set(nk, merged);
     metaByTicker.set("BRK.B", merged);
   }
 
-  const metaForTicker = (ticker: string) => {
-    const k = normalizeTickerKey(ticker);
-    const direct = metaByTicker.get(k);
-    if (direct) return direct;
-    const alt = k.includes("-") ? k.replace(/-/g, ".") : k.replace(/\./g, "-");
-    if (alt) {
-      const hit = metaByTicker.get(alt);
-      if (hit) return hit;
+  const metaKeyCandidates = (ticker: string): string[] => {
+    const raw = String(ticker || "").trim();
+    const k = normalizeTickerKey(raw);
+    const out: string[] = [];
+    const push = (x: string) => {
+      const nk = normalizeTickerKey(x);
+      if (nk && !out.includes(nk)) out.push(nk);
+    };
+    push(k);
+    if (k.includes("-")) push(k.replace(/-/g, "."));
+    else if (k.includes(".")) push(k.replace(/\./g, "-"));
+
+    const jpNorm = normalizeJpListingKey(raw);
+    if (isJpNumericListingTicker(jpNorm)) {
+      push(jpNorm);
+      push(normalizeTickerKey(jpNorm));
+      push(remapJpListingToAdrTicker(jpNorm));
     }
+
+    const listingFromAdr = remapAdrToJpListingTicker(k);
+    if (listingFromAdr) {
+      push(listingFromAdr);
+      push(normalizeTickerKey(listingFromAdr));
+    }
+    return out;
+  };
+
+  const metaForTicker = (ticker: string) => {
+    const useful = (m: RowMeta | undefined) =>
+      Boolean(
+        m &&
+          (meaningfulTextCell(m.sector) ||
+            meaningfulTextCell(m.region) ||
+            meaningfulTextCell(m.nameShort) ||
+            meaningfulTextCell(m.industry) ||
+            meaningfulTextCell(m.country) ||
+            meaningfulTextCell(m.geoZone)),
+      );
+
+    for (const key of metaKeyCandidates(ticker)) {
+      const m = metaByTicker.get(key);
+      if (useful(m)) return m;
+    }
+
+    const k = normalizeTickerKey(ticker);
     const compact = k.replace(/\s+/g, "");
     if (compact === "BRKB" || k.trim().toUpperCase() === "BRK B") {
       return metaByTicker.get("BRK-B") ?? metaByTicker.get("BRK.B");
@@ -780,6 +925,7 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
   const pricesClosePath = path.join(projectRoot, "backend", "data", "prices_close.csv");
   let closeAsOfDate = "";
   const closePricesByTicker = new Map<string, number>();
+  const priceCsvHeaderColsUpper = new Set<string>();
 
   function normalizeTickerForCloseCsv(ticker: string) {
     const s = ticker.trim().toUpperCase().replace(/\s+/g, "");
@@ -825,6 +971,7 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
         for (let i = 0; i < headers.length; i += 1) {
           const col = headers[i];
           if (!col || col.toLowerCase() === "date") continue;
+          priceCsvHeaderColsUpper.add(col.trim().toUpperCase());
           const raw = values[i];
           const num = Number(raw);
           if (Number.isFinite(num) && num > 0) {
@@ -925,11 +1072,30 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
       safeString(m?.nameShort, ""),
     );
     const sector = trimmedCell(m?.sector) || trimmedCell(p.sector ?? p.gics_sector);
+    const industry = trimmedCell(m?.industry) || trimmedCell(p.industry ?? p.subcategory);
+    let country = trimmedCell(p.country) || trimmedCell(m?.country);
+    let zoneGeo = trimmedCell(p.zone) || trimmedCell(m?.geoZone);
+    let regionBench = trimmedCell(m?.region);
+    let sectorOut = sector;
+    const jpPatch = applyJapaneseEquityDisplayFallback(ticker, {
+      country,
+      zone: zoneGeo,
+      region: regionBench,
+      sector: sectorOut,
+    });
+    country = trimmedCell(jpPatch.country) || country;
+    zoneGeo = trimmedCell(jpPatch.zone) || zoneGeo;
+    regionBench = trimmedCell(jpPatch.region) || regionBench;
+    sectorOut = trimmedCell(jpPatch.sector) || sectorOut;
 
     return {
       ticker,
       nameShort,
-      sector,
+      sector: sectorOut,
+      industry,
+      country,
+      zone: zoneGeo,
+      region: regionBench,
       qty,
       marketPrice,
       closePrice: closePrice > 0 ? closePrice : null,
@@ -990,10 +1156,29 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
           safeString(m?.nameShort, ""),
         );
         const sector = trimmedCell(m?.sector) || trimmedCell(p.sector);
+        const industry = trimmedCell(m?.industry) || trimmedCell(p.industry ?? p.subcategory);
+        let country = trimmedCell(p.country) || trimmedCell(m?.country);
+        let zoneGeo = trimmedCell(p.zone) || trimmedCell(m?.geoZone);
+        let regionBench = trimmedCell(m?.region);
+        let sectorOut = sector;
+        const jpPatch = applyJapaneseEquityDisplayFallback(ticker, {
+          country,
+          zone: zoneGeo,
+          region: regionBench,
+          sector: sectorOut,
+        });
+        country = trimmedCell(jpPatch.country) || country;
+        zoneGeo = trimmedCell(jpPatch.zone) || zoneGeo;
+        regionBench = trimmedCell(jpPatch.region) || regionBench;
+        sectorOut = trimmedCell(jpPatch.sector) || sectorOut;
         return {
           ticker,
           nameShort,
-          sector,
+          sector: sectorOut,
+          industry,
+          country,
+          zone: zoneGeo,
+          region: regionBench,
           qty,
           marketPrice,
           closePrice: closePrice > 0 ? closePrice : null,
@@ -1012,6 +1197,10 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
           ticker: "LIQUIDEZ",
           nameShort: "Caixa e equivalentes",
           sector: "Liquidez",
+          industry: "",
+          country: "",
+          zone: "",
+          region: "",
           qty: 0,
           marketPrice: 0,
           closePrice: null,
@@ -1050,16 +1239,29 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
     recommendedRaw = officialMonth.rows.map((row) => {
       const t = remapJpListingToAdrTicker(row.ticker.trim().toUpperCase());
       const m = metaForTicker(t);
+      const b = lookupCompanyMetaEntry(t);
+      const rowAny = row as {
+        zone?: string;
+        country?: string;
+        country_group?: string;
+        industry?: string;
+        geo_zone?: string;
+      };
       return {
         ticker: t,
         nameShort: pickBestDisplayName(
           t,
           safeString(row.company || row.ticker, row.ticker),
-          safeString(m?.nameShort, "")
+          safeString(m?.nameShort, b?.name ?? ""),
         ),
-        region: safeString(m?.region, ""),
-        sector: pickRecommendedSector({ sector: row.sector }, m?.sector),
-        industry: pickRecommendedIndustry({}, m?.industry),
+        region: displayRegionTriplet(m?.region, rowAny.zone, rowAny.country_group, b),
+        country:
+          meaningfulTextCell(rowAny.country) ||
+          meaningfulTextCell(m?.country) ||
+          (b?.country ?? ""),
+        geoZone: meaningfulTextCell(rowAny.geo_zone) || meaningfulTextCell(m?.geoZone) || "",
+        sector: displaySectorTriplet(row.sector, m?.sector, b),
+        industry: displayIndustryTriplet(rowAny.industry, m?.industry, b),
         score: safeNumber(row.score, 0),
         weightPct: safeNumber(row.weightPct, 0),
         originalWeightPct: safeNumber(row.weightPct, 0),
@@ -1077,26 +1279,52 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
           nameShort: (() => {
             const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
             const m = metaForTicker(t);
+            const b = lookupCompanyMetaEntry(t);
             return pickBestDisplayName(
               t,
               safeString(p.name_short || p.short_name || p.ticker),
-              safeString(m?.nameShort, "")
+              safeString(m?.nameShort, b?.name ?? ""),
             );
           })(),
           region: (() => {
             const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
             const m = metaForTicker(t);
-            return safeString(p.region || m?.region, "");
+            const b = lookupCompanyMetaEntry(t);
+            return displayRegionTriplet(
+              m?.region,
+              (p as { zone?: unknown }).zone,
+              (p as { country_group?: unknown }).country_group,
+              b,
+            );
+          })(),
+          country: (() => {
+            const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
+            const m = metaForTicker(t);
+            const b = lookupCompanyMetaEntry(t);
+            const pc = (p as { country?: unknown }).country;
+            return (
+              meaningfulTextCell(typeof pc === "string" ? pc : "") ||
+              meaningfulTextCell(m?.country) ||
+              (b?.country ?? "")
+            );
+          })(),
+          geoZone: (() => {
+            const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
+            const m = metaForTicker(t);
+            const gz = (p as { geo_zone?: unknown }).geo_zone;
+            return meaningfulTextCell(typeof gz === "string" ? gz : "") || meaningfulTextCell(m?.geoZone) || "";
           })(),
           sector: (() => {
             const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
             const m = metaForTicker(t);
-            return pickRecommendedSector(p, m?.sector);
+            const b = lookupCompanyMetaEntry(t);
+            return displaySectorTriplet(p.sector, m?.sector, b);
           })(),
           industry: (() => {
             const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
             const m = metaForTicker(t);
-            return pickRecommendedIndustry(p, m?.industry);
+            const b = lookupCompanyMetaEntry(t);
+            return displayIndustryTriplet(p.industry, m?.industry, b);
           })(),
           score: safeNumber(p.score, 0),
           weightPct: safeNumber(p.weight_pct, 0) * investedFrac,
@@ -1156,6 +1384,8 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
     recommendedPositions[tbillIdx].sector = "Cash & T-Bills";
     recommendedPositions[tbillIdx].industry = "";
     recommendedPositions[tbillIdx].region = recommendedPositions[tbillIdx].region || "US";
+    recommendedPositions[tbillIdx].country = recommendedPositions[tbillIdx].country || "";
+    recommendedPositions[tbillIdx].geoZone = recommendedPositions[tbillIdx].geoZone || "";
     recommendedPositions[tbillIdx].weightPct = safeNumber(
       recommendedPositions[tbillIdx].weightPct,
       0
@@ -1165,6 +1395,8 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
       ticker: "TBILL_PROXY",
       nameShort: "T-Bills / Cash Sleeve",
       region: "US",
+      country: "",
+      geoZone: "",
       sector: "Cash & T-Bills",
       industry: "",
       score: 0,
@@ -1199,6 +1431,48 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
     tbillPos.weightPct += totalNonTbPct;
   }
 
+  recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+
+  {
+    const isPlanWeightProtected = (p: (typeof recommendedPositions)[number]) =>
+      p.ticker === "TBILL_PROXY" || !!p.excluded;
+    const benchZones = benchmarkZoneWeightsFromPriceHeaders(priceCsvHeaderColsUpper, undefined);
+    const zoneForConcentration = (ticker: string, prefRegion: string): "US" | "EU" | "JP" | "CAN" | "OTHER" => {
+      const r =
+        meaningfulTextCell(prefRegion) || meaningfulTextCell(metaForTicker(ticker)?.region);
+      let z = canonZoneForCountryCap(r);
+      if (z !== "OTHER") return z;
+      const nk = normalizeTickerKey(ticker);
+      if (remapAdrToJpListingTicker(nk)) return "JP";
+      if (isJpNumericListingTicker(normalizeJpListingKey(ticker))) return "JP";
+      if (/[-.]PA$/i.test(ticker.trim())) return "EU";
+      return "OTHER";
+    };
+    const zoneByTicker = new Map<string, "US" | "EU" | "JP" | "CAN" | "OTHER">();
+    for (const p of recommendedPositions) {
+      if (isPlanWeightProtected(p)) continue;
+      const z = zoneForConcentration(p.ticker, p.region);
+      if (z !== "OTHER") zoneByTicker.set(p.ticker.trim().toUpperCase(), z);
+    }
+    applyZoneCapsVsBenchmark(
+      recommendedPositions,
+      zoneByTicker,
+      benchZones,
+      planZoneCapMultiplier(),
+      isPlanWeightProtected,
+    );
+    /* Grelha do plano: fundir linhas < **entrada** (1% por defeito). O limiar de saída 0,5% aplica-se a outras regras (env). */
+    consolidateWeightsBelowMinimum(recommendedPositions, planEntryMinWeightPct(), isPlanWeightProtected);
+    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+  }
+
+  for (let i = recommendedPositions.length - 1; i >= 0; i -= 1) {
+    const p = recommendedPositions[i];
+    if (p.excluded) continue;
+    const u = p.ticker.trim().toUpperCase();
+    if (u === "TBILL_PROXY") continue;
+    if (safeNumber(p.weightPct, 0) <= 1e-6) recommendedPositions.splice(i, 1);
+  }
   recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
 
   const proposedTrades: ProposedTrade[] = tradePlanRows
@@ -1255,6 +1529,7 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
   const proposedByTicker = new Set(
     proposedTrades.map((t) => exclusionTickerGroup(normalizeTickerKey(t.ticker)))
   );
+  const entryMinPct = planEntryMinWeightPct();
   for (const r of recommendedPositions) {
     if (
       r.ticker === "TBILL_PROXY" ||
@@ -1263,6 +1538,8 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
     ) {
       continue;
     }
+    /* Entrada: só linha BUY sugerida se alvo **estritamente** > mínimo (default 1%). */
+    if (!(safeNumber(r.weightPct, 0) > entryMinPct + 1e-12)) continue;
     proposedTrades.push({
       ticker: r.ticker,
       side: "BUY",
@@ -1413,6 +1690,8 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
         ticker: eurMmSym,
         nameShort: `MM EUR / caixa (${eurMmSym})`,
         region: "EU",
+        country: "",
+        geoZone: "",
         sector: "Money market UCITS (EUR)",
         industry: "",
         score: 0,
@@ -1429,6 +1708,8 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
         ticker: "EURUSD",
         nameShort: fxRow.nameShort || "Hedge cambial EUR.USD (IDEALPRO)",
         region: "FX",
+        country: "",
+        geoZone: "",
         sector: "Cobertura cambial (operacional)",
         industry: "",
         score: 0,
@@ -1438,6 +1719,53 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
       });
     }
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+  }
+
+  {
+    const skipDisplayEnrich = (t: string) => {
+      const u = t.trim().toUpperCase();
+      if (u === "EURUSD" || u === "EUR_MM_PROXY") return true;
+      if (u === eurMmSym.trim().toUpperCase()) return true;
+      return false;
+    };
+    for (const p of recommendedPositions) {
+      if (skipDisplayEnrich(p.ticker)) continue;
+      const m = metaForTicker(p.ticker);
+      const b = lookupCompanyMetaEntry(p.ticker);
+      if (!meaningfulTextCell(p.sector)) {
+        p.sector = pickRecommendedSector({ sector: p.sector }, m?.sector) || (b?.sector ?? "");
+      }
+      if (!meaningfulTextCell(p.industry)) {
+        p.industry = pickRecommendedIndustry({}, m?.industry) || (b?.industry ?? "");
+      }
+      if (!meaningfulTextCell(p.region)) {
+        p.region =
+          meaningfulTextCell(m?.region) ||
+          (b?.zone ?? "") ||
+          (() => {
+            if (remapAdrToJpListingTicker(normalizeTickerKey(p.ticker))) return "JP";
+            if (isJpNumericListingTicker(normalizeJpListingKey(p.ticker))) return "JP";
+            if (/[-.]PA$/i.test(p.ticker.trim())) return "EU";
+            return "";
+          })();
+      }
+      if (!meaningfulTextCell(p.country)) {
+        p.country = meaningfulTextCell(m?.country) || (b?.country ?? "");
+      }
+      if (!meaningfulTextCell(p.geoZone)) {
+        p.geoZone = meaningfulTextCell(m?.geoZone) || "";
+      }
+      if (
+        !meaningfulTextCell(p.nameShort) ||
+        normalizeTickerKey(p.nameShort) === normalizeTickerKey(p.ticker)
+      ) {
+        p.nameShort = pickBestDisplayName(
+          p.ticker,
+          p.nameShort || p.ticker,
+          safeString(m?.nameShort, b?.name ?? ""),
+        );
+      }
+    }
   }
 
   const dates: string[] = Array.isArray(modelPayload?.series?.dates)
@@ -1633,6 +1961,9 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
     mergeSourcePath: builtWeights?.sourcePath,
     officialHistoryMonthsLoaded: builtWeights?.months.length ?? 0,
     recommendedLineCount: recommendedPositions.length,
+    planDustExitPct: planExitWeightPct(),
+    planEntryMinPct: entryMinPct,
+    planTableConsolidatePct: planEntryMinWeightPct(),
   };
 
   const reportData: ReportData = {

@@ -3,6 +3,8 @@
  * Usado no dashboard (Carteira / total) e na página Carteira.
  */
 
+import { applyJapaneseEquityDisplayFallback } from "./tickerGeoFallback";
+
 export type IbkrSnapshotPosition = {
   value?: number;
   market_value?: number;
@@ -23,6 +25,8 @@ export type IbkrSnapshotPosition = {
   description?: string;
   sector?: string;
   industry?: string;
+  category?: string;
+  subcategory?: string;
   country?: string;
   zone?: string;
   weight_pct?: number;
@@ -135,9 +139,29 @@ export type IbkrPositionDisplayRow = {
   /** Valor da linha ÷ soma dos valores das posição(s) em títulos × 100 — comparável ao sleeve investido do plano. */
   weightPctSecurities: number | null;
   sector: string | null;
+  industry: string | null;
+  /** US / EU / JP / CAN inferido a partir das etiquetas IB (heurística). */
+  regionModel: string | null;
   country: string | null;
   zone: string | null;
 };
+
+/** Heurística para coluna «Região (modelo)» quando não há CSV DECIDE no browser. */
+export function inferDecideRegionFromIbkrGeoLabels(country: string | null, zone: string | null): string | null {
+  const blob = `${country || ""} ${zone || ""}`.toLowerCase();
+  if (!blob.trim()) return null;
+  if (/\bjap|japão|nihon|tokyo|tsej|\.t\b/.test(blob)) return "JP";
+  if (/\bcanad/.test(blob)) return "CAN";
+  if (/\bestados unidos|\beua\b|\bu\.s\.|\busa\b|\bamerica do norte\b/.test(blob) && !/\bm[eé]xico\b|\bcanad/.test(blob))
+    return "US";
+  if (
+    /\beuropa\b|\bfran|alem|reino|su[ií]c|portugal|espan|italia|norue|suec|finl|b[eé]lg|autr|pol[oó]n|chec|gr[eé]c|irland|dinamar|pa[ií]ses baix|holand|luxem|island|liechtenstein/.test(
+      blob,
+    )
+  )
+    return "EU";
+  return null;
+}
 
 export function ibkrPositionMarketValue(p: IbkrSnapshotPosition): number {
   const o = p as Record<string, unknown>;
@@ -281,6 +305,8 @@ function mergeIbkrDisplayRowsByTicker(
       weightPctSecurities: null,
       name: String(ex.name || "").length >= String(r.name || "").length ? ex.name : r.name,
       sector: ex.sector ?? r.sector,
+      industry: ex.industry ?? r.industry,
+      regionModel: ex.regionModel ?? r.regionModel,
       country: ex.country ?? r.country,
       zone: ex.zone ?? r.zone,
     });
@@ -306,12 +332,28 @@ export function buildIbkrPositionDisplayRows(snap: IbkrSnapshotPayload): IbkrPos
     const ticker = tickerRaw ? normalizeBrkTickerDisplay(tickerRaw) : "—";
     const name =
       strField(o, "name", "companyName", "company", "description") ?? (tickerRaw || "—");
+    let country = strField(o, "country");
+    let zone = strField(o, "zone");
     let weightPct: number | null = null;
     if (nav > IBKR_MONEY_EPS) {
       weightPct = Math.min(100, (v / nav) * 100);
     } else if (sumSec > 0) {
       weightPct = (v / sumSec) * 100;
     }
+    let sector = strField(o, "sector") ?? strField(o, "category");
+    const industry = strField(o, "industry") ?? strField(o, "subcategory");
+    let regionModel = inferDecideRegionFromIbkrGeoLabels(country, zone);
+    const jp = applyJapaneseEquityDisplayFallback(ticker, {
+      country,
+      zone,
+      sector: sector ?? "",
+      region: regionModel ?? "",
+    });
+    if (typeof jp.country === "string" && jp.country.trim()) country = jp.country.trim();
+    if (typeof jp.zone === "string" && jp.zone.trim()) zone = jp.zone.trim();
+    if (typeof jp.sector === "string" && jp.sector.trim()) sector = jp.sector.trim();
+    if (typeof jp.region === "string" && jp.region.trim()) regionModel = jp.region.trim();
+
     return {
       ticker,
       name,
@@ -319,9 +361,11 @@ export function buildIbkrPositionDisplayRows(snap: IbkrSnapshotPayload): IbkrPos
       value: v,
       weightPct,
       weightPctSecurities: null,
-      sector: strField(o, "sector", "industry"),
-      country: strField(o, "country"),
-      zone: strField(o, "zone"),
+      sector,
+      industry,
+      regionModel,
+      country,
+      zone,
     };
   });
 

@@ -9,6 +9,7 @@ import EquityCurvesChart from "../components/EquityCurvesChart";
 import DashboardQuickLinks from "../components/DashboardQuickLinks";
 import DecideFaqPanel from "../components/DecideFaqPanel";
 import { DECIDE_APP_FONT_FAMILY } from "../lib/decideClientTheme";
+import { applyJapaneseEquityDashboardHoldingPatch } from "../lib/tickerGeoFallback";
 
 type Holding = {
   ticker?: string;
@@ -579,8 +580,13 @@ export default function DashboardPage() {
 
   const holdingsTableRows = navAlignedPortfolioRows ?? portfolioRows;
 
+  const holdingsTableRowsForUi = useMemo(
+    () => holdingsTableRows.map((h) => applyJapaneseEquityDashboardHoldingPatch(h)),
+    [holdingsTableRows],
+  );
+
   const zonesApi = portfolioKpis?.zones || {};
-  const zonesFromTable = useMemo(() => zonesFromHoldingsRows(holdingsTableRows), [holdingsTableRows]);
+  const zonesFromTable = useMemo(() => zonesFromHoldingsRows(holdingsTableRowsForUi), [holdingsTableRowsForUi]);
   const zones = useMemo(() => {
     const zApi = zonesApi as Record<string, number>;
     // Com alinhamento NAV, a linha T-Bills usa zona CASH — o backend muitas vezes não a devolve em portfolio_kpis.
@@ -602,8 +608,8 @@ export default function DashboardPage() {
   const zoneOTHER = zones.OTHER;
 
   const holdingsTableSumWeight = useMemo(
-    () => holdingsTableRows.reduce((a, r) => a + Number(r.weight || 0), 0),
-    [holdingsTableRows],
+    () => holdingsTableRowsForUi.reduce((a, r) => a + Number(r.weight || 0), 0),
+    [holdingsTableRowsForUi],
   );
 
   const hasTBillsRawResidual = useMemo(() => {
@@ -1157,7 +1163,7 @@ export default function DashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {holdingsTableRows.map((h, idx) => {
+                    {holdingsTableRowsForUi.map((h, idx) => {
                       const tk = String(h.ticker || "").toUpperCase().trim();
                       const company = holdingDisplayName(h);
                       const country = countryKey(h.country, h.zone || h.region);

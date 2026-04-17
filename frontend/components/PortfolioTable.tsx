@@ -34,18 +34,21 @@ export default function PortfolioTable({ portfolio }: { portfolio: CurrentPortfo
               <Th>Ticker</Th>
               <Th>Nome curto</Th>
               <Th>Nome</Th>
+              <Th>País</Th>
+              <Th>Zona</Th>
+              <Th>Região (modelo)</Th>
+              <Th>Setor</Th>
+              <Th>Indústria</Th>
               <Th>Peso</Th>
               <Th>Score</Th>
               <Th>Rank Momentum</Th>
-              <Th>Região</Th>
-              <Th>Sector</Th>
             </tr>
           </thead>
 
           <tbody>
             {(p.positions ?? []).length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-6 py-8 text-left text-xl text-slate-400">
+                <td colSpan={11} className="px-6 py-8 text-left text-xl text-slate-400">
                   Sem posições disponíveis no snapshot atual do motor.
                 </td>
               </tr>
@@ -55,11 +58,14 @@ export default function PortfolioTable({ portfolio }: { portfolio: CurrentPortfo
                   <Td strong>{row.ticker}</Td>
                   <Td>{row.short_name || row.name_short || row.ticker}</Td>
                   <Td>{row.name || row.short_name || row.ticker}</Td>
+                  <Td>{row.country || "—"}</Td>
+                  <Td>{row.zone || "—"}</Td>
+                  <Td>{row.region || "—"}</Td>
+                  <Td>{row.sector || "—"}</Td>
+                  <Td>{row.industry || "—"}</Td>
                   <Td>{fmtPct(row.weight_pct, true)}</Td>
                   <Td>{row.score === null ? "—" : fmtNum(row.score, 4)}</Td>
                   <Td>{row.rank_momentum === null ? "—" : String(row.rank_momentum)}</Td>
-                  <Td>{row.region || "—"}</Td>
-                  <Td>{row.sector || "—"}</Td>
                 </tr>
               ))
             )}

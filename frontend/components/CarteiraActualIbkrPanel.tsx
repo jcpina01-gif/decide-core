@@ -171,6 +171,8 @@ export default function CarteiraActualIbkrPanel({ refreshToken = 0 }: Props) {
                 <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa" }}>Zona</th>
                 <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa" }}>País</th>
                 <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa" }}>Setor</th>
+                <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa" }}>Indústria</th>
+                <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa" }}>Região (modelo)</th>
                 <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa", textAlign: "right" }}>
                   Valor
                 </th>
@@ -199,6 +201,8 @@ export default function CarteiraActualIbkrPanel({ refreshToken = 0 }: Props) {
                   <td style={{ padding: "9px 12px", color: "#a1a1aa" }}>{row.zone ?? "—"}</td>
                   <td style={{ padding: "9px 12px", color: "#a1a1aa" }}>{row.country ?? "—"}</td>
                   <td style={{ padding: "9px 12px", color: "#a1a1aa" }}>{row.sector ?? "—"}</td>
+                  <td style={{ padding: "9px 12px", color: "#a1a1aa" }}>{row.industry ?? "—"}</td>
+                  <td style={{ padding: "9px 12px", color: "#a1a1aa" }}>{row.regionModel ?? "—"}</td>
                   <td style={{ padding: "9px 12px", textAlign: "right", fontWeight: 600 }}>
                     {formatMoneyIbkr(row.value, ccy)}
                   </td>

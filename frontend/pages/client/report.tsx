@@ -41,6 +41,8 @@ import {
   isBuyMissingEquityClosePrice,
 } from "../../lib/approvalPlanTradeDisplay";
 import { capPctDisplay, eurMmIbTicker, safeNumber, safeString } from "../../lib/clientReportCoreUtils";
+import { lookupCompanyMetaEntry } from "../../lib/companyMeta";
+import { applyJapaneseEquityDisplayFallback } from "../../lib/tickerGeoFallback";
 import {
   ResponsiveContainer,
   LineChart,
@@ -64,6 +66,14 @@ export type ActualPosition = {
   /** Nome curto (metadados CSV ou snapshot IBKR). */
   nameShort: string;
   sector: string;
+  /** Indústria / sub-sector quando existir (IBKR ou CSV). */
+  industry: string;
+  /** País (etiqueta ou constituição) quando conhecido. */
+  country: string;
+  /** Zona geográfica (ex.: Ásia, Europa) — snapshot IBKR ou metadados. */
+  zone: string;
+  /** Bloco US / EU / JP / CAN do plano (metadados DECIDE), quando mapeável. */
+  region: string;
   qty: number;
   marketPrice: number;
   /** null quando não há preço de fecho (JSON de GSSP não aceita undefined). */
@@ -77,6 +87,10 @@ export type RecommendedPosition = {
   ticker: string;
   nameShort: string;
   region: string;
+  /** País de constituição / domicílio quando existe nos CSVs ou meta DECIDE. */
+  country: string;
+  /** Zona geográfica (continente / macro-região), quando existir. */
+  geoZone: string;
   sector: string;
   /** GICS / sub-sector quando existe nos CSVs (ex.: Gold para NEM). */
   industry: string;
@@ -112,6 +126,11 @@ export type PlanWeightsProvenance = {
   mergeSourcePath?: string;
   officialHistoryMonthsLoaded: number;
   recommendedLineCount: number;
+  /** Limiares (%) aplicados no SSR — confirma deploy vs HTML em cache. */
+  planDustExitPct?: number;
+  planEntryMinPct?: number;
+  /** Limiar usado para fundir linhas na grelha (em geral = entrada, 1%). */
+  planTableConsolidatePct?: number;
 };
 
 export type ReportData = {
@@ -1295,10 +1314,22 @@ export default function ClientReportPage({ reportData }: PageProps) {
   /** Peso face à soma dos títulos (exclui caixa do denominador) — leitura mais próxima dos pesos do plano à direita. */
   const portfolioDisplayRows = useMemo(() => {
     const gross = portfolioTablePositions.reduce((a, p) => a + Math.abs(p.value), 0);
-    return portfolioTablePositions.map((p) => ({
-      ...p,
-      weightPctSecurities: gross > 1e-9 ? (Math.abs(p.value) / gross) * 100 : 0,
-    }));
+    return portfolioTablePositions.map((p) => {
+      const jp = applyJapaneseEquityDisplayFallback(p.ticker, {
+        country: p.country,
+        zone: p.zone,
+        region: p.region,
+        sector: p.sector,
+      });
+      return {
+        ...p,
+        weightPctSecurities: gross > 1e-9 ? (Math.abs(p.value) / gross) * 100 : 0,
+        country: String(jp.country ?? p.country ?? ""),
+        zone: String(jp.zone ?? p.zone ?? ""),
+        region: String(jp.region ?? p.region ?? ""),
+        sector: String(jp.sector ?? p.sector ?? ""),
+      };
+    });
   }, [portfolioTablePositions]);
 
   useEffect(() => {
@@ -1498,16 +1529,47 @@ export default function ClientReportPage({ reportData }: PageProps) {
         const tick = safeString(p.ticker, "").toUpperCase();
         const nm = typeof p.name === "string" ? p.name.trim() : "";
         const sec = typeof p.sector === "string" ? p.sector.trim() : "";
-        return {
+        const ind =
+          typeof (p as { industry?: string }).industry === "string"
+            ? String((p as { industry?: string }).industry).trim()
+            : typeof (p as { subcategory?: string }).subcategory === "string"
+              ? String((p as { subcategory?: string }).subcategory).trim()
+              : "";
+        const ctry =
+          typeof (p as { country?: string }).country === "string"
+            ? String((p as { country?: string }).country).trim()
+            : "";
+        const zgeo =
+          typeof (p as { zone?: string }).zone === "string" ? String((p as { zone?: string }).zone).trim() : "";
+        const builtin = lookupCompanyMetaEntry(tick);
+        const regionBench = (builtin?.zone ?? "").trim();
+        const base: ActualPosition = {
           ticker: tick,
           nameShort: nm || displayTickerLabel(tick),
-          sector: sec,
+          sector: sec || (builtin?.sector ?? ""),
+          industry: ind,
+          country: ctry || (builtin?.country ?? ""),
+          zone: zgeo,
+          region: regionBench,
           qty: safeNumber(p.qty, 0),
           marketPrice: mpx,
           closePrice: mpx > 0 ? mpx : null,
           value: val,
           weightPct: safeNumber(p.weight_pct, 0),
           currency: safeString(p.currency, navCcy),
+        };
+        const jp = applyJapaneseEquityDisplayFallback(tick, {
+          country: base.country,
+          zone: base.zone,
+          region: base.region,
+          sector: base.sector,
+        });
+        return {
+          ...base,
+          country: String(jp.country ?? base.country ?? ""),
+          zone: String(jp.zone ?? base.zone ?? ""),
+          region: String(jp.region ?? base.region ?? ""),
+          sector: String(jp.sector ?? base.sector ?? ""),
         };
       });
       const cl = data.cash_ledger;
@@ -1525,6 +1587,10 @@ export default function ClientReportPage({ reportData }: PageProps) {
           ticker: "LIQUIDEZ",
           nameShort: "Caixa e equivalentes",
           sector: "Liquidez",
+          industry: "",
+          country: "",
+          zone: "",
+          region: "",
           qty: 0,
           marketPrice: 0,
           closePrice: null,
@@ -2053,6 +2119,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
           sector: p.sector,
           industry: p.industry,
           region: p.region,
+          country: p.country,
+          geoZone: p.geoZone,
           excluded: p.excluded,
         })),
       });
@@ -2936,7 +3004,11 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   <tr style={{ color: "#a1a1aa", textAlign: "left" }}>
                     <th style={{ padding: "10px 8px" }}>Ticker</th>
                     <th style={{ padding: "10px 8px" }}>Empresa</th>
+                    <th style={{ padding: "10px 8px" }}>País</th>
+                    <th style={{ padding: "10px 8px" }}>Zona</th>
+                    <th style={{ padding: "10px 8px" }}>Região (modelo)</th>
                     <th style={{ padding: "10px 8px" }}>Sector</th>
+                    <th style={{ padding: "10px 8px" }}>Indústria</th>
                     <th style={{ padding: "10px 8px" }}>Qtd</th>
                     <th style={{ padding: "10px 8px" }}>Preço (close)</th>
                     <th style={{ padding: "10px 8px" }}>Valor</th>
@@ -2947,7 +3019,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 <tbody>
                   {portfolioDisplayRows.length === 0 ? (
                     <tr>
-                      <td colSpan={8} style={{ padding: 12, color: "#a1a1aa" }}>
+                      <td colSpan={12} style={{ padding: 12, color: "#a1a1aa" }}>
                         Sem posições reais disponíveis.
                       </td>
                     </tr>
@@ -2979,7 +3051,19 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           {p.ticker === "LIQUIDEZ" ? "—" : p.nameShort || "—"}
                         </td>
                         <td style={{ padding: "10px 8px", color: "#a1a1aa" }}>
+                          {p.ticker === "LIQUIDEZ" ? "—" : p.country || "—"}
+                        </td>
+                        <td style={{ padding: "10px 8px", color: "#a1a1aa" }}>
+                          {p.ticker === "LIQUIDEZ" ? "—" : p.zone || "—"}
+                        </td>
+                        <td style={{ padding: "10px 8px", color: "#a1a1aa" }}>
+                          {p.ticker === "LIQUIDEZ" ? "—" : p.region || "—"}
+                        </td>
+                        <td style={{ padding: "10px 8px", color: "#a1a1aa" }}>
                           {p.ticker === "LIQUIDEZ" ? "—" : p.sector || "—"}
+                        </td>
+                        <td style={{ padding: "10px 8px", color: "#a1a1aa" }}>
+                          {p.ticker === "LIQUIDEZ" ? "—" : p.industry || "—"}
                         </td>
                         <td style={{ padding: "10px 8px" }}>
                           {p.ticker === "LIQUIDEZ" ? "—" : formatQty(p.qty)}
@@ -3137,11 +3221,13 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   <tr style={{ color: "#a1a1aa", textAlign: "left" }}>
                     <th style={{ padding: "10px 8px" }}>Ticker</th>
                     <th style={{ padding: "10px 8px" }}>Empresa</th>
+                    <th style={{ padding: "10px 8px" }}>País</th>
+                    <th style={{ padding: "10px 8px" }}>Zona</th>
                     <th style={{ padding: "10px 8px" }}>Peso</th>
                     <th style={{ padding: "10px 8px" }}>% só títulos (plano)</th>
                     <th style={{ padding: "10px 8px" }}>Sector</th>
                     <th style={{ padding: "10px 8px" }}>Indústria</th>
-                    <th style={{ padding: "10px 8px" }}>Região</th>
+                    <th style={{ padding: "10px 8px" }}>Região (modelo)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3186,6 +3272,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           </span>
                         ) : null}
                       </td>
+                      <td style={{ padding: "10px 8px", color: "#d4d4d8" }}>{p.country || "—"}</td>
+                      <td style={{ padding: "10px 8px", color: "#d4d4d8" }}>{p.geoZone || "—"}</td>
                       <td style={{ padding: "10px 8px" }}>
                         {formatPct(p.weightPct)}
                         {p.excluded && p.originalWeightPct > 0 ? (
@@ -3212,6 +3300,18 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   ))}
                 </tbody>
               </table>
+              {reportData.planWeightsProvenance?.planTableConsolidatePct != null &&
+              reportData.planWeightsProvenance?.planEntryMinPct != null ? (
+                <p style={{ margin: "10px 0 0 0", fontSize: 11, color: "#71717a", lineHeight: 1.45, maxWidth: 720 }}>
+                  Regras de peso (servidor): na grelha, linhas com peso abaixo de{" "}
+                  {formatPct(reportData.planWeightsProvenance.planTableConsolidatePct, 2)} são fundidas no resto;
+                  sugestão de compra (BUY) só para alvo estritamente superior a{" "}
+                  {formatPct(reportData.planWeightsProvenance.planEntryMinPct, 2)}. Referência de saída (carteira
+                  real): abaixo de{" "}
+                  {formatPct(reportData.planWeightsProvenance.planDustExitPct ?? 0.5, 2)} —{" "}
+                  <code style={{ color: "#d9f99d" }}>DECIDE_PLAN_EXIT_WEIGHT_PCT</code>.
+                </p>
+              ) : null}
               {recommendedFiltered.some((p) => String(p.ticker).toUpperCase() === "EURUSD") ? (
                 <p style={{ margin: "12px 0 0 0", fontSize: 12, color: "#71717a", lineHeight: 1.5, maxWidth: 720 }}>
                   <strong style={{ color: "#a1a1aa" }}>EUR/USD:</strong> o peso mostrado é o montante de hedge estimado
