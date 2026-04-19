@@ -11,6 +11,7 @@ import path from "path";
 
 import { isDecideCashSleeveBrokerSymbol } from "../decideCashSleeveDisplay";
 import { lookupCompanyMetaEntry } from "../companyMeta";
+import { canonicalTickerForGeo } from "../tickerGeoFallback";
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
 import { isJpNumericListingTicker, jpListingToAdrMap, remapJpListingToAdrTicker } from "./jpListingToAdrMap";
 
@@ -1044,11 +1045,13 @@ export function modelPayloadHasPortfolioPositions(modelPayload: unknown): boolea
   if (!Array.isArray(pos) || pos.length === 0) return false;
   let nonCash = 0;
   for (const row of pos) {
-    const t = String(row?.ticker ?? "").trim();
-    if (!t) continue;
-    const u = t.toUpperCase();
+    const rawT = String(row?.ticker ?? "").trim();
+    if (!rawT) continue;
+    /** «CSH2 IB» / «TOELY US» — sem isto a caixa contava como «1 linha de risco» e o live substituía o CSV. */
+    const canon = canonicalTickerForGeo(rawT).trim().toUpperCase();
+    const u = canon || rawT.toUpperCase();
     if (u === "TBILL_PROXY" || u === "EUR_MM_PROXY" || u === "LIQUIDEZ") continue;
-    if (isDecideCashSleeveBrokerSymbol(t)) continue;
+    if (isDecideCashSleeveBrokerSymbol(rawT) || isDecideCashSleeveBrokerSymbol(canon)) continue;
     const w = Number(row?.weight_pct);
     if (!Number.isFinite(w) || w <= 0) continue;
     nonCash += 1;
