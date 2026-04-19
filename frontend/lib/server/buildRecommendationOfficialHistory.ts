@@ -32,6 +32,10 @@ export type RecommendationRow = {
   weight: number;
   weightPct: number;
   company?: string;
+  /** Macro-zona do motor no CSV (US/EU/JP/CAN) — necessária para caps vs benchmark (meta de ADR ≠ sede). */
+  zone?: string;
+  /** País / código no CSV oficial (ex. JP). */
+  country?: string;
   score?: number;
   sector?: string;
   rank?: number;
@@ -608,6 +612,8 @@ function mergeRecommendationRowsByTicker(rows: RecommendationRow[]): Recommendat
     const nw = (typeof ex.weight === "number" ? ex.weight : 0) + (typeof r.weight === "number" ? r.weight : 0);
     ex.weight = nw;
     ex.weightPct = nw * 100;
+    if (!ex.zone?.trim() && r.zone?.trim()) ex.zone = r.zone.trim();
+    if (!ex.country?.trim() && r.country?.trim()) ex.country = r.country.trim();
     const rs = r.score;
     const es = ex.score;
     if (typeof rs === "number" && Number.isFinite(rs) && (!Number.isFinite(es as number) || rs > (es as number))) {
@@ -644,6 +650,8 @@ function parseWeightsFile(absPath: string, lookup: Map<string, { company?: strin
   const iBaseWeight = colIdx(headers, ["base_weight"]);
   const iWeight = colIdx(headers, ["final_weight", "weight", "target_weight", "w"]);
   const iCompany = colIdx(headers, ["company", "company_name", "name", "security_name", "empresa"]);
+  const iCountry = colIdx(headers, ["country", "country_code", "iso_country"]);
+  const iZone = colIdx(headers, ["zone", "macro_zone", "bench_zone", "country_group"]);
   const iScore = colIdx(headers, ["score"]);
   const iSector = colIdx(headers, ["sector"]);
   const iRank = colIdx(headers, ["rank"]);
@@ -675,6 +683,14 @@ function parseWeightsFile(absPath: string, lookup: Map<string, { company?: strin
       weight: w,
       weightPct: w * 100,
     };
+    if (iCountry >= 0 && r[iCountry]) {
+      const c = String(r[iCountry]).trim();
+      if (c) row.country = c;
+    }
+    if (iZone >= 0 && r[iZone]) {
+      const z = String(r[iZone]).trim();
+      if (z) row.zone = z;
+    }
     if (iCompany >= 0 && r[iCompany]) row.company = String(r[iCompany]).trim();
     if (iScore >= 0 && r[iScore]) {
       const sc = parseFloat(String(r[iScore]).replace(",", "."));

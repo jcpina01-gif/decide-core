@@ -91,6 +91,11 @@ export type RecommendedPosition = {
   ticker: string;
   nameShort: string;
   region: string;
+  /**
+   * Zona macro do CSV oficial (US/EU/JP/CAN) para caps 1,3× vs benchmark.
+   * A coluna ``region`` pode reflectir a listagem (ADR JP → US); não usar só isso nos caps.
+   */
+  csvBenchZone?: string;
   /** País de constituição / domicílio quando existe nos CSVs ou meta DECIDE. */
   country: string;
   /** Zona geográfica (continente / macro-região), quando existir. */

@@ -251,6 +251,8 @@ function economicZoneHintFromCountryLabel(countryRaw: string): "US" | "EU" | "JP
     .trim();
   if (!u) return null;
   if (/\bjapan\b|\bjapao\b|\bjapon\b|nippon|\btokyo\b/.test(u)) return "JP";
+  /** ISO / exportes compactos (CSV motor). */
+  if (u === "jp" || u === "jpn") return "JP";
   if (/\bfrance\b|\bfrancia\b|\bfrankreich\b|\bfrankrijk\b/.test(u)) return "EU";
   if (/\bunited kingdom\b|\bbritain\b|\bengland\b|reino unido|inglaterra|scotland|wales|irlanda do norte/.test(u))
     return "EU";
@@ -1083,7 +1085,13 @@ async function getClientReportServerSidePropsImpl(
     ticker: string,
     prefRegion: string,
     prefCountry?: string,
+    csvMacroZone?: string,
   ): "US" | "EU" | "JP" | "CAN" | "OTHER" => {
+    const csvZ = meaningfulTextCell(csvMacroZone);
+    if (csvZ) {
+      const zCsv = canonZoneForCountryCap(csvZ);
+      if (zCsv !== "OTHER") return zCsv;
+    }
     if (isJapaneseEquityTicker(ticker)) return "JP";
     const r =
       meaningfulTextCell(prefRegion) || meaningfulTextCell(metaForTicker(ticker)?.region);
@@ -1536,6 +1544,7 @@ async function getClientReportServerSidePropsImpl(
           safeString(row.company || row.ticker, row.ticker),
           safeString(m?.nameShort, b?.name ?? ""),
         ),
+        csvBenchZone: meaningfulTextCell(rowAny.zone) || "",
         region: displayRegionTriplet(m?.region, rowAny.zone, rowAny.country_group, b),
         country:
           meaningfulTextCell(rowAny.country) ||
@@ -1698,7 +1707,7 @@ async function getClientReportServerSidePropsImpl(
     const zoneByTicker = new Map<string, PlanGeoZone>();
     for (const p of recommendedPositions) {
       if (isPlanWeightProtected(p)) continue;
-      const z = planZoneForTicker(p.ticker, p.region, p.country);
+      const z = planZoneForTicker(p.ticker, p.region, p.country, p.csvBenchZone);
       mergePlanBenchmarkZoneForTicker(zoneByTicker, p.ticker, z);
     }
     applyZoneCapsVsBenchmark(
@@ -1722,7 +1731,7 @@ async function getClientReportServerSidePropsImpl(
     const zoneByTickerAfterLine = new Map<string, PlanGeoZone>();
     for (const p of recommendedPositions) {
       if (isPlanWeightProtected(p)) continue;
-      const z = planZoneForTicker(p.ticker, p.region, p.country);
+      const z = planZoneForTicker(p.ticker, p.region, p.country, p.csvBenchZone);
       mergePlanBenchmarkZoneForTicker(zoneByTickerAfterLine, p.ticker, z);
     }
     applyZoneCapsVsBenchmark(
@@ -2035,7 +2044,7 @@ async function getClientReportServerSidePropsImpl(
     const zoneByTickerLate = new Map<string, PlanGeoZone>();
     for (const p of recommendedPositions) {
       if (isPlanWeightProtectedAfterUi(p)) continue;
-      const z = planZoneForTicker(p.ticker, p.region, p.country);
+      const z = planZoneForTicker(p.ticker, p.region, p.country, p.csvBenchZone);
       mergePlanBenchmarkZoneForTicker(zoneByTickerLate, p.ticker, z);
     }
     applyZoneCapsVsBenchmark(
@@ -2089,7 +2098,7 @@ async function getClientReportServerSidePropsImpl(
         p.geoZone = meaningfulTextCell(m?.geoZone) || "";
       }
       if (!meaningfulTextCell(p.geoZone)) {
-        const zb = planZoneForTicker(p.ticker, p.region, p.country);
+        const zb = planZoneForTicker(p.ticker, p.region, p.country, p.csvBenchZone);
         const gl = planGeoZoneDisplayLabelPt(zb);
         if (gl) p.geoZone = gl;
       }
@@ -2126,7 +2135,7 @@ async function getClientReportServerSidePropsImpl(
       const m = new Map<string, PlanGeoZone>();
       for (const p of recommendedPositions) {
         if (isPlanWeightProtectedAfterUi(p)) continue;
-        const z = planZoneForTicker(p.ticker, p.region, p.country);
+        const z = planZoneForTicker(p.ticker, p.region, p.country, p.csvBenchZone);
         mergePlanBenchmarkZoneForTicker(m, p.ticker, z);
       }
       return m;
