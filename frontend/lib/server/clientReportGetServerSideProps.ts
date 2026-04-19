@@ -53,7 +53,6 @@ import {
   planEntryMinWeightPct,
   planExitWeightPct,
   planPerTickerMaxWeightPct,
-  planPerTickerMaxWeightPctDisabled,
   planZoneCapMultiplier,
 } from "./planWeightAdjustments";
 import type {
@@ -1649,8 +1648,8 @@ async function getClientReportServerSidePropsImpl(
       consolidateWeightsBelowMinimum(recommendedPositions, entryMinGrid, isPlanWeightProtected);
       recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     }
-    if (!planPerTickerMaxWeightPctDisabled()) {
-      const perTickerMax = planPerTickerMaxWeightPct() ?? 15;
+    {
+      const perTickerMax = planPerTickerMaxWeightPct();
       applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtected);
       recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     }
@@ -1933,8 +1932,8 @@ async function getClientReportServerSidePropsImpl(
     isDecideCashSleeveBrokerSymbol(String(p.ticker || ""));
 
   /** Segunda passagem: a grelha já pode ter CSH2/MM em vez de TBILL_PROXY — o sink do cap tem de encontrar caixa. EURUSD fica de fora (overlay). */
-  if (!planPerTickerMaxWeightPctDisabled()) {
-    const perTickerMax = planPerTickerMaxWeightPct() ?? 15;
+  {
+    const perTickerMax = planPerTickerMaxWeightPct();
     applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
   }
@@ -2212,9 +2211,7 @@ async function getClientReportServerSidePropsImpl(
     planDustExitPct: planExitWeightPct(),
     planEntryMinPct: entryMinPct,
     planTableConsolidatePct: planEntryMinWeightPct(),
-    planPerTickerMaxPct: planPerTickerMaxWeightPctDisabled()
-      ? undefined
-      : (planPerTickerMaxWeightPct() ?? 15),
+    planPerTickerMaxPct: planPerTickerMaxWeightPct(),
   };
 
   const reportData: ReportData = {

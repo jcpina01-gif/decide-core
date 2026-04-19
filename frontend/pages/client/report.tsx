@@ -3420,8 +3420,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
                       redistribuído pelo <strong style={{ color: "#a1a1aa" }}>score</strong> do modelo (peso{" "}
                       <code style={{ color: "#d9f99d" }}>√score</code>
                       ), não para caixa/MM, excepto uma única linha de risco no plano.{" "}
-                      <code style={{ color: "#d9f99d" }}>DECIDE_PLAN_MAX_WEIGHT_PCT_PER_TICKER</code> (15 ou 0,15);{" "}
-                      <code style={{ color: "#d9f99d" }}>DECIDE_DISABLE_PLAN_PER_TICKER_MAX_CAP</code> para desligar.
+                      <code style={{ color: "#d9f99d" }}>DECIDE_PLAN_MAX_WEIGHT_PCT_PER_TICKER</code> (15 ou 0,15 para
+                      15%).
                     </>
                   ) : null}
                 </p>

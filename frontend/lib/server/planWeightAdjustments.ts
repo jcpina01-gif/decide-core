@@ -148,11 +148,6 @@ export function planZoneCapDisabled(): boolean {
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
-export function planPerTickerMaxWeightPctDisabled(): boolean {
-  const v = (process.env.DECIDE_DISABLE_PLAN_PER_TICKER_MAX_CAP || "").trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes" || v === "on";
-}
-
 /**
  * Tecto em **pontos percentuais** (ex.: 15 = 15%) para o cap por linha na grelha do plano.
  * Alinha ao CAP15 / ``cap_per_ticker`` do motor (fração do sleeve de risco, tipicamente 0,15).
@@ -160,9 +155,11 @@ export function planPerTickerMaxWeightPctDisabled(): boolean {
  * - Valor em ``(0,1]`` (ex.: ``0.15``) interpreta-se como **fração** → multiplica por 100.
  * - Valores inválidos ou absurdos (≥ 100 ou > 40) voltam ao **15** por defeito — nunca ``99`` (isso anulava o cap:
  * ``min(99, 0.99×S)`` ≈ 100% do sleeve e ninguém era cortado).
+ *
+ * O tecto **aplica-se sempre** no SSR do relatório; ``DECIDE_DISABLE_PLAN_PER_TICKER_MAX_CAP`` deixou de o desligar
+ * (evita linhas a >15% por defeito quando o deploy tinha esse flag).
  */
-export function planPerTickerMaxWeightPct(): number | null {
-  if (planPerTickerMaxWeightPctDisabled()) return null;
+export function planPerTickerMaxWeightPct(): number {
   const raw = (process.env.DECIDE_PLAN_MAX_WEIGHT_PCT_PER_TICKER || "").trim();
   let n = raw ? Number(raw) : 15;
   if (!Number.isFinite(n) || n <= 0) n = 15;
