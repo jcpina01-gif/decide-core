@@ -1,7 +1,7 @@
 {
-  "benchmark_cagr": 0.08847147227284857,
-  "overlayed_cagr": 0.25302594840982606,
-  "overlayed_sharpe": 1.130590695289619,
+  "benchmark_cagr": 0.08944907827865256,
+  "overlayed_cagr": 0.20284866797695722,
+  "overlayed_sharpe": 0.9449893680597333,
   "data_start": "2006-03-15",
   "data_end": "2026-04-15",
   "profile": "moderado",
@@ -11,7 +11,7 @@
   "avg_executed_turnover_rebalance": 0.31665493288300844,
   "avg_holdings_count": 18.76790660862683,
   "avg_cash_sleeve": 0.20920435770390813,
-  "latest_cash_sleeve": 0.07901612903225796,
+  "latest_cash_sleeve": 0.0790161290322579,
   "avg_trend_exposure": 0.9713098535813217,
   "risk_on_exposure": 1.1,
   "cash_proxy_ticker": "TBILL_PROXY",
@@ -82,7 +82,7 @@
   "bear_low_vol_protection_entry_edges_last_12m": 0,
   "bear_low_vol_explainability_pt": "Em ambientes de bear market com volatilidade anormalmente baixa (frequente antes de stress), reduzimos temporariamente a exposição. Usamos histerese para evitar 'pisca-pisca': só entramos quando o sinal é forte e só saímos quando normaliza.",
   "data_file_used": "C:\\Users\\Joaquim\\Documents\\decide-core\\backend\\data\\prices_close.csv",
-  "n_obs": 5054,
+  "n_obs": 4924,
   "latest_portfolio_date": "2026-04-15",
   "latest_holdings_count": 20,
   "latest_weights_sum": 1.0,
@@ -283,9 +283,10 @@
     "2026-03-31": 0.6084677419354838,
     "2026-04-15": 0.07901612903225796
   },
-  "curve_engine": "engine_research_v5",
-  "curve_engine_script": "export_smooth_freeze_from_v5.py",
+  "curve_engine": "engine_v2_regenerate",
+  "curve_engine_script": "regenerate_smooth_freeze_outputs.py --legacy-engine-v2",
   "prices_input": "C:\\Users\\Joaquim\\Documents\\decide-core\\backend\\data\\prices_close.csv",
   "smooth_export_momentum_mode": "v2_prudent",
-  "smooth_export_overlay_vol_moderado": true
+  "smooth_export_overlay_vol_moderado": true,
+  "curve_engine_note": "Proxy engine_v2 — não replica custos/CAP15 completos do engine_research_v5."
 }
