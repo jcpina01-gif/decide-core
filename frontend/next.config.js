@@ -59,7 +59,11 @@ const nextConfig = {
     /** Histórico de pesos + SSR do relatório leem `weights_by_rebalance*` (mesmo merge que o API). */
     "/api/client/recommendations-history": ["../freeze/**/*", "../backend/data/**/*"],
     "/client/approve": ["../freeze/**/*", "../backend/data/**/*"],
-    "/client/report": ["../freeze/**/*", "../backend/data/**/*"],
+    "/client/report": [
+      "../freeze/**/*",
+      "../backend/data/**/*",
+      "./data/landing/freeze-cap15/**/*",
+    ],
   },
 
   typescript: {

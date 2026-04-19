@@ -1557,14 +1557,14 @@ async function getClientReportServerSidePropsImpl(
     recommendedRaw = Array.isArray(pos) ? mapModelPositionsToRecommended(pos, investedFrac) : [];
     planTargetRebalanceDate = modelPayloadAsOfDateYmd(modelPayload) ?? planTargetRebalanceDate;
   } else {
-    const snap = tryFreezeHoldingsAsModelPositions(projectRoot);
+    const snap = tryFreezeHoldingsAsModelPositions(projectRoot, frontRoot);
     if (snap?.length) {
       planWeightsGridMode = "freeze_snapshot";
-      const freezeCash = freezeKpisLatestCashSleeveFrac(projectRoot);
+      const freezeCash = freezeKpisLatestCashSleeveFrac(projectRoot, frontRoot);
       if (freezeCash !== null) cashSleeveFrac = freezeCash;
       const investedFrac = 1 - cashSleeveFrac;
       recommendedRaw = mapModelPositionsToRecommended(snap, investedFrac);
-      const freezeEnd = freezeKpisDataEndYmd(projectRoot);
+      const freezeEnd = freezeKpisDataEndYmd(projectRoot, frontRoot);
       if (freezeEnd) planTargetRebalanceDate = freezeEnd;
     } else {
       planWeightsGridMode = "model_positions_fallback";
@@ -1572,6 +1572,20 @@ async function getClientReportServerSidePropsImpl(
       const pos = modelPayload?.current_portfolio?.positions;
       recommendedRaw = Array.isArray(pos) ? mapModelPositionsToRecommended(pos, investedFrac) : [];
       planTargetRebalanceDate = modelPayloadAsOfDateYmd(modelPayload) ?? planTargetRebalanceDate;
+    }
+  }
+
+  /** Motor live / payload só com MM: re-tentar freeze embebido em ``frontend/data`` (Vercel tracing). */
+  if (recommendedRaw.filter((p) => !isReportPlanCashSleeveTicker(p.ticker)).length === 0) {
+    const snap = tryFreezeHoldingsAsModelPositions(projectRoot, frontRoot);
+    if (snap?.length) {
+      planWeightsGridMode = "freeze_snapshot";
+      const freezeCash = freezeKpisLatestCashSleeveFrac(projectRoot, frontRoot);
+      if (freezeCash !== null) cashSleeveFrac = freezeCash;
+      const investedFrac = 1 - cashSleeveFrac;
+      recommendedRaw = mapModelPositionsToRecommended(snap, investedFrac);
+      const freezeEnd = freezeKpisDataEndYmd(projectRoot, frontRoot);
+      if (freezeEnd) planTargetRebalanceDate = freezeEnd;
     }
   }
 

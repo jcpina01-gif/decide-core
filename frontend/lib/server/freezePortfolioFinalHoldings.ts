@@ -12,20 +12,28 @@ function readJsonIfExists<T>(filePath: string): T | null {
   }
 }
 
-/**
- * Holdings de ``portfolio_final.json`` no freeze CAP15 — formato alinhado a
- * ``current_portfolio.positions`` do ``run-model`` (para reutilizar o mesmo map SSR).
- *
- * Usado quando **não** há mês oficial no CSV mas o payload traz só a conta (ex.: CSH2).
- */
-export function tryFreezeHoldingsAsModelPositions(projectRoot: string): Record<string, unknown>[] | null {
-  const pfPath = path.join(
-    projectRoot,
-    "freeze",
-    FREEZE_PLAFONADO_MODEL_DIR,
-    "model_outputs",
-    "portfolio_final.json",
-  );
+/** Monorepo ``freeze/...`` e cópia embebida em ``frontend/data/landing/freeze-cap15/`` (Vercel file-tracing). */
+function portfolioFinalJsonCandidates(projectRoot: string, frontendRoot?: string): string[] {
+  const out: string[] = [
+    path.join(projectRoot, "freeze", FREEZE_PLAFONADO_MODEL_DIR, "model_outputs", "portfolio_final.json"),
+  ];
+  if (frontendRoot) {
+    out.push(path.join(frontendRoot, "data", "landing", "freeze-cap15", "portfolio_final.json"));
+  }
+  return out;
+}
+
+function v5KpisJsonCandidates(projectRoot: string, frontendRoot?: string): string[] {
+  const out: string[] = [
+    path.join(projectRoot, "freeze", FREEZE_PLAFONADO_MODEL_DIR, "model_outputs", "v5_kpis.json"),
+  ];
+  if (frontendRoot) {
+    out.push(path.join(frontendRoot, "data", "landing", "freeze-cap15", "v5_kpis.json"));
+  }
+  return out;
+}
+
+function holdingsFromPortfolioFinalPath(pfPath: string): Record<string, unknown>[] | null {
   const pf = readJsonIfExists<{ holdings?: unknown[] }>(pfPath);
   const h = pf?.holdings;
   if (!Array.isArray(h) || h.length === 0) return null;
@@ -54,28 +62,37 @@ export function tryFreezeHoldingsAsModelPositions(projectRoot: string): Record<s
   return out.length ? out : null;
 }
 
-export function freezeKpisDataEndYmd(projectRoot: string): string | null {
-  const kpPath = path.join(
-    projectRoot,
-    "freeze",
-    FREEZE_PLAFONADO_MODEL_DIR,
-    "model_outputs",
-    "v5_kpis.json",
-  );
-  const k = readJsonIfExists<{ data_end?: unknown }>(kpPath);
-  const d = String(k?.data_end ?? "").trim().slice(0, 10);
-  return d.length === 10 && d[4] === "-" && d[7] === "-" ? d : null;
+/**
+ * Holdings de ``portfolio_final.json`` — formato alinhado a ``current_portfolio.positions`` do ``run-model``.
+ *
+ * ``frontendRoot``: pasta ``frontend/`` da app Next (``process.cwd()`` no SSR); tenta cópia embebida quando
+ * o ``freeze/`` do monorepo não entra no bundle serverless da Vercel.
+ */
+export function tryFreezeHoldingsAsModelPositions(
+  projectRoot: string,
+  frontendRoot?: string,
+): Record<string, unknown>[] | null {
+  for (const pfPath of portfolioFinalJsonCandidates(projectRoot, frontendRoot)) {
+    const rows = holdingsFromPortfolioFinalPath(pfPath);
+    if (rows?.length) return rows;
+  }
+  return null;
 }
 
-export function freezeKpisLatestCashSleeveFrac(projectRoot: string): number | null {
-  const kpPath = path.join(
-    projectRoot,
-    "freeze",
-    FREEZE_PLAFONADO_MODEL_DIR,
-    "model_outputs",
-    "v5_kpis.json",
-  );
-  const k = readJsonIfExists<{ latest_cash_sleeve?: unknown }>(kpPath);
-  const v = safeNumber(k?.latest_cash_sleeve, NaN);
-  return v >= 0 && v <= 0.95 && Number.isFinite(v) ? v : null;
+export function freezeKpisDataEndYmd(projectRoot: string, frontendRoot?: string): string | null {
+  for (const kpPath of v5KpisJsonCandidates(projectRoot, frontendRoot)) {
+    const k = readJsonIfExists<{ data_end?: unknown }>(kpPath);
+    const d = String(k?.data_end ?? "").trim().slice(0, 10);
+    if (d.length === 10 && d[4] === "-" && d[7] === "-") return d;
+  }
+  return null;
+}
+
+export function freezeKpisLatestCashSleeveFrac(projectRoot: string, frontendRoot?: string): number | null {
+  for (const kpPath of v5KpisJsonCandidates(projectRoot, frontendRoot)) {
+    const k = readJsonIfExists<{ latest_cash_sleeve?: unknown }>(kpPath);
+    const v = safeNumber(k?.latest_cash_sleeve, NaN);
+    if (v >= 0 && v <= 0.95 && Number.isFinite(v)) return v;
+  }
+  return null;
 }

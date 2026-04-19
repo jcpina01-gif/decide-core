@@ -17,6 +17,7 @@ import {
 } from "./readPlafonadoFreezeCagr";
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
 import { isBuyMissingEquityClosePrice } from "../approvalPlanTradeDisplay";
+import { isDecideCashSleeveBrokerSymbol } from "../decideCashSleeveDisplay";
 import { seedMetaMapFromCompanyMeta } from "../companyMeta";
 import {
   buildOfficialRecommendationMonthsThroughToday,
@@ -759,6 +760,7 @@ export async function loadApprovalAlignedProposedTrades(
     ? pickPlanMonthPreferringTodayFromMonths(builtWeights.months)
     : null;
   const preferLiveWeights = shouldUseLiveModelWeightsInsteadOfOfficialBook(officialMonth, modelPayload);
+  const nextFrontendCwd = resolvePlafonadoNextFrontendCwd(projectRoot);
 
   const mp = modelPayload as Record<string, unknown> | null;
   let recommendedRaw: RecommendedPosition[];
@@ -816,9 +818,9 @@ export async function loadApprovalAlignedProposedTrades(
       : [];
     recommendedRaw = mapPositionsRawToRecommended(positionsRaw, investedFrac);
   } else {
-    const snap = tryFreezeHoldingsAsModelPositions(projectRoot);
+    const snap = tryFreezeHoldingsAsModelPositions(projectRoot, nextFrontendCwd);
     if (snap?.length) {
-      const freezeCash = freezeKpisLatestCashSleeveFrac(projectRoot);
+      const freezeCash = freezeKpisLatestCashSleeveFrac(projectRoot, nextFrontendCwd);
       if (freezeCash !== null) cashSleeveFrac = freezeCash;
       const investedFrac = 1 - cashSleeveFrac;
       recommendedRaw = mapPositionsRawToRecommended(snap as unknown[], investedFrac);
@@ -828,6 +830,20 @@ export async function loadApprovalAlignedProposedTrades(
         ? ((mp?.current_portfolio as Record<string, unknown>).positions as unknown[])
         : [];
       recommendedRaw = mapPositionsRawToRecommended(positionsRaw, investedFrac);
+    }
+  }
+
+  const rowIsPlanCashLike = (p: RecommendedPosition) => {
+    const u = String(p.ticker || "").trim().toUpperCase();
+    return u === "TBILL_PROXY" || isDecideCashSleeveBrokerSymbol(u);
+  };
+  if (recommendedRaw.filter((p) => !rowIsPlanCashLike(p)).length === 0) {
+    const snap = tryFreezeHoldingsAsModelPositions(projectRoot, nextFrontendCwd);
+    if (snap?.length) {
+      const freezeCash = freezeKpisLatestCashSleeveFrac(projectRoot, nextFrontendCwd);
+      if (freezeCash !== null) cashSleeveFrac = freezeCash;
+      const investedFrac = 1 - cashSleeveFrac;
+      recommendedRaw = mapPositionsRawToRecommended(snap as unknown[], investedFrac);
     }
   }
 
@@ -1111,10 +1127,7 @@ export async function loadApprovalAlignedProposedTrades(
   const recommendedCagrPct =
     (await fetchPlafonadoCagrPctFromKpiServer("moderado")) ??
     readPlafonadoM100CagrDisplayPercent(projectRoot) ??
-    readLandingEmbeddedFreezeCap15CagrDisplayPercent(
-      resolvePlafonadoNextFrontendCwd(projectRoot),
-      "moderado",
-    ) ??
+    readLandingEmbeddedFreezeCap15CagrDisplayPercent(nextFrontendCwd, "moderado") ??
     planPlafonadoModeradoCagrFallbackPct() ??
     recommendedCagrDisplayPercentFromModelPayload(modelPayload);
 
