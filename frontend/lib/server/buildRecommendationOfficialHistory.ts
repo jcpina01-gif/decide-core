@@ -9,6 +9,7 @@
 import fs from "fs";
 import path from "path";
 
+import { isDecideCashSleeveBrokerSymbol } from "../decideCashSleeveDisplay";
 import { lookupCompanyMetaEntry } from "../companyMeta";
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
 import { isJpNumericListingTicker, jpListingToAdrMap, remapJpListingToAdrTicker } from "./jpListingToAdrMap";
@@ -1031,10 +1032,29 @@ export function modelPayloadAsOfDateYmd(modelPayload: unknown): string | null {
   return null;
 }
 
+/**
+ * O motor pode devolver `positions` só com caixa/MM (ex. um único CSH2) — isso **não** é livro de risco
+ * para substituir o CSV oficial; antes activava-se o live e a grelha ficava só com ~8% caixa.
+ */
 export function modelPayloadHasPortfolioPositions(modelPayload: unknown): boolean {
-  const p = modelPayload as { current_portfolio?: { positions?: unknown } } | null;
+  const p = modelPayload as {
+    current_portfolio?: { positions?: Array<{ ticker?: unknown; weight_pct?: unknown }> };
+  } | null;
   const pos = p?.current_portfolio?.positions;
-  return Array.isArray(pos) && pos.length > 0;
+  if (!Array.isArray(pos) || pos.length === 0) return false;
+  let nonCash = 0;
+  for (const row of pos) {
+    const t = String(row?.ticker ?? "").trim();
+    if (!t) continue;
+    const u = t.toUpperCase();
+    if (u === "TBILL_PROXY" || u === "EUR_MM_PROXY" || u === "LIQUIDEZ") continue;
+    if (isDecideCashSleeveBrokerSymbol(t)) continue;
+    const w = Number(row?.weight_pct);
+    if (!Number.isFinite(w) || w <= 0) continue;
+    nonCash += 1;
+  }
+  /** Pelo menos uma linha de risco (não basta só caixa/MM). */
+  return nonCash >= 1;
 }
 
 /**

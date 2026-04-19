@@ -1546,10 +1546,16 @@ export default function ClientReportPage({ reportData }: PageProps) {
       }
       const navCcy = safeString(data.net_liquidation_ccy, "USD");
       const netLiq = safeNumber(data.net_liquidation, 0);
+      const snapshotRowsRaw = data.positions.filter((p) => {
+        const t = safeString(p.ticker, "").trim();
+        if (!t) return false;
+        if (t.includes("<") || t.toLowerCase().includes("doctype")) return false;
+        return true;
+      });
       /* Soma com |valor|: FX/hedge (ex. EUR.USD) pode vir com sinal oposto às acções — soma assinada dava «exposição» negativa enganadora. */
-      const grossPositionsValue = data.positions.reduce((acc, p) => acc + Math.abs(safeNumber(p.value, 0)), 0);
+      const grossPositionsValue = snapshotRowsRaw.reduce((acc, p) => acc + Math.abs(safeNumber(p.value, 0)), 0);
 
-      const rows: ActualPosition[] = data.positions.map((p) => {
+      const rows: ActualPosition[] = snapshotRowsRaw.map((p) => {
         const mpx = safeNumber(p.market_price, 0);
         const val = safeNumber(p.value, 0);
         const tick = safeString(p.ticker, "").toUpperCase();
