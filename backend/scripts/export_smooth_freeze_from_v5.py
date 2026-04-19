@@ -10,6 +10,8 @@ Mapeamento (alinhado ao código em ``engine_research_v5.py``):
   com ``max_effective_exposure=1.0`` (teto **≤100% NAV** na perna arriscada vs caixa/T-Bill; mesmo custos).
 - ``model_equity_theoretical_20y.csv`` → **``equity_raw``** (perfil **moderado**): motor com custos,
   **antes** da pilha breadth/trend/vol-overlay do CAP15.
+- ``weights_by_rebalance.csv`` → o motor grava em ``backend/data/``; este script **copia** o ficheiro
+  para ``freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/`` para alinhar com o merge do relatório.
 - ``model_equity_final_20y_*_margin.csv`` / ``model_equity_final_20y_margin.csv`` → **``equity_overlay_margin``**:
   mesma corrida do motor, **sem** esse teto — exposição efectiva pode exceder 100%; CAGR/vol podem
   diferir do plafonado quando o teto encaixa.
@@ -41,6 +43,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -219,9 +222,15 @@ def main() -> int:
         meta["smooth_export_overlay_vol_moderado"] = True
         v5_json.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
+    # O merge oficial (Next) lê primeiro ``freeze/.../weights_by_rebalance.csv``; o motor só
+    # escrevia em ``backend/data/``. Copiar evita CSV antigo no freeze com curvas novas.
+    if data_weights.is_file():
+        shutil.copy2(data_weights, FREEZE_OUT / "weights_by_rebalance.csv")
+
     print("OK: freeze smooth V5 em", FREEZE_OUT)
     print("     v5_kpis:", v5_json)
     print("     weights/cash (moderado):", data_weights, "|", data_cash)
+    print("     weights (cópia para freeze):", FREEZE_OUT / "weights_by_rebalance.csv")
     return 0
 
 

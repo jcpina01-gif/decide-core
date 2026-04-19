@@ -15,7 +15,7 @@ import pandas as pd
 from price_series_clean import sanitize_extreme_daily_closes
 
 
-ENGINE_VERSION = "DECIDE_ENGINE_V2_M1_ZONE_CAP_130PCT_BENCH_2026_04_05"
+ENGINE_VERSION = "DECIDE_ENGINE_V2_M3_SCORE_RANK_POOL_2026_04_17"
 
 _TSE_DOT_T_COL = re.compile(r"^\d+\.[Tt]$|^\d+-[Tt]$")
 
@@ -446,6 +446,109 @@ def apply_zone_caps_vs_benchmark_weights(
     return w.sort_values(ascending=False)
 
 
+def _engine_lp_zone_caps_enabled() -> bool:
+    """
+    Opt-in: ``DECIDE_ENGINE_LP_ZONE_CAPS=1`` activa programação linear (HiGHS via SciPy) para
+    ``sum w_i = 1``, ``w_i <= cap``, ``sum_{i in Z} w_i <= mult * bench[Z]`` e objectivo
+    ``max sum u_i w_i`` com ``u_i = score_i`` (raw) ou ``sqrt(score_i)`` (CAP15).
+    """
+    return _env_truthy("DECIDE_ENGINE_LP_ZONE_CAPS")
+
+
+def solve_max_utility_weights_under_zone_and_ticker_caps(
+    tickers: list[str],
+    scores: pd.Series,
+    ticker_zone: dict[str, str],
+    bench_zones: dict[str, float],
+    *,
+    cap_per_ticker: float,
+    multiplier: float,
+    linear_score_weights: bool,
+) -> Optional[pd.Series]:
+    """
+    Caminho **A** (motor): maximizar utilidade linear nos pesos sujeita a tecto por nome e por zona
+    vs benchmark. Devolve ``None`` se SciPy falhar, problema infeasível, ou dados insuficientes.
+    """
+    try:
+        from scipy.optimize import linprog  # type: ignore[import-untyped]
+    except Exception:
+        return None
+
+    n = len(tickers)
+    if n <= 0 or multiplier <= 0:
+        return None
+
+    cap = float(min(max(float(cap_per_ticker), 1e-12), 1.0))
+    bench = _normalize_zone_weight_dict({str(k): float(v) for k, v in bench_zones.items()})
+    zones_order = ("US", "EU", "JP", "CAN", "OTHER")
+
+    def zone_of(t: str) -> str:
+        z = ticker_zone.get(_normalize_ticker_key_meta(str(t)))
+        return z if z in zones_order else "OTHER"
+
+    c: list[float] = []
+    for t in tickers:
+        s = float(pd.to_numeric(scores.get(t, float("nan")), errors="coerce"))
+        if not math.isfinite(s):
+            s = 0.0
+        s = max(s, 1e-18)
+        u = float(s) if linear_score_weights else float(math.sqrt(s))
+        c.append(float(-u))
+
+    a_rows: list[list[float]] = []
+    b_vals: list[float] = []
+    for z in zones_order:
+        bz = float(bench.get(z, 0.0))
+        if bz < 1e-12:
+            continue
+        row = [0.0] * n
+        for i, tk in enumerate(tickers):
+            if zone_of(tk) == z:
+                row[i] = 1.0
+        a_rows.append(row)
+        b_vals.append(float(multiplier * bz))
+
+    a_ub_np = np.asarray(a_rows, dtype=float) if a_rows else None
+    b_ub_np = np.asarray(b_vals, dtype=float) if b_vals else None
+
+    a_eq = np.ones((1, n), dtype=float)
+    b_eq = np.asarray([1.0], dtype=float)
+    bounds = [(0.0, cap) for _ in range(n)]
+
+    res = linprog(
+        c,
+        A_ub=a_ub_np,
+        b_ub=b_ub_np,
+        A_eq=a_eq,
+        b_eq=b_eq,
+        bounds=bounds,
+        method="highs",
+        options={"disp": False},
+    )
+    if res is None or not getattr(res, "success", False):
+        return None
+    x = getattr(res, "x", None)
+    if x is None or len(x) != n:
+        return None
+    w = pd.Series(np.asarray(x, dtype=float), index=[str(t) for t in tickers], dtype=float).clip(lower=0.0)
+    ssum = float(w.sum())
+    if ssum <= 1e-18:
+        return None
+    w = w / ssum
+    ex_check: dict[str, float] = {z: 0.0 for z in zones_order}
+    for t, wt in w.items():
+        ex_check[zone_of(str(t))] += float(wt)
+    for z in zones_order:
+        bz = float(bench.get(z, 0.0))
+        if bz < 1e-12:
+            continue
+        if ex_check.get(z, 0.0) > float(multiplier * bz) + 1e-5:
+            return None
+    if float(w.max()) > cap + 1e-5:
+        return None
+    return w.sort_values(ascending=False)
+
+
 def _zone_cap_multiplier_from_env() -> float:
     try:
         return float(os.environ.get("DECIDE_ZONE_CAP_VS_BENCHMARK_MULT", "1.3"))
@@ -750,6 +853,35 @@ def _effective_cap_for_profile(profile: Optional[str], cap_per_ticker: float) ->
     return float(cap_per_ticker)
 
 
+def score_rank_pool_n(top_q: int, universe_size: int) -> int:
+    """
+    Quantos nomes do ranking de score entram no **pool** de pesos (LP / heurística), não só ``top_q``.
+
+    - ``DECIDE_ENGINE_SCORE_RANK_POOL`` (inteiro): tecto absoluto de nomes (≥ ``top_q``).
+    - Senão ``DECIDE_ENGINE_SCORE_RANK_POOL_MULT`` (float, default **3**): ``ceil(top_q * mult)``, limitado ao universo.
+
+    Isto permite ao PL ou ao cap por zona usar titulares **abaixo** do top imediato (souvente outras regiões).
+    """
+    n = max(0, int(universe_size))
+    tq = max(1, int(top_q))
+    if n <= 0:
+        return 0
+    raw = (os.environ.get("DECIDE_ENGINE_SCORE_RANK_POOL") or "").strip()
+    if raw:
+        try:
+            cap_n = int(raw)
+            return max(tq, min(max(1, cap_n), n))
+        except ValueError:
+            pass
+    mraw = (os.environ.get("DECIDE_ENGINE_SCORE_RANK_POOL_MULT") or "3").strip()
+    try:
+        mult = float(mraw)
+    except ValueError:
+        mult = 3.0
+    mult = max(mult, 1.0)
+    return min(n, max(tq, int(math.ceil(tq * mult))))
+
+
 # No perfil ``raw``, clip por ativo no retorno diário antes da soma ponderada (evita um print
 # corrupto dominar; ±100% já é extremo para um único dia). Não afecta moderado/conservador/dinâmico.
 RAW_ALIGNED_DAILY_CLIP = 1.0
@@ -788,7 +920,8 @@ def run_model(
 
     cap_use = _effective_cap_for_profile(profile, cap_per_ticker)
     n_univ = max(1, int(top_q))
-    selected = scores.iloc[:n_univ]
+    pool_n = score_rank_pool_n(n_univ, len(scores))
+    selected = scores.iloc[:pool_n] if pool_n > 0 else scores.iloc[:n_univ]
     linear_w = _is_raw_profile(profile)
 
     bench_zones = benchmark_zone_weights(window, benchmark)
@@ -807,16 +940,47 @@ def run_model(
             multiplier=zone_cap_mult,
         )
 
-    weights = _apply_zone_cap_if_needed(build_weights(selected, cap_use, linear_score_weights=linear_w))
+    def _weights_engine(selected_ser: pd.Series) -> tuple[pd.Series, bool]:
+        """Heurística ``build_weights`` + cap zona iterativo, ou PL (opt-in) quando viável."""
+        tk = [str(x) for x in selected_ser.index]
+        if (
+            _zone_cap_enabled()
+            and _engine_lp_zone_caps_enabled()
+            and ticker_zones
+            and len(tk) > 0
+        ):
+            sub_scores = scores.reindex(selected_ser.index)
+            lp_w = solve_max_utility_weights_under_zone_and_ticker_caps(
+                tk,
+                sub_scores,
+                ticker_zones,
+                bench_zones,
+                cap_per_ticker=cap_use,
+                multiplier=zone_cap_mult,
+                linear_score_weights=linear_w,
+            )
+            if lp_w is not None and float(lp_w.sum()) > 1e-18:
+                return lp_w.astype(float), True
+        bw = build_weights(selected_ser, cap_use, linear_score_weights=linear_w)
+        return _apply_zone_cap_if_needed(bw), False
+
+    weights, weights_used_lp = _weights_engine(selected)
+
+    w_emit = weights[weights > 1e-9]
+    if float(w_emit.sum()) > 1e-18:
+        w_emit = w_emit / float(w_emit.sum())
+    else:
+        w_emit = weights.copy()
+        if float(w_emit.sum()) > 1e-18:
+            w_emit = w_emit / float(w_emit.sum())
 
     selection = []
-
-    for t in weights.index:
-
+    for t in w_emit.sort_values(ascending=False).index:
+        sc = float(scores[t]) if t in scores.index else float(selected.get(t, 0.0))
         selection.append({
             "ticker": str(t),
-            "weight": float(weights[t]),
-            "score": float(selected[t]),
+            "weight": float(w_emit[t]),
+            "score": sc,
         })
 
     rets = window.pct_change().fillna(0)
@@ -857,11 +1021,10 @@ def run_model(
 
             hist_scores = compute_multi_horizon_score(hist)
 
-            selected_hist = hist_scores.iloc[:n_univ]
+            pool_hist = score_rank_pool_n(n_univ, len(hist_scores))
+            selected_hist = hist_scores.iloc[:pool_hist] if pool_hist > 0 else hist_scores.iloc[:n_univ]
 
-            current_weights = _apply_zone_cap_if_needed(
-                build_weights(selected_hist, cap_use, linear_score_weights=linear_w)
-            )
+            current_weights, _ = _weights_engine(selected_hist)
 
             if use_vol_target:
 
@@ -931,7 +1094,7 @@ def run_model(
         "engine_version": ENGINE_VERSION,
         "price_universe": price_universe_meta,
         "selection": selection,
-        "weights": weights.to_dict(),
+        "weights": {str(k): float(v) for k, v in w_emit.items()},
         "kpis": kpis,
         "benchmark_kpis": bench_kpis,
         "relative_kpis": relative_kpis,
@@ -944,6 +1107,16 @@ def run_model(
         "tickers_with_zone_meta": int(
             sum(1 for t in weights.index if _normalize_ticker_key_meta(str(t)) in ticker_zones)
         ),
+    }
+    result["meta"]["engine_lp_zone_caps"] = {
+        "env_requested": _engine_lp_zone_caps_enabled(),
+        "used_lp_for_initial_weights": bool(weights_used_lp),
+    }
+    result["meta"]["score_rank_pool"] = {
+        "top_q": int(n_univ),
+        "pool_n": int(pool_n),
+        "universe_scores": int(len(scores)),
+        "selection_lines": int(len(selection)),
     }
     if include_series:
         result["series"] = {

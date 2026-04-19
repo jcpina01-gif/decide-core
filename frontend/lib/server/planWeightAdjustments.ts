@@ -257,6 +257,8 @@ export function planWeightSinkRow(rows: MutablePlanWeightRow[]): MutablePlanWeig
     String(t || "")
       .trim()
       .toUpperCase();
+  const byCashSym = rows.find((r) => isDecideCashSleeveBrokerSymbol(String(r.ticker || "")));
+  if (byCashSym) return byCashSym;
   const want = (tickers: string[]) => {
     for (const w of tickers) {
       const hit = rows.find((r) => u(r.ticker) === w);
@@ -265,10 +267,7 @@ export function planWeightSinkRow(rows: MutablePlanWeightRow[]): MutablePlanWeig
     return undefined;
   };
   const mm = eurMmIbTicker();
-  return (
-    want(["TBILL_PROXY", "EUR_MM_PROXY", "BIL", "SHV", mm]) ||
-    rows.find((r) => isDecideCashSleeveBrokerSymbol(String(r.ticker || "")))
-  );
+  return want(["TBILL_PROXY", "EUR_MM_PROXY", "BIL", "SHV", mm]);
 }
 
 /**
@@ -321,6 +320,66 @@ export function consolidateWeightsBelowMinimum(
       r.originalWeightPct = ow + add * (ow / w || 1);
     }
   }
+}
+
+/**
+ * Coloca ``freed`` (pontos % do NAV) em linhas de zonas **ainda abaixo** do tecto ``mult × bench[Z]``,
+ * por zona com espaço e dentro de cada zona por ``sqrt(score)``. Devolve o que **não** coube.
+ */
+function redistributeZoneCapFreedToUndercappedEquities(
+  eqRows: MutablePlanWeightRow[],
+  zoneOfTicker: (ticker: string) => "US" | "EU" | "JP" | "CAN" | "OTHER",
+  zones: readonly ("US" | "EU" | "JP" | "CAN" | "OTHER")[],
+  bench: Record<string, number>,
+  multiplier: number,
+  freed: number,
+): number {
+  let rem = freed;
+  for (let round = 0; round < 50 && rem > 1e-9; round += 1) {
+    const wt = eqRows.reduce((a, r) => a + safeNumber(r.weightPct, 0), 0);
+    if (wt <= 1e-12) break;
+    const zW: Record<string, number> = { US: 0, EU: 0, JP: 0, CAN: 0, OTHER: 0 };
+    for (const r of eqRows) {
+      const z = zoneOfTicker(r.ticker);
+      zW[z] = (zW[z] || 0) + safeNumber(r.weightPct, 0);
+    }
+    const head: Record<string, number> = {};
+    let totalHead = 0;
+    for (const z of zones) {
+      const b = bench[z] || 0;
+      if (b < 1e-12) {
+        head[z] = 0;
+        continue;
+      }
+      const maxW = multiplier * b * wt;
+      const h = Math.max(0, maxW - (zW[z] || 0));
+      head[z] = h;
+      totalHead += h;
+    }
+    if (totalHead <= 1e-9) break;
+    const toPlace = Math.min(rem, totalHead);
+    for (const z of zones) {
+      if (head[z] <= 1e-9) continue;
+      const addZ = Math.min(head[z], toPlace * (head[z] / totalHead));
+      const zRows = eqRows.filter((r) => zoneOfTicker(r.ticker) === z);
+      if (zRows.length === 0) continue;
+      const wts = zRows.map((r) => planRankAllocationWeight(r));
+      const s = wts.reduce((a, b) => a + b, 0);
+      if (s <= 1e-18) continue;
+      for (let i = 0; i < zRows.length; i += 1) {
+        const r = zRows[i];
+        const w0 = safeNumber(r.weightPct, 0);
+        const add = addZ * (wts[i] / s);
+        r.weightPct = w0 + add;
+        if (r.originalWeightPct !== undefined) {
+          const ow0 = safeNumber(r.originalWeightPct, w0);
+          r.originalWeightPct = ow0 + add * (ow0 / w0 || 1);
+        }
+      }
+    }
+    rem -= toPlace;
+  }
+  return rem;
 }
 
 /**
@@ -404,6 +463,96 @@ export function applyZoneCapsVsBenchmark(
     if (r.originalWeightPct !== undefined) {
       const ow0 = safeNumber(r.originalWeightPct, oldW);
       r.originalWeightPct = oldW > 1e-9 ? (nw / oldW) * ow0 : nw;
+    }
+  }
+
+  /**
+   * A iteração em ``fr`` renormaliza a soma a 1 **entre todas** as linhas de risco; quando o plano está
+   * concentrado numa zona (ex. quase só JP + uma EU) isso **recicla** massa para a zona que acabou de ser
+   * cortada e o teto 1,3× nunca fecha. Aqui garantimos o tecto em **peso**: o excesso vai primeiro para
+   * **outras acções** em zonas com espaço sob o 1,3× (``sqrt(score)`` dentro da zona); só o que não couber
+   * segue para o sink de caixa/MM.
+   */
+  const sink = planWeightSinkRow(rows);
+  /**
+   * Sem este laço quando **não** há linha de caixa (sink), a fase ``fr`` acima pode deixar uma zona
+   * (ex. JP ≈ 80% do sleeve) acima de ``mult × bench[Z]`` — era o bug que o utilizador via na grelha.
+   * O sink é opcional: o excesso que não couber nas outras zonas sob o tecto vai para caixa **ou**
+   * reparte-se pelas linhas fora da zona mais violada (fallback).
+   */
+  for (let guard = 0; guard < 120; guard += 1) {
+    const wt = eqRows.reduce((a, r) => a + safeNumber(r.weightPct, 0), 0);
+    if (wt <= 1e-12) break;
+    let worstZ: (typeof zones)[number] | null = null;
+    let worstExcess = 0;
+    for (const z of zones) {
+      const b = bench[z] || 0;
+      if (b < 1e-12) continue;
+      const capF = multiplier * b;
+      const zW = eqRows
+        .filter((r) => zoneOfTicker(r.ticker) === z)
+        .reduce((a, r) => a + safeNumber(r.weightPct, 0), 0);
+      const exZ = zW / wt;
+      if (exZ > capF + 1e-7) {
+        const targetW = capF * wt;
+        const excess = zW - targetW;
+        if (excess > worstExcess + 1e-12) {
+          worstExcess = excess;
+          worstZ = z;
+        }
+      }
+    }
+    if (!worstZ || worstExcess <= 1e-9) break;
+    const capF = multiplier * (bench[worstZ] || 0);
+    const zRows = eqRows.filter((r) => zoneOfTicker(r.ticker) === worstZ);
+    const zW = zRows.reduce((a, r) => a + safeNumber(r.weightPct, 0), 0);
+    if (zW <= 1e-12) break;
+    const targetW = capF * wt;
+    const fac = targetW / zW;
+    let freed = 0;
+    for (const r of zRows) {
+      const w = safeNumber(r.weightPct, 0);
+      const nw = w * fac;
+      freed += w - nw;
+      r.weightPct = nw;
+      if (r.originalWeightPct !== undefined) {
+        const ow0 = safeNumber(r.originalWeightPct, w);
+        r.originalWeightPct = w > 1e-9 ? (nw / w) * ow0 : nw;
+      }
+    }
+    if (freed > 1e-9) {
+      const toSink = redistributeZoneCapFreedToUndercappedEquities(
+        eqRows,
+        zoneOfTicker,
+        zones,
+        bench,
+        multiplier,
+        freed,
+      );
+      if (toSink > 1e-9) {
+        if (sink) {
+          const sw = safeNumber(sink.weightPct, 0);
+          const sow = sink.originalWeightPct !== undefined ? safeNumber(sink.originalWeightPct, sw) : undefined;
+          sink.weightPct = sw + toSink;
+          if (sink.originalWeightPct !== undefined) {
+            sink.originalWeightPct = (sow ?? sw) + toSink;
+          }
+        } else {
+          const spill = eqRows.filter((r) => zoneOfTicker(r.ticker) !== worstZ);
+          const base = spill.reduce((a, r) => a + safeNumber(r.weightPct, 0), 0);
+          if (base > 1e-9) {
+            for (const r of spill) {
+              const w0 = safeNumber(r.weightPct, 0);
+              const add = toSink * (w0 / base);
+              r.weightPct = w0 + add;
+              if (r.originalWeightPct !== undefined) {
+                const ow0 = safeNumber(r.originalWeightPct, w0);
+                r.originalWeightPct = ow0 + add * (ow0 / w0 || 1);
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
