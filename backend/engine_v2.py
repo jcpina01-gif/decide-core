@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
+import math
 import os
 import re
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Iterable, Optional
 
 import numpy as np
 import pandas as pd
@@ -13,7 +15,7 @@ import pandas as pd
 from price_series_clean import sanitize_extreme_daily_closes
 
 
-ENGINE_VERSION = "DECIDE_ENGINE_V2_M1_RAW_LINEAR_SCORES_2026_04_17_JP_ADR"
+ENGINE_VERSION = "DECIDE_ENGINE_V2_M1_ZONE_CAP_130PCT_BENCH_2026_04_05"
 
 _TSE_DOT_T_COL = re.compile(r"^\d+\.[Tt]$|^\d+-[Tt]$")
 
@@ -226,6 +228,233 @@ def _make_benchmark_from_prices(prices: pd.DataFrame, benchmark: Optional[str]) 
     bench_eq.iloc[0] = 1.0
 
     return bench_eq
+
+
+# ============================================================
+# ZONA / «PAÍS» vs BENCHMARK (teto relativo, p.ex. 130%)
+# ============================================================
+
+_DEFAULT_COMPOSITE_BENCH_ZONES: tuple[tuple[str, float, str], ...] = (
+    ("SPY", 0.60, "US"),
+    ("VGK", 0.25, "EU"),
+    ("EWJ", 0.10, "JP"),
+    ("EWC", 0.05, "CAN"),
+)
+
+_BENCH_ZONE_FALLBACK_WORLD: dict[str, float] = {
+    "US": 0.55,
+    "EU": 0.22,
+    "JP": 0.14,
+    "CAN": 0.05,
+    "OTHER": 0.04,
+}
+
+
+def _bench_zones_need_world_fallback(z: dict[str, float]) -> bool:
+    return z.get("US", 0.0) < 1e-12 or z.get("EU", 0.0) < 1e-12 or z.get("JP", 0.0) < 1e-12
+
+
+# Mistura regional aproximada quando o benchmark é **uma** coluna (ETF).
+# Valores sumam 1.0 por ETF; «OTHER» absorve o que não cai em US/EU/JP/CAN.
+_SINGLE_ETF_BENCH_ZONE_PRIOR: dict[str, dict[str, float]] = {
+    "SPY": {"US": 0.72, "EU": 0.14, "JP": 0.08, "CAN": 0.03, "OTHER": 0.03},
+    "VOO": {"US": 0.72, "EU": 0.14, "JP": 0.08, "CAN": 0.03, "OTHER": 0.03},
+    "IVV": {"US": 0.72, "EU": 0.14, "JP": 0.08, "CAN": 0.03, "OTHER": 0.03},
+    "QQQ": {"US": 0.76, "EU": 0.12, "JP": 0.07, "CAN": 0.02, "OTHER": 0.03},
+    "VGK": {"EU": 1.0},
+    "EZU": {"EU": 1.0},
+    "EUNL.DE": {"EU": 0.85, "US": 0.10, "OTHER": 0.05},
+    "IWDA.AS": {"US": 0.58, "EU": 0.22, "JP": 0.09, "CAN": 0.04, "OTHER": 0.07},
+    "IWDA": {"US": 0.58, "EU": 0.22, "JP": 0.09, "CAN": 0.04, "OTHER": 0.07},
+    "URTH": {"US": 0.58, "EU": 0.22, "JP": 0.09, "CAN": 0.04, "OTHER": 0.07},
+    "ACWI": {"US": 0.58, "EU": 0.20, "JP": 0.09, "CAN": 0.04, "OTHER": 0.09},
+    "EWJ": {"JP": 1.0},
+    "EWC": {"CAN": 1.0},
+}
+
+_META_CSV_ZONE_CANDIDATES: tuple[str, ...] = (
+    "backend/data/company_meta_global_enriched.csv",
+    "backend/data/company_meta_global.csv",
+    "backend/data/company_meta_combined.csv",
+    "backend/data/company_meta_v3.csv",
+)
+
+
+def _normalize_ticker_key_meta(ticker: str) -> str:
+    return str(ticker or "").strip().upper().replace(".", "-")
+
+
+def _canon_zone_label(raw: object) -> str:
+    s = str(raw or "").strip().upper()
+    if not s:
+        return "OTHER"
+    if s in {"US", "EU", "JP", "CAN"}:
+        return s
+    if s in {"USA", "U.S.", "U.S.A.", "UNITED STATES", "UNITED STATES OF AMERICA"}:
+        return "US"
+    if s in {"EU", "EUROPE", "EUROZONE", "EURO AREA", "EMU"}:
+        return "EU"
+    if s in {"UK", "UNITED KINGDOM", "GB", "GBR"}:
+        return "EU"
+    if s in {"JP", "JPN", "JAPAN"} or "JAPAN" in s:
+        return "JP"
+    if s in {"CAN", "CANADA", "CA"}:
+        return "CAN"
+    return "OTHER"
+
+
+def _normalize_zone_weight_dict(raw: dict[str, float]) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for k, v in raw.items():
+        z = _canon_zone_label(k)
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if fv > 0 and math.isfinite(fv):
+            out[z] = out.get(z, 0.0) + fv
+    s = sum(out.values())
+    if s <= 1e-18:
+        return {"US": 1.0}
+    return {z: out[z] / s for z in out}
+
+
+def benchmark_zone_weights(prices: pd.DataFrame, benchmark: Optional[str]) -> dict[str, float]:
+    """
+    Pesos regionais do benchmark (US/EU/JP/CAN/OTHER) alinhados a ``_make_benchmark_from_prices``:
+    - coluna única presente em ``prices``: prior em ``_SINGLE_ETF_BENCH_ZONE_PRIOR`` ou mistura mundial de reserva;
+    - caso contrário, mistura **sleeves** SPY/VGK/EWJ/EWC (renormalizada); se faltar JP/US/EU, usa a mesma reserva.
+    Override opcional: env ``DECIDE_BENCHMARK_ZONE_WEIGHTS_JSON`` (objecto JSON de zona->peso).
+    """
+    raw_json = (os.environ.get("DECIDE_BENCHMARK_ZONE_WEIGHTS_JSON") or "").strip()
+    if raw_json:
+        try:
+            parsed = json.loads(raw_json)
+            if isinstance(parsed, dict):
+                d = {str(k): float(v) for k, v in parsed.items() if str(k).strip()}
+                if d:
+                    return _normalize_zone_weight_dict(d)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+
+    cols = {str(c).strip() for c in prices.columns}
+    # Igual a ``_make_benchmark_from_prices``: só série única quando o nome da coluna existe.
+    bc_raw = str(benchmark).strip() if benchmark is not None and str(benchmark).strip() else ""
+    if bc_raw and bc_raw in cols:
+        key = bc_raw.upper()
+        prior = _SINGLE_ETF_BENCH_ZONE_PRIOR.get(key)
+        if prior is not None:
+            return _normalize_zone_weight_dict(prior)
+        return _normalize_zone_weight_dict(dict(_BENCH_ZONE_FALLBACK_WORLD))
+
+    zsum: dict[str, float] = {}
+    for etf, w, zone in _DEFAULT_COMPOSITE_BENCH_ZONES:
+        if etf in cols:
+            zsum[zone] = zsum.get(zone, 0.0) + float(w)
+    if not zsum:
+        return _normalize_zone_weight_dict(dict(_BENCH_ZONE_FALLBACK_WORLD))
+    tot = sum(zsum.values())
+    out = {z: zsum[z] / tot for z in zsum}
+    if _bench_zones_need_world_fallback(out):
+        return _normalize_zone_weight_dict(dict(_BENCH_ZONE_FALLBACK_WORLD))
+    return out
+
+
+def load_ticker_zone_lookup(labels: Iterable[str]) -> dict[str, str]:
+    """Ticker (chave normalizada ``BRK-B``) → zona US/EU/JP/CAN/OTHER a partir dos CSV de meta."""
+    want = {_normalize_ticker_key_meta(x) for x in labels}
+    if not want:
+        return {}
+    out: dict[str, str] = {}
+    for rel in _META_CSV_ZONE_CANDIDATES:
+        p = _candidate_path(rel)
+        if p is None:
+            continue
+        try:
+            df = pd.read_csv(p)
+        except (OSError, ValueError, TypeError):
+            continue
+        if "ticker" not in df.columns:
+            continue
+        for _, row in df.iterrows():
+            tk = _normalize_ticker_key_meta(row.get("ticker", ""))
+            if not tk or tk not in want:
+                continue
+            if tk in out:
+                continue
+            zraw = row.get("zone") or row.get("country_group") or row.get("region") or ""
+            out[tk] = _canon_zone_label(zraw)
+    return out
+
+
+def apply_zone_caps_vs_benchmark_weights(
+    weights: pd.Series,
+    ticker_zone: dict[str, str],
+    bench_zones: dict[str, float],
+    *,
+    multiplier: float = 1.3,
+    max_iterations: int = 500,
+) -> pd.Series:
+    """
+    Garante, por zona Z, ``sum_i w_i 1{zone(i)=Z} <= multiplier * bench_zones[Z]`` quando ``bench_zones[Z]>0``.
+    Zonas com peso ~0 no benchmark **não** são limitadas (evita banir activos).
+    """
+    w = pd.to_numeric(weights, errors="coerce").fillna(0.0).clip(lower=0.0)
+    if w.size == 0 or w.sum() <= 1e-18:
+        return w
+    w = w / w.sum()
+    if not ticker_zone or not bench_zones or multiplier <= 0:
+        return w
+
+    bench = _normalize_zone_weight_dict({str(k): float(v) for k, v in bench_zones.items()})
+
+    zones = ("US", "EU", "JP", "CAN", "OTHER")
+
+    def zone_of(ticker: str) -> str:
+        z = ticker_zone.get(_normalize_ticker_key_meta(ticker))
+        return z if z in zones else "OTHER"
+
+    def exposure(ww: pd.Series) -> dict[str, float]:
+        ex = {z: 0.0 for z in zones}
+        for t, wt in ww.items():
+            ex[zone_of(str(t))] += float(wt)
+        return ex
+
+    for _ in range(max_iterations):
+        ex = exposure(w)
+        factors: dict[str, float] = {z: 1.0 for z in zones}
+        tightened = False
+        for z in zones:
+            b = float(bench.get(z, 0.0))
+            if b < 1e-12:
+                continue
+            cap = multiplier * b
+            if ex[z] > cap + 1e-12:
+                factors[z] = cap / ex[z] if ex[z] > 1e-18 else 1.0
+                tightened = True
+        if not tightened:
+            break
+        nw = w.copy()
+        for t in w.index:
+            z = zone_of(str(t))
+            nw.loc[t] = float(w.loc[t]) * float(factors.get(z, 1.0))
+        s = float(nw.sum())
+        if s <= 1e-18:
+            break
+        w = nw / s
+
+    return w.sort_values(ascending=False)
+
+
+def _zone_cap_multiplier_from_env() -> float:
+    try:
+        return float(os.environ.get("DECIDE_ZONE_CAP_VS_BENCHMARK_MULT", "1.3"))
+    except ValueError:
+        return 1.3
+
+
+def _zone_cap_enabled() -> bool:
+    return not _env_truthy("DECIDE_DISABLE_ZONE_CAP_VS_BENCHMARK")
 
 
 # ============================================================
@@ -562,7 +791,23 @@ def run_model(
     selected = scores.iloc[:n_univ]
     linear_w = _is_raw_profile(profile)
 
-    weights = build_weights(selected, cap_use, linear_score_weights=linear_w)
+    bench_zones = benchmark_zone_weights(window, benchmark)
+    ticker_zones = load_ticker_zone_lookup(window.columns) if _zone_cap_enabled() else {}
+    zone_cap_mult = _zone_cap_multiplier_from_env()
+
+    def _apply_zone_cap_if_needed(ws: pd.Series) -> pd.Series:
+        if not _zone_cap_enabled() or zone_cap_mult <= 0:
+            return ws
+        if not ticker_zones:
+            return ws
+        return apply_zone_caps_vs_benchmark_weights(
+            ws,
+            ticker_zones,
+            bench_zones,
+            multiplier=zone_cap_mult,
+        )
+
+    weights = _apply_zone_cap_if_needed(build_weights(selected, cap_use, linear_score_weights=linear_w))
 
     selection = []
 
@@ -614,7 +859,9 @@ def run_model(
 
             selected_hist = hist_scores.iloc[:n_univ]
 
-            current_weights = build_weights(selected_hist, cap_use, linear_score_weights=linear_w)
+            current_weights = _apply_zone_cap_if_needed(
+                build_weights(selected_hist, cap_use, linear_score_weights=linear_w)
+            )
 
             if use_vol_target:
 
@@ -689,6 +936,14 @@ def run_model(
         "benchmark_kpis": bench_kpis,
         "relative_kpis": relative_kpis,
         "as_of_date": str(window.index[-1].date()),
+    }
+    result.setdefault("meta", {})["zone_cap_vs_benchmark"] = {
+        "enabled": _zone_cap_enabled(),
+        "multiplier": zone_cap_mult,
+        "benchmark_zone_weights": bench_zones,
+        "tickers_with_zone_meta": int(
+            sum(1 for t in weights.index if _normalize_ticker_key_meta(str(t)) in ticker_zones)
+        ),
     }
     if include_series:
         result["series"] = {

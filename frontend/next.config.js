@@ -70,6 +70,26 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
 
+  /**
+   * Em Windows o `next build` pode parecer «congelado» minutos sem linhas no ecrã.
+   * ProgressPlugin mostra % webpack (útil para distinguir compilação lenta de bloqueio a 0% CPU).
+   */
+  webpack: (config, { dev, webpack: webpackMod }) => {
+    if (!dev) {
+      let lastPct = -1;
+      config.plugins.push(
+        new webpackMod.ProgressPlugin((p, message) => {
+          const pct = Math.floor(p * 100);
+          if (pct >= 100 || pct <= 0 || pct - lastPct >= 3) {
+            lastPct = pct;
+            console.log(`[next build] webpack ${pct}% ${message || ""}`);
+          }
+        }),
+      );
+    }
+    return config;
+  },
+
   async redirects() {
     return [
       {

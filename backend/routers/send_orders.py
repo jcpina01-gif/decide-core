@@ -2,15 +2,22 @@
 POST /api/send-orders — envia ordens de ações (SMART/USD) e, opcionalmente,
 uma ordem FX EUR.USD na mesma sessão IBKR (vender USD / comprar EUR sobre o montante estimado das compras).
 
+**Anti-short (SELL):** antes de cada venda de STK/UCITS MM, lê-se ``ib.portfolio()`` e limita-se a
+quantidade ao **long disponível** (somatório das linhas longas por símbolo). Se o plano pedir mais do que
+o long na IBKR, envia-se só o excedente permitido; se não houver long, a linha fica ``skip_sell_no_long``.
+Isto evita descoberto involuntário quando o CSV/plano desactualiza face à conta. Desligar:
+``DECIDE_DISABLE_SELL_LONG_CAP=1``.
+
 Requer **IB Gateway** (recomendado) ou TWS em modo paper (porta por defeito 7497).
 Host/porta: `IB_GATEWAY_*` ou `TWS_*` — ver `ib_socket_env.py`.
 """
 
 from __future__ import annotations
 
+import math
 import os
 import time
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter
 from ib_insync import IB, Contract, Forex, LimitOrder, MarketOrder, Order, Stock
@@ -23,7 +30,7 @@ from ibkr_paper_checks import ibkr_require_paper_env, is_paper_account
 router = APIRouter(tags=["send-orders"])
 
 # Exposto em `/api/health` para confirmar que o processo carregou este módulo (útil sem `--reload`).
-SEND_ORDERS_BUILD_ID = "wait_fill_stk_v1"
+SEND_ORDERS_BUILD_ID = "sell_long_cap_v1"
 
 TWS_HOST = ib_socket_host()
 TWS_PORT = ib_socket_port()
@@ -311,6 +318,41 @@ def _place_eur_mm_ucits(ib: IB, o: OrderIn) -> dict[str, Any]:
         trade,
         f"UCITS {sym} ({ccy}): mercado inactivo ou sem preço — horário EU/UK e permissões ETF.",
     )
+
+
+def _position_map_key(ticker: str) -> str:
+    """
+    Chave alinhada aos tickers do plano/DECIDE para cruzar com ``ib.portfolio()``.
+    Berkshire: API IB «BRK B» → mesma chave que ``BRK.B`` no CSV.
+    """
+    s = (ticker or "").strip().upper()
+    if s == "EUR_MM_PROXY":
+        s = _EUR_MM_IB
+    compact = s.replace(" ", "")
+    if compact in ("BRK.B", "BRK-B", "BRKB") or s == "BRK B":
+        return "BRK.B"
+    return compact
+
+
+def _ib_portfolio_net_qty_by_key(ib: IB) -> Dict[str, float]:
+    """Soma líquida por símbolo (STK/FUND); positivo = long, negativo = short."""
+    out: Dict[str, float] = {}
+    try:
+        items = ib.portfolio()
+    except Exception:
+        return out
+    for item in items or []:
+        c = item.contract
+        st = (getattr(c, "secType", "") or "").upper()
+        if st not in ("STK", "FUND", ""):
+            continue
+        raw = str(getattr(c, "symbol", "") or "").strip().upper()
+        if not raw:
+            continue
+        key = _position_map_key(raw)
+        q = float(item.position or 0.0)
+        out[key] = out.get(key, 0.0) + q
+    return out
 
 
 def _ib_us_equity_symbol_for_contract(sym: str) -> str:
@@ -769,6 +811,11 @@ def send_orders(body: SendOrdersBody) -> dict[str, Any]:
         and body.coordinate_fx_hedge
         and bool(body.attach_fx_hedge_per_order)
     )
+    sell_cap_disabled = os.environ.get("DECIDE_DISABLE_SELL_LONG_CAP", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
     # SELL antes de BUY (margem), já ordenado no cliente — mantemos ordem recebida
     created_loop, loop = ensure_ib_insync_loop()
@@ -791,15 +838,67 @@ def send_orders(body: SendOrdersBody) -> dict[str, Any]:
                 "accounts": accounts,
             }
 
+        rem_long: Dict[str, float] = {}
+        if not sell_cap_disabled:
+            net_map = _ib_portfolio_net_qty_by_key(ib)
+            rem_long = {k: max(0.0, v) for k, v in net_map.items()}
+
         for o in orders:
             sym_u = (o.ticker or "").strip().upper()
             if sym_u == "EURUSD":
                 # Hedge FX: usar sempre `coordinate_fx_hedge` + `fx_hedge_usd_estimate` (evita STK inválido).
                 continue
+
+            o_exec = o
+            side_u = (o.side or "").strip().upper()
+            cap_key: Optional[str] = None
+            cap_note = ""
+            req_sell: Optional[int] = None
+            if not sell_cap_disabled and side_u == "SELL":
+                cap_key = _position_map_key(o.ticker)
+                req_sell = int(math.floor(float(o.qty) + 1e-9))
+                avail = int(math.floor(rem_long.get(cap_key, 0.0) + 1e-9))
+                if avail < 1:
+                    fills.append(
+                        {
+                            "ticker": sym_u,
+                            "action": "SELL",
+                            "requested_qty": float(req_sell),
+                            "filled": 0.0,
+                            "avg_fill_price": None,
+                            "status": "skip_sell_no_long",
+                            "message": (
+                                "DECIDE: venda ignorada — sem posição longa na IBKR neste momento "
+                                f"(long disponível 0; pedido {req_sell}). Isto impede descoberto involuntário."
+                            ),
+                            "executed_as": None,
+                            "ib_order_id": None,
+                            "ib_perm_id": None,
+                            "sell_cap_key": cap_key,
+                        },
+                    )
+                    continue
+                if req_sell > avail:
+                    o_exec = o.model_copy(update={"qty": float(avail)})
+                    cap_note = (
+                        f" Quantidade limitada ao long na IBKR (pedido {req_sell}; enviado {avail}) — anti-short."
+                    )
+
             if _is_eur_mm_ucits_symbol(sym_u):
-                fills.append(_place_eur_mm_ucits(ib, o))
+                fill_row = _place_eur_mm_ucits(ib, o_exec)
             else:
-                fills.append(_place_stock(ib, o, per_order_fx))
+                fill_row = _place_stock(ib, o_exec, per_order_fx)
+            if cap_note:
+                prev = fill_row.get("message")
+                fill_row["message"] = ((str(prev) + cap_note).strip() if prev else cap_note.strip())
+                if req_sell is not None and req_sell > int(float(o_exec.qty) + 1e-9):
+                    fill_row["sell_qty_requested"] = float(req_sell)
+                    fill_row["sell_qty_long_cap"] = float(o_exec.qty)
+            fills.append(fill_row)
+
+            if not sell_cap_disabled and side_u == "SELL" and cap_key is not None:
+                filled = float(fill_row.get("filled") or 0.0)
+                rem_long[cap_key] = max(0.0, rem_long.get(cap_key, 0.0) - filled)
 
         # Hedge FX agregado só quando não usamos filho FX anexado por compra STK (evita duplicar).
         if not skip_fx_env and body.coordinate_fx_hedge and not body.attach_fx_hedge_per_order:
@@ -834,6 +933,7 @@ def send_orders(body: SendOrdersBody) -> dict[str, Any]:
         "fills": fills,
         "meta": {
             "send_orders_router": SEND_ORDERS_BUILD_ID,
+            "sell_long_cap_disabled": sell_cap_disabled,
             "fx_append_skipped_by_env": skip_fx_env,
             "coordinate_fx_hedge": body.coordinate_fx_hedge,
             "attach_fx_hedge_per_order": bool(body.attach_fx_hedge_per_order),

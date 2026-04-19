@@ -21,7 +21,28 @@ const SINGLE_ETF_ZONE_PRIOR: Record<string, Partial<Record<"US" | "EU" | "JP" | 
   EZU: { EU: 1 },
   EWJ: { JP: 1 },
   EWC: { CAN: 1 },
+  /** MSCI World (USD) — aproximação regional para teto vs plano. */
+  URTH: { US: 0.58, EU: 0.22, JP: 0.09, CAN: 0.04, OTHER: 0.07 },
+  ACWI: { US: 0.58, EU: 0.2, JP: 0.09, CAN: 0.04, OTHER: 0.09 },
+  IWDA: { US: 0.58, EU: 0.22, JP: 0.09, CAN: 0.04, OTHER: 0.07 },
+  "IWDA.AS": { US: 0.58, EU: 0.22, JP: 0.09, CAN: 0.04, OTHER: 0.07 },
 };
+
+/** Mistura mínima US/EU/JP/CAN quando o CSV não traz colunas suficientes para o composto 60/25/10/5. */
+const BENCH_ZONE_FALLBACK_WORLD: Record<string, number> = {
+  US: 0.55,
+  EU: 0.22,
+  JP: 0.14,
+  CAN: 0.05,
+  OTHER: 0.04,
+};
+
+function benchZonesNeedWorldFallback(z: Record<string, number>): boolean {
+  const u = z.US ?? 0;
+  const e = z.EU ?? 0;
+  const j = z.JP ?? 0;
+  return u < 1e-9 || e < 1e-9 || j < 1e-9;
+}
 
 function normalizeZoneDict(raw: Record<string, number>): Record<string, number> {
   const acc: Record<string, number> = {};
@@ -55,23 +76,23 @@ export function benchmarkZoneWeightsFromPriceHeaders(
       }
       return normalizeZoneDict(flat);
     }
-    return { US: 1 };
+    /* Coluna de benchmark desconhecida: ``{ US: 1 }`` desactivava o teto JP (bench.JP=0). */
+    return normalizeZoneDict({ ...BENCH_ZONE_FALLBACK_WORLD });
   }
   const zsum: Record<string, number> = {};
   for (const [etf, w, zone] of DEFAULT_COMPOSITE) {
     if (cols.has(etf)) zsum[zone] = (zsum[zone] || 0) + w;
   }
   if (Object.keys(zsum).length === 0) {
-    /* ``prices_close`` do deploy muitas vezes só tem acções — sem SPY/VGK/EWJ/EWC o teto JP ficava inactivo ({US:1}). */
-    return normalizeZoneDict({
-      US: 0.55,
-      EU: 0.22,
-      JP: 0.14,
-      CAN: 0.05,
-      OTHER: 0.04,
-    });
+    /* ``prices_close`` do deploy muitas vezes só tem acções — sem SPY/VGK/EWJ/EWC. */
+    return normalizeZoneDict({ ...BENCH_ZONE_FALLBACK_WORLD });
   }
-  return normalizeZoneDict(zsum);
+  const composite = normalizeZoneDict(zsum);
+  /* Só SPY+VGK no CSV → JP=0 no «benchmark» e o cap por país para o Japão nunca corre. */
+  if (benchZonesNeedWorldFallback(composite)) {
+    return normalizeZoneDict({ ...BENCH_ZONE_FALLBACK_WORLD });
+  }
+  return composite;
 }
 
 export function canonZoneForCountryCap(regionRaw: string): "US" | "EU" | "JP" | "CAN" | "OTHER" {

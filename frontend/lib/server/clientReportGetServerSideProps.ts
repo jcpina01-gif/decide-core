@@ -22,7 +22,11 @@ import {
   normalizeJpListingKey,
   remapJpListingToAdrTicker,
 } from "./jpListingToAdrMap";
-import { applyJapaneseEquityDisplayFallback } from "../tickerGeoFallback";
+import {
+  applyJapaneseEquityDisplayFallback,
+  displayGeoZoneFromTickerAndMeta,
+  isJapaneseEquityTicker,
+} from "../tickerGeoFallback";
 import {
   buildOfficialRecommendationMonthsThroughToday,
   pickPlanMonthPreferringTodayFromMonths,
@@ -62,6 +66,9 @@ import type {
   ReportData,
   SeriesPoint,
 } from "../../pages/client/report";
+
+/** Zonas do cap vs benchmark — não usar ``new Map<string, "US"|"EU"|...>()`` (SWC pode interpretar ``<`` como JSX). */
+type PlanGeoZone = "US" | "EU" | "JP" | "CAN" | "OTHER";
 
 function trimmedCell(x: unknown): string {
   return typeof x === "string" ? x.trim() : "";
@@ -150,7 +157,17 @@ function buildSsrFailureReportData(backendError: string): ReportData {
 /** Células CSV/UI com ``-`` / ``—`` / ``n/a`` não devem sobrepor meta útil. */
 function meaningfulTextCell(x: unknown): string {
   const s = trimmedCell(x);
-  if (!s || s === "-" || s === "—" || s.toLowerCase() === "n/a" || s.toLowerCase() === "nan") return "";
+  if (
+    !s ||
+    s === "-" ||
+    s === "—" ||
+    s === "–" ||
+    s === "\u2212" ||
+    s.toLowerCase() === "n/a" ||
+    s.toLowerCase() === "nan"
+  ) {
+    return "";
+  }
   return s;
 }
 
@@ -201,6 +218,26 @@ function displayIndustryTriplet(
           : "",
     )
   );
+}
+
+/**
+ * Zona para teto 1,3× vs benchmark a partir do **país** económico, quando a coluna
+ * ``region`` do meta ainda reflete a listagem (ex.: ADR japonês → US).
+ */
+function economicZoneHintFromCountryLabel(countryRaw: string): "US" | "EU" | "JP" | "CAN" | "OTHER" | null {
+  const u = String(countryRaw || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+  if (!u) return null;
+  if (/\bjapan\b|\bjapao\b|\bjapon\b|nippon|\btokyo\b/.test(u)) return "JP";
+  if (/\bfrance\b|\bfrancia\b|\bfrankreich\b|\bfrankrijk\b/.test(u)) return "EU";
+  if (/\bunited kingdom\b|\bbritain\b|\bengland\b|reino unido|inglaterra|scotland|wales|irlanda do norte/.test(u))
+    return "EU";
+  if (/\bcanada\b|canad[aá]\b/.test(u)) return "CAN";
+  if (/\bunited states\b|\busa\b|\bamerica\b|estados unidos|\bu\.s\.a\.?\b|\bu\.s\.?\b/.test(u)) return "US";
+  return null;
 }
 
 /** Bloco US / EU / JP / CAN / FX do plano — não confundir com país (nome) nem zona geográfica. */
@@ -1022,6 +1059,51 @@ async function getClientReportServerSidePropsImpl(
     return undefined;
   };
 
+  /** Zona US/EU/JP/CAN/OTHER para teto vs benchmark (ADR JP, .PA→EU, etc.). */
+  const planZoneForTicker = (
+    ticker: string,
+    prefRegion: string,
+    prefCountry?: string,
+  ): "US" | "EU" | "JP" | "CAN" | "OTHER" => {
+    if (isJapaneseEquityTicker(ticker)) return "JP";
+    const r =
+      meaningfulTextCell(prefRegion) || meaningfulTextCell(metaForTicker(ticker)?.region);
+    const co =
+      meaningfulTextCell(prefCountry) ||
+      meaningfulTextCell(metaForTicker(ticker)?.country);
+    let z = canonZoneForCountryCap(r);
+    const zCountry = co ? economicZoneHintFromCountryLabel(co) : null;
+    if (z === "US" && zCountry === "JP") return "JP";
+    if (z === "US" && zCountry === "EU") return "EU";
+    if (z === "US" && zCountry === "CAN") return "CAN";
+    if (z === "OTHER" && zCountry && zCountry !== "OTHER") return zCountry;
+    if (z !== "OTHER") return z;
+    const nk = normalizeTickerKey(ticker);
+    if (reverseAdrToJpListingTicker(nk)) return "JP";
+    if (isJpNumericListingTicker(normalizeJpListingKey(ticker))) return "JP";
+    {
+      const tpa = ticker.trim().toUpperCase().replace(/\s+/g, "");
+      if (/(?:\.|-)PA$/i.test(tpa)) return "EU";
+    }
+    return "OTHER";
+  };
+
+  /** Rótulo curto para a coluna «Zona» (geo) quando o CSV/meta não trazem continente. */
+  const planGeoZoneDisplayLabelPt = (z: PlanGeoZone): string => {
+    switch (z) {
+      case "JP":
+        return "Ásia (JP)";
+      case "US":
+        return "América do Norte";
+      case "EU":
+        return "Europa";
+      case "CAN":
+        return "Canadá";
+      default:
+        return "";
+    }
+  };
+
   // "Last close" prices (for the "Preço" column). We only read the header + last line.
   const pricesClosePath = path.join(projectRoot, "backend", "data", "prices_close.csv");
   let closeAsOfDate = "";
@@ -1545,21 +1627,10 @@ async function getClientReportServerSidePropsImpl(
     const isPlanWeightProtected = (p: (typeof recommendedPositions)[number]) =>
       p.ticker === "TBILL_PROXY" || !!p.excluded;
     const benchZones = benchmarkZoneWeightsFromPriceHeaders(priceCsvHeaderColsUpper, undefined);
-    const zoneForConcentration = (ticker: string, prefRegion: string): "US" | "EU" | "JP" | "CAN" | "OTHER" => {
-      const r =
-        meaningfulTextCell(prefRegion) || meaningfulTextCell(metaForTicker(ticker)?.region);
-      let z = canonZoneForCountryCap(r);
-      if (z !== "OTHER") return z;
-      const nk = normalizeTickerKey(ticker);
-      if (reverseAdrToJpListingTicker(nk)) return "JP";
-      if (isJpNumericListingTicker(normalizeJpListingKey(ticker))) return "JP";
-      if (/[-.]PA$/i.test(ticker.trim())) return "EU";
-      return "OTHER";
-    };
-    const zoneByTicker = new Map<string, "US" | "EU" | "JP" | "CAN" | "OTHER">();
+    const zoneByTicker = new Map<string, PlanGeoZone>();
     for (const p of recommendedPositions) {
       if (isPlanWeightProtected(p)) continue;
-      const z = zoneForConcentration(p.ticker, p.region);
+      const z = planZoneForTicker(p.ticker, p.region, p.country);
       if (z !== "OTHER") zoneByTicker.set(p.ticker.trim().toUpperCase(), z);
     }
     applyZoneCapsVsBenchmark(
@@ -1583,6 +1654,21 @@ async function getClientReportServerSidePropsImpl(
       applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtected);
       recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     }
+    /* O cap por linha redistribui para outras acções (muitas vezes mesma zona) e pode violar o teto por país. */
+    const zoneByTickerAfterLine = new Map<string, PlanGeoZone>();
+    for (const p of recommendedPositions) {
+      if (isPlanWeightProtected(p)) continue;
+      const z = planZoneForTicker(p.ticker, p.region, p.country);
+      if (z !== "OTHER") zoneByTickerAfterLine.set(p.ticker.trim().toUpperCase(), z);
+    }
+    applyZoneCapsVsBenchmark(
+      recommendedPositions,
+      zoneByTickerAfterLine,
+      benchZones,
+      planZoneCapMultiplier(),
+      isPlanWeightProtected,
+    );
+    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
   }
 
   for (let i = recommendedPositions.length - 1; i >= 0; i -= 1) {
@@ -1840,15 +1926,33 @@ async function getClientReportServerSidePropsImpl(
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
   }
 
+  const isPlanWeightProtectedAfterUi = (p: (typeof recommendedPositions)[number]) =>
+    !!p.excluded ||
+    String(p.ticker || "").trim().toUpperCase() === "EURUSD" ||
+    String(p.ticker || "").trim().toUpperCase() === "TBILL_PROXY" ||
+    isDecideCashSleeveBrokerSymbol(String(p.ticker || ""));
+
   /** Segunda passagem: a grelha já pode ter CSH2/MM em vez de TBILL_PROXY — o sink do cap tem de encontrar caixa. EURUSD fica de fora (overlay). */
   if (!planPerTickerMaxWeightPctDisabled()) {
     const perTickerMax = planPerTickerMaxWeightPct() ?? 15;
-    const isPlanWeightProtectedAfterUi = (p: (typeof recommendedPositions)[number]) =>
-      !!p.excluded ||
-      String(p.ticker || "").trim().toUpperCase() === "EURUSD" ||
-      String(p.ticker || "").trim().toUpperCase() === "TBILL_PROXY" ||
-      isDecideCashSleeveBrokerSymbol(String(p.ticker || ""));
     applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
+    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+  }
+  {
+    const benchZonesLate = benchmarkZoneWeightsFromPriceHeaders(priceCsvHeaderColsUpper, undefined);
+    const zoneByTickerLate = new Map<string, PlanGeoZone>();
+    for (const p of recommendedPositions) {
+      if (isPlanWeightProtectedAfterUi(p)) continue;
+      const z = planZoneForTicker(p.ticker, p.region, p.country);
+      if (z !== "OTHER") zoneByTickerLate.set(p.ticker.trim().toUpperCase(), z);
+    }
+    applyZoneCapsVsBenchmark(
+      recommendedPositions,
+      zoneByTickerLate,
+      benchZonesLate,
+      planZoneCapMultiplier(),
+      isPlanWeightProtectedAfterUi,
+    );
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
   }
 
@@ -1885,6 +1989,19 @@ async function getClientReportServerSidePropsImpl(
       }
       if (!meaningfulTextCell(p.geoZone)) {
         p.geoZone = meaningfulTextCell(m?.geoZone) || "";
+      }
+      if (!meaningfulTextCell(p.geoZone)) {
+        const zb = planZoneForTicker(p.ticker, p.region, p.country);
+        const gl = planGeoZoneDisplayLabelPt(zb);
+        if (gl) p.geoZone = gl;
+      }
+      if (!meaningfulTextCell(p.geoZone)) {
+        const gl2 = displayGeoZoneFromTickerAndMeta(p.ticker, {
+          country: p.country,
+          region: p.region,
+          zone: p.geoZone,
+        });
+        if (meaningfulTextCell(gl2)) p.geoZone = gl2;
       }
       if (
         !meaningfulTextCell(p.nameShort) ||

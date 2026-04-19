@@ -3,7 +3,11 @@
  * Usado no dashboard (Carteira / total) e na página Carteira.
  */
 
-import { applyJapaneseEquityDisplayFallback } from "./tickerGeoFallback";
+import {
+  applyJapaneseEquityDisplayFallback,
+  displayGeoZoneFromTickerAndMeta,
+  meaningfulGeoTableCell,
+} from "./tickerGeoFallback";
 
 export type IbkrSnapshotPosition = {
   value?: number;
@@ -353,6 +357,16 @@ export function buildIbkrPositionDisplayRows(snap: IbkrSnapshotPayload): IbkrPos
     if (typeof jp.zone === "string" && jp.zone.trim()) zone = jp.zone.trim();
     if (typeof jp.sector === "string" && jp.sector.trim()) sector = jp.sector.trim();
     if (typeof jp.region === "string" && jp.region.trim()) regionModel = jp.region.trim();
+
+    const zoneTrim = (zone || "").trim();
+    if (!meaningfulGeoTableCell(zoneTrim)) {
+      const inferred = displayGeoZoneFromTickerAndMeta(ticker, {
+        country,
+        region: regionModel ?? "",
+        zone: zone ?? "",
+      });
+      zone = inferred.trim() ? inferred : zone;
+    }
 
     return {
       ticker,

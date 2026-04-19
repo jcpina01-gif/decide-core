@@ -616,11 +616,11 @@ export async function loadApprovalAlignedProposedTrades(
     const alt = t.includes("-") ? t.replace(/-/g, ".") : t.replace(/\./g, "-");
     if (alt && alt !== t) metaByTicker.set(alt, next);
   };
-  seedMetaMapFromCompanyMeta(upsertMeta);
   for (const row of readCsvIfExists(companyMetaGlobalPath)) upsertMeta(row);
   for (const row of readCsvIfExists(companyMetaGlobalEnrichedPath)) upsertMeta(row);
   for (const row of readCsvIfExists(companyMetaV3Path)) upsertMeta(row);
   for (const row of readCsvIfExists(companyMetaPath)) upsertMeta(row);
+  seedMetaMapFromCompanyMeta(upsertMeta);
 
   const metaForTicker = (ticker: string) => {
     const k = normalizeTickerKey(ticker);

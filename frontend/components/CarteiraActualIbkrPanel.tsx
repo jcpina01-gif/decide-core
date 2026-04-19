@@ -153,36 +153,37 @@ export default function CarteiraActualIbkrPanel({ refreshToken = 0 }: Props) {
       ) : rows.length === 0 ? (
         <p style={{ margin: 0, fontSize: 14, color: "#d4d4d8" }}>{IBKR_NO_STOCK_POSITIONS_LABEL_PT}</p>
       ) : (
-        <div style={{ overflowX: "auto", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)" }}>
+        <div style={{ overflowX: "auto", maxWidth: "100%", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", WebkitOverflowScrolling: "touch" }}>
           <table
             style={{
+              minWidth: 1040,
               width: "100%",
               borderCollapse: "collapse",
-              fontSize: 13,
+              fontSize: 12,
               fontVariantNumeric: "tabular-nums",
             }}
           >
             <thead>
               <tr style={{ background: "rgba(39,39,42,0.6)", textAlign: "left" }}>
-                <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa" }}>#</th>
-                <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa" }}>Ticker</th>
-                <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa", textAlign: "right" }}>
-                  Qtd. (u.)
+                <th style={{ padding: "6px 6px", fontWeight: 700, color: "#a1a1aa", width: "4%", lineHeight: 1.2 }}>#</th>
+                <th style={{ padding: "6px 6px", fontWeight: 700, color: "#a1a1aa", width: "9%", lineHeight: 1.2 }}>Ticker</th>
+                <th style={{ padding: "6px 6px", fontWeight: 700, color: "#a1a1aa", textAlign: "right", width: "8%", lineHeight: 1.2 }}>
+                  Qtd.
                 </th>
-                <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa" }}>Nome</th>
-                <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa" }}>Zona</th>
-                <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa" }}>País</th>
-                <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa" }}>Setor</th>
-                <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa" }}>Indústria</th>
-                <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa" }}>Região (modelo)</th>
-                <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa", textAlign: "right" }}>
+                <th style={{ padding: "6px 6px", fontWeight: 700, color: "#a1a1aa", width: "14%", lineHeight: 1.2 }}>Nome</th>
+                <th style={{ padding: "6px 6px", fontWeight: 700, color: "#a1a1aa", width: "8%", lineHeight: 1.2 }}>Zona</th>
+                <th style={{ padding: "6px 6px", fontWeight: 700, color: "#a1a1aa", width: "9%", lineHeight: 1.2 }}>País</th>
+                <th style={{ padding: "6px 6px", fontWeight: 700, color: "#a1a1aa", width: "10%", lineHeight: 1.2 }}>Setor</th>
+                <th style={{ padding: "6px 6px", fontWeight: 700, color: "#a1a1aa", width: "10%", lineHeight: 1.2 }}>Indústria</th>
+                <th style={{ padding: "6px 6px", fontWeight: 700, color: "#a1a1aa", width: "8%", lineHeight: 1.2 }}>Região</th>
+                <th style={{ padding: "6px 6px", fontWeight: 700, color: "#a1a1aa", textAlign: "right", width: "9%", lineHeight: 1.2 }}>
                   Valor
                 </th>
-                <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa", textAlign: "right" }}>
-                  Peso % (NAV)
+                <th style={{ padding: "6px 6px", fontWeight: 700, color: "#a1a1aa", textAlign: "right", width: "6%", lineHeight: 1.2 }}>
+                  % NAV
                 </th>
-                <th style={{ padding: "10px 12px", fontWeight: 700, color: "#a1a1aa", textAlign: "right" }}>
-                  % só títulos
+                <th style={{ padding: "6px 6px", fontWeight: 700, color: "#a1a1aa", textAlign: "right", width: "7%", lineHeight: 1.2 }}>
+                  % risco
                 </th>
               </tr>
             </thead>
@@ -192,24 +193,32 @@ export default function CarteiraActualIbkrPanel({ refreshToken = 0 }: Props) {
                   key={`${row.rank}-${row.ticker}`}
                   style={{ borderTop: "1px solid rgba(255,255,255,0.06)", color: "#e4e4e7" }}
                 >
-                  <td style={{ padding: "9px 12px", color: "#71717a" }}>{row.rank}</td>
-                  <td style={{ padding: "9px 12px", fontWeight: 600 }}>
+                  <td style={{ padding: "6px 6px", color: "#71717a" }}>{row.rank}</td>
+                  <td style={{ padding: "6px 6px", fontWeight: 600, wordBreak: "break-word" }}>
                     <IbkrTickerLink ticker={row.ticker} />
                   </td>
-                  <td style={{ padding: "9px 12px", textAlign: "right", color: "#d4d4d8" }}>
+                  <td style={{ padding: "6px 6px", textAlign: "right", color: "#d4d4d8" }}>
                     {formatIbkrQuantity(row.quantity)}
                   </td>
-                  <td style={{ padding: "9px 12px", maxWidth: 280 }}>{row.name}</td>
-                  <td style={{ padding: "9px 12px", color: "#a1a1aa" }}>{row.zone ?? "—"}</td>
-                  <td style={{ padding: "9px 12px", color: "#a1a1aa" }}>{row.country ?? "—"}</td>
-                  <td style={{ padding: "9px 12px", color: "#a1a1aa" }}>{row.sector ?? "—"}</td>
-                  <td style={{ padding: "9px 12px", color: "#a1a1aa" }}>{row.industry ?? "—"}</td>
-                  <td style={{ padding: "9px 12px", color: "#a1a1aa" }}>{row.regionModel ?? "—"}</td>
-                  <td style={{ padding: "9px 12px", textAlign: "right", fontWeight: 600 }}>
+                  <td
+                    style={{
+                      padding: "6px 6px",
+                      wordBreak: "break-word",
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                    {row.name}
+                  </td>
+                  <td style={{ padding: "6px 6px", color: "#a1a1aa", wordBreak: "break-word" }}>{row.zone ?? "—"}</td>
+                  <td style={{ padding: "6px 6px", color: "#a1a1aa", wordBreak: "break-word" }}>{row.country ?? "—"}</td>
+                  <td style={{ padding: "6px 6px", color: "#a1a1aa", wordBreak: "break-word" }}>{row.sector ?? "—"}</td>
+                  <td style={{ padding: "6px 6px", color: "#a1a1aa", wordBreak: "break-word" }}>{row.industry ?? "—"}</td>
+                  <td style={{ padding: "6px 6px", color: "#a1a1aa", wordBreak: "break-word" }}>{row.regionModel ?? "—"}</td>
+                  <td style={{ padding: "6px 6px", textAlign: "right", fontWeight: 600 }}>
                     {formatMoneyIbkr(row.value, ccy)}
                   </td>
-                  <td style={{ padding: "9px 12px", textAlign: "right" }}>{fmtPct(row.weightPct)}</td>
-                  <td style={{ padding: "9px 12px", textAlign: "right" }}>{fmtPct(row.weightPctSecurities)}</td>
+                  <td style={{ padding: "6px 6px", textAlign: "right" }}>{fmtPct(row.weightPct)}</td>
+                  <td style={{ padding: "6px 6px", textAlign: "right" }}>{fmtPct(row.weightPctSecurities)}</td>
                 </tr>
               ))}
             </tbody>

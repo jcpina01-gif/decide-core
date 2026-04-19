@@ -20,7 +20,8 @@ router = APIRouter(tags=["ibkr-snapshot"])
 
 # Host/porta lidos em cada pedido (não cachear no import — evita ficar preso a 7497 após mudar ``backend/.env``).
 # Distinct from send-orders clientId to reduce clashes if both run close together.
-IBKR_CLIENT_ID = 96
+IBKR_CLIENT_ID = int(os.environ.get("IBKR_SNAPSHOT_CLIENT_ID", "96"))
+IBKR_CONNECT_TIMEOUT = float(os.environ.get("IBKR_CONNECT_TIMEOUT", "20"))
 IBKR_MARKET_DATA_TYPE = 3
 # Nome / sector / zona via reqContractDetails (pacing ~0.2s por linha).
 IBKR_SNAPSHOT_ENRICH_METADATA = os.getenv("IBKR_SNAPSHOT_ENRICH_METADATA", "1").strip() != "0"
@@ -165,7 +166,7 @@ def _connect_ib(host: str, port: int, client_id: int) -> IB:
             asyncio.set_event_loop(asyncio.new_event_loop())
 
     ib = IB()
-    ib.connect(host, port, clientId=client_id, timeout=8)
+    ib.connect(host, port, clientId=client_id, timeout=IBKR_CONNECT_TIMEOUT)
     ib.reqMarketDataType(IBKR_MARKET_DATA_TYPE)
     return ib
 

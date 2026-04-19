@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { DECIDE_APP_FONT_FAMILY } from "../lib/decideClientTheme";
+import { DECIDE_APP_FONT_FAMILY } from "../../lib/decideClientTheme";
 
 type AnyObj = Record<string, any>;
 

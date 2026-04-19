@@ -30,6 +30,7 @@ const BUILTIN: Record<string, string> = {
 };
 
 let cachedMap: Map<string, string> | null = null;
+let cachedAdrToListing: Map<string, string> | null = null;
 
 export function normalizeJpListingKey(ticker: string): string {
   let t = String(ticker || "")
@@ -82,9 +83,30 @@ export function jpListingToAdrMap(): Map<string, string> {
   return cachedMap;
 }
 
+/**
+ * Inverso de ``remapJpListingToAdrTicker``: dado um ADR/OTC (ex. ``TOELY``), devolve a listagem Tóquio
+ * (ex. ``8035.T``) quando existir no mapa — útil para reaproveitar meta indexada por ``NNNN.T``.
+ */
+export function remapAdrToJpListingTicker(adrTicker: string): string | undefined {
+  const a = String(adrTicker || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\./g, "-");
+  if (!a) return undefined;
+  if (!cachedAdrToListing) {
+    const m = new Map<string, string>();
+    for (const [listing, adr] of jpListingToAdrMap()) {
+      m.set(String(adr || "").trim().toUpperCase(), listing);
+    }
+    cachedAdrToListing = m;
+  }
+  return cachedAdrToListing.get(a);
+}
+
 /** @internal tests */
 export function _resetJpListingToAdrMapCacheForTests(): void {
   cachedMap = null;
+  cachedAdrToListing = null;
 }
 
 export function remapJpListingToAdrTicker(ticker: string): string {

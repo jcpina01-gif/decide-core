@@ -42,7 +42,11 @@ import {
 } from "../../lib/approvalPlanTradeDisplay";
 import { capPctDisplay, eurMmIbTicker, safeNumber, safeString } from "../../lib/clientReportCoreUtils";
 import { lookupCompanyMetaEntry } from "../../lib/companyMeta";
-import { applyJapaneseEquityDisplayFallback } from "../../lib/tickerGeoFallback";
+import {
+  applyJapaneseEquityDisplayFallback,
+  displayGeoZoneFromTickerAndMeta,
+  meaningfulGeoTableCell,
+} from "../../lib/tickerGeoFallback";
 import {
   ResponsiveContainer,
   LineChart,
@@ -386,6 +390,7 @@ function execStatusDisplay(f: {
   const fill = Number(f.filled ?? 0);
   if (ibkrStatusIsTerminalCancelled(f.status ?? "")) return "Cancelada";
   if (st.includes("skip_fx_below_min") || st.includes("skip_fx_size")) return "FX não enviada (limite)";
+  if (st.includes("skip_sell_no_long")) return "Venda ignorada (sem long na IB — anti-short)";
   if (
     st.includes("not_qualified") ||
     st.includes("qualify_error") ||
@@ -420,6 +425,7 @@ function execStatusDisplay(f: {
 function fillEligibleForCompletionRetry(f: { status?: string; requested_qty?: number; filled?: number }): boolean {
   if (remainingOrderQty(f) <= 0) return false;
   const st = String(f.status ?? "").toLowerCase();
+  if (st.includes("skip_sell_no_long")) return false;
   if (st.includes("cancel") || st.includes("inactive")) return false;
   const fill = Math.floor(Number(f.filled ?? 0));
   const liveNoFill =
@@ -716,6 +722,7 @@ function fillLooksAwaitingBroker(f: {
   const fill = Number(f.filled ?? 0);
   if (st.includes("filled") && req > 0 && fill >= req) return false;
   if (st.includes("skip_fx")) return false;
+  if (st.includes("skip_sell_no_long")) return false;
   if (st.includes("inactive")) return false;
   if (
     st.includes("not_qualified") ||
@@ -750,8 +757,8 @@ function buildExecSummaryFromFills(fills: ReportExecFillRow[]): ReportExecSummar
       st.includes("pending")
     ) {
       submitted += 1;
-    } else if (st.includes("skip_fx")) {
-      /* omitida por limite FX */
+    } else if (st.includes("skip_fx") || st.includes("skip_sell_no_long")) {
+      /* omitida por limite FX ou cap de venda (anti-short) */
     } else {
       failed += 1;
     }
@@ -1323,12 +1330,22 @@ export default function ClientReportPage({ reportData }: PageProps) {
         region: p.region,
         sector: p.sector,
       });
+      const countryOut = String(jp.country ?? p.country ?? "");
+      const regionOut = String(jp.region ?? p.region ?? "");
+      let zoneOut = String(jp.zone ?? p.zone ?? "").trim();
+      if (!meaningfulGeoTableCell(zoneOut)) {
+        zoneOut = displayGeoZoneFromTickerAndMeta(p.ticker, {
+          country: countryOut,
+          region: regionOut,
+          zone: "",
+        });
+      }
       return {
         ...p,
         weightPctSecurities: gross > 1e-9 ? (Math.abs(p.value) / gross) * 100 : 0,
-        country: String(jp.country ?? p.country ?? ""),
-        zone: String(jp.zone ?? p.zone ?? ""),
-        region: String(jp.region ?? p.region ?? ""),
+        country: countryOut,
+        zone: zoneOut,
+        region: regionOut,
         sector: String(jp.sector ?? p.sector ?? ""),
       };
     });
@@ -1523,7 +1540,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
       }
       const navCcy = safeString(data.net_liquidation_ccy, "USD");
       const netLiq = safeNumber(data.net_liquidation, 0);
-      const grossPositionsValue = data.positions.reduce((acc, p) => acc + safeNumber(p.value, 0), 0);
+      /* Soma com |valor|: FX/hedge (ex. EUR.USD) pode vir com sinal oposto às acções — soma assinada dava «exposição» negativa enganadora. */
+      const grossPositionsValue = data.positions.reduce((acc, p) => acc + Math.abs(safeNumber(p.value, 0)), 0);
 
       const rows: ActualPosition[] = data.positions.map((p) => {
         const mpx = safeNumber(p.market_price, 0);
@@ -1566,11 +1584,21 @@ export default function ClientReportPage({ reportData }: PageProps) {
           region: base.region,
           sector: base.sector,
         });
+        const countryLive = String(jp.country ?? base.country ?? "");
+        const regionLive = String(jp.region ?? base.region ?? "");
+        let zoneLive = String(jp.zone ?? base.zone ?? "").trim();
+        if (!meaningfulGeoTableCell(zoneLive)) {
+          zoneLive = displayGeoZoneFromTickerAndMeta(tick, {
+            country: countryLive,
+            region: regionLive,
+            zone: "",
+          });
+        }
         return {
           ...base,
-          country: String(jp.country ?? base.country ?? ""),
-          zone: String(jp.zone ?? base.zone ?? ""),
-          region: String(jp.region ?? base.region ?? ""),
+          country: countryLive,
+          zone: zoneLive,
+          region: regionLive,
           sector: String(jp.sector ?? base.sector ?? ""),
         };
       });
@@ -2081,7 +2109,37 @@ export default function ClientReportPage({ reportData }: PageProps) {
     }
   };
 
-  const recommendedFiltered = reportData.recommendedPositions || [];
+  const recommendedFiltered = useMemo(() => {
+    const src = reportData.recommendedPositions || [];
+    return src.map((p) => {
+      const jp = applyJapaneseEquityDisplayFallback(
+        p.ticker,
+        {
+          country: p.country,
+          geoZone: p.geoZone,
+          region: p.region,
+          sector: p.sector,
+        } as Record<string, unknown>,
+        { country: "country", zone: "geoZone", region: "region", sector: "sector" },
+      );
+      const p1 = {
+        ...p,
+        country: String(jp.country ?? p.country ?? ""),
+        geoZone: String(jp.geoZone ?? p.geoZone ?? ""),
+        region: String(jp.region ?? p.region ?? ""),
+        sector: String(jp.sector ?? p.sector ?? ""),
+      };
+      const gz = (p1.geoZone || "").trim();
+      if (meaningfulGeoTableCell(gz)) return p1;
+      const filled = displayGeoZoneFromTickerAndMeta(p.ticker, {
+        country: p1.country,
+        region: p1.region,
+        zone: p1.geoZone,
+      });
+      if (!filled) return p1;
+      return { ...p1, geoZone: filled };
+    });
+  }, [reportData.recommendedPositions]);
   const proposedTradesFiltered = reportData.proposedTrades || [];
 
   const handleDownloadMonthlyRecommendationPdf = useCallback(async () => {
@@ -2882,8 +2940,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 20,
+              gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+              gap: 16,
               marginBottom: 28,
             }}
           >
@@ -2893,8 +2951,9 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 background: DECIDE_DASHBOARD.clientPanelGradient,
                 border: DECIDE_DASHBOARD.panelBorder,
                 borderRadius: 18,
-                padding: 20,
+                padding: "16px 12px",
                 overflowX: "auto",
+                minWidth: 0,
                 boxShadow: DECIDE_DASHBOARD.clientPanelShadow,
               }}
             >
@@ -2935,13 +2994,13 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     background: "linear-gradient(180deg, rgba(39,39,42,0.9) 0%, rgba(24,24,27,0.95) 100%)",
                     border: "1px solid rgba(148,163,184,0.35)",
                     borderRadius: 14,
-                    maxWidth: 560,
+                    maxWidth: "100%",
                   }}
                 >
                   <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 12 }}>
                     Estrutura da carteira (IBKR)
                   </div>
-                  <div style={{ display: "grid", gap: 10, fontSize: 13, color: "#cbd5e1" }}>
+                  <div style={{ display: "grid", gap: 10, fontSize: 12, color: "#cbd5e1" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
                       <span style={{ color: "#a1a1aa" }}>Capital próprio (valor líquido)</span>
                       <strong style={{ color: "#f8fafc" }}>
@@ -2966,7 +3025,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                         </strong>
                       </div>
                     ) : null}
-                    {liveIbkrStructure.netLiquidation > 1e-6 && liveIbkrStructure.grossPositionsValue > 0 ? (
+                    {liveIbkrStructure.netLiquidation > 1e-6 && liveIbkrStructure.grossPositionsValue > 1e-6 ? (
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
                         <span style={{ color: "#a1a1aa" }}>Alavancagem implícita (exposição ÷ capital próprio)</span>
                         <strong style={{ color: DECIDE_DASHBOARD.accentSky }}>
@@ -2975,6 +3034,12 @@ export default function ClientReportPage({ reportData }: PageProps) {
                       </div>
                     ) : null}
                   </div>
+                  <p style={{ margin: "10px 0 0 0", fontSize: 11, color: "#71717a", lineHeight: 1.45 }}>
+                    «Exposição em títulos» = soma dos <strong style={{ color: "#a1a1aa" }}>valores absolutos</strong> das
+                    linhas do snapshot (acções, ETF, FX). O hedge <strong style={{ color: "#a1a1aa" }}>EURUSD</strong> pode
+                    dominar o somatório assinado antigo; a tabela abaixo continua a listar cada linha com o sinal da
+                    corretora.
+                  </p>
                   {liveIbkrStructure.financing < -1e-4 ? (
                     <p style={{ margin: "12px 0 0 0", fontSize: 12, color: "#a1a1aa", lineHeight: 1.5 }}>
                       Valor negativo indica financiamento automático da corretora para suportar exposição superior ao
@@ -2996,28 +3061,39 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   via margem estão no bloco «Estrutura da carteira».
                 </p>
               ) : null}
-              <p style={{ margin: "0 0 12px 0", fontSize: 11, color: "#71717a", lineHeight: 1.45, maxWidth: 640 }}>
+              <p style={{ margin: "0 0 12px 0", fontSize: 11, color: "#71717a", lineHeight: 1.45, maxWidth: "100%" }}>
                 <strong style={{ color: "#a1a1aa" }}>Pesos:</strong> «% do capital» = valor da posição ÷ património
                 líquido total na IBKR (a caixa entra no denominador e dilui cada título). «% só títulos» = valor ÷ soma
                 dos títulos nesta tabela (sem caixa). Para comparar com o plano, use a coluna{" "}
                 <strong style={{ color: "#a1a1aa" }}>«% só títulos (plano)»</strong> à direita — o «Peso» do plano inclui
-                ainda <strong style={{ color: "#a1a1aa" }}>CSH2</strong> / caixa e o hedge <strong style={{ color: "#a1a1aa" }}>EURUSD</strong>, por isso sozinho parece mais baixo que «% só títulos» daqui.
+                ainda <strong style={{ color: "#a1a1aa" }}>CSH2</strong> / caixa e o hedge <strong style={{ color: "#a1a1aa" }}>EURUSD</strong>, por isso sozinho parece mais baixo que «% só títulos» daqui. Se
+                executou quase todo o plano e só vê poucas linhas de <strong style={{ color: "#a1a1aa" }}>acções</strong>,
+                confirme na TWS/Gateway linhas <strong style={{ color: "#a1a1aa" }}>FX</strong>, ordens inactivas ou outra
+                conta/subconta — o snapshot reflecte o que a API IBKR devolve neste momento.
               </p>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <div style={{ overflowX: "auto", maxWidth: "100%", WebkitOverflowScrolling: "touch" }}>
+              <table
+                style={{
+                  minWidth: 1180,
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: 12,
+                }}
+              >
                 <thead>
                   <tr style={{ color: "#a1a1aa", textAlign: "left" }}>
-                    <th style={{ padding: "10px 8px" }}>Ticker</th>
-                    <th style={{ padding: "10px 8px" }}>Empresa</th>
-                    <th style={{ padding: "10px 8px" }}>País</th>
-                    <th style={{ padding: "10px 8px" }}>Zona</th>
-                    <th style={{ padding: "10px 8px" }}>Região (modelo)</th>
-                    <th style={{ padding: "10px 8px" }}>Sector</th>
-                    <th style={{ padding: "10px 8px" }}>Indústria</th>
-                    <th style={{ padding: "10px 8px" }}>Qtd</th>
-                    <th style={{ padding: "10px 8px" }}>Preço (close)</th>
-                    <th style={{ padding: "10px 8px" }}>Valor</th>
-                    <th style={{ padding: "10px 8px" }}>% do capital</th>
-                    <th style={{ padding: "10px 8px" }}>% só títulos</th>
+                    <th style={{ padding: "6px 4px", width: "9%", lineHeight: 1.2 }}>Ticker</th>
+                    <th style={{ padding: "6px 4px", width: "14%", lineHeight: 1.2 }}>Empresa</th>
+                    <th style={{ padding: "6px 4px", width: "8%", lineHeight: 1.2 }}>País</th>
+                    <th style={{ padding: "6px 4px", width: "8%", lineHeight: 1.2 }}>Zona</th>
+                    <th style={{ padding: "6px 4px", width: "8%", lineHeight: 1.2 }}>Região</th>
+                    <th style={{ padding: "6px 4px", width: "10%", lineHeight: 1.2 }}>Sector</th>
+                    <th style={{ padding: "6px 4px", width: "10%", lineHeight: 1.2 }}>Indústria</th>
+                    <th style={{ padding: "6px 4px", width: "7%", lineHeight: 1.2 }}>Qtd</th>
+                    <th style={{ padding: "6px 4px", width: "8%", lineHeight: 1.2 }}>Preço</th>
+                    <th style={{ padding: "6px 4px", width: "9%", lineHeight: 1.2 }}>Valor</th>
+                    <th style={{ padding: "6px 4px", width: "5%", lineHeight: 1.2 }}>% cap.</th>
+                    <th style={{ padding: "6px 4px", width: "6%", lineHeight: 1.2 }}>% risco</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3030,7 +3106,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   ) : (
                     portfolioDisplayRows.map((p, idx) => (
                       <tr key={`${p.ticker}-${idx}`} style={{ borderTop: DECIDE_DASHBOARD.panelBorder }}>
-                        <td style={{ padding: "10px 8px", color: "#ffffff", fontWeight: 700 }}>
+                        <td style={{ padding: "6px 4px", color: "#ffffff", fontWeight: 700, wordBreak: "break-word" }}>
                           {(() => {
                             const label =
                               p.ticker === "BIL" ||
@@ -3051,28 +3127,35 @@ export default function ClientReportPage({ reportData }: PageProps) {
                             );
                           })()}
                         </td>
-                        <td style={{ padding: "10px 8px", color: "#d4d4d8", maxWidth: 220 }}>
+                        <td
+                          style={{
+                            padding: "6px 4px",
+                            color: "#d4d4d8",
+                            wordBreak: "break-word",
+                            overflowWrap: "anywhere",
+                          }}
+                        >
                           {p.ticker === "LIQUIDEZ" ? "—" : p.nameShort || "—"}
                         </td>
-                        <td style={{ padding: "10px 8px", color: "#a1a1aa" }}>
+                        <td style={{ padding: "6px 4px", color: "#a1a1aa", wordBreak: "break-word" }}>
                           {p.ticker === "LIQUIDEZ" ? "—" : p.country || "—"}
                         </td>
-                        <td style={{ padding: "10px 8px", color: "#a1a1aa" }}>
+                        <td style={{ padding: "6px 4px", color: "#a1a1aa", wordBreak: "break-word" }}>
                           {p.ticker === "LIQUIDEZ" ? "—" : p.zone || "—"}
                         </td>
-                        <td style={{ padding: "10px 8px", color: "#a1a1aa" }}>
+                        <td style={{ padding: "6px 4px", color: "#a1a1aa", wordBreak: "break-word" }}>
                           {p.ticker === "LIQUIDEZ" ? "—" : p.region || "—"}
                         </td>
-                        <td style={{ padding: "10px 8px", color: "#a1a1aa" }}>
+                        <td style={{ padding: "6px 4px", color: "#a1a1aa", wordBreak: "break-word" }}>
                           {p.ticker === "LIQUIDEZ" ? "—" : p.sector || "—"}
                         </td>
-                        <td style={{ padding: "10px 8px", color: "#a1a1aa" }}>
+                        <td style={{ padding: "6px 4px", color: "#a1a1aa", wordBreak: "break-word" }}>
                           {p.ticker === "LIQUIDEZ" ? "—" : p.industry || "—"}
                         </td>
-                        <td style={{ padding: "10px 8px" }}>
+                        <td style={{ padding: "6px 4px", fontVariantNumeric: "tabular-nums" }}>
                           {p.ticker === "LIQUIDEZ" ? "—" : formatQty(p.qty)}
                         </td>
-                        <td style={{ padding: "10px 8px" }}>
+                        <td style={{ padding: "6px 4px", fontVariantNumeric: "tabular-nums", wordBreak: "break-word" }}>
                           {p.ticker === "LIQUIDEZ"
                             ? "—"
                             : typeof p.closePrice === "number" && p.closePrice > 0
@@ -3080,14 +3163,19 @@ export default function ClientReportPage({ reportData }: PageProps) {
                             : "—"}
                           {p.ticker === "LIQUIDEZ" ? "" : ` ${p.currency}`}
                         </td>
-                        <td style={{ padding: "10px 8px" }}>{formatMoneyCompact(p.value, p.currency)}</td>
-                        <td style={{ padding: "10px 8px" }}>{formatPct(p.weightPct)}</td>
-                        <td style={{ padding: "10px 8px" }}>{formatPct(p.weightPctSecurities)}</td>
+                        <td style={{ padding: "6px 4px", fontVariantNumeric: "tabular-nums" }}>
+                          {formatMoneyCompact(p.value, p.currency)}
+                        </td>
+                        <td style={{ padding: "6px 4px", fontVariantNumeric: "tabular-nums" }}>{formatPct(p.weightPct)}</td>
+                        <td style={{ padding: "6px 4px", fontVariantNumeric: "tabular-nums" }}>
+                          {formatPct(p.weightPctSecurities)}
+                        </td>
                       </tr>
                     ))
                   )}
                 </tbody>
               </table>
+              </div>
               {showFlattenDevButton ? (
                 <div
                   style={{
@@ -3195,8 +3283,9 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 background: DECIDE_DASHBOARD.clientPanelGradient,
                 border: DECIDE_DASHBOARD.panelBorder,
                 borderRadius: 18,
-                padding: 20,
+                padding: "16px 12px",
                 overflowX: "auto",
+                minWidth: 0,
                 boxShadow: DECIDE_DASHBOARD.clientPanelShadow,
               }}
             >
@@ -3220,18 +3309,26 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   no deploy se usa o motor em vez do CSV quando o último export ainda não inclui o dia corrente.
                 </p>
               ) : null}
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <div style={{ overflowX: "auto", maxWidth: "100%", WebkitOverflowScrolling: "touch" }}>
+              <table
+                style={{
+                  minWidth: 960,
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: 12,
+                }}
+              >
                 <thead>
                   <tr style={{ color: "#a1a1aa", textAlign: "left" }}>
-                    <th style={{ padding: "10px 8px" }}>Ticker</th>
-                    <th style={{ padding: "10px 8px" }}>Empresa</th>
-                    <th style={{ padding: "10px 8px" }}>País</th>
-                    <th style={{ padding: "10px 8px" }}>Zona</th>
-                    <th style={{ padding: "10px 8px" }}>Peso</th>
-                    <th style={{ padding: "10px 8px" }}>% só títulos (plano)</th>
-                    <th style={{ padding: "10px 8px" }}>Sector</th>
-                    <th style={{ padding: "10px 8px" }}>Indústria</th>
-                    <th style={{ padding: "10px 8px" }}>Região (modelo)</th>
+                    <th style={{ padding: "6px 4px", width: "11%", lineHeight: 1.2 }}>Ticker</th>
+                    <th style={{ padding: "6px 4px", width: "18%", lineHeight: 1.2 }}>Empresa</th>
+                    <th style={{ padding: "6px 4px", width: "9%", lineHeight: 1.2 }}>País</th>
+                    <th style={{ padding: "6px 4px", width: "9%", lineHeight: 1.2 }}>Zona</th>
+                    <th style={{ padding: "6px 4px", width: "8%", lineHeight: 1.2 }}>Peso</th>
+                    <th style={{ padding: "6px 4px", width: "8%", lineHeight: 1.2 }}>% risco</th>
+                    <th style={{ padding: "6px 4px", width: "12%", lineHeight: 1.2 }}>Sector</th>
+                    <th style={{ padding: "6px 4px", width: "12%", lineHeight: 1.2 }}>Indústria</th>
+                    <th style={{ padding: "6px 4px", width: "9%", lineHeight: 1.2 }}>Região</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3243,12 +3340,12 @@ export default function ClientReportPage({ reportData }: PageProps) {
                         opacity: p.excluded ? 0.55 : 1,
                       }}
                     >
-                      <td style={{ padding: "10px 8px", color: "#ffffff", fontWeight: 700 }}>
+                      <td style={{ padding: "6px 4px", color: "#ffffff", fontWeight: 700, wordBreak: "break-word" }}>
                         {(() => {
                           const href = reportPlanTickerLinks(p.ticker);
                           if (!href) return displayTickerLabel(p.ticker);
                           return (
-                            <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                            <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                               <a href={href.yf} target="_blank" rel="noreferrer" style={{ color: DECIDE_DASHBOARD.accentSky, textDecoration: "none" }}>
                                 {displayTickerLabel(p.ticker)}
                               </a>
@@ -3259,7 +3356,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           );
                         })()}
                       </td>
-                      <td style={{ padding: "10px 8px" }}>
+                      <td style={{ padding: "6px 4px", wordBreak: "break-word", overflowWrap: "anywhere" }}>
                         {p.nameShort || p.ticker}
                         {p.excluded ? (
                           <span
@@ -3276,9 +3373,9 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           </span>
                         ) : null}
                       </td>
-                      <td style={{ padding: "10px 8px", color: "#d4d4d8" }}>{p.country || "—"}</td>
-                      <td style={{ padding: "10px 8px", color: "#d4d4d8" }}>{p.geoZone || "—"}</td>
-                      <td style={{ padding: "10px 8px" }}>
+                      <td style={{ padding: "6px 4px", color: "#d4d4d8", wordBreak: "break-word" }}>{p.country || "—"}</td>
+                      <td style={{ padding: "6px 4px", color: "#d4d4d8", wordBreak: "break-word" }}>{p.geoZone || "—"}</td>
+                      <td style={{ padding: "6px 4px", fontVariantNumeric: "tabular-nums" }}>
                         {formatPct(p.weightPct)}
                         {p.excluded && p.originalWeightPct > 0 ? (
                           <span style={{ marginLeft: 6, fontSize: 11, color: "#a1a1aa" }}>
@@ -3286,7 +3383,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           </span>
                         ) : null}
                       </td>
-                      <td style={{ padding: "10px 8px", color: "#d4d4d8" }}>
+                      <td style={{ padding: "6px 4px", color: "#d4d4d8", fontVariantNumeric: "tabular-nums" }}>
                         {isRecommendedCashOrHedgeRowTicker(p.ticker) ? (
                           <span style={{ color: "#71717a" }} title="Fora do denominador (caixa, MM, T-Bills ou hedge FX)">
                             —
@@ -3297,13 +3394,14 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           "—"
                         )}
                       </td>
-                      <td style={{ padding: "10px 8px" }}>{p.sector || "—"}</td>
-                      <td style={{ padding: "10px 8px" }}>{p.industry || "—"}</td>
-                      <td style={{ padding: "10px 8px" }}>{p.region || "—"}</td>
+                      <td style={{ padding: "6px 4px", wordBreak: "break-word" }}>{p.sector || "—"}</td>
+                      <td style={{ padding: "6px 4px", wordBreak: "break-word" }}>{p.industry || "—"}</td>
+                      <td style={{ padding: "6px 4px", wordBreak: "break-word" }}>{p.region || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              </div>
               {reportData.planWeightsProvenance?.planTableConsolidatePct != null &&
               reportData.planWeightsProvenance?.planEntryMinPct != null ? (
                 <p style={{ margin: "10px 0 0 0", fontSize: 11, color: "#71717a", lineHeight: 1.45, maxWidth: 720 }}>

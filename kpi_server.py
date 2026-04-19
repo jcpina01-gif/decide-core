@@ -6,6 +6,7 @@ from math import sqrt
 from pathlib import Path
 import json
 import os
+import re
 import sys
 import unicodedata
 from urllib.parse import urlparse
@@ -6486,6 +6487,51 @@ def _iter_smooth_margin_equity_csv_paths(profile_key: str, main_model_path: Path
     return out
 
 
+def _reindex_margin_curve_to_model_calendar(
+    margin_eq: list[float] | np.ndarray,
+    margin_dates: pd.Series,
+    model_dates: pd.Series,
+    plafonado_eq: pd.Series | np.ndarray | list[float],
+) -> pd.Series | None:
+    """
+    Alinha o CSV «margem» / MAX100 ao calendário do modelo plafonado.
+
+    ``reindex(...).ffill().bfill()`` na cabeça repete o primeiro valor disponível em todo o
+    período anterior — gera um patamar horizontal desde ~2007 enquanto o benchmark já varia.
+    Aqui: ``ffill`` + lacunas iniciais preenchidas com a **série plafonada** (mesmo período)
+    até existir trajectória própria no ficheiro de margem.
+    """
+    dt_m = pd.to_datetime(model_dates)
+    s_fm = pd.Series(np.asarray(margin_eq, dtype=float), index=pd.to_datetime(margin_dates))
+    s_fm = s_fm[~s_fm.index.duplicated(keep="last")].sort_index()
+    s_al = s_fm.reindex(dt_m).ffill()
+    plaf = np.asarray(plafonado_eq, dtype=float).reshape(-1)
+    if len(s_al) != len(plaf):
+        return None
+    s_pl = pd.Series(plaf, index=s_al.index)
+    s_al = s_al.where(s_al.notna(), s_pl)
+    if bool(s_al.isna().any()):
+        s_al = s_al.bfill().ffill()
+    if bool(s_al.isna().any()):
+        return None
+    # CSVs de margem / MAX100 por vezes repetem o 1.º valor em toda a cabeça da série (sem NaNs) —
+    # o ``bfill`` antigo copiava esse patamar para trás; aqui já não, mas ainda precisamos de
+    # substituir o prefixo em que a margem não se move e o plafonado sim (curva «morta» vs benchmark).
+    raw_ff = s_fm.reindex(dt_m).ffill()
+    if bool(raw_ff.notna().any()):
+        dv = raw_ff.pct_change().abs()
+        dp = s_pl.pct_change().abs()
+        not_stale = ~((dv < 1e-7) & (dp > 1e-4))
+        not_stale = not_stale.fillna(True)
+        ns = not_stale.to_numpy(dtype=bool)
+        idx_alive = np.flatnonzero(ns)
+        first_live = int(idx_alive[0]) if idx_alive.size else len(s_al)
+        if first_live > 0:
+            for i in range(first_live):
+                s_al.iloc[i] = float(s_pl.iloc[i])
+    return s_al
+
+
 def load_cap15_margin_series_distinct_from_plafonado(
     profile_key: str,
     dates: pd.Series,
@@ -6506,9 +6552,10 @@ def load_cap15_margin_series_distinct_from_plafonado(
     for margem_path in _iter_smooth_margin_equity_csv_paths(profile_key, main_model_path):
         try:
             _, _, margem_eq_file, margem_dates_s = load_equity_curve(margem_path, "model_equity")
-            s_fm = pd.Series(np.asarray(margem_eq_file, dtype=float), index=pd.to_datetime(margem_dates_s))
-            s_aligned_m = s_fm.reindex(dt_m).ffill().bfill()
-            if len(s_aligned_m) != len(dt_m) or not bool(s_aligned_m.notna().all()):
+            s_aligned_m = _reindex_margin_curve_to_model_calendar(
+                margem_eq_file, margem_dates_s, dates, model_eq
+            )
+            if s_aligned_m is None or len(s_aligned_m) != len(dt_m):
                 continue
             margin_series = pd.Series([float(x) for x in s_aligned_m.values], dtype=float)
             used_profile_file = margem_path.name != "model_equity_final_20y_margin.csv"
@@ -8079,6 +8126,120 @@ def _normalize_country(value: str, zone: str = "") -> str:
     return s
 
 
+_JP_LISTING_TO_ADR_PY: dict[str, str] | None = None
+
+
+def _jp_listing_to_adr_map_py() -> dict[str, str]:
+    """Alinhado a ``frontend/lib/server/jpListingToAdrMap.ts`` + ``jp_listing_to_adr.csv``."""
+    global _JP_LISTING_TO_ADR_PY
+    if _JP_LISTING_TO_ADR_PY is not None:
+        return _JP_LISTING_TO_ADR_PY
+    m: dict[str, str] = {
+        "8035.T": "TOELY",
+        "7974.T": "NTDOY",
+        "8411.T": "MFG",
+        "7203.T": "TM",
+        "6758.T": "SONY",
+        "8306.T": "MUFG",
+        "8316.T": "SMFG",
+        "9433.T": "KDDIY",
+        "9984.T": "SFTBY",
+        "6501.T": "HTHIY",
+        "9983.T": "FRCOY",
+        "6954.T": "FANUY",
+        "8002.T": "MARUY",
+        "8058.T": "MSBHF",
+        "6981.T": "MRAAY",
+    }
+    csv_p = REPO_ROOT / "backend" / "data" / "jp_listing_to_adr.csv"
+    if csv_p.is_file():
+        import csv
+
+        try:
+            with csv_p.open("r", encoding="utf-8-sig", newline="") as f:
+                rdr = csv.reader(f)
+                next(rdr, None)
+                for row in rdr:
+                    if len(row) < 2:
+                        continue
+                    a0 = str(row[0] or "").strip().upper().replace(" ", "")
+                    b0 = str(row[1] or "").strip().upper().replace(" ", "")
+                    if not a0 or not b0:
+                        continue
+                    if re.fullmatch(r"\d{3,5}-T", a0):
+                        a0 = f"{a0[:-2]}.T"
+                    elif re.fullmatch(r"\d{3,5}T", a0) and "." not in a0:
+                        a0 = f"{a0[:-1]}.T"
+                    m[a0] = b0
+        except OSError:
+            pass
+    _JP_LISTING_TO_ADR_PY = {str(k).upper(): str(v).upper() for k, v in m.items() if k and v}
+    return _JP_LISTING_TO_ADR_PY
+
+
+def _jp_normalize_listing_key(ticker: str) -> str:
+    t = str(ticker or "").strip().upper().replace(" ", "")
+    if re.fullmatch(r"\d{3,5}-T", t):
+        return f"{t[:-2]}.T"
+    if re.fullmatch(r"\d{3,5}T", t) and "." not in t:
+        return f"{t[:-1]}.T"
+    return t
+
+
+def _jp_is_numeric_listing(ticker: str) -> bool:
+    return bool(re.fullmatch(r"\d{3,5}\.T", _jp_normalize_listing_key(ticker)))
+
+
+def _jp_remap_listing_to_adr(ticker: str) -> str:
+    k = _jp_normalize_listing_key(ticker)
+    if not _jp_is_numeric_listing(k):
+        return str(ticker or "").strip().upper()
+    mp = _jp_listing_to_adr_map_py()
+    return mp.get(k.upper(), str(ticker or "").strip().upper())
+
+
+def _jp_meta_index_aliases(ticker: str) -> list[str]:
+    """Variantes de índice (``BRK-B`` vs ``BRK.B``, ``8035.T`` vs ADR) para bater ``company_meta*.csv``."""
+    raw = str(ticker or "").strip().upper()
+    aliases: list[str] = []
+    seen: set[str] = set()
+
+    def push(x: str) -> None:
+        t = x.strip().upper()
+        if not t or t in seen:
+            return
+        seen.add(t)
+        aliases.append(t)
+
+    push(raw)
+    push(raw.replace(".", "-"))
+    push(raw.replace("-", "."))
+    jn = _jp_normalize_listing_key(raw)
+    if _jp_is_numeric_listing(jn):
+        push(jn)
+        push(jn.replace(".", "-"))
+        push(_jp_remap_listing_to_adr(jn))
+    rev = {v: k for k, v in _jp_listing_to_adr_map_py().items()}
+    listing = rev.get(raw)
+    if listing:
+        push(listing)
+        push(listing.replace(".", "-"))
+    return aliases
+
+
+def _meta_df_loc_first(meta_df: pd.DataFrame, ticker: str) -> pd.Series | None:
+    if not ticker:
+        return None
+    for alias in _jp_meta_index_aliases(ticker):
+        if alias not in meta_df.index:
+            continue
+        row = meta_df.loc[alias]
+        if isinstance(row, pd.DataFrame):
+            return row.iloc[0]
+        return row
+    return None
+
+
 def load_last_close_as_of_date() -> str:
     """Return max date from backend/data/prices_close.csv (YYYY-MM-DD)."""
     prices_path = REPO_ROOT / "backend" / "data" / "prices_close.csv"
@@ -8150,16 +8311,16 @@ def load_holdings_and_breakdowns(base_path: Path):
         company_from_meta = ""
         country_from_meta = ""
         zone_from_meta = ""
-        if ticker and ticker in meta_df.index:
-            row = meta_df.loc[ticker]
-            sector_from_meta = _clean_str(row.get("sector", ""))
-            company_from_meta = _clean_str(row.get("company", ""))
-            country_from_meta = _clean_str(row.get("country", ""))
-            zone_from_meta = _clean_str(row.get("zone", ""))
+        row_meta = _meta_df_loc_first(meta_df, ticker) if ticker else None
+        if row_meta is not None:
+            sector_from_meta = _clean_str(row_meta.get("sector", ""))
+            company_from_meta = _clean_str(row_meta.get("company", ""))
+            country_from_meta = _clean_str(row_meta.get("country", ""))
+            zone_from_meta = _clean_str(row_meta.get("zone", ""))
 
         # Se existir linha no meta_v3, usamos sempre o sector/nome de lá como "golden source"
-        if ticker and ticker in meta_v3.index:
-            row_v3 = meta_v3.loc[ticker]
+        row_v3 = _meta_df_loc_first(meta_v3, ticker) if ticker else None
+        if row_v3 is not None:
             v3_sector = _clean_str(row_v3.get("sector", ""))
             v3_company = _clean_str(row_v3.get("company", ""))
             v3_country = _clean_str(row_v3.get("country", ""))
@@ -8592,9 +8753,26 @@ def cap15_margin_equity_list_aligned(
     try:
         _, _, margem_eq_file, margem_dates_s = load_equity_curve(margem_path, "model_equity")
         dt_m = pd.to_datetime(dates)
-        s_fm = pd.Series(np.asarray(margem_eq_file, dtype=float), index=pd.to_datetime(margem_dates_s))
-        s_aligned_m = s_fm.reindex(dt_m).ffill().bfill()
-        if len(s_aligned_m) != len(dt_m) or not bool(s_aligned_m.notna().all()):
+        if plafonado_eq is not None:
+            s_aligned_m = _reindex_margin_curve_to_model_calendar(
+                margem_eq_file, margem_dates_s, dates, plafonado_eq
+            )
+        elif main_model_path is not None and main_model_path.exists():
+            try:
+                _, _, pl_eq, pl_dates = load_equity_curve(main_model_path, "model_equity")
+                pl_on_cal = align_equity_series_to_target_dates(pl_eq, pl_dates, dates)
+                s_aligned_m = _reindex_margin_curve_to_model_calendar(
+                    margem_eq_file, margem_dates_s, dates, pl_on_cal
+                )
+            except Exception:
+                s_fm = pd.Series(
+                    np.asarray(margem_eq_file, dtype=float), index=pd.to_datetime(margem_dates_s)
+                )
+                s_aligned_m = s_fm.reindex(dt_m).ffill().bfill()
+        else:
+            s_fm = pd.Series(np.asarray(margem_eq_file, dtype=float), index=pd.to_datetime(margem_dates_s))
+            s_aligned_m = s_fm.reindex(dt_m).ffill().bfill()
+        if s_aligned_m is None or len(s_aligned_m) != len(dt_m) or not bool(s_aligned_m.notna().all()):
             return None
         margin_series = pd.Series([float(x) for x in s_aligned_m.values], dtype=float)
         margin_series = apply_model_equity_profile_policy(
@@ -8669,9 +8847,10 @@ def equity_series_bundle_for_simulator(
             try:
                 _, _, m100_eq_file, m100_dates_s = load_equity_curve(m100_path, "model_equity")
                 dt_m = pd.to_datetime(dates)
-                s_f = pd.Series(np.asarray(m100_eq_file, dtype=float), index=pd.to_datetime(m100_dates_s))
-                s_aligned = s_f.reindex(dt_m).ffill().bfill()
-                if len(s_aligned) == len(model_eq) and bool(s_aligned.notna().all()):
+                s_aligned = _reindex_margin_curve_to_model_calendar(
+                    m100_eq_file, m100_dates_s, dates, model_eq
+                )
+                if s_aligned is not None and len(s_aligned) == len(model_eq) and bool(s_aligned.notna().all()):
                     m100_series = pd.Series([float(x) for x in s_aligned.values], dtype=float)
                     m100_series = apply_model_equity_profile_policy(
                         m100_series,
@@ -9188,9 +9367,10 @@ def index():
             try:
                 _, _, m100_eq_file, m100_dates_s = load_equity_curve(m100_path, "model_equity")
                 dt_m = pd.to_datetime(dates)
-                s_f = pd.Series(np.asarray(m100_eq_file, dtype=float), index=pd.to_datetime(m100_dates_s))
-                s_aligned = s_f.reindex(dt_m).ffill().bfill()
-                if len(s_aligned) == len(model_eq) and bool(s_aligned.notna().all()):
+                s_aligned = _reindex_margin_curve_to_model_calendar(
+                    m100_eq_file, m100_dates_s, dates, model_eq
+                )
+                if s_aligned is not None and len(s_aligned) == len(model_eq) and bool(s_aligned.notna().all()):
                     m100_series = pd.Series([float(x) for x in s_aligned.values], dtype=float)
                     m100_series = apply_model_equity_profile_policy(
                         m100_series,
