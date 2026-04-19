@@ -1052,7 +1052,9 @@ export function modelPayloadHasPortfolioPositions(modelPayload: unknown): boolea
     const u = canon || rawT.toUpperCase();
     if (u === "TBILL_PROXY" || u === "EUR_MM_PROXY" || u === "LIQUIDEZ") continue;
     if (isDecideCashSleeveBrokerSymbol(rawT) || isDecideCashSleeveBrokerSymbol(canon)) continue;
-    const w = Number(row?.weight_pct);
+    const wPct = Number(row?.weight_pct);
+    const wFr = Number((row as { weight?: unknown }).weight);
+    const w = Number.isFinite(wPct) && wPct > 0 ? wPct : Number.isFinite(wFr) && wFr > 0 ? (wFr <= 1 + 1e-9 ? wFr * 100 : wFr) : NaN;
     if (!Number.isFinite(w) || w <= 0) continue;
     nonCash += 1;
   }

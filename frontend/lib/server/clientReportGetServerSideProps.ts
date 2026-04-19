@@ -37,6 +37,11 @@ import {
 import { supplementClosePricesMapFromLegacyWideCsv } from "./supplementClosePricesFromLegacyWideCsv";
 import { FREEZE_PLAFONADO_MODEL_DIR, PLAFONADO_MODEL_DISPLAY_NAME_PT } from "../freezePlafonadoDir";
 import {
+  freezeKpisDataEndYmd,
+  freezeKpisLatestCashSleeveFrac,
+  tryFreezeHoldingsAsModelPositions,
+} from "./freezePortfolioFinalHoldings";
+import {
   estimateUsdNotionalForBuyFxHedge,
   isBuyMissingEquityClosePrice,
 } from "../approvalPlanTradeDisplay";
@@ -1442,6 +1447,65 @@ async function getClientReportServerSidePropsImpl(
   const preferLiveWeights = shouldUseLiveModelWeightsInsteadOfOfficialBook(officialMonth, modelPayload);
   let planTargetRebalanceDate: string | undefined;
 
+  const mapModelPositionsToRecommended = (pos: any[], investedFrac: number): RecommendedPosition[] =>
+    pos.map((p: any) => ({
+      ticker: remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase()),
+      nameShort: (() => {
+        const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
+        const m = metaForTicker(t);
+        const b = lookupCompanyMetaEntry(t);
+        return pickBestDisplayName(
+          t,
+          safeString(p.name_short || p.short_name || p.ticker),
+          safeString(m?.nameShort, b?.name ?? ""),
+        );
+      })(),
+      region: (() => {
+        const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
+        const m = metaForTicker(t);
+        const b = lookupCompanyMetaEntry(t);
+        return displayRegionTriplet(
+          m?.region,
+          (p as { zone?: unknown }).zone,
+          (p as { country_group?: unknown }).country_group,
+          b,
+        );
+      })(),
+      country: (() => {
+        const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
+        const m = metaForTicker(t);
+        const b = lookupCompanyMetaEntry(t);
+        const pc = (p as { country?: unknown }).country;
+        return (
+          meaningfulTextCell(typeof pc === "string" ? pc : "") ||
+          meaningfulTextCell(m?.country) ||
+          (b?.country ?? "")
+        );
+      })(),
+      geoZone: (() => {
+        const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
+        const m = metaForTicker(t);
+        const gz = (p as { geo_zone?: unknown }).geo_zone;
+        return meaningfulTextCell(typeof gz === "string" ? gz : "") || meaningfulTextCell(m?.geoZone) || "";
+      })(),
+      sector: (() => {
+        const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
+        const m = metaForTicker(t);
+        const b = lookupCompanyMetaEntry(t);
+        return displaySectorTriplet(p.sector, m?.sector, b);
+      })(),
+      industry: (() => {
+        const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
+        const m = metaForTicker(t);
+        const b = lookupCompanyMetaEntry(t);
+        return displayIndustryTriplet(p.industry, m?.industry, b);
+      })(),
+      score: safeNumber(p.score, 0),
+      weightPct: safeNumber(p.weight_pct, 0) * investedFrac,
+      originalWeightPct: safeNumber(p.weight_pct, 0) * investedFrac,
+      excluded: false,
+    }));
+
   let recommendedRaw: RecommendedPosition[];
   if (!preferLiveWeights && officialMonth?.rows?.length) {
     planTargetRebalanceDate = String(officialMonth.date || "").slice(0, 10);
@@ -1483,72 +1547,26 @@ async function getClientReportServerSidePropsImpl(
         excluded: false,
       };
     });
-  } else {
+  } else if (preferLiveWeights) {
     const investedFrac = 1 - cashSleeveFrac;
-    recommendedRaw = Array.isArray(modelPayload?.current_portfolio?.positions)
-      ? modelPayload.current_portfolio.positions.map((p: any) => ({
-          ticker: (() => {
-            const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
-            return t;
-          })(),
-          nameShort: (() => {
-            const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
-            const m = metaForTicker(t);
-            const b = lookupCompanyMetaEntry(t);
-            return pickBestDisplayName(
-              t,
-              safeString(p.name_short || p.short_name || p.ticker),
-              safeString(m?.nameShort, b?.name ?? ""),
-            );
-          })(),
-          region: (() => {
-            const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
-            const m = metaForTicker(t);
-            const b = lookupCompanyMetaEntry(t);
-            return displayRegionTriplet(
-              m?.region,
-              (p as { zone?: unknown }).zone,
-              (p as { country_group?: unknown }).country_group,
-              b,
-            );
-          })(),
-          country: (() => {
-            const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
-            const m = metaForTicker(t);
-            const b = lookupCompanyMetaEntry(t);
-            const pc = (p as { country?: unknown }).country;
-            return (
-              meaningfulTextCell(typeof pc === "string" ? pc : "") ||
-              meaningfulTextCell(m?.country) ||
-              (b?.country ?? "")
-            );
-          })(),
-          geoZone: (() => {
-            const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
-            const m = metaForTicker(t);
-            const gz = (p as { geo_zone?: unknown }).geo_zone;
-            return meaningfulTextCell(typeof gz === "string" ? gz : "") || meaningfulTextCell(m?.geoZone) || "";
-          })(),
-          sector: (() => {
-            const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
-            const m = metaForTicker(t);
-            const b = lookupCompanyMetaEntry(t);
-            return displaySectorTriplet(p.sector, m?.sector, b);
-          })(),
-          industry: (() => {
-            const t = remapJpListingToAdrTicker(safeString(p.ticker).toUpperCase());
-            const m = metaForTicker(t);
-            const b = lookupCompanyMetaEntry(t);
-            return displayIndustryTriplet(p.industry, m?.industry, b);
-          })(),
-          score: safeNumber(p.score, 0),
-          weightPct: safeNumber(p.weight_pct, 0) * investedFrac,
-          originalWeightPct: safeNumber(p.weight_pct, 0) * investedFrac,
-          excluded: false,
-        }))
-      : [];
-    planTargetRebalanceDate =
-      modelPayloadAsOfDateYmd(modelPayload) ?? planTargetRebalanceDate;
+    const pos = modelPayload?.current_portfolio?.positions;
+    recommendedRaw = Array.isArray(pos) ? mapModelPositionsToRecommended(pos, investedFrac) : [];
+    planTargetRebalanceDate = modelPayloadAsOfDateYmd(modelPayload) ?? planTargetRebalanceDate;
+  } else {
+    const snap = tryFreezeHoldingsAsModelPositions(projectRoot);
+    if (snap?.length) {
+      const freezeCash = freezeKpisLatestCashSleeveFrac(projectRoot);
+      if (freezeCash !== null) cashSleeveFrac = freezeCash;
+      const investedFrac = 1 - cashSleeveFrac;
+      recommendedRaw = mapModelPositionsToRecommended(snap, investedFrac);
+      const freezeEnd = freezeKpisDataEndYmd(projectRoot);
+      if (freezeEnd) planTargetRebalanceDate = freezeEnd;
+    } else {
+      const investedFrac = 1 - cashSleeveFrac;
+      const pos = modelPayload?.current_portfolio?.positions;
+      recommendedRaw = Array.isArray(pos) ? mapModelPositionsToRecommended(pos, investedFrac) : [];
+      planTargetRebalanceDate = modelPayloadAsOfDateYmd(modelPayload) ?? planTargetRebalanceDate;
+    }
   }
 
   // Remover duplicados exatos por ticker (mantém o maior peso).

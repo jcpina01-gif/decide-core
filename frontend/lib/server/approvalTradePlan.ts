@@ -24,6 +24,10 @@ import {
   shouldUseLiveModelWeightsInsteadOfOfficialBook,
   sumCashSleeveWeight,
 } from "./buildRecommendationOfficialHistory";
+import {
+  freezeKpisLatestCashSleeveFrac,
+  tryFreezeHoldingsAsModelPositions,
+} from "./freezePortfolioFinalHoldings";
 import { remapJpListingToAdrTicker } from "./jpListingToAdrMap";
 
 export type ApprovalProposedTrade = {
@@ -759,6 +763,28 @@ export async function loadApprovalAlignedProposedTrades(
   const mp = modelPayload as Record<string, unknown> | null;
   let recommendedRaw: RecommendedPosition[];
 
+  const mapPositionsRawToRecommended = (positionsRaw: unknown[], investedFrac: number): RecommendedPosition[] =>
+    positionsRaw.map((p: unknown) => {
+      const pp = p as Record<string, unknown>;
+      const t = remapJpListingToAdrTicker(safeString(pp.ticker).toUpperCase());
+      const m = metaForTicker(t);
+      return {
+        ticker: t,
+        nameShort: pickBestDisplayName(
+          t,
+          safeString(pp.name_short || pp.short_name || pp.ticker),
+          safeString(m?.nameShort, ""),
+        ),
+        region: safeString(pp.region || m?.region, ""),
+        sector: pickRecommendedSector(pp as { sector?: unknown }, m?.sector),
+        industry: pickRecommendedIndustry(pp as { industry?: unknown }, m?.industry),
+        score: safeNumber(pp.score, 0),
+        weightPct: safeNumber(pp.weight_pct, 0) * investedFrac,
+        originalWeightPct: safeNumber(pp.weight_pct, 0) * investedFrac,
+        excluded: false,
+      };
+    });
+
   if (!preferLiveWeights && officialMonth?.rows?.length) {
     const cashFromRows = sumCashSleeveWeight(officialMonth.rows);
     if (cashFromRows >= 0 && cashFromRows <= 0.95) {
@@ -783,31 +809,26 @@ export async function loadApprovalAlignedProposedTrades(
         excluded: false,
       };
     });
-  } else {
+  } else if (preferLiveWeights) {
     const investedFrac = 1 - cashSleeveFrac;
     const positionsRaw = Array.isArray((mp?.current_portfolio as Record<string, unknown> | undefined)?.positions)
       ? ((mp?.current_portfolio as Record<string, unknown>).positions as unknown[])
       : [];
-    recommendedRaw = positionsRaw.map((p: unknown) => {
-      const pp = p as Record<string, unknown>;
-      const t = remapJpListingToAdrTicker(safeString(pp.ticker).toUpperCase());
-      const m = metaForTicker(t);
-      return {
-        ticker: t,
-        nameShort: pickBestDisplayName(
-          t,
-          safeString(pp.name_short || pp.short_name || pp.ticker),
-          safeString(m?.nameShort, ""),
-        ),
-        region: safeString(pp.region || m?.region, ""),
-        sector: pickRecommendedSector(pp as { sector?: unknown }, m?.sector),
-        industry: pickRecommendedIndustry(pp as { industry?: unknown }, m?.industry),
-        score: safeNumber(pp.score, 0),
-        weightPct: safeNumber(pp.weight_pct, 0) * investedFrac,
-        originalWeightPct: safeNumber(pp.weight_pct, 0) * investedFrac,
-        excluded: false,
-      };
-    });
+    recommendedRaw = mapPositionsRawToRecommended(positionsRaw, investedFrac);
+  } else {
+    const snap = tryFreezeHoldingsAsModelPositions(projectRoot);
+    if (snap?.length) {
+      const freezeCash = freezeKpisLatestCashSleeveFrac(projectRoot);
+      if (freezeCash !== null) cashSleeveFrac = freezeCash;
+      const investedFrac = 1 - cashSleeveFrac;
+      recommendedRaw = mapPositionsRawToRecommended(snap as unknown[], investedFrac);
+    } else {
+      const investedFrac = 1 - cashSleeveFrac;
+      const positionsRaw = Array.isArray((mp?.current_portfolio as Record<string, unknown> | undefined)?.positions)
+        ? ((mp?.current_portfolio as Record<string, unknown>).positions as unknown[])
+        : [];
+      recommendedRaw = mapPositionsRawToRecommended(positionsRaw, investedFrac);
+    }
   }
 
   const dedupByTicker = new Map<string, RecommendedPosition>();
