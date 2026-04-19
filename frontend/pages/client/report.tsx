@@ -3442,7 +3442,34 @@ export default function ClientReportPage({ reportData }: PageProps) {
                       <code style={{ color: "#d9f99d" }}>DECIDE_PLAN_MAX_WEIGHT_PCT_PER_TICKER</code> (15 ou 0,15 para
                       15%).
                     </>
-                  ) : null}
+                  ) : null}{" "}
+                  (4) tecto agregado por macro-zona (US, EU, JP, Canadá) face ao benchmark regional inferido a partir
+                  de <code style={{ color: "#d9f99d" }}>backend/data/prices_close.csv</code> (colunas tipo SPY, VGK,
+                  EWJ, EWC; fallback «world» se faltar zona): a fracção do{" "}
+                  <strong style={{ color: "#a1a1aa" }}>sleeve de risco</strong> (sem caixa/MM/hedge) em cada zona não
+                  ultrapassa{" "}
+                  {reportData.planWeightsProvenance.planGeoAdjustmentsDisabled ? (
+                    <span style={{ color: "#fca5a5" }}>
+                      — desactivo com <code style={{ color: "#d9f99d" }}>DECIDE_DISABLE_PLAN_WEIGHT_ADJUSTMENTS</code>
+                    </span>
+                  ) : reportData.planWeightsProvenance.planZoneCapVsBenchmarkDisabled ? (
+                    <span style={{ color: "#fca5a5" }}>
+                      — desactivo com <code style={{ color: "#d9f99d" }}>DECIDE_DISABLE_ZONE_CAP_VS_BENCHMARK</code>
+                    </span>
+                  ) : (
+                    <>
+                      <strong style={{ color: "#a1a1aa" }}>
+                        {(reportData.planWeightsProvenance.planZoneCapMult ?? 1.3).toLocaleString("pt-PT", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                        ×
+                      </strong>{" "}
+                      a fatia dessa zona no benchmark; excesso redistribui por zonas com folga (e caixa quando
+                      necessário). Parâmetro:{" "}
+                      <code style={{ color: "#d9f99d" }}>DECIDE_ZONE_CAP_VS_BENCHMARK_MULT</code>.
+                    </>
+                  )}
                 </p>
               ) : null}
               {recommendedFiltered.some((p) => String(p.ticker).toUpperCase() === "EURUSD") ? (
