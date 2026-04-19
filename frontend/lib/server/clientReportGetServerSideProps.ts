@@ -1713,6 +1713,11 @@ async function getClientReportServerSidePropsImpl(
   }
   recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
 
+  /** Ainda ``TBILL_PROXY`` (antes da troca UI por MM EUR) — usado nas ordens MM; não confundir com ``cashSinkForScale``. */
+  const tbillPos = recommendedPositions.find(
+    (p) => String(p.ticker || "").trim().toUpperCase() === "TBILL_PROXY",
+  );
+
   const proposedTrades: ProposedTrade[] = tradePlanRows
     .filter((r) => {
       const side = safeString(r.side).toUpperCase();
@@ -1924,19 +1929,35 @@ async function getClientReportServerSidePropsImpl(
       const ow = safeNumber(prev.originalWeightPct, w);
       const excl = prev.excluded;
       recommendedPositions.splice(tbIdx, 1);
-      recommendedPositions.push({
-        ticker: eurMmSym,
-        nameShort: `MM EUR / caixa (${eurMmSym})`,
-        region: "EU",
-        country: "",
-        geoZone: "",
-        sector: "Money market UCITS (EUR)",
-        industry: "",
-        score: 0,
-        weightPct: w,
-        originalWeightPct: ow,
-        excluded: excl,
-      });
+      const mmU = eurMmSym.trim().toUpperCase();
+      const mergeIdx = recommendedPositions.findIndex((p) => String(p.ticker || "").trim().toUpperCase() === mmU);
+      if (mergeIdx >= 0) {
+        const tgt = recommendedPositions[mergeIdx]!;
+        const baseW = safeNumber(tgt.weightPct, 0);
+        const baseOw = safeNumber(tgt.originalWeightPct, baseW);
+        tgt.weightPct = baseW + w;
+        tgt.originalWeightPct = baseOw + ow;
+        tgt.excluded = !!tgt.excluded || excl;
+        if (!meaningfulTextCell(tgt.nameShort)) {
+          tgt.nameShort = `MM EUR / caixa (${eurMmSym})`;
+        }
+        tgt.sector = tgt.sector || "Money market UCITS (EUR)";
+        tgt.region = tgt.region || "EU";
+      } else {
+        recommendedPositions.push({
+          ticker: eurMmSym,
+          nameShort: `MM EUR / caixa (${eurMmSym})`,
+          region: "EU",
+          country: "",
+          geoZone: "",
+          sector: "Money market UCITS (EUR)",
+          industry: "",
+          score: 0,
+          weightPct: w,
+          originalWeightPct: ow,
+          excluded: excl,
+        });
+      }
     }
     const fxRow = proposedTrades.find((t) => t.ticker === "EURUSD");
     if (fxRow && navEur > 0) {

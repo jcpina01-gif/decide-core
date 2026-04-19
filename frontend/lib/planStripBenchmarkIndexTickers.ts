@@ -93,6 +93,13 @@ export function stripPlanBenchmarkIndexRows<T extends RowWithWeights>(rows: T[])
         weightPct: (Number(t.weightPct) || 0) + removedW,
         originalWeightPct: (Number(t.originalWeightPct) || 0) + removedOw,
       };
+    } else if (removedW > 1e-12) {
+      /** Só ETF de benchmark / índice: sem TBILL no alvo, o peso não pode evaporar (evita grelha vazia no relatório). */
+      kept.push({
+        ticker: "TBILL_PROXY",
+        weightPct: removedW,
+        originalWeightPct: removedOw > 1e-12 ? removedOw : removedW,
+      } as T);
     }
     return kept;
   }
