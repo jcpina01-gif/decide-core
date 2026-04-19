@@ -4,6 +4,7 @@
  */
 import { eurMmIbTicker, safeNumber } from "../clientReportCoreUtils";
 import { isDecideCashSleeveBrokerSymbol } from "../decideCashSleeveDisplay";
+import { canonicalTickerForGeo, normalizeGeoTickerInput } from "../tickerGeoFallback";
 
 const DEFAULT_COMPOSITE: readonly (readonly [string, number, "US" | "EU" | "JP" | "CAN"])[] = [
   ["SPY", 0.6, "US"],
@@ -58,6 +59,30 @@ function normalizeZoneDict(raw: Record<string, number>): Record<string, number> 
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(acc)) out[k] = v / s;
   return out;
+}
+
+/**
+ * Chaves para ``Map`` ticker→zona no cap vs benchmark: alinha ``TOELY`` / ``TOELY IB`` / compactos e pontos,
+ * para ``applyZoneCapsVsBenchmark`` não tratar linhas como ``OTHER`` por falta de match.
+ */
+export function planBenchmarkZoneLookupKeys(ticker: string): string[] {
+  const keys = new Set<string>();
+  const u0 = String(ticker || "").trim().toUpperCase();
+  if (u0) keys.add(u0);
+  const ng = normalizeGeoTickerInput(ticker).toUpperCase().trim();
+  if (ng) keys.add(ng);
+  const canon = canonicalTickerForGeo(ticker).toUpperCase();
+  if (canon) keys.add(canon);
+  if (u0) keys.add(u0.replace(/\s+/g, ""));
+  if (ng) keys.add(ng.replace(/\s+/g, ""));
+  const stripIb = (s: string) => s.replace(/\s+IB$/i, "").trim();
+  const sb0 = stripIb(u0);
+  if (sb0) keys.add(sb0);
+  const sbn = stripIb(ng);
+  if (sbn) keys.add(sbn);
+  if (sb0) keys.add(sb0.replace(/\./g, "-"));
+  if (sbn) keys.add(sbn.replace(/\./g, "-"));
+  return [...keys].filter(Boolean);
 }
 
 /** Mesma regra que ``benchmark_zone_weights`` em ``engine_v2.py`` (coluna única vs composto). */
@@ -319,8 +344,11 @@ export function applyZoneCapsVsBenchmark(
   const zones = ["US", "EU", "JP", "CAN", "OTHER"] as const;
 
   const zoneOfTicker = (ticker: string): (typeof zones)[number] => {
-    const z = tickerToZone.get(ticker.trim().toUpperCase());
-    return z && (zones as readonly string[]).includes(z) ? z : "OTHER";
+    for (const k of planBenchmarkZoneLookupKeys(ticker)) {
+      const z = tickerToZone.get(k);
+      if (z && (zones as readonly string[]).includes(z)) return z;
+    }
+    return "OTHER";
   };
 
   const eqRows = rows.filter((r) => !r.excluded && !isProtected(r));

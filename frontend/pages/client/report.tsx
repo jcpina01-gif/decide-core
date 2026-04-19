@@ -137,6 +137,12 @@ export type PlanWeightsProvenance = {
   planTableConsolidatePct?: number;
   /** Tecto % por linha de risco (ex.: 15%) — ``DECIDE_PLAN_MAX_WEIGHT_PCT_PER_TICKER``. */
   planPerTickerMaxPct?: number;
+  /** ``true`` se ``DECIDE_DISABLE_PLAN_WEIGHT_ADJUSTMENTS`` — caps por zona/linha desligados. */
+  planGeoAdjustmentsDisabled?: boolean;
+  /** ``true`` se ``DECIDE_DISABLE_ZONE_CAP_VS_BENCHMARK`` — só o teto 1,3× por país fica OFF. */
+  planZoneCapVsBenchmarkDisabled?: boolean;
+  /** Multiplicador vs benchmark (por defeito 1,3). */
+  planZoneCapMult?: number;
 };
 
 export type ReportData = {
@@ -2437,6 +2443,19 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     {" "}
                     · meses no histórico: {reportData.planWeightsProvenance.officialHistoryMonthsLoaded} · linhas
                     grelha: {reportData.planWeightsProvenance.recommendedLineCount}
+                    {typeof reportData.planWeightsProvenance.planGeoAdjustmentsDisabled === "boolean" ? (
+                      <>
+                        {" "}
+                        · cap zona vs índice:{" "}
+                        <strong style={{ color: "#fde68a" }}>
+                          {reportData.planWeightsProvenance.planGeoAdjustmentsDisabled
+                            ? "OFF (ajustes plano)"
+                            : reportData.planWeightsProvenance.planZoneCapVsBenchmarkDisabled
+                              ? "OFF (1,3×)"
+                              : `${reportData.planWeightsProvenance.planZoneCapMult ?? 1.3}× activo`}
+                        </strong>
+                      </>
+                    ) : null}
                   </>
                 ) : null}
               </div>

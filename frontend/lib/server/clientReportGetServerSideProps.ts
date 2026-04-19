@@ -51,9 +51,12 @@ import {
   canonZoneForCountryCap,
   consolidateWeightsBelowMinimum,
   enforceAbsolutePerTickerCeiling,
+  planBenchmarkZoneLookupKeys,
   planEntryMinWeightPct,
   planExitWeightPct,
+  planGeoAdjustmentsDisabled,
   planPerTickerMaxWeightPct,
+  planZoneCapDisabled,
   planZoneCapMultiplier,
 } from "./planWeightAdjustments";
 import type {
@@ -1088,6 +1091,17 @@ async function getClientReportServerSidePropsImpl(
     return "OTHER";
   };
 
+  const mergePlanBenchmarkZoneForTicker = (
+    m: Map<string, PlanGeoZone>,
+    ticker: string,
+    z: PlanGeoZone,
+  ) => {
+    if (z === "OTHER") return;
+    for (const k of planBenchmarkZoneLookupKeys(ticker)) {
+      m.set(k, z);
+    }
+  };
+
   /** Rótulo curto para a coluna «Zona» (geo) quando o CSV/meta não trazem continente. */
   const planGeoZoneDisplayLabelPt = (z: PlanGeoZone): string => {
     switch (z) {
@@ -1631,7 +1645,7 @@ async function getClientReportServerSidePropsImpl(
     for (const p of recommendedPositions) {
       if (isPlanWeightProtected(p)) continue;
       const z = planZoneForTicker(p.ticker, p.region, p.country);
-      if (z !== "OTHER") zoneByTicker.set(p.ticker.trim().toUpperCase(), z);
+      mergePlanBenchmarkZoneForTicker(zoneByTicker, p.ticker, z);
     }
     applyZoneCapsVsBenchmark(
       recommendedPositions,
@@ -1659,7 +1673,7 @@ async function getClientReportServerSidePropsImpl(
     for (const p of recommendedPositions) {
       if (isPlanWeightProtected(p)) continue;
       const z = planZoneForTicker(p.ticker, p.region, p.country);
-      if (z !== "OTHER") zoneByTickerAfterLine.set(p.ticker.trim().toUpperCase(), z);
+      mergePlanBenchmarkZoneForTicker(zoneByTickerAfterLine, p.ticker, z);
     }
     applyZoneCapsVsBenchmark(
       recommendedPositions,
@@ -1952,7 +1966,7 @@ async function getClientReportServerSidePropsImpl(
     for (const p of recommendedPositions) {
       if (isPlanWeightProtectedAfterUi(p)) continue;
       const z = planZoneForTicker(p.ticker, p.region, p.country);
-      if (z !== "OTHER") zoneByTickerLate.set(p.ticker.trim().toUpperCase(), z);
+      mergePlanBenchmarkZoneForTicker(zoneByTickerLate, p.ticker, z);
     }
     applyZoneCapsVsBenchmark(
       recommendedPositions,
@@ -2043,7 +2057,7 @@ async function getClientReportServerSidePropsImpl(
       for (const p of recommendedPositions) {
         if (isPlanWeightProtectedAfterUi(p)) continue;
         const z = planZoneForTicker(p.ticker, p.region, p.country);
-        if (z !== "OTHER") m.set(p.ticker.trim().toUpperCase(), z);
+        mergePlanBenchmarkZoneForTicker(m, p.ticker, z);
       }
       return m;
     };
@@ -2260,6 +2274,9 @@ async function getClientReportServerSidePropsImpl(
     planEntryMinPct: entryMinPct,
     planTableConsolidatePct: planEntryMinWeightPct(),
     planPerTickerMaxPct: planPerTickerMaxWeightPct(),
+    planGeoAdjustmentsDisabled: planGeoAdjustmentsDisabled(),
+    planZoneCapVsBenchmarkDisabled: planZoneCapDisabled(),
+    planZoneCapMult: planZoneCapMultiplier(),
   };
 
   const reportData: ReportData = {
