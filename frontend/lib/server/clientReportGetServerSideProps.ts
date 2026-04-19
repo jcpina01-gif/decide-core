@@ -50,6 +50,7 @@ import {
   benchmarkZoneWeightsFromPriceHeaders,
   canonZoneForCountryCap,
   consolidateWeightsBelowMinimum,
+  enforceAbsolutePerTickerCeiling,
   planEntryMinWeightPct,
   planExitWeightPct,
   planPerTickerMaxWeightPct,
@@ -2027,6 +2028,39 @@ async function getClientReportServerSidePropsImpl(
         );
       }
     }
+  }
+
+  /**
+   * Após enriquecimento de display: (1) tecto duro 15% por linha; (2) **voltar a aplicar o cap 1,3× por zona
+   * vs benchmark** — a redistribuição do passo (1) favorece ``sqrt(score)`` e pode reconcentrar o mesmo bloco
+   * (ex. quase tudo em JP); (3) tecto por ticker iterativo; (4) tecto duro outra vez após a renormalização por zona.
+   */
+  {
+    const perTickerMax = planPerTickerMaxWeightPct();
+    const benchZonesPostDisplay = benchmarkZoneWeightsFromPriceHeaders(priceCsvHeaderColsUpper, undefined);
+    const zoneMapPostDisplay = (): Map<string, PlanGeoZone> => {
+      const m = new Map<string, PlanGeoZone>();
+      for (const p of recommendedPositions) {
+        if (isPlanWeightProtectedAfterUi(p)) continue;
+        const z = planZoneForTicker(p.ticker, p.region, p.country);
+        if (z !== "OTHER") m.set(p.ticker.trim().toUpperCase(), z);
+      }
+      return m;
+    };
+    enforceAbsolutePerTickerCeiling(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
+    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    applyZoneCapsVsBenchmark(
+      recommendedPositions,
+      zoneMapPostDisplay(),
+      benchZonesPostDisplay,
+      planZoneCapMultiplier(),
+      isPlanWeightProtectedAfterUi,
+    );
+    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
+    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    enforceAbsolutePerTickerCeiling(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
+    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
   }
 
   const dates: string[] = Array.isArray(modelPayload?.series?.dates)

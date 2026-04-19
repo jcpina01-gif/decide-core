@@ -446,3 +446,44 @@ export function applyPerTickerMaxWeightPct(
     }
   }
 }
+
+/**
+ * Garantia final: nenhuma linha de risco acima de ``maxPct`` (pontos %), independentemente de
+ * renormalizações em ``applyZoneCapsVsBenchmark``. O excesso **não** vai para caixa/MM: redistribui-se pelas
+ * outras linhas de risco com **headroom × sqrt(score)** (igual a ``applyPerTickerMaxWeightPct``), favorecendo
+ * títulos com factor/ranking mais alto. Linhas protegidas (caixa, overlay, excluídas) ficam de fora.
+ */
+export function enforceAbsolutePerTickerCeiling(
+  rows: MutablePlanWeightRow[],
+  maxPct: number,
+  isProtected: (r: MutablePlanWeightRow) => boolean,
+): void {
+  const cap = Math.min(Math.max(maxPct, 1e-6), 40);
+  if (cap >= 100) return;
+  let excess = 0;
+  for (const r of rows) {
+    if (isProtected(r)) continue;
+    const w = safeNumber(r.weightPct, 0);
+    if (w > cap + 1e-9) {
+      excess += w - cap;
+      r.weightPct = cap;
+      if (r.originalWeightPct !== undefined) {
+        const ow = safeNumber(r.originalWeightPct, w);
+        r.originalWeightPct = w > 1e-9 ? (cap / w) * ow : cap;
+      }
+    }
+  }
+  if (excess <= 1e-9) return;
+
+  let rem = excess;
+  for (let pass = 0; pass < 8; pass += 1) {
+    if (rem <= 1e-9) break;
+    const before = rem;
+    const elig = rows.filter((r) => !isProtected(r) && safeNumber(r.weightPct, 0) > 1e-12);
+    const under = elig.filter((r) => safeNumber(r.weightPct, 0) < cap - 1e-9);
+    const recipients = under.length > 0 ? under : elig;
+    if (recipients.length === 0) break;
+    rem = redistributeExcessBoundedByRank(recipients, rem, cap);
+    if (rem >= before - 1e-12) break;
+  }
+}
