@@ -1668,6 +1668,14 @@ async function getClientReportServerSidePropsImpl(
       isPlanWeightProtected,
     );
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    /* O tecto por linha tem de voltar a correr depois dos caps por zona: a renormalização interna
+     * pode inflacionar uma linha (ex. única EU) acima do máximo. */
+    applyPerTickerMaxWeightPct(
+      recommendedPositions,
+      planPerTickerMaxWeightPct(),
+      isPlanWeightProtected,
+    );
+    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
   }
 
   for (let i = recommendedPositions.length - 1; i >= 0; i -= 1) {
@@ -1950,6 +1958,12 @@ async function getClientReportServerSidePropsImpl(
       zoneByTickerLate,
       benchZonesLate,
       planZoneCapMultiplier(),
+      isPlanWeightProtectedAfterUi,
+    );
+    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    applyPerTickerMaxWeightPct(
+      recommendedPositions,
+      planPerTickerMaxWeightPct(),
       isPlanWeightProtectedAfterUi,
     );
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
