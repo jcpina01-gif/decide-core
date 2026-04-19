@@ -163,7 +163,7 @@ function buildSsrFailureReportData(backendError: string): ReportData {
     estimatedPerformanceFeeEur: 0,
     tbillProxyIbTicker: eurMmSym,
     planWeightsProvenance: {
-      mode: "model_fallback",
+      mode: "model_positions_fallback",
       officialHistoryMonthsLoaded: 0,
       recommendedLineCount: 0,
       planDustExitPct: planExitWeightPct(),
@@ -1446,6 +1446,8 @@ async function getClientReportServerSidePropsImpl(
     : null;
   const preferLiveWeights = shouldUseLiveModelWeightsInsteadOfOfficialBook(officialMonth, modelPayload);
   let planTargetRebalanceDate: string | undefined;
+  /** Origem da grelha de pesos — distingue CSV oficial, live, snapshot embebido e payload bruto. */
+  let planWeightsGridMode: PlanWeightsProvenance["mode"] = "model_positions_fallback";
 
   const mapModelPositionsToRecommended = (pos: any[], investedFrac: number): RecommendedPosition[] =>
     pos.map((p: any) => ({
@@ -1508,6 +1510,7 @@ async function getClientReportServerSidePropsImpl(
 
   let recommendedRaw: RecommendedPosition[];
   if (!preferLiveWeights && officialMonth?.rows?.length) {
+    planWeightsGridMode = "official_csv";
     planTargetRebalanceDate = String(officialMonth.date || "").slice(0, 10);
     const cashFromRows = sumCashSleeveWeight(officialMonth.rows);
     if (cashFromRows >= 0 && cashFromRows <= 0.95) {
@@ -1548,6 +1551,7 @@ async function getClientReportServerSidePropsImpl(
       };
     });
   } else if (preferLiveWeights) {
+    planWeightsGridMode = "live_model";
     const investedFrac = 1 - cashSleeveFrac;
     const pos = modelPayload?.current_portfolio?.positions;
     recommendedRaw = Array.isArray(pos) ? mapModelPositionsToRecommended(pos, investedFrac) : [];
@@ -1555,6 +1559,7 @@ async function getClientReportServerSidePropsImpl(
   } else {
     const snap = tryFreezeHoldingsAsModelPositions(projectRoot);
     if (snap?.length) {
+      planWeightsGridMode = "freeze_snapshot";
       const freezeCash = freezeKpisLatestCashSleeveFrac(projectRoot);
       if (freezeCash !== null) cashSleeveFrac = freezeCash;
       const investedFrac = 1 - cashSleeveFrac;
@@ -1562,6 +1567,7 @@ async function getClientReportServerSidePropsImpl(
       const freezeEnd = freezeKpisDataEndYmd(projectRoot);
       if (freezeEnd) planTargetRebalanceDate = freezeEnd;
     } else {
+      planWeightsGridMode = "model_positions_fallback";
       const investedFrac = 1 - cashSleeveFrac;
       const pos = modelPayload?.current_portfolio?.positions;
       recommendedRaw = Array.isArray(pos) ? mapModelPositionsToRecommended(pos, investedFrac) : [];
@@ -2310,13 +2316,12 @@ async function getClientReportServerSidePropsImpl(
     navEur * 0.05
   );
 
-  const usingOfficialWeightsForPlan =
-    !preferLiveWeights && !!officialMonth?.rows?.length;
   const planWeightsProvenance: PlanWeightsProvenance = {
-    mode: usingOfficialWeightsForPlan ? "official_csv" : "model_fallback",
-    rebalanceDate: usingOfficialWeightsForPlan
-      ? String(officialMonth!.date || "").slice(0, 10)
-      : modelPayloadAsOfDateYmd(modelPayload) ?? undefined,
+    mode: planWeightsGridMode,
+    rebalanceDate:
+      planWeightsGridMode === "official_csv"
+        ? String(officialMonth!.date || "").slice(0, 10)
+        : planTargetRebalanceDate ?? modelPayloadAsOfDateYmd(modelPayload) ?? undefined,
     mergeSourcePath: builtWeights?.sourcePath,
     officialHistoryMonthsLoaded: builtWeights?.months.length ?? 0,
     recommendedLineCount: recommendedPositions.length,

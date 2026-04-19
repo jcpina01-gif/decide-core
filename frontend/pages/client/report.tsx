@@ -125,7 +125,13 @@ export type LiveIbkrStructure = {
 
 /** Diagnóstico SSR: de onde vêm os pesos-alvo da grelha (evita cache/CDN a mostrar HTML antigo). */
 export type PlanWeightsProvenance = {
-  mode: "official_csv" | "model_fallback";
+  /**
+   * - ``official_csv``: ``weights_by_rebalance`` (último mês ≤ hoje).
+   * - ``live_model``: opt-in live com payload ``as_of`` = hoje.
+   * - ``freeze_snapshot``: sem linhas no CSV no deploy — ``portfolio_final.json`` do freeze CAP15 (ilustrativo).
+   * - ``model_positions_fallback``: payload ``current_portfolio`` sem ser o ramo live (ex.: só conta).
+   */
+  mode: "official_csv" | "live_model" | "freeze_snapshot" | "model_positions_fallback";
   rebalanceDate?: string;
   mergeSourcePath?: string;
   officialHistoryMonthsLoaded: number;
@@ -2431,8 +2437,12 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     · Pesos-alvo SSR:{" "}
                     <strong style={{ color: "#fde68a" }}>
                       {reportData.planWeightsProvenance.mode === "official_csv"
-                        ? "CSV oficial"
-                        : "motor (fallback)"}
+                        ? "CSV oficial (último rebalance)"
+                        : reportData.planWeightsProvenance.mode === "live_model"
+                          ? "motor live (as_of hoje)"
+                          : reportData.planWeightsProvenance.mode === "freeze_snapshot"
+                            ? "snapshot freeze CAP15 (CSV oficial em falta)"
+                            : "payload motor (fallback)"}
                     </strong>
                     {reportData.planWeightsProvenance.rebalanceDate
                       ? ` · data ${reportData.planWeightsProvenance.rebalanceDate}`
