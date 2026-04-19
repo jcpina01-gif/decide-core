@@ -77,6 +77,17 @@ function trimmedCell(x: unknown): string {
   return typeof x === "string" ? x.trim() : "";
 }
 
+/**
+ * Antes da UI trocar ``TBILL_PROXY`` → MM EUR (CSH2/XEON): proxies e UCITS MM contam como caixa.
+ * Sem isto, CSH2 entrava no cap por zona / rescale como se fosse acção e a grelha podia ficar só com a linha de caixa.
+ */
+function isReportPlanCashSleeveTicker(ticker: unknown): boolean {
+  const t = String(ticker ?? "").trim();
+  if (!t) return false;
+  if (t.toUpperCase() === "TBILL_PROXY") return true;
+  return isDecideCashSleeveBrokerSymbol(t);
+}
+
 /** ADR/OTC → listagem ``NNNN.T`` (inverso de ``jpListingToAdrMap``). Cache local — evita ``remapAdrToJpListingTicker`` undefined em alguns bundles Next. */
 let cachedAdrToJpListing: Map<string, string> | null = null;
 function reverseAdrToJpListingTicker(adrTicker: string): string | undefined {
@@ -1554,7 +1565,7 @@ async function getClientReportServerSidePropsImpl(
   // Lista de exclusão sem "títulos" duplicados (ex.: GOOG/GOOGL -> 1 entrada).
   const exclusionByTitle = new Map<string, { ticker: string; nameShort: string; weightPct: number }>();
   for (const p of recommendedRawUnique) {
-    if (!p.ticker || p.ticker === "TBILL_PROXY") continue;
+    if (!p.ticker || isReportPlanCashSleeveTicker(p.ticker)) continue;
     const grp = exclusionTickerGroup(p.ticker);
     const dedupeKey = grp;
     const prev = exclusionByTitle.get(dedupeKey);
@@ -1611,35 +1622,40 @@ async function getClientReportServerSidePropsImpl(
   }
 
   // Reescalar proporcionalmente os títulos aprovados (não excluídos), mantendo excluídos visíveis mas a 0%.
-  const nonTb = recommendedPositions.filter((p) => p.ticker !== "TBILL_PROXY");
-  const totalNonTbPct = nonTb.reduce((acc, p) => acc + safeNumber(p.weightPct, 0), 0);
-  const approvedNonTb = nonTb.filter((p) => !p.excluded);
-  const approvedNonTbPct = approvedNonTb.reduce((acc, p) => acc + safeNumber(p.weightPct, 0), 0);
-  const tbillPos = recommendedPositions.find((p) => p.ticker === "TBILL_PROXY");
+  const nonCashSleeve = recommendedPositions.filter((p) => !isReportPlanCashSleeveTicker(p.ticker));
+  const totalNonCashSleevePct = nonCashSleeve.reduce((acc, p) => acc + safeNumber(p.weightPct, 0), 0);
+  const approvedNonCashSleeve = nonCashSleeve.filter((p) => !p.excluded);
+  const approvedNonCashSleevePct = approvedNonCashSleeve.reduce(
+    (acc, p) => acc + safeNumber(p.weightPct, 0),
+    0,
+  );
+  const cashSinkForScale =
+    recommendedPositions.find((p) => String(p.ticker || "").trim().toUpperCase() === "TBILL_PROXY") ??
+    recommendedPositions.find((p) => isDecideCashSleeveBrokerSymbol(String(p.ticker || "")));
 
-  if (approvedNonTbPct > 0 && totalNonTbPct > 0) {
-    const scale = totalNonTbPct / approvedNonTbPct;
+  if (approvedNonCashSleevePct > 0 && totalNonCashSleevePct > 0) {
+    const scale = totalNonCashSleevePct / approvedNonCashSleevePct;
     for (const p of recommendedPositions) {
-      if (p.ticker === "TBILL_PROXY") continue;
+      if (isReportPlanCashSleeveTicker(p.ticker)) continue;
       if (p.excluded) {
         p.weightPct = 0;
       } else {
         p.weightPct = p.weightPct * scale;
       }
     }
-  } else if (tbillPos) {
+  } else if (cashSinkForScale) {
     // Se excluiu tudo, o sleeve vai para T-Bills/Cash.
     for (const p of recommendedPositions) {
-      if (p.ticker !== "TBILL_PROXY") p.weightPct = 0;
+      if (!isReportPlanCashSleeveTicker(p.ticker)) p.weightPct = 0;
     }
-    tbillPos.weightPct += totalNonTbPct;
+    cashSinkForScale.weightPct += totalNonCashSleevePct;
   }
 
   recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
 
   {
     const isPlanWeightProtected = (p: (typeof recommendedPositions)[number]) =>
-      p.ticker === "TBILL_PROXY" || !!p.excluded;
+      isReportPlanCashSleeveTicker(p.ticker) || !!p.excluded;
     const benchZones = benchmarkZoneWeightsFromPriceHeaders(priceCsvHeaderColsUpper, undefined);
     const zoneByTicker = new Map<string, PlanGeoZone>();
     for (const p of recommendedPositions) {
@@ -1692,8 +1708,7 @@ async function getClientReportServerSidePropsImpl(
   for (let i = recommendedPositions.length - 1; i >= 0; i -= 1) {
     const p = recommendedPositions[i];
     if (p.excluded) continue;
-    const u = safeString(p.ticker, "").trim().toUpperCase();
-    if (u === "TBILL_PROXY") continue;
+    if (isReportPlanCashSleeveTicker(p.ticker)) continue;
     if (safeNumber(p.weightPct, 0) <= 1e-6) recommendedPositions.splice(i, 1);
   }
   recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
@@ -1755,7 +1770,7 @@ async function getClientReportServerSidePropsImpl(
   const entryMinPct = planEntryMinWeightPct();
   for (const r of recommendedPositions) {
     if (
-      r.ticker === "TBILL_PROXY" ||
+      isReportPlanCashSleeveTicker(r.ticker) ||
       safeNumber(r.weightPct, 0) <= 0 ||
       proposedByTicker.has(exclusionTickerGroup(normalizeTickerKey(r.ticker)))
     ) {
@@ -1781,7 +1796,7 @@ async function getClientReportServerSidePropsImpl(
 
   const recommendedTickersActive = new Set(
     recommendedPositions
-      .filter((p) => p.ticker !== "TBILL_PROXY" && safeNumber(p.weightPct, 0) > 0)
+      .filter((p) => !isReportPlanCashSleeveTicker(p.ticker) && safeNumber(p.weightPct, 0) > 0)
       .map((p) => p.ticker)
   );
   for (const a of actualPositions) {

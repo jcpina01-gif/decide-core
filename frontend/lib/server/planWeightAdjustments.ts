@@ -297,13 +297,14 @@ export function consolidateWeightsBelowMinimum(
   if (dust <= 1e-9) return;
   /** Sem linhas ≥ limiar: o pó não pode evaporar — acumula no sleeve de caixa (TBILL) como no ``stripPlanBenchmarkIndexRows``. */
   if (keepers.length === 0) {
-    const tb = rows.find((r) => String(r.ticker || "").trim().toUpperCase() === "TBILL_PROXY");
-    if (tb) {
-      const prevW = safeNumber(tb.weightPct, 0);
-      const prevOw = tb.originalWeightPct !== undefined ? safeNumber(tb.originalWeightPct, prevW) : undefined;
-      tb.weightPct = prevW + dust;
-      if (tb.originalWeightPct !== undefined) {
-        tb.originalWeightPct = (prevOw ?? prevW) + dust;
+    const sink = planWeightSinkRow(rows);
+    if (sink) {
+      const prevW = safeNumber(sink.weightPct, 0);
+      const prevOw =
+        sink.originalWeightPct !== undefined ? safeNumber(sink.originalWeightPct, prevW) : undefined;
+      sink.weightPct = prevW + dust;
+      if (sink.originalWeightPct !== undefined) {
+        sink.originalWeightPct = (prevOw ?? prevW) + dust;
       }
     }
     return;
