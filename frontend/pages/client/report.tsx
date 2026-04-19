@@ -133,7 +133,7 @@ export type PlanWeightsProvenance = {
   /** Limiares (%) aplicados no SSR — confirma deploy vs HTML em cache. */
   planDustExitPct?: number;
   planEntryMinPct?: number;
-  /** Limiar usado para fundir linhas na grelha (em geral = entrada, 1%). */
+  /** Limiar de pó na grelha (em geral = saída ~0,5%); a grelha não funde ao mínimo de entrada. */
   planTableConsolidatePct?: number;
   /** Tecto % por linha de risco (ex.: 15%) — ``DECIDE_PLAN_MAX_WEIGHT_PCT_PER_TICKER``. */
   planPerTickerMaxPct?: number;
@@ -3425,12 +3425,15 @@ export default function ClientReportPage({ reportData }: PageProps) {
               reportData.planWeightsProvenance?.planEntryMinPct != null ? (
                 <>
                 <p style={{ margin: "10px 0 0 0", fontSize: 11, color: "#71717a", lineHeight: 1.45, maxWidth: 720 }}>
-                  Regras de peso (servidor): na grelha, (1) fundir pó abaixo de{" "}
+                  Regras de peso (servidor): (1) na grelha, fundir só pó abaixo de{" "}
                   {formatPct(reportData.planWeightsProvenance.planDustExitPct ?? 0.5, 2)} (
-                  <code style={{ color: "#d9f99d" }}>DECIDE_PLAN_EXIT_WEIGHT_PCT</code>); (2) fundir linhas abaixo de{" "}
-                  {formatPct(reportData.planWeightsProvenance.planTableConsolidatePct, 2)} para alinhar com o mínimo de
-                  entrada; sugestão de compra (BUY) só para alvo estritamente superior a{" "}
-                  {formatPct(reportData.planWeightsProvenance.planEntryMinPct, 2)}.
+                  <code style={{ color: "#d9f99d" }}>DECIDE_PLAN_EXIT_WEIGHT_PCT</code>); (2) sugestão de compra (BUY)
+                  só para alvo estritamente superior a{" "}
+                  {formatPct(reportData.planWeightsProvenance.planEntryMinPct, 2)} (
+                  <code style={{ color: "#d9f99d" }}>DECIDE_PLAN_ENTRY_MIN_WEIGHT_PCT</code> /{" "}
+                  <code style={{ color: "#d9f99d" }}>DECIDE_PLAN_MIN_WEIGHT_PCT</code>) — linhas entre o limiar de saída
+                  e esse mínimo <strong style={{ color: "#a1a1aa" }}>mantêm-se na tabela</strong> (até ~20 tickers do
+                  modelo).
                   {typeof reportData.planWeightsProvenance.planPerTickerMaxPct === "number" ? (
                     <>
                       {" "}

@@ -152,7 +152,7 @@ function buildSsrFailureReportData(backendError: string): ReportData {
       recommendedLineCount: 0,
       planDustExitPct: planExitWeightPct(),
       planEntryMinPct: entryMin,
-      planTableConsolidatePct: entryMin,
+      planTableConsolidatePct: planExitWeightPct(),
     },
   };
 }
@@ -1657,12 +1657,8 @@ async function getClientReportServerSidePropsImpl(
     /* 1) Pó abaixo do limiar de **saída** (0,5%): fundir e redistribuir (histerese vs entrada). */
     consolidateWeightsBelowMinimum(recommendedPositions, planExitWeightPct(), isPlanWeightProtected);
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
-    /* 2) Grelha sem linhas &lt; **entrada** (1% por defeito): alinha com BUY sugerido e com o texto do relatório. */
-    const entryMinGrid = planEntryMinWeightPct();
-    if (entryMinGrid > planExitWeightPct() + 1e-9) {
-      consolidateWeightsBelowMinimum(recommendedPositions, entryMinGrid, isPlanWeightProtected);
-      recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
-    }
+    /* Não fundir a grelha ao limiar de **entrada** (1%): isso apagava linhas e a carteira deixava de mostrar ~20
+     * tickers após caps; BUY sugerido continua a exigir alvo > entrada (ver mais abaixo). */
     {
       const perTickerMax = planPerTickerMaxWeightPct();
       applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtected);
@@ -2272,7 +2268,8 @@ async function getClientReportServerSidePropsImpl(
     recommendedLineCount: recommendedPositions.length,
     planDustExitPct: planExitWeightPct(),
     planEntryMinPct: entryMinPct,
-    planTableConsolidatePct: planEntryMinWeightPct(),
+    /** Só pó (saída); a grelha já não funde ao mínimo de entrada — mantém linhas até ~top_q. */
+    planTableConsolidatePct: planExitWeightPct(),
     planPerTickerMaxPct: planPerTickerMaxWeightPct(),
     planGeoAdjustmentsDisabled: planGeoAdjustmentsDisabled(),
     planZoneCapVsBenchmarkDisabled: planZoneCapDisabled(),
