@@ -33,6 +33,8 @@ export const COMPANY_META: Record<string, CompanyMetaEntry> = {
   ROST: { name: "Ross Stores", country: "USA", zone: "US", sector: "Consumer Discretionary" },
   PCAR: { name: "PACCAR", country: "USA", zone: "US", sector: "Industrials" },
   GILD: { name: "Gilead", country: "USA", zone: "US", sector: "Health Care" },
+  HON: { name: "Honeywell International", country: "USA", zone: "US", sector: "Industrials" },
+  AEP: { name: "American Electric Power", country: "USA", zone: "US", sector: "Utilities" },
   MNST: { name: "Monster Beverage", country: "USA", zone: "US", sector: "Consumer Staples" },
   BIIB: { name: "Biogen", country: "USA", zone: "US", sector: "Health Care" },
   MAR: { name: "Marriott", country: "USA", zone: "US", sector: "Consumer Discretionary" },
@@ -327,18 +329,31 @@ export function seedMetaMapFromCompanyMeta(upsertMeta: (row: Record<string, stri
   }
 }
 
-/** Lookup robusto (ADR, ``BRK-B``, ``8001.T``) para preencher grelha do plano / relatório. */
+/** Lookup robusto (ADR, ``BRK-B``, ``8001.T``, ``HON IB`` compactado) para preencher grelha do plano / relatório. */
 export function lookupCompanyMetaEntry(ticker: string): CompanyMetaEntry | undefined {
-  const raw = String(ticker || "")
+  const raw0 = String(ticker || "")
     .trim()
     .toUpperCase()
     .replace(/\s+/g, "");
-  if (!raw) return undefined;
+  if (!raw0) return undefined;
+  const stripIbkrSuffix = (s: string): string => {
+    let x = s;
+    for (const suf of ["IB", "US", "LSE", "PA", "DE", "AS", "CN", "HK"]) {
+      if (x.endsWith(suf) && x.length > suf.length + 1) {
+        x = x.slice(0, -suf.length);
+        break;
+      }
+    }
+    return x;
+  };
+  const candidates = Array.from(new Set([raw0, stripIbkrSuffix(raw0)]));
   const tab = COMPANY_META as Record<string, CompanyMetaEntry>;
-  const keys = [raw, raw.replace(/\./g, "-"), raw.replace(/-/g, ".")];
-  for (const k of keys) {
-    const hit = tab[k];
-    if (hit) return hit;
+  for (const raw of candidates) {
+    const keys = [raw, raw.replace(/\./g, "-"), raw.replace(/-/g, ".")];
+    for (const k of keys) {
+      const hit = tab[k];
+      if (hit) return hit;
+    }
   }
   return undefined;
 }
