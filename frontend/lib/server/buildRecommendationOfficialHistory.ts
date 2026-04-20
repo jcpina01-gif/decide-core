@@ -59,16 +59,18 @@ export type RecommendationMonth = {
 
 /**
  * Ordem: **primeiro ficheiro com dados para uma dada data ganha** (pesos alinhados ao que publicas como CAP15).
- * Depois, ficheiros seguintes só acrescentam **meses em falta** (ex. `weights_by_rebalance_full.csv` até ao último pregão).
+ * Ficheiros só com ``ticker/weight`` (sem ``zone``/``country``) têm de vir **depois** do CSV largo do motor:
+ * senão o merge absorvia datas partilhadas (ex. 2007-03-30) a partir de ``weights_by_rebalance_full.csv`` e o SSR
+ * perdia a macro-zona → caps 1,3× vs benchmark tratavam ADRs JP como US e a grelha podia ficar só com caixa.
  */
 const WEIGHTS_PLAFONADO_FREEZE = `freeze/${FREEZE_PLAFONADO_MODEL_DIR}/model_outputs/weights_by_rebalance.csv`;
 
 export const RECOMMENDATION_WEIGHTS_CANDIDATE_FILES = [
   WEIGHTS_PLAFONADO_FREEZE,
   "freeze/DECIDE_MODEL_V5_OVERLAY_CAP15/model_outputs/weights_by_rebalance.csv",
-  "backend/data/weights_by_rebalance_full.csv",
   "backend/data/weights_by_rebalance.csv",
   "backend/data/weights_by_rebalance_normalized_long.csv",
+  "backend/data/weights_by_rebalance_full.csv",
   "freeze/latest_v3/weights_by_rebalance_latest.csv",
   "freeze/latest_v3_global_final/weights_by_rebalance.csv",
   "freeze/DECIDE_MODEL_V3_GLOBAL_OPT/model_outputs/weights_by_rebalance.csv",
