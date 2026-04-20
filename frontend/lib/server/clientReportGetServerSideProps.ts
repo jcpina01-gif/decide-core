@@ -675,7 +675,15 @@ function exclusionTickerGroup(ticker: string): string {
 }
 
 function normalizeTickerKey(ticker: string): string {
-  return ticker.trim().toUpperCase().replace(/\./g, "-");
+  let u = ticker.trim().toUpperCase().replace(/\./g, "-").replace(/\s+/g, "");
+  /** IBKR / CSV: «HON IB», «AEP US» compactados — alinhar ao índice `metaByTicker` (HON, AEP, …). */
+  for (const suf of ["IB", "US", "LSE", "PA", "DE", "AS", "CN", "HK"] as const) {
+    if (u.endsWith(suf) && u.length > suf.length + 1) {
+      u = u.slice(0, -suf.length);
+      break;
+    }
+  }
+  return u;
 }
 
 function pickBestDisplayName(ticker: string, candidate: string, fallback: string): string {
