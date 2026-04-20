@@ -5,6 +5,7 @@ import InlineLoadingDots from "./InlineLoadingDots";
 import { CLIENT_SESSION_CHANGED_EVENT } from "../lib/clientAuth";
 import { DECIDE_DASHBOARD_KPI_REFRESH_EVENT } from "../lib/decideDashboardEvents";
 import { DECIDE_CAGR_INCLUDES_MARKET_COSTS_PT } from "../lib/modelRobustnessCopy";
+import { clientReportHrefFromQuery } from "../lib/clientPlanDailyEntryQuery";
 
 type PlanKpisOk = {
   ok: true;
@@ -186,7 +187,7 @@ export default function DecideRecommendedPlanCta({
                 <div className="decide-app-recommended-plan-decision-footer-cta">
                   <div className="decide-app-recommended-plan-cta-wrap decide-app-recommended-plan-cta-wrap--panel-right">
                     <Link
-                      href="/client/report"
+                      href={clientReportHrefFromQuery({}, "daily_entry")}
                       className="decide-app-recommended-plan-cta"
                       aria-busy={planNavPending}
                       style={

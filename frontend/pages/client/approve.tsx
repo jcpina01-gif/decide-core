@@ -14,6 +14,7 @@ import { getHrefAfterTradePlanApprovalStep } from "../../lib/onboardingProgress"
 import { DECIDE_DASHBOARD, ONBOARDING_SHELL_MAX_WIDTH_PX } from "../../lib/decideClientTheme";
 import { DECIDE_MIN_INVEST_EUR } from "../../lib/decideInvestPrefill";
 import { isBuyMissingEquityClosePrice } from "../../lib/approvalPlanTradeDisplay";
+import { queryIndicatesDailyEntryPlanWeights } from "../../lib/server/buildRecommendationOfficialHistory";
 import { loadApprovalAlignedProposedTrades } from "../../lib/server/approvalTradePlan";
 import { resolveDecideProjectRoot } from "../../lib/server/decideProjectRoot";
 import path from "path";
@@ -191,7 +192,7 @@ const EMPTY_APPROVE_PROPS: PageProps = {
   accountCode: "",
 };
 
-export const getServerSideProps: GetServerSideProps<PageProps> = async () => {
+export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => {
   try {
     const projectRoot = resolveDecideProjectRoot();
     const tmpDir = path.join(projectRoot, "tmp_diag");
@@ -212,7 +213,9 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async () => {
     const att0 = attempts0 && typeof attempts0 === "object" ? (attempts0 as Record<string, unknown>) : undefined;
 
     const { trades, navEur, coverageNote, csvRowCount } =
-      await loadApprovalAlignedProposedTrades(projectRoot);
+      await loadApprovalAlignedProposedTrades(projectRoot, {
+        queryWantsDailyEntryTarget: queryIndicatesDailyEntryPlanWeights(ctx.query as Record<string, unknown>),
+      });
 
     return {
       props: {

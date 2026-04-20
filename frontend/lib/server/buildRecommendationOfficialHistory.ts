@@ -993,12 +993,21 @@ export function utcTodayYmd(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Remove rebalanceamentos com data estritamente futura (o CSV pode incluir linhas “planeadas” além do último pregão). */
+/**
+ * Remove rebalanceamentos de meses civis **estritamente futuros** (compara `YYYY-MM` em UTC).
+ *
+ * Comparação só por dia (`YYYY-MM-DD <= hoje`) cortava o fecho mensal do **próprio** mês quando a
+ * `rebalance_date` era o último pregão (ex.: 31‑03) e o relógio do servidor ainda estava no meio
+ * do mês — o histórico ficava preso a datas intermédias de outro ficheiro ou sem Março.
+ */
 function filterMonthsThroughToday(months: RecommendationMonth[]): RecommendationMonth[] {
   const today = utcTodayYmd();
+  const ymToday = today.slice(0, 7);
   return months.filter((m) => {
     const d = String(m.date || "").slice(0, 10);
-    return d.length === 10 && d <= today;
+    if (d.length !== 10) return false;
+    const ym = d.slice(0, 7);
+    return ym <= ymToday;
   });
 }
 
@@ -1143,9 +1152,85 @@ export function actualPositionsLikelyMostlyCashForPlanWeights(
   return invested / navEur < maxInvested;
 }
 
+/**
+ * Conta ainda «em montagem»: poucas linhas de risco e menos de metade do NAV em risco
+ * (quem entra e compra ao longo de vários dias — alvo do dia no CSV).
+ */
+export function actualPositionsLikelyEarlyConstitutionPortfolio(
+  actualPositions: Array<{ ticker?: unknown; value?: unknown }>,
+  navEur: number,
+  opts?: { maxNonCashLines?: number; maxInvestedFrac?: number },
+): boolean {
+  const maxLines = opts?.maxNonCashLines ?? 3;
+  const maxFrac = opts?.maxInvestedFrac ?? 0.5;
+  if (!(navEur > 0) || !Array.isArray(actualPositions)) return false;
+  let invested = 0;
+  let nonCashLines = 0;
+  for (const p of actualPositions) {
+    const t = String(p.ticker ?? "").trim().toUpperCase();
+    if (!t || t === "LIQUIDEZ") continue;
+    if (isDecideCashSleeveBrokerSymbol(t)) continue;
+    const v = Math.abs(safeNumberLike(p.value, 0));
+    if (v <= 1e-6) continue;
+    nonCashLines += 1;
+    invested += v;
+  }
+  return nonCashLines <= maxLines && invested / navEur < maxFrac;
+}
+
 function safeNumberLike(x: unknown, fallback: number): number {
   const v = typeof x === "number" ? x : Number(x);
   return Number.isFinite(v) ? v : fallback;
+}
+
+export { queryIndicatesDailyEntryPlanWeights } from "../clientPlanDailyEntryQuery";
+
+export type DailyEntryPlanWeightSignals = {
+  navEur: number;
+  actualPositions: Array<{ ticker?: unknown; value?: unknown }>;
+  /** Ex.: ``?alvo_entrada=1`` no URL do relatório ou ``/client/approve``. */
+  queryWantsDailyEntryTarget: boolean;
+};
+
+/**
+ * Usar a **última linha do CSV** (≤ hoje) em vez do **último fecho mensal** da série, quando esta for **mais recente**.
+ *
+ * Activa se: query de entrada; ou conta em constituição (caixa / poucas linhas); ou
+ * ``DECIDE_PLAN_DAILY_ENTRY_LATEST_CSV=1`` (todos os clientes com export intra-mês mais novo).
+ */
+export function shouldPreferLatestCsvRowOverMonthlySeriesForEntryDayTarget(
+  officialMonthLatestCsvRow: RecommendationMonth | null,
+  officialMonthCalendarSeries: RecommendationMonth | null,
+  signals: DailyEntryPlanWeightSignals,
+): boolean {
+  if (
+    !officialMonthLatestCsvRow?.rows?.length ||
+    !officialMonthCalendarSeries?.rows?.length
+  ) {
+    return false;
+  }
+  const dL = String(officialMonthLatestCsvRow.date || "").slice(0, 10);
+  const dC = String(officialMonthCalendarSeries.date || "").slice(0, 10);
+  if (dL.length !== 10 || dC.length !== 10 || dL <= dC) return false;
+
+  const envAll = String(process.env.DECIDE_PLAN_DAILY_ENTRY_LATEST_CSV || "").trim().toLowerCase();
+  if (envAll === "1" || envAll === "true" || envAll === "yes") return true;
+
+  if (signals.queryWantsDailyEntryTarget) return true;
+
+  if (
+    actualPositionsLikelyMostlyCashForPlanWeights(signals.actualPositions, signals.navEur, {
+      maxInvestedFrac: 0.35,
+    })
+  ) {
+    return true;
+  }
+
+  if (actualPositionsLikelyEarlyConstitutionPortfolio(signals.actualPositions, signals.navEur)) {
+    return true;
+  }
+
+  return false;
 }
 
 /**

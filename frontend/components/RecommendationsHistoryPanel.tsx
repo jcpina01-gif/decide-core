@@ -277,7 +277,7 @@ export default function RecommendationsHistoryPanel() {
           A carteira é ajustada periodicamente para refletir as melhores oportunidades identificadas pelo modelo.{" "}
           <span style={{ color: "#52525b" }}>
             Por mês civil mostra-se só a data mais tardia desse mês no CSV (ex.: 27 fev em vez de 4 fev). Só entram
-            datas até hoje: rebalances futuros não são listados.
+            meses até ao mês civil actual (UTC); meses futuros não são listados.
           </span>
         </div>
         <input

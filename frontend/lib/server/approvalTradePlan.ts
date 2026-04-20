@@ -20,10 +20,10 @@ import { isBuyMissingEquityClosePrice } from "../approvalPlanTradeDisplay";
 import { isDecideCashSleeveBrokerSymbol } from "../decideCashSleeveDisplay";
 import { seedMetaMapFromCompanyMeta } from "../companyMeta";
 import {
-  actualPositionsLikelyMostlyCashForPlanWeights,
   buildOfficialRecommendationMonthsThroughToday,
   pickOfficialPlanMonthFromMonthlySeriesThroughToday,
   pickPlanMonthPreferringTodayFromMonths,
+  shouldPreferLatestCsvRowOverMonthlySeriesForEntryDayTarget,
   shouldUseLiveModelWeightsInsteadOfOfficialBook,
   sumCashSleeveWeight,
 } from "./buildRecommendationOfficialHistory";
@@ -564,6 +564,11 @@ export type LoadApprovalAlignedProposedTradesOptions = {
    * ex. Vercel sem ficheiros locais; alinha quantidades ao montante do onboarding.
    */
   navOverrideEur?: number;
+  /**
+   * URL ``?alvo_entrada=1`` (ou ``entrada_hoje``, ``constituir``, ``entrada``) — último export do CSV
+   * como alvo do dia (alinhado ao relatório cliente).
+   */
+  queryWantsDailyEntryTarget?: boolean;
 };
 
 export async function loadApprovalAlignedProposedTrades(
@@ -764,17 +769,16 @@ export async function loadApprovalAlignedProposedTrades(
   const officialMonthCalendarSeries = builtWeights
     ? pickOfficialPlanMonthFromMonthlySeriesThroughToday(builtWeights.months)
     : null;
-  const starterPortfolioLikelyMostlyCash = actualPositionsLikelyMostlyCashForPlanWeights(
-    actualPositions,
-    navFinal,
+  const useLatestCsvVersusMonthlyForEntryDay = shouldPreferLatestCsvRowOverMonthlySeriesForEntryDayTarget(
+    officialMonthLatestCsvRow,
+    officialMonthCalendarSeries,
+    {
+      navEur: navFinal,
+      actualPositions,
+      queryWantsDailyEntryTarget: Boolean(options?.queryWantsDailyEntryTarget),
+    },
   );
-  const useStarterLatestCsvVersusMonthly =
-    starterPortfolioLikelyMostlyCash &&
-    officialMonthLatestCsvRow &&
-    officialMonthCalendarSeries &&
-    String(officialMonthLatestCsvRow.date || "").slice(0, 10) >
-      String(officialMonthCalendarSeries.date || "").slice(0, 10);
-  const officialMonth = useStarterLatestCsvVersusMonthly
+  const officialMonth = useLatestCsvVersusMonthlyForEntryDay
     ? officialMonthLatestCsvRow
     : officialMonthCalendarSeries ?? officialMonthLatestCsvRow;
   const preferLiveWeights = shouldUseLiveModelWeightsInsteadOfOfficialBook(

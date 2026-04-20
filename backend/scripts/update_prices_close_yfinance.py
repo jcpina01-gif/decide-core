@@ -3,6 +3,13 @@
 Acrescenta linhas a `backend/data/prices_close.csv` com fechos diários (Yahoo via yfinance),
 a partir do dia seguinte ao último `date` no CSV até hoje (dias úteis devolvidos pelo Yahoo).
 
+Para actualização normal com **Interactive Brokers primeiro** (TWS/Gateway), use em vez disso:
+  python backend/scripts/update_prices_close.py
+  # ou só IB, sem Yahoo:  python backend/scripts/update_prices_close.py --source tws
+(com TWS ou IB Gateway a correr; portas por defeito em ``prices_tws.py`` / ``DECIDE_TWS_*``).
+
+Este ficheiro fica como atalho **só Yahoo** (rede, sem ligação à API IB).
+
 Uso (a partir de `backend/`):
   python scripts/update_prices_close_yfinance.py
 
@@ -165,6 +172,8 @@ def main() -> int:
     merged = sanitize_extreme_daily_closes(merged)
 
     out = merged.reset_index()
+    if "date" not in out.columns:
+        out = out.rename(columns={out.columns[0]: "date"})
     out["date"] = out["date"].dt.strftime("%Y-%m-%d")
     out.to_csv(CSV_PATH, index=False)
     print("OK — gravado até", out["date"].iloc[-1], "| linhas:", len(out))

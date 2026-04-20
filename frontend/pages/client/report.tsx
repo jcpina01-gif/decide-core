@@ -21,6 +21,10 @@ import {
   clearDecideClientLocalTestState,
   isDecidePlanoDevResetVisibleInBrowser,
 } from "../../lib/decideClientDevReset";
+import {
+  clientReportHrefFromQuery,
+  queryIndicatesDailyEntryPlanWeights,
+} from "../../lib/clientPlanDailyEntryQuery";
 import { DECIDE_APP_FONT_FAMILY, DECIDE_DASHBOARD } from "../../lib/decideClientTheme";
 import { getNextOnboardingHref } from "../../lib/onboardingProgress";
 import {
@@ -140,6 +144,8 @@ export type PlanWeightsProvenance = {
   rebalanceDate?: string;
   /** Quando a grelha usa CSV mais recente que o fecho mensal (constituição), data da série mensal. */
   officialCalendarRebalanceDate?: string;
+  /** ``true`` quando o alvo da grelha segue o último export do CSV (entrada / constituição no dia). */
+  dailyEntryPlanTargetApplied?: boolean;
   mergeSourcePath?: string;
   officialHistoryMonthsLoaded: number;
   recommendedLineCount: number;
@@ -1140,6 +1146,7 @@ function PlanoDevResetTestPanel({ onExecuteIbkr, executeBusy }: PlanoDevResetTes
 
 export default function ClientReportPage({ reportData }: PageProps) {
   const router = useRouter();
+  const dailyEntryQueryActive = queryIndicatesDailyEntryPlanWeights(router.query as Record<string, unknown>);
   const isClientB = reportData.feeSegment === "B";
   const tbillIb = reportData.tbillProxyIbTicker;
   const excludedTickers = reportData.excludedTickersApplied || [];
@@ -1705,6 +1712,17 @@ export default function ClientReportPage({ reportData }: PageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- executar uma vez ao montar; a função fecha sobre o estado actual
   }, []);
 
+  const sanitizeProxyErrorUiMessage = (raw: string): string => {
+    const t = raw.trimStart();
+    if (t.startsWith("<!") || t.toLowerCase().startsWith("<html")) {
+      return (
+        "O servidor devolveu HTML em vez de JSON (p.ex. HTTP 502 do gateway). " +
+        "Confirme DECIDE_BACKEND_URL / BACKEND_URL na Vercel e que o FastAPI responde em …/api/health."
+      );
+    }
+    return t.length > 900 ? `${t.slice(0, 420)}…` : raw;
+  };
+
   const flattenPaperPortfolioAll = async () => {
     if (typeof window === "undefined") return;
     let flattenActivityRecorded = false;
@@ -1728,12 +1746,12 @@ export default function ClientReportPage({ reportData }: PageProps) {
       try {
         data = JSON.parse(raw) as typeof data;
       } catch {
-        throw new Error(raw.slice(0, 200) || `Resposta inválida (${res.status})`);
+        throw new Error(sanitizeProxyErrorUiMessage(raw.slice(0, 400) || `Resposta inválida (${res.status})`));
       }
       if (!res.ok || data.status !== "ok") {
         const errMsg =
           typeof data.error === "string" && data.error
-            ? data.error
+            ? sanitizeProxyErrorUiMessage(data.error)
             : `Falha ao fechar posições (${res.status})`;
         recordFlattenPaperPortfolioResponse([], { error: errMsg });
         flattenActivityRecorded = true;
@@ -1755,7 +1773,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
         }, 9000);
       }
     } catch (e: unknown) {
-      const m = e instanceof Error ? e.message : String(e);
+      const m = sanitizeProxyErrorUiMessage(e instanceof Error ? e.message : String(e));
       if (!flattenActivityRecorded) {
         recordFlattenPaperPortfolioResponse([], { error: m });
       }
@@ -1787,12 +1805,12 @@ export default function ClientReportPage({ reportData }: PageProps) {
       try {
         data = JSON.parse(raw) as typeof data;
       } catch {
-        throw new Error(raw.slice(0, 200) || `Resposta inválida (${res.status})`);
+        throw new Error(sanitizeProxyErrorUiMessage(raw.slice(0, 400) || `Resposta inválida (${res.status})`));
       }
       if (!res.ok || data.status !== "ok") {
         throw new Error(
           typeof data.error === "string" && data.error
-            ? data.error
+            ? sanitizeProxyErrorUiMessage(data.error)
             : `Falha ao cancelar ordens (${res.status})`
         );
       }
@@ -2438,6 +2456,51 @@ export default function ClientReportPage({ reportData }: PageProps) {
               >
                 Plano do Cliente
               </h1>
+              <div
+                style={{
+                  marginTop: 14,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 10,
+                  alignItems: "center",
+                }}
+              >
+                <span style={{ color: "#71717a", fontSize: 13, fontWeight: 700 }}>Pesos do modelo</span>
+                <Link
+                  href={clientReportHrefFromQuery(router.query, "monthly")}
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    textDecoration: "none",
+                    borderRadius: 999,
+                    padding: "6px 12px",
+                    border: dailyEntryQueryActive
+                      ? "1px solid rgba(63,63,70,0.75)"
+                      : "1px solid rgba(153,246,228,0.55)",
+                    color: dailyEntryQueryActive ? "#a1a1aa" : "#99f6e4",
+                    background: dailyEntryQueryActive ? "rgba(39,39,42,0.72)" : "rgba(20,83,45,0.25)",
+                  }}
+                >
+                  Fecho mensal (série)
+                </Link>
+                <Link
+                  href={clientReportHrefFromQuery(router.query, "daily_entry")}
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    textDecoration: "none",
+                    borderRadius: 999,
+                    padding: "6px 12px",
+                    border: dailyEntryQueryActive
+                      ? "1px solid rgba(153,246,228,0.55)"
+                      : "1px solid rgba(63,63,70,0.75)",
+                    color: dailyEntryQueryActive ? "#99f6e4" : "#a1a1aa",
+                    background: dailyEntryQueryActive ? "rgba(20,83,45,0.25)" : "rgba(39,39,42,0.72)",
+                  }}
+                >
+                  Constituição hoje (último CSV)
+                </Link>
+              </div>
               <div style={{ color: "#a1a1aa", marginTop: 10, fontSize: 15 }}>
                 Conta IBKR: {reportData.accountCode || "—"} · Perfil:{" "}
                 {reportData.profile || "moderado"} · {reportData.modelDisplayName} · Gerado em{" "}
@@ -2469,6 +2532,12 @@ export default function ClientReportPage({ reportData }: PageProps) {
                         {" "}
                         · série mensal (referência):{" "}
                         {reportData.planWeightsProvenance.officialCalendarRebalanceDate}
+                      </>
+                    ) : null}
+                    {reportData.planWeightsProvenance.dailyEntryPlanTargetApplied ? (
+                      <>
+                        {" "}
+                        · alvo entrada (último CSV até hoje vs fecho mensal)
                       </>
                     ) : null}
                     {reportData.planWeightsProvenance.mergeSourcePath ? (

@@ -5,6 +5,7 @@ import {
   ibkrPerRequestRoutingEnabled,
   resolveIbkrSocketRoute,
 } from "../../lib/server/ibkrInternalRouting";
+import { respondJsonIfUpstreamHtmlError } from "../../lib/upstreamProxyCoerceJson";
 import { tryBuildIbkrSnapshotFromTmpDiag } from "../../lib/server/ibkrSnapshotTmpDiagFallback";
 
 /** Snapshot pode incluir reqContractDetails por posição (nome, sector, zona) — precisa de margem. */
@@ -74,6 +75,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     const buf = Buffer.from(await upstream.arrayBuffer());
+    if (
+      respondJsonIfUpstreamHtmlError(res, upstream, buf, {
+        targetUrl,
+        backendBase: base,
+        routeLabel: "/api/ibkr-snapshot",
+        mode: "ibkr_snapshot_503",
+      })
+    ) {
+      return;
+    }
     res.status(upstream.status);
     res.setHeader("X-Decide-Proxy-Backend", base);
     const ct = upstream.headers.get("content-type");

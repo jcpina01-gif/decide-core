@@ -28,10 +28,11 @@ import {
   isJapaneseEquityTicker,
 } from "../tickerGeoFallback";
 import {
-  actualPositionsLikelyMostlyCashForPlanWeights,
   buildOfficialRecommendationMonthsThroughToday,
   pickOfficialPlanMonthFromMonthlySeriesThroughToday,
   pickPlanMonthPreferringTodayFromMonths,
+  queryIndicatesDailyEntryPlanWeights,
+  shouldPreferLatestCsvRowOverMonthlySeriesForEntryDayTarget,
   shouldUseLiveModelWeightsInsteadOfOfficialBook,
   modelPayloadAsOfDateYmd,
   sumCashSleeveWeight,
@@ -1457,17 +1458,17 @@ async function getClientReportServerSidePropsImpl(
   const officialMonthCalendarSeries = builtWeights
     ? pickOfficialPlanMonthFromMonthlySeriesThroughToday(builtWeights.months)
     : null;
-  const starterPortfolioLikelyMostlyCash = actualPositionsLikelyMostlyCashForPlanWeights(
-    actualPositions,
-    navEur,
+  const queryWantsDailyEntryTarget = queryIndicatesDailyEntryPlanWeights(ctx.query as Record<string, unknown>);
+  const useLatestCsvVersusMonthlyForEntryDay = shouldPreferLatestCsvRowOverMonthlySeriesForEntryDayTarget(
+    officialMonthLatestCsvRow,
+    officialMonthCalendarSeries,
+    {
+      navEur,
+      actualPositions,
+      queryWantsDailyEntryTarget,
+    },
   );
-  const useStarterLatestCsvVersusMonthly =
-    starterPortfolioLikelyMostlyCash &&
-    officialMonthLatestCsvRow &&
-    officialMonthCalendarSeries &&
-    String(officialMonthLatestCsvRow.date || "").slice(0, 10) >
-      String(officialMonthCalendarSeries.date || "").slice(0, 10);
-  const officialMonth = useStarterLatestCsvVersusMonthly
+  const officialMonth = useLatestCsvVersusMonthlyForEntryDay
     ? officialMonthLatestCsvRow
     : officialMonthCalendarSeries ?? officialMonthLatestCsvRow;
   const preferLiveWeights = shouldUseLiveModelWeightsInsteadOfOfficialBook(
@@ -2284,7 +2285,9 @@ async function getClientReportServerSidePropsImpl(
   const overlayModelCagrPct = capPctDisplay(cagrPctFromEquityWindow(ovrW, ySpanCagr));
   const overlayBenchmarkCagrPct = capPctDisplay(cagrPctFromEquityWindow(benchW, ySpanCagr));
 
-  const { recommendedCagrPct: cagrFromModel } = await loadApprovalAlignedProposedTrades(projectRoot);
+  const { recommendedCagrPct: cagrFromModel } = await loadApprovalAlignedProposedTrades(projectRoot, {
+    queryWantsDailyEntryTarget,
+  });
   const freezeHero = readHeroKpiFreezeContext(projectRoot);
   const embedModelKpis = await fetchPlafonadoKpisFromKpiServer(kpiProfile);
 
@@ -2447,10 +2450,12 @@ async function getClientReportServerSidePropsImpl(
         : planTargetRebalanceDate ?? modelPayloadAsOfDateYmd(modelPayload) ?? undefined,
     officialCalendarRebalanceDate:
       planWeightsGridMode === "official_csv" &&
-      useStarterLatestCsvVersusMonthly &&
+      useLatestCsvVersusMonthlyForEntryDay &&
       officialMonthCalendarSeries
         ? String(officialMonthCalendarSeries.date || "").slice(0, 10)
         : undefined,
+    dailyEntryPlanTargetApplied:
+      planWeightsGridMode === "official_csv" && useLatestCsvVersusMonthlyForEntryDay ? true : undefined,
     mergeSourcePath: builtWeights?.sourcePath,
     officialHistoryMonthsLoaded: builtWeights?.months.length ?? 0,
     recommendedLineCount: recommendedPositions.length,

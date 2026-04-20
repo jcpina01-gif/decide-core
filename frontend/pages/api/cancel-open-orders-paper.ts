@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getBackendBase } from "../../lib/apiProxy";
+import { respondJsonIfUpstreamHtmlError } from "../../lib/upstreamProxyCoerceJson";
 
 const UPSTREAM_MS = 60_000;
 
@@ -49,6 +50,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const buf = Buffer.from(await upstream.arrayBuffer());
+    if (
+      respondJsonIfUpstreamHtmlError(res, upstream, buf, {
+        targetUrl,
+        backendBase: base,
+        routeLabel: "/api/cancel-open-orders-paper",
+        mode: "cancel_orders_200",
+      })
+    ) {
+      return;
+    }
     res.status(upstream.status);
     const ct = upstream.headers.get("content-type");
     if (ct) res.setHeader("content-type", ct);
