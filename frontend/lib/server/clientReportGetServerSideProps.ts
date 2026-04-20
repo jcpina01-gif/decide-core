@@ -1098,12 +1098,17 @@ async function getClientReportServerSidePropsImpl(
     prefCountry?: string,
     csvMacroZone?: string,
   ): "US" | "EU" | "JP" | "CAN" | "OTHER" => {
+    /**
+     * ADRs / OTC JP (TOELY, …) listados como «US» no CSV/meta: para o **tecto 1,3× vs benchmark** contam
+     * como **JP** (exposição macro Japão). Se confiarmos primeiro em ``csvMacroZone``, o cap JP não corre
+     * e o sleeve fica artificialmente «quase só US» com dezenas de títulos JP.
+     */
+    if (isJapaneseEquityTicker(ticker)) return "JP";
     const csvZ = meaningfulTextCell(csvMacroZone);
     if (csvZ) {
       const zCsv = canonZoneForCountryCap(csvZ);
       if (zCsv !== "OTHER") return zCsv;
     }
-    if (isJapaneseEquityTicker(ticker)) return "JP";
     const r =
       meaningfulTextCell(prefRegion) || meaningfulTextCell(metaForTicker(ticker)?.region);
     const co =

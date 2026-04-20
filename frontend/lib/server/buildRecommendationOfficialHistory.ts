@@ -377,6 +377,8 @@ function loadPriceCsvHeaderColsUpper(root: string): Set<string> {
 }
 
 function historyRowGeoZone(r: RecommendationRow): PlanGeoZone {
+  /** Mesma prioridade que ``planZoneForTicker`` no relatório: ADR JP não fica «US» por coluna ``zone`` errada. */
+  if (isJapaneseEquityTicker(r.ticker)) return "JP";
   const z0 = (r.zone || "").trim();
   if (z0) {
     const z = canonZoneForCountryCap(z0);
@@ -387,7 +389,6 @@ function historyRowGeoZone(r: RecommendationRow): PlanGeoZone {
     const z = canonZoneForCountryCap(c0);
     if (z !== "OTHER") return z;
   }
-  if (isJapaneseEquityTicker(r.ticker)) return "JP";
   if (isJpNumericListingTicker(r.ticker)) return "JP";
   const tpa = r.ticker.trim().toUpperCase().replace(/\s+/g, "");
   if (/(?:\.|-)PA$/i.test(tpa)) return "EU";
