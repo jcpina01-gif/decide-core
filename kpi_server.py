@@ -151,7 +151,7 @@ REPO_ROOT = _resolve_kpi_repo_root()
 BACKEND_META_PATH = REPO_ROOT / "backend" / "data" / "company_meta_global_enriched.csv"
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
-    "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v27-cap15-bench-prefix"
+    "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v28-risk-mode-instant"
 )
 
 
@@ -3305,7 +3305,10 @@ HTML_TEMPLATE = """
               <span>{{ risk_info.mode_label }}</span>
               {% endif %}
             </div>
-            <div class="muted">Baseado na exposição média a risco</div>
+            <div class="muted">
+              {{ risk_info.mode_basis_pt }} — não equivale à % «Liquidez» da recomendação ao cliente (outra agregação).
+              Exposição média histórica de tendência (contexto): {{ (risk_info.avg_risk_exposure * 100) | round(1) }}%.
+            </div>
           </div>
           <div class="stat-box">
             <div class="label">Exposição a equity (actual)</div>
@@ -8506,26 +8509,58 @@ def align_holdings_weight_pct_to_nav(holdings: list, cash_frac: float, cash_tick
     return out
 
 
+def _risk_mode_card_from_v5_kpis(data: dict) -> tuple[str, str, str]:
+    """ON/OFF/Neutra para o cartão «neste momento»: último dia publicado no freeze.
+
+    Preferência: ``latest_trend_exposure`` em ``v5_kpis.json`` (quando o export o incluir).
+    Fallback: ``latest_cash_sleeve`` — mais caixa (TBills) no motor ⇒ mais defensivo *agora*.
+    Isto não replica a linha «Liquidez %» da recomendação ao cliente (outra agregação / fonte).
+    """
+    lt_raw = data.get("latest_trend_exposure")
+    if lt_raw is not None and str(lt_raw).strip() != "":
+        try:
+            lt = float(lt_raw)
+        except (TypeError, ValueError):
+            lt = None
+        else:
+            if lt >= 0.9:
+                return "on", "Risk ON", "exposição de tendência no último dia (meta do motor)"
+            if lt <= 0.6:
+                return "off", "Risk OFF", "exposição de tendência no último dia (meta do motor)"
+            return "neutral", "Neutra", "exposição de tendência no último dia (meta do motor)"
+    try:
+        lc = float(data.get("latest_cash_sleeve", 0.0))
+    except (TypeError, ValueError):
+        lc = 0.0
+    if lc >= 0.28:
+        return "off", "Risk OFF", "sleeve de caixa (TBills) no último dia do backtest"
+    if lc <= 0.07:
+        return "on", "Risk ON", "sleeve de caixa (TBills) no último dia do backtest"
+    return "neutral", "Neutra", "sleeve de caixa (TBills) no último dia do backtest"
+
+
 def load_risk_info(model_key: str, base_path: Path) -> dict:
     """Carrega info de risco / cash a partir do freeze, com defaults razoáveis."""
     mode = "unknown"
     mode_label = "Desconhecido"
+    mode_basis_pt = ""
     avg_risk_exposure = 1.0
     risk_on_target = 1.0
     avg_tbill_exposure = 0.0
     latest_tbill_exposure = 0.0
     cash_proxy = "-"
+    v5_data: dict = {}
 
     if model_key in V5_KPI_JSON_MODEL_KEYS:
         kpi_path = base_path / "v5_kpis.json"
         try:
             with kpi_path.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            avg_risk_exposure = float(data.get("avg_trend_exposure", 0.97))
-            risk_on_target = float(data.get("risk_on_exposure", 1.1))
-            avg_tbill_exposure = float(data.get("avg_cash_sleeve", 0.24))
-            latest_tbill_exposure = float(data.get("latest_cash_sleeve", avg_tbill_exposure))
-            cash_proxy = str(data.get("cash_proxy_ticker", "TBILL_PROXY"))
+                v5_data = json.load(f)
+            avg_risk_exposure = float(v5_data.get("avg_trend_exposure", 0.97))
+            risk_on_target = float(v5_data.get("risk_on_exposure", 1.1))
+            avg_tbill_exposure = float(v5_data.get("avg_cash_sleeve", 0.24))
+            latest_tbill_exposure = float(v5_data.get("latest_cash_sleeve", avg_tbill_exposure))
+            cash_proxy = str(v5_data.get("cash_proxy_ticker", "TBILL_PROXY"))
         except FileNotFoundError:
             pass
     else:
@@ -8536,20 +8571,25 @@ def load_risk_info(model_key: str, base_path: Path) -> dict:
         latest_tbill_exposure = 0.0
         cash_proxy = "-"
 
-    # Heurística simples para modo de risco
-    if avg_risk_exposure >= 0.9:
-        mode = "on"
-        mode_label = "Risk ON"
-    elif avg_risk_exposure <= 0.6:
-        mode = "off"
-        mode_label = "Risk OFF"
+    if model_key in V5_KPI_JSON_MODEL_KEYS and v5_data:
+        mode, mode_label, mode_basis_pt = _risk_mode_card_from_v5_kpis(v5_data)
     else:
-        mode = "neutral"
-        mode_label = "Neutral"
+        # V3 / sem v5_kpis: mantém heurística antiga sobre «tendência» ficticia 1.0
+        if avg_risk_exposure >= 0.9:
+            mode = "on"
+            mode_label = "Risk ON"
+        elif avg_risk_exposure <= 0.6:
+            mode = "off"
+            mode_label = "Risk OFF"
+        else:
+            mode = "neutral"
+            mode_label = "Neutra"
+        mode_basis_pt = "exposição média histórica (aproximação)"
 
     return {
         "mode": mode,
         "mode_label": mode_label,
+        "mode_basis_pt": mode_basis_pt,
         "avg_risk_exposure": avg_risk_exposure,
         "risk_on_target": risk_on_target,
         "avg_tbill_exposure": avg_tbill_exposure,
