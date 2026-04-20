@@ -155,10 +155,10 @@ export type PlanWeightsProvenance = {
   /** Multiplicador vs benchmark (por defeito 1,3). */
   planZoneCapMult?: number;
   /**
-   * ``true`` se o SSR correu ``applyZoneCapsVsBenchmark`` sobre a grelha.
+   * ``true`` se o SSR reaplicou caps geométricos (zona vs benchmark, tecto por linha, pó, etc.) sobre a grelha.
    * ``false`` no modo ``official_csv`` por defeito (export já reflecte o motor).
    */
-  planBenchZoneCapRanOnSsrGrid?: boolean;
+  planSsrGeometryRecutsRanOnGrid?: boolean;
 };
 
 export type ReportData = {
@@ -3451,6 +3451,13 @@ export default function ClientReportPage({ reportData }: PageProps) {
               reportData.planWeightsProvenance?.planEntryMinPct != null ? (
                 <>
                 <p style={{ margin: "10px 0 0 0", fontSize: 11, color: "#71717a", lineHeight: 1.45, maxWidth: 720 }}>
+                  {reportData.planWeightsProvenance?.mode === "official_csv" &&
+                  reportData.planWeightsProvenance?.planSsrGeometryRecutsRanOnGrid === false ? (
+                    <span style={{ color: "#a8a29e" }}>
+                      <strong style={{ color: "#d6d3d1" }}>Modo official_csv:</strong> (1) pó e (3) tecto por linha{" "}
+                      <strong>não</strong> são repetidos no SSR — já estão no export; ver também a nota em (4).{" "}
+                    </span>
+                  ) : null}
                   Regras de peso (servidor): (1) na grelha, fundir só pó abaixo de{" "}
                   {formatPct(reportData.planWeightsProvenance.planDustExitPct ?? 0.5, 2)} (
                   <code style={{ color: "#d9f99d" }}>DECIDE_PLAN_EXIT_WEIGHT_PCT</code>); (2) sugestão de compra (BUY)
@@ -3495,16 +3502,18 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     <span style={{ color: "#fca5a5" }}>
                       — <strong>OFF</strong> com <code style={{ color: "#d9f99d" }}>DECIDE_DISABLE_ZONE_CAP_VS_BENCHMARK</code>
                     </span>
-                  ) : reportData.planWeightsProvenance.planBenchZoneCapRanOnSsrGrid === false &&
+                  ) : reportData.planWeightsProvenance.planSsrGeometryRecutsRanOnGrid === false &&
                     reportData.planWeightsProvenance.mode === "official_csv" ? (
                     <span style={{ color: "#fde047" }}>
                       neste modo (<code style={{ color: "#d9f99d" }}>official_csv</code>) o alvo vem do CSV oficial já
-                      tratado no motor; o tecto 1,3× vs benchmark global (SPY/VGK/EWJ/EWC){" "}
-                      <strong>não</strong> é repetido aqui — reaplicá-lo anulava alvos concentrados em JP (ex.{" "}
-                      <code style={{ color: "#d9f99d" }}>2026-04-15</code>). Em{" "}
-                      <code style={{ color: "#d9f99d" }}>live_model</code> /{" "}
-                      <code style={{ color: "#d9f99d" }}>freeze_snapshot</code> mantém-se a regra abaixo. Para forçar
-                      no CSV: <code style={{ color: "#d9f99d" }}>DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV=1</code>.
+                      tratado no motor; <strong>não</strong> repetimos aqui (1) fusão de pó, (3) tecto por linha{" "}
+                      <code style={{ color: "#d9f99d" }}>min(% NAV, % sleeve)</code> nem (4) tecto 1,3× vs benchmark
+                      global — reaplicar comprimia linhas EU pequenas (ex. RMS-PA) e cortava tops já a 15% no ficheiro.
+                      Em <code style={{ color: "#d9f99d" }}>live_model</code> /{" "}
+                      <code style={{ color: "#d9f99d" }}>freeze_snapshot</code> mantêm-se as regras abaixo. Para forçar
+                      no CSV: <code style={{ color: "#d9f99d" }}>DECIDE_APPLY_SSR_PLAN_CAPS_TO_OFFICIAL_CSV=1</code>{" "}
+                      (ou <code style={{ color: "#d9f99d" }}>DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV=1</code> — mesmo
+                      efeito).
                     </span>
                   ) : (
                     <>

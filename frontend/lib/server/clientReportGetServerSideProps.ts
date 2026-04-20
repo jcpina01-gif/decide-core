@@ -1701,14 +1701,19 @@ async function getClientReportServerSidePropsImpl(
   recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
 
   /**
-   * O alvo ``official_csv`` já saiu do motor com CAP15 / constrangimentos próprios. Reaplicar aqui o tecto
-   * 1,3× vs um benchmark tipo ACWI (SPY/VGK/EWJ/EWC) sobre um sleeve **intencionalmente** concentrado em JP
-   * (ex. 2026-04-15) faz o SSR convergir para ~0% em todas as linhas de risco e só mostrar caixa.
-   * Mantém-se para ``live_model`` / ``freeze_snapshot``. Opt-in para o CSV: ``DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV=1``.
+   * O alvo ``official_csv`` já reflecte o motor (CAP15, pó, zonas no export). Reaplicar no SSR:
+   * - tecto **1,3×** vs ACWI anulava alvos JP-concentrados;
+   * - tecto **por linha** ``min(15%, 15%×sleeve)`` cortava linhas a 15% no CSV para ~13,8% e redistribuía sobretudo
+   *   por ``√score`` para outras JP, **comprimindo** linhas EU pequenas (ex. RMS-PA ~0,61% → ~0,56%).
+   * Mantém-se para ``live_model`` / ``freeze_snapshot``.
+   * Opt-in para voltar a espelhar tudo no CSV: ``DECIDE_APPLY_SSR_PLAN_CAPS_TO_OFFICIAL_CSV=1``
+   * (ou ``DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV=1`` — mesmo efeito, compat.).
    */
-  const applyZoneCapVsBenchmarkOnPlanGrid =
-    planWeightsGridMode !== "official_csv" ||
+  const ssrPlanCapsOnOfficialCsv =
+    String(process.env.DECIDE_APPLY_SSR_PLAN_CAPS_TO_OFFICIAL_CSV || "").trim() === "1" ||
     String(process.env.DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV || "").trim() === "1";
+  const applySsrPlanGeometryRecuts =
+    planWeightsGridMode !== "official_csv" || ssrPlanCapsOnOfficialCsv;
 
   {
     const isPlanWeightProtected = (p: (typeof recommendedPositions)[number]) =>
@@ -1720,7 +1725,7 @@ async function getClientReportServerSidePropsImpl(
       const z = planZoneForTicker(p.ticker, p.region, p.country, p.csvBenchZone);
       mergePlanBenchmarkZoneForTicker(zoneByTicker, p.ticker, z);
     }
-    if (applyZoneCapVsBenchmarkOnPlanGrid) {
+    if (applySsrPlanGeometryRecuts) {
       applyZoneCapsVsBenchmark(
         recommendedPositions,
         zoneByTicker,
@@ -1730,11 +1735,13 @@ async function getClientReportServerSidePropsImpl(
       );
     }
     /* 1) Pó abaixo do limiar de **saída** (0,5%): fundir e redistribuir (histerese vs entrada). */
-    consolidateWeightsBelowMinimum(recommendedPositions, planExitWeightPct(), isPlanWeightProtected);
+    if (applySsrPlanGeometryRecuts) {
+      consolidateWeightsBelowMinimum(recommendedPositions, planExitWeightPct(), isPlanWeightProtected);
+    }
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     /* Não fundir a grelha ao limiar de **entrada** (1%): isso apagava linhas e a carteira deixava de mostrar ~20
      * tickers após caps; BUY sugerido continua a exigir alvo > entrada (ver mais abaixo). */
-    {
+    if (applySsrPlanGeometryRecuts) {
       const perTickerMax = planPerTickerMaxWeightPct();
       applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtected);
       recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
@@ -1746,7 +1753,7 @@ async function getClientReportServerSidePropsImpl(
       const z = planZoneForTicker(p.ticker, p.region, p.country, p.csvBenchZone);
       mergePlanBenchmarkZoneForTicker(zoneByTickerAfterLine, p.ticker, z);
     }
-    if (applyZoneCapVsBenchmarkOnPlanGrid) {
+    if (applySsrPlanGeometryRecuts) {
       applyZoneCapsVsBenchmark(
         recommendedPositions,
         zoneByTickerAfterLine,
@@ -1758,12 +1765,14 @@ async function getClientReportServerSidePropsImpl(
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     /* O tecto por linha tem de voltar a correr depois dos caps por zona: a renormalização interna
      * pode inflacionar uma linha (ex. única EU) acima do máximo. */
-    applyPerTickerMaxWeightPct(
-      recommendedPositions,
-      planPerTickerMaxWeightPct(),
-      isPlanWeightProtected,
-    );
-    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    if (applySsrPlanGeometryRecuts) {
+      applyPerTickerMaxWeightPct(
+        recommendedPositions,
+        planPerTickerMaxWeightPct(),
+        isPlanWeightProtected,
+      );
+      recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    }
   }
 
   for (let i = recommendedPositions.length - 1; i >= 0; i -= 1) {
@@ -2048,7 +2057,7 @@ async function getClientReportServerSidePropsImpl(
     isDecideCashSleeveBrokerSymbol(String(p.ticker || ""));
 
   /** Segunda passagem: a grelha já pode ter CSH2/MM em vez de TBILL_PROXY — o sink do cap tem de encontrar caixa. EURUSD fica de fora (overlay). */
-  {
+  if (applySsrPlanGeometryRecuts) {
     const perTickerMax = planPerTickerMaxWeightPct();
     applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
@@ -2061,7 +2070,7 @@ async function getClientReportServerSidePropsImpl(
       const z = planZoneForTicker(p.ticker, p.region, p.country, p.csvBenchZone);
       mergePlanBenchmarkZoneForTicker(zoneByTickerLate, p.ticker, z);
     }
-    if (applyZoneCapVsBenchmarkOnPlanGrid) {
+    if (applySsrPlanGeometryRecuts) {
       applyZoneCapsVsBenchmark(
         recommendedPositions,
         zoneByTickerLate,
@@ -2071,12 +2080,14 @@ async function getClientReportServerSidePropsImpl(
       );
     }
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
-    applyPerTickerMaxWeightPct(
-      recommendedPositions,
-      planPerTickerMaxWeightPct(),
-      isPlanWeightProtectedAfterUi,
-    );
-    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    if (applySsrPlanGeometryRecuts) {
+      applyPerTickerMaxWeightPct(
+        recommendedPositions,
+        planPerTickerMaxWeightPct(),
+        isPlanWeightProtectedAfterUi,
+      );
+      recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    }
   }
 
   {
@@ -2156,9 +2167,9 @@ async function getClientReportServerSidePropsImpl(
       }
       return m;
     };
-    enforceAbsolutePerTickerCeiling(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
-    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
-    if (applyZoneCapVsBenchmarkOnPlanGrid) {
+    if (applySsrPlanGeometryRecuts) {
+      enforceAbsolutePerTickerCeiling(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
+      recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
       applyZoneCapsVsBenchmark(
         recommendedPositions,
         zoneMapPostDisplay(),
@@ -2166,12 +2177,12 @@ async function getClientReportServerSidePropsImpl(
         planZoneCapMultiplier(),
         isPlanWeightProtectedAfterUi,
       );
+      recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+      applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
+      recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+      enforceAbsolutePerTickerCeiling(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
+      recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     }
-    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
-    applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
-    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
-    enforceAbsolutePerTickerCeiling(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
-    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
   }
 
   const dates: string[] = Array.isArray(modelPayload?.series?.dates)
@@ -2374,8 +2385,7 @@ async function getClientReportServerSidePropsImpl(
     planGeoAdjustmentsDisabled: planGeoAdjustmentsDisabled(),
     planZoneCapVsBenchmarkDisabled: planZoneCapDisabled(),
     planZoneCapMult: planZoneCapMultiplier(),
-    planBenchZoneCapRanOnSsrGrid:
-      applyZoneCapVsBenchmarkOnPlanGrid && !planGeoAdjustmentsDisabled() && !planZoneCapDisabled(),
+    planSsrGeometryRecutsRanOnGrid: applySsrPlanGeometryRecuts && !planGeoAdjustmentsDisabled(),
   };
 
   const reportData: ReportData = {
