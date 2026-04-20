@@ -1700,6 +1700,16 @@ async function getClientReportServerSidePropsImpl(
 
   recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
 
+  /**
+   * O alvo ``official_csv`` já saiu do motor com CAP15 / constrangimentos próprios. Reaplicar aqui o tecto
+   * 1,3× vs um benchmark tipo ACWI (SPY/VGK/EWJ/EWC) sobre um sleeve **intencionalmente** concentrado em JP
+   * (ex. 2026-04-15) faz o SSR convergir para ~0% em todas as linhas de risco e só mostrar caixa.
+   * Mantém-se para ``live_model`` / ``freeze_snapshot``. Opt-in para o CSV: ``DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV=1``.
+   */
+  const applyZoneCapVsBenchmarkOnPlanGrid =
+    planWeightsGridMode !== "official_csv" ||
+    String(process.env.DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV || "").trim() === "1";
+
   {
     const isPlanWeightProtected = (p: (typeof recommendedPositions)[number]) =>
       isReportPlanCashSleeveTicker(p.ticker) || !!p.excluded;
@@ -1710,13 +1720,15 @@ async function getClientReportServerSidePropsImpl(
       const z = planZoneForTicker(p.ticker, p.region, p.country, p.csvBenchZone);
       mergePlanBenchmarkZoneForTicker(zoneByTicker, p.ticker, z);
     }
-    applyZoneCapsVsBenchmark(
-      recommendedPositions,
-      zoneByTicker,
-      benchZones,
-      planZoneCapMultiplier(),
-      isPlanWeightProtected,
-    );
+    if (applyZoneCapVsBenchmarkOnPlanGrid) {
+      applyZoneCapsVsBenchmark(
+        recommendedPositions,
+        zoneByTicker,
+        benchZones,
+        planZoneCapMultiplier(),
+        isPlanWeightProtected,
+      );
+    }
     /* 1) Pó abaixo do limiar de **saída** (0,5%): fundir e redistribuir (histerese vs entrada). */
     consolidateWeightsBelowMinimum(recommendedPositions, planExitWeightPct(), isPlanWeightProtected);
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
@@ -1734,13 +1746,15 @@ async function getClientReportServerSidePropsImpl(
       const z = planZoneForTicker(p.ticker, p.region, p.country, p.csvBenchZone);
       mergePlanBenchmarkZoneForTicker(zoneByTickerAfterLine, p.ticker, z);
     }
-    applyZoneCapsVsBenchmark(
-      recommendedPositions,
-      zoneByTickerAfterLine,
-      benchZones,
-      planZoneCapMultiplier(),
-      isPlanWeightProtected,
-    );
+    if (applyZoneCapVsBenchmarkOnPlanGrid) {
+      applyZoneCapsVsBenchmark(
+        recommendedPositions,
+        zoneByTickerAfterLine,
+        benchZones,
+        planZoneCapMultiplier(),
+        isPlanWeightProtected,
+      );
+    }
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     /* O tecto por linha tem de voltar a correr depois dos caps por zona: a renormalização interna
      * pode inflacionar uma linha (ex. única EU) acima do máximo. */
@@ -2047,13 +2061,15 @@ async function getClientReportServerSidePropsImpl(
       const z = planZoneForTicker(p.ticker, p.region, p.country, p.csvBenchZone);
       mergePlanBenchmarkZoneForTicker(zoneByTickerLate, p.ticker, z);
     }
-    applyZoneCapsVsBenchmark(
-      recommendedPositions,
-      zoneByTickerLate,
-      benchZonesLate,
-      planZoneCapMultiplier(),
-      isPlanWeightProtectedAfterUi,
-    );
+    if (applyZoneCapVsBenchmarkOnPlanGrid) {
+      applyZoneCapsVsBenchmark(
+        recommendedPositions,
+        zoneByTickerLate,
+        benchZonesLate,
+        planZoneCapMultiplier(),
+        isPlanWeightProtectedAfterUi,
+      );
+    }
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     applyPerTickerMaxWeightPct(
       recommendedPositions,
@@ -2142,13 +2158,15 @@ async function getClientReportServerSidePropsImpl(
     };
     enforceAbsolutePerTickerCeiling(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
-    applyZoneCapsVsBenchmark(
-      recommendedPositions,
-      zoneMapPostDisplay(),
-      benchZonesPostDisplay,
-      planZoneCapMultiplier(),
-      isPlanWeightProtectedAfterUi,
-    );
+    if (applyZoneCapVsBenchmarkOnPlanGrid) {
+      applyZoneCapsVsBenchmark(
+        recommendedPositions,
+        zoneMapPostDisplay(),
+        benchZonesPostDisplay,
+        planZoneCapMultiplier(),
+        isPlanWeightProtectedAfterUi,
+      );
+    }
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
@@ -2356,6 +2374,8 @@ async function getClientReportServerSidePropsImpl(
     planGeoAdjustmentsDisabled: planGeoAdjustmentsDisabled(),
     planZoneCapVsBenchmarkDisabled: planZoneCapDisabled(),
     planZoneCapMult: planZoneCapMultiplier(),
+    planBenchZoneCapRanOnSsrGrid:
+      applyZoneCapVsBenchmarkOnPlanGrid && !planGeoAdjustmentsDisabled() && !planZoneCapDisabled(),
   };
 
   const reportData: ReportData = {

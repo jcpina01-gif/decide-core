@@ -154,6 +154,11 @@ export type PlanWeightsProvenance = {
   planZoneCapVsBenchmarkDisabled?: boolean;
   /** Multiplicador vs benchmark (por defeito 1,3). */
   planZoneCapMult?: number;
+  /**
+   * ``true`` se o SSR correu ``applyZoneCapsVsBenchmark`` sobre a grelha.
+   * ``false`` no modo ``official_csv`` por defeito (export já reflecte o motor).
+   */
+  planBenchZoneCapRanOnSsrGrid?: boolean;
 };
 
 export type ReportData = {
@@ -3489,6 +3494,17 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   ) : reportData.planWeightsProvenance.planZoneCapVsBenchmarkDisabled ? (
                     <span style={{ color: "#fca5a5" }}>
                       — <strong>OFF</strong> com <code style={{ color: "#d9f99d" }}>DECIDE_DISABLE_ZONE_CAP_VS_BENCHMARK</code>
+                    </span>
+                  ) : reportData.planWeightsProvenance.planBenchZoneCapRanOnSsrGrid === false &&
+                    reportData.planWeightsProvenance.mode === "official_csv" ? (
+                    <span style={{ color: "#fde047" }}>
+                      neste modo (<code style={{ color: "#d9f99d" }}>official_csv</code>) o alvo vem do CSV oficial já
+                      tratado no motor; o tecto 1,3× vs benchmark global (SPY/VGK/EWJ/EWC){" "}
+                      <strong>não</strong> é repetido aqui — reaplicá-lo anulava alvos concentrados em JP (ex.{" "}
+                      <code style={{ color: "#d9f99d" }}>2026-04-15</code>). Em{" "}
+                      <code style={{ color: "#d9f99d" }}>live_model</code> /{" "}
+                      <code style={{ color: "#d9f99d" }}>freeze_snapshot</code> mantém-se a regra abaixo. Para forçar
+                      no CSV: <code style={{ color: "#d9f99d" }}>DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV=1</code>.
                     </span>
                   ) : (
                     <>
