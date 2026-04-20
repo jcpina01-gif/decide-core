@@ -3452,8 +3452,22 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     <th style={{ padding: "6px 4px", width: "18%", lineHeight: 1.2 }}>Empresa</th>
                     <th style={{ padding: "6px 4px", width: "9%", lineHeight: 1.2 }}>País</th>
                     <th style={{ padding: "6px 4px", width: "9%", lineHeight: 1.2 }}>Zona</th>
-                    <th style={{ padding: "6px 4px", width: "8%", lineHeight: 1.2 }}>Peso</th>
-                    <th style={{ padding: "6px 4px", width: "8%", lineHeight: 1.2 }}>% risco</th>
+                    <th
+                      style={{ padding: "6px 4px", width: "8%", lineHeight: 1.2 }}
+                      title="Alvo do modelo em % do património total (NAV), incluindo caixa/MM nas linhas respectivas."
+                    >
+                      Peso
+                    </th>
+                    <th
+                      style={{ padding: "6px 4px", width: "8%", lineHeight: 1.2 }}
+                      title={
+                        "Parte desta linha na soma só de títulos de risco (exclui caixa, MM, T-Bills proxy e EURUSD). " +
+                        "Quando quase todo o NAV está em liquidez, esta coluna pode parecer «grande» em poucas linhas — " +
+                        "olhe sempre também «Peso» (% NAV) à esquerda; não é peso no índice de referência."
+                      }
+                    >
+                      % só títulos (plano)
+                    </th>
                     <th style={{ padding: "6px 4px", width: "12%", lineHeight: 1.2 }}>Sector</th>
                     <th style={{ padding: "6px 4px", width: "12%", lineHeight: 1.2 }}>Indústria</th>
                     <th style={{ padding: "6px 4px", width: "9%", lineHeight: 1.2 }}>Região</th>
