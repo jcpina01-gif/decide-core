@@ -3,6 +3,8 @@
  * (merge de `weights_by_rebalance*.csv` + overlays V5/cash como no API de histórico).
  * Por defeito aplica-se também o **tecto por linha** (ex. 15%) e o **1,3× por zona vs benchmark**
  * como no SSR do relatório — os pesos do CSV podem ser pré-CAP15 / pré-redistribuição.
+ * Os caps correm **só sobre o sleeve de risco**, mantendo o peso de caixa/T-Bills do overlay V5 (evita
+ * o excesso de zona ir para TBILL e mostrar ~100% MM na grelha).
  * Opt-out: ``DECIDE_SKIP_HISTORY_PLAN_CAPS=1``.
  *
  * O Plano / aprovação usam por defeito o **último rebalance por mês de calendário**
@@ -462,6 +464,58 @@ function applyOfficialHistoryProductCaps(
     }
   }
   return out.sort((a, b) => (b.weight || 0) - (a.weight || 0));
+}
+
+/**
+ * Aplica tectos de produto **só ao sleeve de risco**, mantendo o peso agregado de caixa / T-Bills / MM
+ * já definido pelo overlay V5 ou pelo CSV. Se os caps correrem **depois** do overlay sobre linhas que
+ * já incluem TBILL, o excesso de zona ia para o sink TBILL e a caixa subia artificialmente para ~100%.
+ */
+function applyEquityOnlyOfficialProductCapsPreservingCash(
+  rows: RecommendationRow[],
+  priceHeaderCols: Set<string>,
+  lookup: Map<string, { company?: string; sector?: string }>,
+): RecommendationRow[] {
+  const skip = String(process.env.DECIDE_SKIP_HISTORY_PLAN_CAPS || "").trim() === "1";
+  if (skip || planGeoAdjustmentsDisabled() || !rows.length) return rows;
+
+  const cashRows = rows.filter((r) => historyCapProtectedTicker(r.ticker));
+  const eqRows = rows.filter((r) => !historyCapProtectedTicker(r.ticker));
+
+  const cashSum = cashRows.reduce((s, r) => {
+    const w = typeof r.weight === "number" && isFinite(r.weight) ? r.weight : 0;
+    return s + w;
+  }, 0);
+  if (eqRows.length === 0) return rows;
+
+  const eqSum = eqRows.reduce((s, r) => {
+    const w = typeof r.weight === "number" && isFinite(r.weight) ? r.weight : 0;
+    return s + w;
+  }, 0);
+  if (eqSum <= 1e-12) return rows;
+
+  const cashSumClamped = Math.max(0, Math.min(1, cashSum));
+  const equitySleeveTarget = Math.max(0, 1 - cashSumClamped);
+
+  const eqRenorm: RecommendationRow[] = eqRows.map((row) => {
+    const nw = row.weight / eqSum;
+    return enrichRow({ ...row, weight: nw, weightPct: nw * 100 }, lookup);
+  });
+
+  const eqCapped = applyOfficialHistoryProductCaps(eqRenorm, priceHeaderCols, lookup);
+
+  const eqCappedSum = eqCapped.reduce((s, r) => {
+    const w = typeof r.weight === "number" && isFinite(r.weight) ? r.weight : 0;
+    return s + w;
+  }, 0);
+  const scale = eqCappedSum > 1e-12 ? equitySleeveTarget / eqCappedSum : 0;
+  const eqScaled = eqCapped.map((row) => {
+    const nw = row.weight * scale;
+    return enrichRow({ ...row, weight: nw, weightPct: nw * 100 }, lookup);
+  });
+
+  const cashPreserved = cashRows.map((r) => enrichRow({ ...r }, lookup));
+  return [...cashPreserved, ...eqScaled].sort((a, b) => (b.weight || 0) - (a.weight || 0));
 }
 
 function safeNumberHistory(x: unknown, fallback: number): number {
@@ -926,6 +980,7 @@ function buildMonthsFromMerged(
   root: string,
 ): RecommendationMonth[] {
   const months: RecommendationMonth[] = [];
+  const priceHeaderCols = loadPriceCsvHeaderColsUpper(root);
   const cashDailySorted = loadCashSleeveDailySorted(root);
   const { latestNavCash: v5LatestNavCash, cashAtRebalanceByDate: rebalanceCashMap } =
     loadV5KpisCashFields(root);
@@ -1027,6 +1082,7 @@ function buildMonthsFromMerged(
     } else {
       rowsOut = list;
     }
+    rowsOut = applyEquityOnlyOfficialProductCapsPreservingCash(rowsOut, priceHeaderCols, lookup);
     const sleevePcts = computeSleeveDisplayPct(rowsOut);
     months.push({
       date,
@@ -1052,16 +1108,6 @@ function buildMonthsFromMerged(
     if (sleevePcts) {
       curM.tbillsTotalPct = sleevePcts.tbillsTotalPct;
       curM.equitySleeveTotalPct = sleevePcts.equitySleeveTotalPct;
-    }
-  }
-
-  const priceHeaderCols = loadPriceCsvHeaderColsUpper(root);
-  for (const curM of asc) {
-    curM.rows = applyOfficialHistoryProductCaps(curM.rows, priceHeaderCols, lookup);
-    const sleeveAfterCaps = computeSleeveDisplayPct(curM.rows);
-    if (sleeveAfterCaps) {
-      curM.tbillsTotalPct = sleeveAfterCaps.tbillsTotalPct;
-      curM.equitySleeveTotalPct = sleeveAfterCaps.equitySleeveTotalPct;
     }
   }
 
