@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { formatPtDate } from "../lib/clientPortfolioSchedule";
 import { DECIDE_APP_FONT_FAMILY } from "../lib/decideClientTheme";
+import { collapseHistMonthsToLatestPerCalendarMonth } from "../lib/recommendationsHistoryMonthCollapse";
 import { yahooFinanceQuoteHref } from "../lib/yahooFinanceQuoteUrl";
 
 function formatMonthHeadingPt(ymd: string): string {
@@ -197,8 +198,13 @@ export default function RecommendationsHistoryPanel() {
     };
   }, []);
 
+  const monthsCollapsed = useMemo(
+    () => collapseHistMonthsToLatestPerCalendarMonth(data?.months ?? []),
+    [data?.months],
+  );
+
   const monthsFiltered = useMemo(() => {
-    const m = data?.months || [];
+    const m = monthsCollapsed;
     const q = filter.trim().toLowerCase();
     if (!q) return m;
     return m.filter(
@@ -211,7 +217,7 @@ export default function RecommendationsHistoryPanel() {
             (r.sector && r.sector.toLowerCase().includes(q)),
         ),
     );
-  }, [data?.months, filter]);
+  }, [monthsCollapsed, filter]);
 
   if (loading) {
     return (
@@ -270,8 +276,8 @@ export default function RecommendationsHistoryPanel() {
         <div style={{ fontSize: 13, color: "#71717a", marginTop: 8, lineHeight: 1.45, maxWidth: 560 }}>
           A carteira é ajustada periodicamente para refletir as melhores oportunidades identificadas pelo modelo.{" "}
           <span style={{ color: "#52525b" }}>
-            Só entram datas até hoje: linhas de rebalance com data futura no CSV do modelo não são listadas como
-            histórico.
+            Por mês civil mostra-se só a data mais tardia desse mês no CSV (ex.: 27 fev em vez de 4 fev). Só entram
+            datas até hoje: rebalances futuros não são listados.
           </span>
         </div>
         <input

@@ -2,9 +2,11 @@
  * Motor de dados partilhado: histórico de recomendações oficiais por `rebalance_date`
  * (merge de `weights_by_rebalance*.csv` + overlays V5/cash como no API de histórico).
  *
- * O Plano / aprovação usam o **último** snapshot com data ≤ hoje como pesos-alvo,
- * alinhados ao que vigora até ao próximo rebalance (incl. revisões extraordinárias
- * representadas por linhas com datas próprias no CSV).
+ * O Plano / aprovação usam por defeito o **último rebalance por mês de calendário**
+ * (≤ hoje), p.ex. 31-03 prevalece sobre 20-03 no mesmo mês — ritmo mensal.
+ * Carteiras sobretudo em caixa (constituição) podem alinhar à **linha mais recente**
+ * do CSV quando esta for posterior a esse fecho mensal (pré-publicação do mês).
+ * Revisões extraordinárias: `rebalance_date` **= hoje** (UTC) continua a ganhar.
  */
 import fs from "fs";
 import path from "path";
@@ -97,6 +99,27 @@ function normalizeDate(raw: string): string {
   const s = String(raw).trim().replace(/^["']|["']$/g, "");
   const cut = s.includes("T") ? s.split("T")[0]! : s.slice(0, 10);
   return cut.length >= 10 ? cut.slice(0, 10) : s;
+}
+
+/**
+ * Chave de `rebalance_date` no merge → `YYYY-MM-DD` para ordenar / agrupar por mês civil.
+ * (Evita duas datas em fev no histórico quando o CSV mistura formatos.)
+ */
+function canonicalIsoYmdFromDbKey(raw: string): string | null {
+  const n = normalizeDate(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(n)) return n;
+  const slash = n.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slash) {
+    const dd = slash[1]!.padStart(2, "0");
+    const mm = slash[2]!.padStart(2, "0");
+    const yyyy = slash[3]!;
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  const loose = n.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (loose) {
+    return `${loose[1]}-${loose[2]!.padStart(2, "0")}-${loose[3]!.padStart(2, "0")}`;
+  }
+  return null;
 }
 
 /** Uma linha CSV com suporte a "campo, com vírgula". */
@@ -979,12 +1002,55 @@ function filterMonthsThroughToday(months: RecommendationMonth[]): Recommendation
   });
 }
 
+/**
+ * Por cada mês civil (`YYYY-MM`), mantém só a entrada com a **data mais tardia** no merge.
+ * Assim o histórico / API não listam um rebalance “intermédio” (ex. 4 fev) quando já existe
+ * o fecho desse mês (ex. 27 fev); idem para março (31-03 vs 20-03).
+ */
+function filterMergedWeightsToLatestRebalancePerCalendarMonth(
+  merged: Map<string, RecommendationRow[]>,
+  turnoverByDate: Map<string, number>,
+): { merged: Map<string, RecommendationRow[]>; turnoverByDate: Map<string, number> } {
+  if (merged.size === 0) {
+    return { merged: new Map(), turnoverByDate: new Map() };
+  }
+  const sortedKeys = Array.from(merged.keys()).sort((a, b) => {
+    const ca = canonicalIsoYmdFromDbKey(a);
+    const cb = canonicalIsoYmdFromDbKey(b);
+    if (ca && cb) return ca.localeCompare(cb);
+    return normalizeDate(a).localeCompare(normalizeDate(b));
+  });
+  const winKeyByYm = new Map<string, string>();
+  for (const k of sortedKeys) {
+    const ymd = canonicalIsoYmdFromDbKey(k);
+    if (!ymd) continue;
+    const ym = ymd.slice(0, 7);
+    winKeyByYm.set(ym, k);
+  }
+  const mergedOut = new Map<string, RecommendationRow[]>();
+  for (const k of winKeyByYm.values()) {
+    const rows = merged.get(k);
+    if (rows?.length) mergedOut.set(k, rows);
+  }
+  const turnoverByCanon = new Map<string, number>();
+  for (const [d, t] of turnoverByDate) {
+    const c = canonicalIsoYmdFromDbKey(d);
+    if (c) turnoverByCanon.set(c, t);
+  }
+  const turnoverOut = new Map<string, number>();
+  for (const k of mergedOut.keys()) {
+    const c = canonicalIsoYmdFromDbKey(k);
+    if (c && turnoverByCanon.has(c)) turnoverOut.set(k, turnoverByCanon.get(c)!);
+  }
+  return { merged: mergedOut, turnoverByDate: turnoverOut };
+}
+
 function formatMergeSourcePath(sourceFiles: string[]): string {
   if (sourceFiles.length === 1) return sourceFiles[0]!;
   return `merge:${sourceFiles.length} ficheiros (${sourceFiles.slice(0, 3).join(", ")}${sourceFiles.length > 3 ? "…" : ""})`;
 }
 
-/** Mesma sequência que o GET `/api/client/recommendations-history` (meses ≤ hoje, mais recente primeiro). */
+/** Mesma sequência que o GET `/api/client/recommendations-history` (após colapsar a **última data por mês civil** no merge; meses ≤ hoje). */
 export function buildOfficialRecommendationMonthsThroughToday(root: string): {
   months: RecommendationMonth[];
   sourcePath: string;
@@ -993,7 +1059,16 @@ export function buildOfficialRecommendationMonthsThroughToday(root: string): {
   const lookup = loadCompanyLookup(root);
   const pack = mergeWeightSources(root, lookup);
   if (!pack || pack.merged.size === 0) return null;
-  const monthsRaw = buildMonthsFromMerged(pack.merged, pack.turnoverByDate, lookup, root);
+  const filteredPack = filterMergedWeightsToLatestRebalancePerCalendarMonth(
+    pack.merged,
+    pack.turnoverByDate,
+  );
+  const monthsRaw = buildMonthsFromMerged(
+    filteredPack.merged,
+    filteredPack.turnoverByDate,
+    lookup,
+    root,
+  );
   const months = filterMonthsThroughToday(monthsRaw);
   const ascChrono = [...months].sort((a, b) => a.date.localeCompare(b.date));
   ascChrono.forEach((m, i) => {
@@ -1007,9 +1082,8 @@ export function buildOfficialRecommendationMonthsThroughToday(root: string): {
 }
 
 /**
- * Escolhe o mês oficial a partir da lista já filtrada (≤ hoje), **independente da ordem** do array:
- * - `rebalance_date` **= hoje** (UTC) se existir;
- * - senão o rebalance com data mais recente (≤ hoje).
+ * Última linha do CSV com data ≤ hoje (e **= hoje** se existir) — pode ser um export
+ * intra-mês **posterior** ao fecho mensal da série oficial (útil para constituição inicial).
  */
 export function pickPlanMonthPreferringTodayFromMonths(months: RecommendationMonth[]): RecommendationMonth | null {
   if (!months.length) return null;
@@ -1023,14 +1097,65 @@ export function pickPlanMonthPreferringTodayFromMonths(months: RecommendationMon
 }
 
 /**
- * Livro oficial em vigor para o calendário:
- * - se existir `rebalance_date` **igual a hoje** (UTC), esse snapshot (revisão extraordinária / onboarding datado hoje);
- * - senão, o último rebalance com data ≤ hoje.
+ * Série **mensal**: por cada `YYYY-MM`, fica a linha com a data mais tardia (≤ hoje);
+ * depois o último mês dessa série. Igual a `rebalance_date` **= hoje** (UTC) ganha antes do colapso.
+ */
+export function pickOfficialPlanMonthFromMonthlySeriesThroughToday(
+  months: RecommendationMonth[],
+): RecommendationMonth | null {
+  if (!months.length) return null;
+  const today = utcTodayYmd();
+  const sorted = [...months].sort((a, b) => a.date.localeCompare(b.date));
+  const through = sorted.filter((m) => String(m.date || "").slice(0, 10) <= today);
+  if (!through.length) return null;
+  for (let i = through.length - 1; i >= 0; i -= 1) {
+    const m = through[i]!;
+    if (String(m.date || "").slice(0, 10) === today) return m;
+  }
+  const byYm = new Map<string, RecommendationMonth>();
+  for (const m of through) {
+    const ymd = String(m.date || "").slice(0, 10);
+    if (ymd.length !== 10) continue;
+    const ym = ymd.slice(0, 7);
+    byYm.set(ym, m);
+  }
+  const reps = [...byYm.values()].sort((a, b) => a.date.localeCompare(b.date));
+  return reps[reps.length - 1] ?? null;
+}
+
+/**
+ * Heurística para **constituição / conta sobretudo em caixa**: NAV em risco (não caixa/MM) baixo.
+ */
+export function actualPositionsLikelyMostlyCashForPlanWeights(
+  actualPositions: Array<{ ticker?: unknown; value?: unknown }>,
+  navEur: number,
+  opts?: { maxInvestedFrac?: number },
+): boolean {
+  const maxInvested = opts?.maxInvestedFrac ?? 0.18;
+  if (!(navEur > 0) || !Array.isArray(actualPositions)) return false;
+  let invested = 0;
+  for (const p of actualPositions) {
+    const t = String(p.ticker ?? "").trim().toUpperCase();
+    if (!t || t === "LIQUIDEZ") continue;
+    if (isDecideCashSleeveBrokerSymbol(t)) continue;
+    invested += Math.abs(safeNumberLike(p.value, 0));
+  }
+  return invested / navEur < maxInvested;
+}
+
+function safeNumberLike(x: unknown, fallback: number): number {
+  const v = typeof x === "number" ? x : Number(x);
+  return Number.isFinite(v) ? v : fallback;
+}
+
+/**
+ * Livro oficial em vigor para o **calendário mensal** (última data por mês de calendário, ≤ hoje),
+ * com excepção de snapshot datado **hoje** (UTC).
  */
 export function pickOfficialPlanMonthPreferringToday(root: string): RecommendationMonth | null {
   const built = buildOfficialRecommendationMonthsThroughToday(root);
   if (!built?.months.length) return null;
-  return pickPlanMonthPreferringTodayFromMonths(built.months);
+  return pickOfficialPlanMonthFromMonthlySeriesThroughToday(built.months);
 }
 
 /** @deprecated Prefer `pickOfficialPlanMonthPreferringToday` — mantido para imports existentes. */

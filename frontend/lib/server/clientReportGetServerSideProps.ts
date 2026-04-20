@@ -28,7 +28,9 @@ import {
   isJapaneseEquityTicker,
 } from "../tickerGeoFallback";
 import {
+  actualPositionsLikelyMostlyCashForPlanWeights,
   buildOfficialRecommendationMonthsThroughToday,
+  pickOfficialPlanMonthFromMonthlySeriesThroughToday,
   pickPlanMonthPreferringTodayFromMonths,
   shouldUseLiveModelWeightsInsteadOfOfficialBook,
   modelPayloadAsOfDateYmd,
@@ -1449,10 +1451,29 @@ async function getClientReportServerSidePropsImpl(
     cashSleeveFracRawModel >= 0 && cashSleeveFracRawModel <= 0.95 ? cashSleeveFracRawModel : 0;
 
   const builtWeights = buildOfficialRecommendationMonthsThroughToday(projectRoot);
-  const officialMonth = builtWeights
+  const officialMonthLatestCsvRow = builtWeights
     ? pickPlanMonthPreferringTodayFromMonths(builtWeights.months)
     : null;
-  const preferLiveWeights = shouldUseLiveModelWeightsInsteadOfOfficialBook(officialMonth, modelPayload);
+  const officialMonthCalendarSeries = builtWeights
+    ? pickOfficialPlanMonthFromMonthlySeriesThroughToday(builtWeights.months)
+    : null;
+  const starterPortfolioLikelyMostlyCash = actualPositionsLikelyMostlyCashForPlanWeights(
+    actualPositions,
+    navEur,
+  );
+  const useStarterLatestCsvVersusMonthly =
+    starterPortfolioLikelyMostlyCash &&
+    officialMonthLatestCsvRow &&
+    officialMonthCalendarSeries &&
+    String(officialMonthLatestCsvRow.date || "").slice(0, 10) >
+      String(officialMonthCalendarSeries.date || "").slice(0, 10);
+  const officialMonth = useStarterLatestCsvVersusMonthly
+    ? officialMonthLatestCsvRow
+    : officialMonthCalendarSeries ?? officialMonthLatestCsvRow;
+  const preferLiveWeights = shouldUseLiveModelWeightsInsteadOfOfficialBook(
+    officialMonthCalendarSeries ?? officialMonthLatestCsvRow,
+    modelPayload,
+  );
   let planTargetRebalanceDate: string | undefined;
   /** Origem da grelha de pesos — distingue CSV oficial, live, snapshot embebido e payload bruto. */
   let planWeightsGridMode: PlanWeightsProvenance["mode"] = "model_positions_fallback";
@@ -2424,6 +2445,12 @@ async function getClientReportServerSidePropsImpl(
       planWeightsGridMode === "official_csv"
         ? String(officialMonth!.date || "").slice(0, 10)
         : planTargetRebalanceDate ?? modelPayloadAsOfDateYmd(modelPayload) ?? undefined,
+    officialCalendarRebalanceDate:
+      planWeightsGridMode === "official_csv" &&
+      useStarterLatestCsvVersusMonthly &&
+      officialMonthCalendarSeries
+        ? String(officialMonthCalendarSeries.date || "").slice(0, 10)
+        : undefined,
     mergeSourcePath: builtWeights?.sourcePath,
     officialHistoryMonthsLoaded: builtWeights?.months.length ?? 0,
     recommendedLineCount: recommendedPositions.length,

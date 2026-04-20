@@ -24,6 +24,7 @@ import {
   setOnboardingSnapshotNow,
   toLocalYmd,
 } from "../lib/clientPortfolioSchedule";
+import { collapseHistMonthsToLatestPerCalendarMonth } from "../lib/recommendationsHistoryMonthCollapse";
 import {
   DECIDE_NEXT_DEV_PORT,
   devConfirmationLinkUsesLoopback,
@@ -287,8 +288,8 @@ export default function ClientDashboardPage() {
           setLatestModelMonth(null);
           return;
         }
-        const months = j.months;
-        setLatestModelMonth(months[months.length - 1]!);
+        const months = collapseHistMonthsToLatestPerCalendarMonth(j.months ?? []);
+        setLatestModelMonth(months[0] ?? null);
       } catch {
         if (!cancelled) setLatestModelMonth(null);
       }

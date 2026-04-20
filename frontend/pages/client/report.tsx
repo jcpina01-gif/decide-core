@@ -138,6 +138,8 @@ export type PlanWeightsProvenance = {
    */
   mode: "official_csv" | "live_model" | "freeze_snapshot" | "model_positions_fallback";
   rebalanceDate?: string;
+  /** Quando a grelha usa CSV mais recente que o fecho mensal (constituição), data da série mensal. */
+  officialCalendarRebalanceDate?: string;
   mergeSourcePath?: string;
   officialHistoryMonthsLoaded: number;
   recommendedLineCount: number;
@@ -2462,6 +2464,13 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     {reportData.planWeightsProvenance.rebalanceDate
                       ? ` · data ${reportData.planWeightsProvenance.rebalanceDate}`
                       : ""}
+                    {reportData.planWeightsProvenance.officialCalendarRebalanceDate ? (
+                      <>
+                        {" "}
+                        · série mensal (referência):{" "}
+                        {reportData.planWeightsProvenance.officialCalendarRebalanceDate}
+                      </>
+                    ) : null}
                     {reportData.planWeightsProvenance.mergeSourcePath ? (
                       <>
                         {" "}

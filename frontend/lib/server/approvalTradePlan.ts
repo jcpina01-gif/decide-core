@@ -20,7 +20,9 @@ import { isBuyMissingEquityClosePrice } from "../approvalPlanTradeDisplay";
 import { isDecideCashSleeveBrokerSymbol } from "../decideCashSleeveDisplay";
 import { seedMetaMapFromCompanyMeta } from "../companyMeta";
 import {
+  actualPositionsLikelyMostlyCashForPlanWeights,
   buildOfficialRecommendationMonthsThroughToday,
+  pickOfficialPlanMonthFromMonthlySeriesThroughToday,
   pickPlanMonthPreferringTodayFromMonths,
   shouldUseLiveModelWeightsInsteadOfOfficialBook,
   sumCashSleeveWeight,
@@ -756,10 +758,29 @@ export async function loadApprovalAlignedProposedTrades(
     cashSleeveFracRawModel >= 0 && cashSleeveFracRawModel <= 0.95 ? cashSleeveFracRawModel : 0;
 
   const builtWeights = buildOfficialRecommendationMonthsThroughToday(projectRoot);
-  const officialMonth = builtWeights
+  const officialMonthLatestCsvRow = builtWeights
     ? pickPlanMonthPreferringTodayFromMonths(builtWeights.months)
     : null;
-  const preferLiveWeights = shouldUseLiveModelWeightsInsteadOfOfficialBook(officialMonth, modelPayload);
+  const officialMonthCalendarSeries = builtWeights
+    ? pickOfficialPlanMonthFromMonthlySeriesThroughToday(builtWeights.months)
+    : null;
+  const starterPortfolioLikelyMostlyCash = actualPositionsLikelyMostlyCashForPlanWeights(
+    actualPositions,
+    navFinal,
+  );
+  const useStarterLatestCsvVersusMonthly =
+    starterPortfolioLikelyMostlyCash &&
+    officialMonthLatestCsvRow &&
+    officialMonthCalendarSeries &&
+    String(officialMonthLatestCsvRow.date || "").slice(0, 10) >
+      String(officialMonthCalendarSeries.date || "").slice(0, 10);
+  const officialMonth = useStarterLatestCsvVersusMonthly
+    ? officialMonthLatestCsvRow
+    : officialMonthCalendarSeries ?? officialMonthLatestCsvRow;
+  const preferLiveWeights = shouldUseLiveModelWeightsInsteadOfOfficialBook(
+    officialMonthCalendarSeries ?? officialMonthLatestCsvRow,
+    modelPayload,
+  );
   const nextFrontendCwd = resolvePlafonadoNextFrontendCwd(projectRoot);
 
   const mp = modelPayload as Record<string, unknown> | null;
