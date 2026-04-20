@@ -151,7 +151,7 @@ REPO_ROOT = _resolve_kpi_repo_root()
 BACKEND_META_PATH = REPO_ROOT / "backend" / "data" / "company_meta_global_enriched.csv"
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
-    "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v26"
+    "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v27-cap15-bench-prefix"
 )
 
 
@@ -6532,6 +6532,80 @@ def _reindex_margin_curve_to_model_calendar(
     return s_al
 
 
+def _backfill_cap15_flat_model_prefix_with_benchmark(
+    model_eq: pd.Series,
+    bench_eq: pd.Series,
+    dates: pd.Series,
+    *,
+    flat_tol: float = 1e-7,
+) -> pd.Series:
+    """Enquanto o CSV do CAP15 / margem / MAX100 fica em NAV inicial (platô), o gráfico log parece «morto».
+
+    Do primeiro dia de calendário >= ``DECIDE_KPI_BACKFILL_PREFIX_START`` (default ``2006-04-01``)
+    até ao dia anterior ao primeiro movimento da série do modelo, substitui por uma réplica do
+    benchmark ancorada no NAV do modelo nesse primeiro dia de Abril — o índice «mexe» com os preços.
+
+    Desligar: ``DECIDE_KPI_DISABLE_CAP15_BENCH_BACKFILL=1`` (ou ``true``). Data vazia / ``off`` / ``0``
+    em ``DECIDE_KPI_BACKFILL_PREFIX_START`` desactiva o preenchimento.
+    """
+    if os.environ.get("DECIDE_KPI_DISABLE_CAP15_BENCH_BACKFILL", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        return model_eq
+    start_raw = (os.environ.get("DECIDE_KPI_BACKFILL_PREFIX_START") or "2006-04-01").strip()
+    if not start_raw or start_raw.lower() in ("0", "false", "off", "none"):
+        return model_eq
+    if len(model_eq) != len(bench_eq) or len(model_eq) != len(dates):
+        return model_eq
+    out = model_eq.astype(float).copy()
+    dtp = pd.to_datetime(dates, errors="coerce")
+    if bool(dtp.isna().any()):
+        return model_eq
+    try:
+        april_cut = pd.Timestamp(start_raw)
+    except (ValueError, TypeError):
+        return model_eq
+    mask_april = dtp >= april_cut
+    if not bool(mask_april.any()):
+        return model_eq
+    i_april = int(np.argmax(mask_april.to_numpy(dtype=bool)))
+
+    def _first_index_nav_move() -> int:
+        base = float(out.iloc[0])
+        for i in range(1, len(out)):
+            if abs(float(out.iloc[i]) - base) > flat_tol:
+                return i
+        return len(out)
+
+    def _first_index_return_move() -> int:
+        try:
+            ret_tol = float(os.environ.get("DECIDE_KPI_BACKFILL_RET_TOL", "1e-9"))
+        except ValueError:
+            ret_tol = 1e-9
+        rets = out.pct_change().abs().fillna(0.0)
+        for i in range(1, len(out)):
+            if float(rets.iloc[i]) > ret_tol:
+                return i
+        return len(out)
+
+    # ``max`` evita falsos «primeiro dia vivo» por ruído numérico na NAV; ``ret`` captura platô com retorno nulo.
+    i_live = max(_first_index_nav_move(), _first_index_return_move())
+    if i_live >= len(out) or i_april >= i_live:
+        return model_eq
+    b0 = float(bench_eq.iloc[i_april])
+    if not np.isfinite(b0) or abs(b0) < 1e-300:
+        return model_eq
+    m_apr = float(out.iloc[i_april])
+    span = bench_eq.iloc[i_april:i_live].astype(float)
+    if not bool(np.isfinite(span.to_numpy(dtype=float)).all()):
+        return model_eq
+    for i in range(i_april, i_live):
+        out.iloc[i] = float(bench_eq.iloc[i]) / b0 * m_apr
+    return out
+
+
 def load_cap15_margin_series_distinct_from_plafonado(
     profile_key: str,
     dates: pd.Series,
@@ -6567,6 +6641,9 @@ def load_cap15_margin_series_distinct_from_plafonado(
                 client_embed=client_embed,
                 force_synthetic_profile_vol=force_synthetic_profile_vol,
                 strict_cap15_vol_targets=True,
+            )
+            margin_series = _backfill_cap15_flat_model_prefix_with_benchmark(
+                margin_series, bench_eq, dates
             )
             # Não rejeitar se coincidir com o plafonado: com `equity_overlay_margin` do motor V5, nos dias em
             # que o teto NAV 100% não activa, as duas curvas são a mesma série — isso é correcto.
@@ -8639,6 +8716,10 @@ def load_scaled_model_equity_series(
             force_synthetic_profile_vol=fs,
             strict_cap15_vol_targets=strict_cap15_vol,
         )
+        if model_key in ("v5_overlay_cap15", "v5_overlay_cap15_max100exp"):
+            model_eq = _backfill_cap15_flat_model_prefix_with_benchmark(
+                model_eq, bench_eq, dates
+            )
     return model_eq.astype(float), dates, bench_eq.astype(float) if bench_eq is not None else None
 
 
@@ -8784,6 +8865,9 @@ def cap15_margin_equity_list_aligned(
             force_synthetic_profile_vol=force_synthetic_profile_vol,
             strict_cap15_vol_targets=True,
         )
+        margin_series = _backfill_cap15_flat_model_prefix_with_benchmark(
+            margin_series, bench_eq, dates
+        )
         return [float(x) for x in margin_series.values]
     except Exception:
         return None
@@ -8830,6 +8914,8 @@ def equity_series_bundle_for_simulator(
         force_synthetic_profile_vol=force_synthetic_profile_vol,
         strict_cap15_vol_targets=strict_cap15_vol,
     )
+    if model_key in ("v5_overlay_cap15", "v5_overlay_cap15_max100exp"):
+        model_eq = _backfill_cap15_flat_model_prefix_with_benchmark(model_eq, bench_eq, dates)
     dates_list = [d.strftime("%Y-%m-%d") for d in dates]
     bench_list = [float(x) for x in bench_eq.astype(float)]
     model_list = [float(x) for x in model_eq.astype(float)]
@@ -8860,6 +8946,9 @@ def equity_series_bundle_for_simulator(
                         client_embed=client_embed,
                         force_synthetic_profile_vol=force_synthetic_profile_vol,
                         strict_cap15_vol_targets=True,
+                    )
+                    m100_series = _backfill_cap15_flat_model_prefix_with_benchmark(
+                        m100_series, bench_eq, dates
                     )
                     sim_model = [float(x) for x in m100_series.values]
                     sim_label = "Modelo CAP15"
@@ -8959,6 +9048,7 @@ def api_health():
     # Corpo JSON explícito (evita confusão com builds antigos que só tinham ok+app no jsonify).
     _health_payload: dict = {"ok": True, "app": "DecideAI KPI Flask", "build": KPI_SERVER_BUILD_TAG}
     _health_payload["kpi_repo_root"] = str(REPO_ROOT)
+    _health_payload["cap15_bench_prefix_backfill"] = True
     try:
         _vk = _PLAFONADO_CAP15_OUTPUTS / "v5_kpis.json"
         if _vk.is_file():
@@ -9052,6 +9142,9 @@ def compute_client_embed_plafonado_kpis(profile_key: str) -> dict | None:
             client_embed=True,
             force_synthetic_profile_vol=fs,
             strict_cap15_vol_targets=True,
+        )
+        m100_series = _backfill_cap15_flat_model_prefix_with_benchmark(
+            m100_series, bench_eq, dates
         )
         compare_cap100_kpis, _ = compute_kpis(m100_series)
         cagr_pct = round(float(compare_cap100_kpis.cagr) * 100.0, 2)
@@ -9267,6 +9360,8 @@ def index():
         force_synthetic_profile_vol=force_synthetic_profile_vol,
         strict_cap15_vol_targets=(model_key in CAP15_VOL_TARGET_MODEL_KEYS),
     )
+    if model_key in ("v5_overlay_cap15", "v5_overlay_cap15_max100exp"):
+        model_eq = _backfill_cap15_flat_model_prefix_with_benchmark(model_eq, bench_eq, dates)
 
     profile_source_note = (
         f"Perfil: {profile_key} (curva por ficheiro)."
@@ -9380,6 +9475,9 @@ def index():
                         client_embed=client_embed,
                         force_synthetic_profile_vol=force_synthetic_profile_vol,
                         strict_cap15_vol_targets=True,
+                    )
+                    m100_series = _backfill_cap15_flat_model_prefix_with_benchmark(
+                        m100_series, bench_eq, dates
                     )
                     compare_cap100_kpis, m100_dd_s = compute_kpis(m100_series)
                     compare_max100_equity = [float(x) for x in m100_series.values]
