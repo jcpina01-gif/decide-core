@@ -28,7 +28,9 @@ import {
   isJapaneseEquityTicker,
 } from "../tickerGeoFallback";
 import {
+  applyJpUniverseRepairAfterSsrProductCaps,
   buildOfficialRecommendationMonthsThroughToday,
+  type RecommendationRow,
   pickOfficialPlanMonthFromMonthlySeriesThroughToday,
   pickPlanMonthPreferringTodayFromMonths,
   queryIndicatesDailyEntryPlanWeights,
@@ -2272,6 +2274,73 @@ async function getClientReportServerSidePropsImpl(
       applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
       recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
       enforceAbsolutePerTickerCeiling(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
+      recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    }
+  }
+
+  /**
+   * Paridade com ``buildMonthsFromMerged``: após todos os caps SSR, o excesso JP vs benchmark pode
+   * voltar a subir — cortar de novo e realocar para não-JP (scores mais recentes + universo ``full``).
+   */
+  if (planWeightsGridMode === "official_csv" && planTargetRebalanceDate) {
+    if (!planGeoAdjustmentsDisabled() && !planZoneCapDisabled()) {
+      const rowsIn: RecommendationRow[] = recommendedPositions.map((p) => ({
+        ticker: p.ticker,
+        weight: safeNumber(p.weightPct, 0) / 100,
+        weightPct: safeNumber(p.weightPct, 0),
+        company: p.nameShort,
+        zone: p.csvBenchZone || "",
+        country: p.country || "",
+        sector: p.sector || "",
+        score: p.score,
+      }));
+      const rowsOut = applyJpUniverseRepairAfterSsrProductCaps(
+        rowsIn,
+        planTargetRebalanceDate,
+        projectRoot,
+      );
+      const prevByT = new Map(recommendedPositions.map((p) => [p.ticker.trim().toUpperCase(), p]));
+      const rebuilt: RecommendedPosition[] = rowsOut.map((r) => {
+        const t = remapJpListingToAdrTicker(safeString(r.ticker, "").trim().toUpperCase());
+        const wp =
+          typeof r.weightPct === "number" && isFinite(r.weightPct)
+            ? r.weightPct
+            : safeNumber(r.weight, 0) * 100;
+        const prev = prevByT.get(t);
+        if (prev) {
+          return {
+            ...prev,
+            weightPct: wp,
+            originalWeightPct: wp,
+            score: safeNumber(r.score, prev.score),
+          };
+        }
+        const m = metaForTicker(t);
+        const b = lookupCompanyMetaEntry(t);
+        const rowAny = r as { zone?: string; country?: string; industry?: string; geo_zone?: string };
+        return {
+          ticker: t,
+          nameShort: pickBestDisplayName(
+            t,
+            safeString(r.company || r.ticker, r.ticker),
+            safeString(m?.nameShort, b?.name ?? ""),
+          ),
+          csvBenchZone: meaningfulTextCell(rowAny.zone) || "",
+          region: displayRegionTriplet(m?.region, rowAny.zone, "", b),
+          country:
+            meaningfulTextCell(rowAny.country) ||
+            meaningfulTextCell(m?.country) ||
+            (b?.country ?? ""),
+          geoZone: meaningfulTextCell(rowAny.geo_zone) || meaningfulTextCell(m?.geoZone) || "",
+          sector: displaySectorTriplet(r.sector, m?.sector, b),
+          industry: displayIndustryTriplet(rowAny.industry, m?.industry, b),
+          score: safeNumber(r.score, 0),
+          weightPct: wp,
+          originalWeightPct: wp,
+          excluded: false,
+        };
+      });
+      recommendedPositions.splice(0, recommendedPositions.length, ...rebuilt);
       recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     }
   }

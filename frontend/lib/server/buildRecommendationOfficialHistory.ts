@@ -6,6 +6,14 @@
  * Os caps correm **só sobre o sleeve de risco**, mantendo o peso de caixa/T-Bills do overlay V5 (evita
  * o excesso de zona ir para TBILL e mostrar ~100% MM na grelha).
  * Opt-out: ``DECIDE_SKIP_HISTORY_PLAN_CAPS=1``.
+ * Quando o sleeve ainda viola o tecto JP vs benchmark após os caps, pode correr uma reparação que
+ * **corta JP ao limite** e coloca o excesso em títulos **não-JP** do ``weights_by_rebalance_full.csv``
+ * (última ``rebalance_date`` disponível ≤ à data do mês para **quem** entra na carteira).
+ * O **ranking por score** dos substitutos usa o score **mais recente por ticker** nos CSVs
+ * ``weights_by_rebalance.csv`` + ``weights_by_rebalance_full.csv`` com ``rebalance_date`` ≤ hoje (UTC),
+ * ou ≤ ``DECIDE_SCORE_AS_OF_YMD`` quando definido (builds reprodutíveis). Opt-out global:
+ * ``DECIDE_SKIP_JP_FULL_UNIVERSE_REPAIR=1``. Opt-out **só** da segunda passagem no SSR da grelha
+ * ``official_csv``: ``DECIDE_SKIP_SSR_JP_UNIVERSE_REPAIR=1``.
  *
  * O Plano / aprovação usam por defeito o **último rebalance por mês de calendário**
  * (≤ hoje), p.ex. 31-03 prevalece sobre 20-03 no mesmo mês — ritmo mensal.
@@ -519,6 +527,329 @@ function applyEquityOnlyOfficialProductCapsPreservingCash(
   return [...cashPreserved, ...eqScaled].sort((a, b) => (b.weight || 0) - (a.weight || 0));
 }
 
+/** Uma linha do ``weights_by_rebalance_full.csv`` (universo largo + score). */
+type FullUniverseEntry = { ticker: string; weight: number; score: number };
+
+function loadFullWeightsByDateMap(root: string): Map<string, FullUniverseEntry[]> | null {
+  const abs = path.join(root, "backend", "data", "weights_by_rebalance_full.csv");
+  if (!fs.existsSync(abs)) return null;
+  try {
+    const text = fs.readFileSync(abs, "utf8");
+    const { headers, rows } = parseCsvRows(text);
+    const iD = colIdx(headers, ["rebalance_date", "date", "as_of"]);
+    const iT = colIdx(headers, ["ticker", "symbol"]);
+    const iW = colIdx(headers, ["weight", "w"]);
+    const iS = colIdx(headers, ["score", "rank", "factor"]);
+    if (iD < 0 || iT < 0) return null;
+    const byDate = new Map<string, Map<string, FullUniverseEntry>>();
+    for (const r of rows) {
+      if (r.length <= Math.max(iD, iT)) continue;
+      const ds = normalizeDate(r[iD] || "").slice(0, 10);
+      if (ds.length < 10) continue;
+      const ticker = String(r[iT] || "").trim().toUpperCase();
+      if (!ticker) continue;
+      const wRaw = iW >= 0 ? parseFloat(String(r[iW] || "").replace(",", ".")) : NaN;
+      const scRaw = iS >= 0 ? parseFloat(String(r[iS] || "").replace(",", ".")) : NaN;
+      const w = Number.isFinite(wRaw) ? wRaw : 0;
+      const score = Number.isFinite(scRaw) ? scRaw : 0;
+      let m = byDate.get(ds);
+      if (!m) {
+        m = new Map();
+        byDate.set(ds, m);
+      }
+      const prev = m.get(ticker);
+      if (!prev || score > prev.score) m.set(ticker, { ticker, weight: w, score });
+    }
+    const out = new Map<string, FullUniverseEntry[]>();
+    for (const [d, tm] of byDate) {
+      out.set(d, [...tm.values()].sort((a, b) => b.score - a.score));
+    }
+    return out.size ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+function pickFullUniverseDateLeq(fullByDate: Map<string, FullUniverseEntry[]>, ymd: string): string | null {
+  const t = normalizeDate(ymd).slice(0, 10);
+  if (t.length < 10) return null;
+  let best: string | null = null;
+  for (const d of fullByDate.keys()) {
+    if (d <= t && (!best || d > best)) best = d;
+  }
+  return best;
+}
+
+/**
+ * Data limite (ISO) para o mapa **score mais recente por ticker**: hoje UTC ou ``DECIDE_SCORE_AS_OF_YMD``.
+ * Não usar a data do universo largo (ex. 31‑03) quando já existe export mais recente (ex. 17‑04) no CSV oficial.
+ */
+function scoreCutoffYmdForLatestTickerScores(): string {
+  const raw = String(process.env.DECIDE_SCORE_AS_OF_YMD || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw.slice(0, 10);
+  return utcTodayYmd();
+}
+
+/**
+ * Por cada ticker (chave ADR canónica), mantém o par ``(rebalance_date, score)`` com a data **mais recente**
+ * entre ``weights_by_rebalance.csv`` e ``weights_by_rebalance_full.csv``, só com linhas ``date ≤ cutoff``.
+ */
+function loadTickerLatestScoresMap(root: string): Map<string, number> {
+  const cutoff = scoreCutoffYmdForLatestTickerScores().slice(0, 10);
+  const acc = new Map<string, { d: string; score: number }>();
+  const paths = [
+    path.join(root, "backend", "data", "weights_by_rebalance.csv"),
+    path.join(root, "backend", "data", "weights_by_rebalance_full.csv"),
+  ];
+  for (const abs of paths) {
+    if (!fs.existsSync(abs)) continue;
+    let text: string;
+    try {
+      text = fs.readFileSync(abs, "utf8");
+    } catch {
+      continue;
+    }
+    const { headers, rows } = parseCsvRows(text);
+    const iD = colIdx(headers, ["rebalance_date", "date", "as_of"]);
+    const iT = colIdx(headers, ["ticker", "symbol"]);
+    const iS = colIdx(headers, ["score", "rank", "factor"]);
+    if (iD < 0 || iT < 0 || iS < 0) continue;
+    for (const r of rows) {
+      if (r.length <= Math.max(iD, iT, iS)) continue;
+      const ds = normalizeDate(r[iD] || "").slice(0, 10);
+      if (ds.length < 10 || ds > cutoff) continue;
+      const tk = remapJpListingToAdrTicker(String(r[iT] || "").trim()).trim().toUpperCase();
+      if (!tk) continue;
+      const sc = parseFloat(String(r[iS] || "").replace(",", "."));
+      if (!Number.isFinite(sc)) continue;
+      const prev = acc.get(tk);
+      if (!prev || ds > prev.d || (ds === prev.d && sc > prev.score)) acc.set(tk, { d: ds, score: sc });
+    }
+  }
+  const out = new Map<string, number>();
+  for (const [t, v] of acc) out.set(t, v.score);
+  return out;
+}
+
+/**
+ * Coloca ``reml`` (fração NAV) em linhas **não-JP** já no plano, respeitando ``maxNav`` por linha
+ * (tecto produto), por rondas com ``headroom × sqrt(score)``.
+ */
+function placeJpRepairRemainderOnNonJpRows(
+  rows: RecommendationRow[],
+  rem: number,
+  maxNav: number,
+  lookup: Map<string, { company?: string; sector?: string }>,
+): RecommendationRow[] {
+  let reml = rem;
+  const out = rows.map((r) => enrichRow({ ...r }, lookup));
+  for (let round = 0; round < 500 && reml > 1e-9; round += 1) {
+    const elig: { i: number; r: RecommendationRow; hr: number }[] = [];
+    for (let i = 0; i < out.length; i++) {
+      const r = out[i]!;
+      if (historyCapProtectedTicker(r.ticker)) continue;
+      if (historyRowGeoZone(r) === "JP") continue;
+      const hr = maxNav - (typeof r.weight === "number" && isFinite(r.weight) ? r.weight : 0);
+      if (hr > 1e-9) elig.push({ i, r, hr });
+    }
+    if (!elig.length) break;
+    const wts = elig.map((x) => x.hr * Math.sqrt(Math.max(1e-12, x.r.score ?? 0.0001)));
+    const s = wts.reduce((a, b) => a + b, 0);
+    if (s <= 1e-15) break;
+    let placed = 0;
+    for (let j = 0; j < elig.length; j++) {
+      const add = Math.min(elig[j]!.hr, reml * (wts[j]! / s));
+      const idx = elig[j]!.i;
+      const cur = out[idx]!;
+      const w0 = typeof cur.weight === "number" && isFinite(cur.weight) ? cur.weight : 0;
+      const nw = w0 + add;
+      out[idx] = enrichRow({ ...cur, weight: nw, weightPct: nw * 100 }, lookup);
+      placed += add;
+    }
+    reml -= placed;
+    if (placed < 1e-12) break;
+  }
+  return out;
+}
+
+/**
+ * Se, após os caps do produto, o agregado JP (zona plano) ainda excede ``mult × bench[JP]`` do sleeve
+ * de risco, corta JP proporcionalmente ao limite e realoca o excesso: primeiro em **tickers novos**
+ * não-JP do universo completo (ordenados por score), depois na restante carteira não-JP com headroom.
+ */
+export type JpUniverseRepairOpts = {
+  /** No histórico, ``DECIDE_SKIP_HISTORY_PLAN_CAPS=1`` também desliga a reparação; no SSR do relatório queremos reparação independente desse opt-out. */
+  skipHistoryPlanCapsGate?: boolean;
+  /** Respeita ``DECIDE_SKIP_SSR_JP_UNIVERSE_REPAIR=1``. */
+  forSsrGrid?: boolean;
+};
+
+function repairJpOverweightWithNonJpSupplements(
+  rows: RecommendationRow[],
+  rebalanceYmd: string,
+  priceHeaderCols: Set<string>,
+  lookup: Map<string, { company?: string; sector?: string }>,
+  fullByDate: Map<string, FullUniverseEntry[]> | null,
+  latestScoresByTicker: Map<string, number>,
+  jpRepairOpts?: JpUniverseRepairOpts,
+): RecommendationRow[] {
+  /**
+   * O ``full`` só serve a **novos** tickers; o corte proporcional JP + realocação na carteira não-JP
+   * tem de correr mesmo sem ficheiro (ex. deploy sem ``weights_by_rebalance_full.csv``).
+   */
+  const skipHistory = String(process.env.DECIDE_SKIP_HISTORY_PLAN_CAPS || "").trim() === "1";
+  const skipRepair = String(process.env.DECIDE_SKIP_JP_FULL_UNIVERSE_REPAIR || "").trim() === "1";
+  const skipSsrOnly =
+    jpRepairOpts?.forSsrGrid && String(process.env.DECIDE_SKIP_SSR_JP_UNIVERSE_REPAIR || "").trim() === "1";
+  const skip =
+    (!jpRepairOpts?.skipHistoryPlanCapsGate && skipHistory) || skipRepair || skipSsrOnly;
+  if (skip || planGeoAdjustmentsDisabled() || planZoneCapDisabled() || !rows.length) return rows;
+
+  const cashRows = rows.filter((r) => historyCapProtectedTicker(r.ticker));
+  const eqRows = rows.filter((r) => !historyCapProtectedTicker(r.ticker));
+  if (!eqRows.length) return rows;
+
+  const eqSum = eqRows.reduce((s, r) => {
+    const w = typeof r.weight === "number" && isFinite(r.weight) ? r.weight : 0;
+    return s + w;
+  }, 0);
+  if (eqSum <= 1e-12) return rows;
+
+  const bench = benchmarkZoneWeightsFromPriceHeaders(priceHeaderCols, undefined);
+  const bJp = Math.max(0, bench.JP ?? 0);
+  const maxJpNav = planZoneCapMultiplier() * bJp * eqSum;
+
+  const jpSumNav = eqRows.reduce((s, r) => {
+    if (historyRowGeoZone(r) !== "JP") return s;
+    const w = typeof r.weight === "number" && isFinite(r.weight) ? r.weight : 0;
+    return s + w;
+  }, 0);
+  const excessNav = jpSumNav - maxJpNav;
+  if (excessNav <= 1e-8 || jpSumNav <= 1e-12) return rows;
+
+  const safeExcess = Math.min(excessNav, jpSumNav * 0.999999);
+  const factor = (jpSumNav - safeExcess) / jpSumNav;
+  const eqTarget = eqSum;
+
+  const adjustedEq: RecommendationRow[] = eqRows.map((r) => {
+    if (historyRowGeoZone(r) !== "JP") return enrichRow({ ...r }, lookup);
+    const w = typeof r.weight === "number" && isFinite(r.weight) ? r.weight : 0;
+    const nw = w * factor;
+    return enrichRow({ ...r, weight: nw, weightPct: nw * 100 }, lookup);
+  });
+
+  let freedNav = safeExcess;
+  const sleevePctSum = adjustedEq.reduce((s, r) => s + safeNumberHistory(r.weightPct, (r.weight ?? 0) * 100), 0);
+  const maxPct = planPerTickerMaxWeightPct();
+  const capLinePct = Math.min(maxPct, (maxPct / 100) * sleevePctSum);
+  const maxNavPerTicker = capLinePct / 100;
+
+  const inBook = new Set<string>();
+  for (const r of adjustedEq) inBook.add(r.ticker.trim().toUpperCase());
+
+  const candDate =
+    fullByDate && fullByDate.size > 0 ? pickFullUniverseDateLeq(fullByDate, rebalanceYmd) : null;
+  const pool = candDate && fullByDate ? fullByDate.get(candDate) || [] : [];
+
+  type Cand = { tk: string; sortScore: number; fileScore: number };
+  const candByTk = new Map<string, Cand>();
+  for (const c of pool) {
+    const tk = remapJpListingToAdrTicker(String(c.ticker || "").trim()).trim().toUpperCase();
+    if (!tk || inBook.has(tk)) continue;
+    if (historyCapProtectedTicker(tk)) continue;
+    if (isJapaneseEquityTicker(tk)) continue;
+    if (isJpNumericListingTicker(tk)) continue;
+    if (priceHeaderCols.size > 0 && !priceHeaderCols.has(tk)) continue;
+    const sortScore = latestScoresByTicker.has(tk) ? latestScoresByTicker.get(tk)! : c.score;
+    const prev = candByTk.get(tk);
+    if (!prev || sortScore > prev.sortScore) candByTk.set(tk, { tk, sortScore, fileScore: c.score });
+  }
+  const cands = [...candByTk.values()].sort((a, b) => b.sortScore - a.sortScore);
+
+  const added: RecommendationRow[] = [];
+  const maxNew = 48;
+  for (const c of cands) {
+    if (freedNav <= 1e-9) break;
+    if (added.length >= maxNew) break;
+    const tk = c.tk;
+    const chunk = Math.min(freedNav, maxNavPerTicker);
+    if (chunk <= 1e-9) break;
+    const scOut = latestScoresByTicker.has(tk) ? latestScoresByTicker.get(tk)! : c.fileScore;
+    added.push(enrichRow({ ticker: tk, weight: chunk, weightPct: chunk * 100, score: scOut }, lookup));
+    inBook.add(tk);
+    freedNav -= chunk;
+  }
+
+  let combined = [...adjustedEq, ...added];
+  if (freedNav > 1e-6) {
+    combined = placeJpRepairRemainderOnNonJpRows(combined, freedNav, maxNavPerTicker, lookup);
+  }
+
+  const eqSumAfter = combined.reduce((s, r) => {
+    const w = typeof r.weight === "number" && isFinite(r.weight) ? r.weight : 0;
+    return s + w;
+  }, 0);
+  /**
+   * Corrigir só o bloco **não-JP** (e não caixa): um ``scale`` global repartia o drift também pelo JP
+   * e podia **reinflacionar** o agregado Japonês acima do tecto ``mult × bench[JP] × sleeve``.
+   */
+  if (eqSumAfter > 1e-12 && Math.abs(eqSumAfter - eqTarget) > 1e-6) {
+    const jpNavSum = combined.reduce((s, r) => {
+      if (historyCapProtectedTicker(r.ticker)) return s;
+      if (historyRowGeoZone(r) !== "JP") return s;
+      const w = typeof r.weight === "number" && isFinite(r.weight) ? r.weight : 0;
+      return s + w;
+    }, 0);
+    const targetNonJpNav = Math.max(0, eqTarget - jpNavSum);
+    const curNonJpNav = combined.reduce((s, r) => {
+      if (historyCapProtectedTicker(r.ticker)) return s;
+      if (historyRowGeoZone(r) === "JP") return s;
+      const w = typeof r.weight === "number" && isFinite(r.weight) ? r.weight : 0;
+      return s + w;
+    }, 0);
+    if (curNonJpNav > 1e-12 && targetNonJpNav >= 0) {
+      const fac = targetNonJpNav / curNonJpNav;
+      combined = combined.map((r) => {
+        if (historyCapProtectedTicker(r.ticker)) return enrichRow({ ...r }, lookup);
+        if (historyRowGeoZone(r) === "JP") return enrichRow({ ...r }, lookup);
+        const w = typeof r.weight === "number" && isFinite(r.weight) ? r.weight : 0;
+        const nw = w * fac;
+        return enrichRow({ ...r, weight: nw, weightPct: nw * 100 }, lookup);
+      });
+    }
+  }
+
+  return [...cashRows, ...combined].sort((a, b) => (b.weight || 0) - (a.weight || 0));
+}
+
+/**
+ * Mesma regra que ``repairJpOverweightWithNonJpSupplements`` no histórico oficial, para a **grelha SSR**
+ * (``official_csv``) **depois** dos caps por zona/linha: não herda o opt-out
+ * ``DECIDE_SKIP_HISTORY_PLAN_CAPS`` — só ``DECIDE_SKIP_JP_FULL_UNIVERSE_REPAIR`` e, no SSR,
+ * ``DECIDE_SKIP_SSR_JP_UNIVERSE_REPAIR=1``.
+ */
+export function applyJpUniverseRepairAfterSsrProductCaps(
+  rows: RecommendationRow[],
+  rebalanceYmd: string,
+  root: string,
+): RecommendationRow[] {
+  if (!rows.length) return rows;
+  const lookup = loadCompanyLookup(root);
+  const priceHeaderCols = loadPriceCsvHeaderColsUpper(root);
+  const fullByDate = loadFullWeightsByDateMap(root);
+  const latestScoresByTicker = loadTickerLatestScoresMap(root);
+  const list = rows.map((r) => enrichRow(r, lookup));
+  return repairJpOverweightWithNonJpSupplements(
+    list,
+    normalizeDate(rebalanceYmd).slice(0, 10),
+    priceHeaderCols,
+    lookup,
+    fullByDate,
+    latestScoresByTicker,
+    { skipHistoryPlanCapsGate: true, forSsrGrid: true },
+  );
+}
+
 function safeNumberHistory(x: unknown, fallback: number): number {
   const n = typeof x === "number" ? x : parseFloat(String(x ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : fallback;
@@ -982,6 +1313,8 @@ function buildMonthsFromMerged(
 ): RecommendationMonth[] {
   const months: RecommendationMonth[] = [];
   const priceHeaderCols = loadPriceCsvHeaderColsUpper(root);
+  const fullWeightsByDate = loadFullWeightsByDateMap(root);
+  const latestScoresByTicker = loadTickerLatestScoresMap(root);
   const cashDailySorted = loadCashSleeveDailySorted(root);
   const { latestNavCash: v5LatestNavCash, cashAtRebalanceByDate: rebalanceCashMap } =
     loadV5KpisCashFields(root);
@@ -1084,6 +1417,15 @@ function buildMonthsFromMerged(
       rowsOut = list;
     }
     rowsOut = applyEquityOnlyOfficialProductCapsPreservingCash(rowsOut, priceHeaderCols, lookup);
+    rowsOut = repairJpOverweightWithNonJpSupplements(
+      rowsOut,
+      date,
+      priceHeaderCols,
+      lookup,
+      fullWeightsByDate,
+      latestScoresByTicker,
+      undefined,
+    );
     const sleevePcts = computeSleeveDisplayPct(rowsOut);
     months.push({
       date,
