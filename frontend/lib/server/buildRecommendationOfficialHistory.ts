@@ -1,6 +1,9 @@
 /**
  * Motor de dados partilhado: histórico de recomendações oficiais por `rebalance_date`
  * (merge de `weights_by_rebalance*.csv` + overlays V5/cash como no API de histórico).
+ * Por defeito aplica-se também o **tecto por linha** (ex. 15%) e o **1,3× por zona vs benchmark**
+ * como no SSR do relatório — os pesos do CSV podem ser pré-CAP15 / pré-redistribuição.
+ * Opt-out: ``DECIDE_SKIP_HISTORY_PLAN_CAPS=1``.
  *
  * O Plano / aprovação usam por defeito o **último rebalance por mês de calendário**
  * (≤ hoje), p.ex. 31-03 prevalece sobre 20-03 no mesmo mês — ritmo mensal.
@@ -13,9 +16,21 @@ import path from "path";
 
 import { isDecideCashSleeveBrokerSymbol } from "../decideCashSleeveDisplay";
 import { lookupCompanyMetaEntry } from "../companyMeta";
-import { canonicalTickerForGeo } from "../tickerGeoFallback";
+import { canonicalTickerForGeo, isJapaneseEquityTicker } from "../tickerGeoFallback";
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
 import { isJpNumericListingTicker, jpListingToAdrMap, remapJpListingToAdrTicker } from "./jpListingToAdrMap";
+import {
+  applyPerTickerMaxWeightPct,
+  applyZoneCapsVsBenchmark,
+  benchmarkZoneWeightsFromPriceHeaders,
+  canonZoneForCountryCap,
+  planBenchmarkZoneLookupKeys,
+  planGeoAdjustmentsDisabled,
+  planPerTickerMaxWeightPct,
+  planZoneCapDisabled,
+  planZoneCapMultiplier,
+  type MutablePlanWeightRow,
+} from "./planWeightAdjustments";
 
 export type FlowRow = {
   ticker: string;
@@ -330,6 +345,128 @@ function computeSleeveDisplayPct(rowsOut: RecommendationRow[]): {
     tbillsTotalPct: (cashW / totalW) * 100,
     equitySleeveTotalPct: (equityW / totalW) * 100,
   };
+}
+
+type PlanGeoZone = "US" | "EU" | "JP" | "CAN" | "OTHER";
+
+function loadPriceCsvHeaderColsUpper(root: string): Set<string> {
+  const cols = new Set<string>();
+  const p = path.join(root, "backend", "data", "prices_close.csv");
+  if (!fs.existsSync(p)) return cols;
+  try {
+    const fh = fs.openSync(p, "r");
+    try {
+      const buf = Buffer.alloc(262144);
+      const n = fs.readSync(fh, buf, 0, buf.length, 0);
+      const s = buf.slice(0, n).toString("utf8");
+      const nli = s.search(/\r?\n/);
+      const head = (nli >= 0 ? s.slice(0, nli) : s).replace(/^\uFEFF/, "");
+      for (const c of head.split(",")) {
+        const t = c.trim().toUpperCase();
+        if (t) cols.add(t);
+      }
+    } finally {
+      fs.closeSync(fh);
+    }
+  } catch {
+    /* ignore */
+  }
+  return cols;
+}
+
+function historyRowGeoZone(r: RecommendationRow): PlanGeoZone {
+  const z0 = (r.zone || "").trim();
+  if (z0) {
+    const z = canonZoneForCountryCap(z0);
+    if (z !== "OTHER") return z;
+  }
+  const c0 = (r.country || "").trim();
+  if (c0) {
+    const z = canonZoneForCountryCap(c0);
+    if (z !== "OTHER") return z;
+  }
+  if (isJapaneseEquityTicker(r.ticker)) return "JP";
+  if (isJpNumericListingTicker(r.ticker)) return "JP";
+  const tpa = r.ticker.trim().toUpperCase().replace(/\s+/g, "");
+  if (/(?:\.|-)PA$/i.test(tpa)) return "EU";
+  return "OTHER";
+}
+
+function mergeHistoryZoneKeys(m: Map<string, PlanGeoZone>, ticker: string, z: PlanGeoZone): void {
+  if (z === "OTHER") return;
+  for (const k of planBenchmarkZoneLookupKeys(ticker)) m.set(k, z);
+}
+
+function historyCapProtectedTicker(ticker: string): boolean {
+  const u = String(ticker || "").trim().toUpperCase();
+  if (u === "EURUSD") return true;
+  if (CASH_SLEEVE_TICKERS.has(u)) return true;
+  return isDecideCashSleeveBrokerSymbol(ticker);
+}
+
+/**
+ * Alinha pesos do histórico ao produto: tecto **1,3×** por zona vs benchmark composto (headers em
+ * ``prices_close.csv`` ou fallback) e **tecto por linha** (ex. 15%), na mesma ordem que o pós-display
+ * do relatório (zona → linha → zona → linha).
+ */
+function applyOfficialHistoryProductCaps(
+  rows: RecommendationRow[],
+  priceHeaderCols: Set<string>,
+  lookup: Map<string, { company?: string; sector?: string }>,
+): RecommendationRow[] {
+  const skip = String(process.env.DECIDE_SKIP_HISTORY_PLAN_CAPS || "").trim() === "1";
+  if (skip || planGeoAdjustmentsDisabled() || !rows.length) return rows;
+
+  const origByTicker = new Map<string, RecommendationRow>();
+  for (const r of rows) {
+    origByTicker.set(r.ticker.trim().toUpperCase(), r);
+  }
+
+  const mut: MutablePlanWeightRow[] = rows.map((r) => ({
+    ticker: r.ticker,
+    weightPct: typeof r.weightPct === "number" && isFinite(r.weightPct) ? r.weightPct : (r.weight ?? 0) * 100,
+    score: typeof r.score === "number" && isFinite(r.score) ? r.score : 0,
+    excluded: false,
+  }));
+
+  const isProtected = (p: MutablePlanWeightRow) => historyCapProtectedTicker(String(p.ticker || ""));
+  const bench = benchmarkZoneWeightsFromPriceHeaders(priceHeaderCols, undefined);
+  const mult = planZoneCapMultiplier();
+
+  const zonePass = () => {
+    const zoneByTicker = new Map<string, PlanGeoZone>();
+    for (const r of rows) {
+      if (historyCapProtectedTicker(r.ticker)) continue;
+      mergeHistoryZoneKeys(zoneByTicker, r.ticker, historyRowGeoZone(r));
+    }
+    if (!planZoneCapDisabled()) {
+      applyZoneCapsVsBenchmark(mut, zoneByTicker, bench, mult, isProtected);
+    }
+  };
+
+  zonePass();
+  applyPerTickerMaxWeightPct(mut, planPerTickerMaxWeightPct(), isProtected);
+  zonePass();
+  applyPerTickerMaxWeightPct(mut, planPerTickerMaxWeightPct(), isProtected);
+
+  const out: RecommendationRow[] = [];
+  for (const m of mut) {
+    if (!historyCapProtectedTicker(m.ticker) && safeNumberHistory(m.weightPct, 0) <= 1e-6) continue;
+    const orig = origByTicker.get(String(m.ticker || "").trim().toUpperCase());
+    const wp = safeNumberHistory(m.weightPct, 0);
+    const w = wp / 100;
+    if (orig) {
+      out.push(enrichRow({ ...orig, weight: w, weightPct: wp, score: m.score ?? orig.score }, lookup));
+    } else {
+      out.push({ ticker: String(m.ticker), weight: w, weightPct: wp, score: m.score });
+    }
+  }
+  return out.sort((a, b) => (b.weight || 0) - (a.weight || 0));
+}
+
+function safeNumberHistory(x: unknown, fallback: number): number {
+  const n = typeof x === "number" ? x : parseFloat(String(x ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function parseEquityCsv(text: string): { dates: string[]; equity: number[] } {
@@ -909,6 +1046,16 @@ function buildMonthsFromMerged(
     if (sleevePcts) {
       curM.tbillsTotalPct = sleevePcts.tbillsTotalPct;
       curM.equitySleeveTotalPct = sleevePcts.equitySleeveTotalPct;
+    }
+  }
+
+  const priceHeaderCols = loadPriceCsvHeaderColsUpper(root);
+  for (const curM of asc) {
+    curM.rows = applyOfficialHistoryProductCaps(curM.rows, priceHeaderCols, lookup);
+    const sleeveAfterCaps = computeSleeveDisplayPct(curM.rows);
+    if (sleeveAfterCaps) {
+      curM.tbillsTotalPct = sleeveAfterCaps.tbillsTotalPct;
+      curM.equitySleeveTotalPct = sleeveAfterCaps.equitySleeveTotalPct;
     }
   }
 
