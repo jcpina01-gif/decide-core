@@ -1787,22 +1787,28 @@ async function getClientReportServerSidePropsImpl(
     isDecideCashSleeveBrokerSymbol(String(p.ticker || ""));
 
   /**
-   * ``official_csv``: (4) tecto **1,3×** por zona vs benchmark **corre por defeito** no SSR (regra de produto).
-   * Pó (1) e tecto por linha (3) **não** se repetem por defeito — o export já reflecte o motor; reaplicar comprimia
-   * linhas EU pequenas (ex. RMS-PA). ``live_model`` / ``freeze_snapshot``: tudo activo como antes.
-   * - Opt-in para repetir também (1)+(3) no CSV: ``DECIDE_APPLY_SSR_PLAN_CAPS_TO_OFFICIAL_CSV=1`` ou
-   *   ``DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV=1`` (compat.: mesmo efeito que o opt-in «full»).
+   * ``official_csv``: (4) tecto **1,3×** por zona vs benchmark **corre por defeito** no SSR.
+   * **(1) pó e (3) tecto por linha** voltam a correr por defeito no ``official_csv``: sem o (3), só o cap por zona
+   * no SSR **inflacionava** linhas US/EU (ex. LIN/BRK/RMS) acima do tecto oficial ao desviar peso do JP.
+   * - Opt-out de (1)+(3) só no CSV: ``DECIDE_SKIP_SSR_LINE_GEOMETRY_ON_OFFICIAL_CSV=1``.
+   * - Opt-in legado (mesmo efeito que antes «forçar tudo»): ``DECIDE_APPLY_SSR_PLAN_CAPS_TO_OFFICIAL_CSV=1`` ou
+   *   ``DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV=1``.
    * - Opt-out do cap por zona (4) só no CSV: ``DECIDE_SKIP_ZONE_CAP_ON_OFFICIAL_CSV=1``.
    */
   const ssrFullLineRecutsOnOfficialCsv =
     String(process.env.DECIDE_APPLY_SSR_PLAN_CAPS_TO_OFFICIAL_CSV || "").trim() === "1" ||
     String(process.env.DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV || "").trim() === "1";
+  const skipSsrLineGeometryOnOfficialCsv =
+    planWeightsGridMode === "official_csv" &&
+    String(process.env.DECIDE_SKIP_SSR_LINE_GEOMETRY_ON_OFFICIAL_CSV || "").trim() === "1";
   const skipZoneCapOnOfficialCsv =
     String(process.env.DECIDE_SKIP_ZONE_CAP_ON_OFFICIAL_CSV || "").trim() === "1";
   const applySsrZoneCapVsBenchmarkOnGrid =
     planWeightsGridMode !== "official_csv" ? true : !skipZoneCapOnOfficialCsv;
   const applySsrLineGeometryRecuts =
-    planWeightsGridMode !== "official_csv" || ssrFullLineRecutsOnOfficialCsv;
+    planWeightsGridMode !== "official_csv" ||
+    ssrFullLineRecutsOnOfficialCsv ||
+    !skipSsrLineGeometryOnOfficialCsv;
 
   {
     const benchZones = benchmarkZoneWeightsFromPriceHeaders(priceCsvHeaderColsUpper, undefined);

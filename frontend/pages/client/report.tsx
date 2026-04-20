@@ -3551,8 +3551,10 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   {reportData.planWeightsProvenance?.mode === "official_csv" &&
                   reportData.planWeightsProvenance?.planSsrGeometryRecutsRanOnGrid === false ? (
                     <span style={{ color: "#a8a29e" }}>
-                      <strong style={{ color: "#d6d3d1" }}>Modo official_csv:</strong> (1) pó e (3) tecto por linha{" "}
-                      <strong>não</strong> são repetidos no SSR — já estão no export; ver também a nota em (4).{" "}
+                      <strong style={{ color: "#d6d3d1" }}>Modo official_csv (opt-out):</strong> (1) pó e (3) tecto por
+                      linha <strong>não</strong> correram no SSR — definiu-se{" "}
+                      <code style={{ color: "#d9f99d" }}>DECIDE_SKIP_SSR_LINE_GEOMETRY_ON_OFFICIAL_CSV=1</code> no
+                      deploy.
                     </span>
                   ) : null}
                   Regras de peso (servidor): (1) na grelha, fundir só pó abaixo de{" "}
