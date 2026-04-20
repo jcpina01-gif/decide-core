@@ -575,7 +575,13 @@ function cashSleeveOnOrBefore(sorted: CashDailyPoint[], ymd: string): number | n
   /** Antes devolvíamos `sorted[0].v` — projectava o cash do 1.º dia da série para **todos** os rebalances anteriores. */
   if (t < sorted[0]!.d) return null;
   const last = sorted[sorted.length - 1]!;
-  if (t > last.d) return last.v;
+  /**
+   * Não extrapolar o último ponto para **rebalances posteriores** ao ficheiro diário: isso misturava
+   * caixa de «último dia conhecido» com datas de export novas (ex. 2026-04-17) e podia inflar TBILL/MM
+   * na grelha do relatório. Para datas > último dia usamos `null` e caímos em
+   * `cash_sleeve_at_rebalance` / `latest_cash_sleeve` do `v5_kpis.json` quando aplicável.
+   */
+  if (t > last.d) return null;
   let lo = 0;
   let hi = sorted.length - 1;
   let ans = -1;
