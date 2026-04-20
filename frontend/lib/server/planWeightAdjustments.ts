@@ -132,7 +132,7 @@ export function canonZoneForCountryCap(regionRaw: string): "US" | "EU" | "JP" | 
   /* Rótulos de UI / CSV (PT): «Ásia (JP)», «Asia (JP)», etc. — sem isto o cap 1,3× via ``csvBenchZone`` caía em OTHER. */
   if (/\bJAPAN\b|\bJAPÃO\b|\bJAPAO\b/.test(s)) return "JP";
   if ((/\bASIA\b/.test(s) || /\bÁSIA\b/.test(s)) && /\bJP\b|\bJAPAN\b|\bJAPÃO\b|\bJAPAO\b/.test(s)) return "JP";
-  if (/\(JP\)/.test(s) || /\bJP\b/.test(s)) return "JP";
+  if (/\(JP\)/.test(s)) return "JP";
   if (/\bEUROPE\b|\bEUROPA\b|\bEMU\b|\bEEA\b/.test(s)) return "EU";
   if (/\bNORTH\s+AMERICA\b|\bAMÉRICA\s+DO\s+NORTE\b|\bAMERICA\s+DO\s+NORTE\b/.test(s)) return "US";
   if (/\bCANADA\b|\bCANADÁ\b|\bCANADA\b/.test(s)) return "CAN";
@@ -425,71 +425,14 @@ export function applyZoneCapsVsBenchmark(
   const scaleTotal = eqRows.reduce((a, r) => a + Math.max(0, safeNumber(r.weightPct, 0)), 0);
   if (scaleTotal <= 1e-9) return;
 
-  const fr = new Map<MutablePlanWeightRow, number>();
-  for (const r of eqRows) {
-    fr.set(r, Math.max(0, safeNumber(r.weightPct, 0)) / scaleTotal);
-  }
-
-  const exposureFrac = (): Record<string, number> => {
-    const ex: Record<string, number> = { US: 0, EU: 0, JP: 0, CAN: 0, OTHER: 0 };
-    for (const r of eqRows) {
-      const f = fr.get(r) || 0;
-      if (f <= 0) continue;
-      ex[zoneOfTicker(r.ticker)] += f;
-    }
-    return ex;
-  };
-
-  for (let it = 0; it < 500; it += 1) {
-    const ex = exposureFrac();
-    const factors: Record<string, number> = { US: 1, EU: 1, JP: 1, CAN: 1, OTHER: 1 };
-    let tightened = false;
-    for (const z of zones) {
-      const b = bench[z] || 0;
-      if (b < 1e-12) continue;
-      const cap = multiplier * b;
-      if (ex[z] > cap + 1e-9) {
-        factors[z] = cap / ex[z];
-        tightened = true;
-      }
-    }
-    if (!tightened) break;
-    for (const r of eqRows) {
-      const z = zoneOfTicker(r.ticker);
-      const fac = factors[z] ?? 1;
-      fr.set(r, Math.max(0, (fr.get(r) || 0) * fac));
-    }
-    const s = Array.from(fr.values()).reduce((a, v) => a + v, 0);
-    if (s > 1e-18) {
-      for (const r of eqRows) {
-        fr.set(r, (fr.get(r) || 0) / s);
-      }
-    }
-  }
-
-  for (const r of eqRows) {
-    const oldW = safeNumber(r.weightPct, 0);
-    const nw = (fr.get(r) || 0) * scaleTotal;
-    r.weightPct = nw;
-    if (r.originalWeightPct !== undefined) {
-      const ow0 = safeNumber(r.originalWeightPct, oldW);
-      r.originalWeightPct = oldW > 1e-9 ? (nw / oldW) * ow0 : nw;
-    }
-  }
-
   /**
-   * A iteração em ``fr`` renormaliza a soma a 1 **entre todas** as linhas de risco; quando o plano está
-   * concentrado numa zona (ex. quase só JP + uma EU) isso **recicla** massa para a zona que acabou de ser
-   * cortada e o teto 1,3× nunca fecha. Aqui garantimos o tecto em **peso**: o excesso vai primeiro para
-   * **outras acções** em zonas com espaço sob o 1,3× (``sqrt(score)`` dentro da zona); só o que não couber
-   * segue para o sink de caixa/MM.
+   * Sem fase prévia em frações ``fr`` + renormalização global (redundante com o laço ``guard`` e instável
+   * em carteiras muito concentradas numa zona). Corta a zona mais violada em **peso**, redistribui folga,
+   * depois sink.
    */
   const sink = planWeightSinkRow(rows);
   /**
-   * Sem este laço quando **não** há linha de caixa (sink), a fase ``fr`` acima pode deixar uma zona
-   * (ex. JP ≈ 80% do sleeve) acima de ``mult × bench[Z]`` — era o bug que o utilizador via na grelha.
-   * O sink é opcional: o excesso que não couber nas outras zonas sob o tecto vai para caixa **ou**
-   * reparte-se pelas linhas fora da zona mais violada (fallback).
+   * Sem sink, o excesso reparte-se pelas linhas fora da zona mais violada (fallback).
    */
   for (let guard = 0; guard < 120; guard += 1) {
     const wt = eqRows.reduce((a, r) => a + safeNumber(r.weightPct, 0), 0);
