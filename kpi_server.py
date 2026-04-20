@@ -149,9 +149,11 @@ def _resolve_kpi_repo_root() -> Path:
 
 REPO_ROOT = _resolve_kpi_repo_root()
 BACKEND_META_PATH = REPO_ROOT / "backend" / "data" / "company_meta_global_enriched.csv"
+# Complemento versionado: tickers em falta no CSV global (ex.: novos no freeze antes do próximo export de meta).
+COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta_kpi_overrides.csv"
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
-    "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v28-risk-mode-instant"
+    "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
 )
 
 
@@ -8369,6 +8371,21 @@ def load_holdings_and_breakdowns(base_path: Path):
         meta_df = meta_df.set_index("ticker")
     else:
         meta_df.index = meta_df.index.astype(str).str.upper().str.strip()
+
+    if COMPANY_META_KPI_OVERRIDES_PATH.is_file():
+        try:
+            ov = pd.read_csv(COMPANY_META_KPI_OVERRIDES_PATH, encoding="utf-8")
+            if not ov.empty and "ticker" in ov.columns:
+                ov = ov.copy()
+                ov["ticker"] = ov["ticker"].astype(str).str.upper().str.strip()
+                ov = ov.set_index("ticker")
+                for col in ("sector", "company", "country", "zone"):
+                    if col not in ov.columns:
+                        ov[col] = ""
+                meta_df = pd.concat([meta_df, ov], axis=0)
+                meta_df = meta_df[~meta_df.index.duplicated(keep="last")]
+        except (OSError, ValueError, TypeError, KeyError):
+            pass
 
     # Fallback/upgrade meta from V3 core universe (forçar nomes/sectores onde existir)
     v3_path = REPO_ROOT / "backend" / "data" / "company_meta_v3.csv"
