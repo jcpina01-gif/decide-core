@@ -1700,76 +1700,133 @@ async function getClientReportServerSidePropsImpl(
 
   recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
 
+  /** Referência ao TBILL **antes** de o fundirmos na MM — o ``splice`` remove da lista mas o objecto mantém o peso para ordens MM. */
+  const tbillPos = recommendedPositions.find(
+    (p) => String(p.ticker || "").trim().toUpperCase() === "TBILL_PROXY",
+  );
+
   /**
-   * O alvo ``official_csv`` já reflecte o motor (CAP15, pó, zonas no export). Reaplicar no SSR:
-   * - tecto **1,3×** vs ACWI anulava alvos JP-concentrados;
-   * - tecto **por linha** ``min(15%, 15%×sleeve)`` cortava linhas a 15% no CSV para ~13,8% e redistribuía sobretudo
-   *   por ``√score`` para outras JP, **comprimindo** linhas EU pequenas (ex. RMS-PA ~0,61% → ~0,56%).
-   * Mantém-se para ``live_model`` / ``freeze_snapshot``.
-   * Opt-in para voltar a espelhar tudo no CSV: ``DECIDE_APPLY_SSR_PLAN_CAPS_TO_OFFICIAL_CSV=1``
-   * (ou ``DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV=1`` — mesmo efeito, compat.).
+   * O cap 1,3× usa ``planWeightSinkRow`` (caixa/MM). Se ``TBILL_PROXY`` ainda existir com peso 0 enquanto o CSV
+   * já traz CSH2, o excesso ia para uma linha TBILL inútil e a grelha parecia «sem cap». Fundir **antes** dos caps.
    */
-  const ssrPlanCapsOnOfficialCsv =
+  {
+    const tbIdxEarly = recommendedPositions.findIndex((p) => p.ticker === "TBILL_PROXY");
+    if (tbIdxEarly >= 0) {
+      const prev = recommendedPositions[tbIdxEarly]!;
+      const w = safeNumber(prev.weightPct, 0);
+      const ow = safeNumber(prev.originalWeightPct, w);
+      const excl = prev.excluded;
+      recommendedPositions.splice(tbIdxEarly, 1);
+      const mmU = eurMmSym.trim().toUpperCase();
+      const mergeIdx = recommendedPositions.findIndex((p) => String(p.ticker || "").trim().toUpperCase() === mmU);
+      if (mergeIdx >= 0) {
+        const tgt = recommendedPositions[mergeIdx]!;
+        const baseW = safeNumber(tgt.weightPct, 0);
+        const baseOw = safeNumber(tgt.originalWeightPct, baseW);
+        tgt.weightPct = baseW + w;
+        tgt.originalWeightPct = baseOw + ow;
+        tgt.excluded = !!tgt.excluded || excl;
+        if (!meaningfulTextCell(tgt.nameShort)) {
+          tgt.nameShort = `MM EUR / caixa (${eurMmSym})`;
+        }
+        tgt.sector = tgt.sector || "Money market UCITS (EUR)";
+        tgt.region = tgt.region || "EU";
+      } else if (w > 1e-12) {
+        recommendedPositions.push({
+          ticker: eurMmSym,
+          nameShort: `MM EUR / caixa (${eurMmSym})`,
+          region: "EU",
+          country: "",
+          geoZone: "",
+          sector: "Money market UCITS (EUR)",
+          industry: "",
+          score: 0,
+          weightPct: w,
+          originalWeightPct: ow,
+          excluded: excl,
+        });
+      }
+    }
+    recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+  }
+
+  const isPlanWeightProtectedAfterUi = (p: (typeof recommendedPositions)[number]) =>
+    !!p.excluded ||
+    String(p.ticker || "").trim().toUpperCase() === "EURUSD" ||
+    String(p.ticker || "").trim().toUpperCase() === "TBILL_PROXY" ||
+    isDecideCashSleeveBrokerSymbol(String(p.ticker || ""));
+
+  /**
+   * ``official_csv``: (4) tecto **1,3×** por zona vs benchmark **corre por defeito** no SSR (regra de produto).
+   * Pó (1) e tecto por linha (3) **não** se repetem por defeito — o export já reflecte o motor; reaplicar comprimia
+   * linhas EU pequenas (ex. RMS-PA). ``live_model`` / ``freeze_snapshot``: tudo activo como antes.
+   * - Opt-in para repetir também (1)+(3) no CSV: ``DECIDE_APPLY_SSR_PLAN_CAPS_TO_OFFICIAL_CSV=1`` ou
+   *   ``DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV=1`` (compat.: mesmo efeito que o opt-in «full»).
+   * - Opt-out do cap por zona (4) só no CSV: ``DECIDE_SKIP_ZONE_CAP_ON_OFFICIAL_CSV=1``.
+   */
+  const ssrFullLineRecutsOnOfficialCsv =
     String(process.env.DECIDE_APPLY_SSR_PLAN_CAPS_TO_OFFICIAL_CSV || "").trim() === "1" ||
     String(process.env.DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV || "").trim() === "1";
-  const applySsrPlanGeometryRecuts =
-    planWeightsGridMode !== "official_csv" || ssrPlanCapsOnOfficialCsv;
+  const skipZoneCapOnOfficialCsv =
+    String(process.env.DECIDE_SKIP_ZONE_CAP_ON_OFFICIAL_CSV || "").trim() === "1";
+  const applySsrZoneCapVsBenchmarkOnGrid =
+    planWeightsGridMode !== "official_csv" ? true : !skipZoneCapOnOfficialCsv;
+  const applySsrLineGeometryRecuts =
+    planWeightsGridMode !== "official_csv" || ssrFullLineRecutsOnOfficialCsv;
 
   {
-    const isPlanWeightProtected = (p: (typeof recommendedPositions)[number]) =>
-      isReportPlanCashSleeveTicker(p.ticker) || !!p.excluded;
     const benchZones = benchmarkZoneWeightsFromPriceHeaders(priceCsvHeaderColsUpper, undefined);
     const zoneByTicker = new Map<string, PlanGeoZone>();
     for (const p of recommendedPositions) {
-      if (isPlanWeightProtected(p)) continue;
+      if (isPlanWeightProtectedAfterUi(p)) continue;
       const z = planZoneForTicker(p.ticker, p.region, p.country, p.csvBenchZone);
       mergePlanBenchmarkZoneForTicker(zoneByTicker, p.ticker, z);
     }
-    if (applySsrPlanGeometryRecuts) {
+    if (applySsrZoneCapVsBenchmarkOnGrid) {
       applyZoneCapsVsBenchmark(
         recommendedPositions,
         zoneByTicker,
         benchZones,
         planZoneCapMultiplier(),
-        isPlanWeightProtected,
+        isPlanWeightProtectedAfterUi,
       );
     }
     /* 1) Pó abaixo do limiar de **saída** (0,5%): fundir e redistribuir (histerese vs entrada). */
-    if (applySsrPlanGeometryRecuts) {
-      consolidateWeightsBelowMinimum(recommendedPositions, planExitWeightPct(), isPlanWeightProtected);
+    if (applySsrLineGeometryRecuts) {
+      consolidateWeightsBelowMinimum(recommendedPositions, planExitWeightPct(), isPlanWeightProtectedAfterUi);
     }
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     /* Não fundir a grelha ao limiar de **entrada** (1%): isso apagava linhas e a carteira deixava de mostrar ~20
      * tickers após caps; BUY sugerido continua a exigir alvo > entrada (ver mais abaixo). */
-    if (applySsrPlanGeometryRecuts) {
+    if (applySsrLineGeometryRecuts) {
       const perTickerMax = planPerTickerMaxWeightPct();
-      applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtected);
+      applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
       recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     }
     /* O cap por linha redistribui para outras acções (muitas vezes mesma zona) e pode violar o teto por país. */
     const zoneByTickerAfterLine = new Map<string, PlanGeoZone>();
     for (const p of recommendedPositions) {
-      if (isPlanWeightProtected(p)) continue;
+      if (isPlanWeightProtectedAfterUi(p)) continue;
       const z = planZoneForTicker(p.ticker, p.region, p.country, p.csvBenchZone);
       mergePlanBenchmarkZoneForTicker(zoneByTickerAfterLine, p.ticker, z);
     }
-    if (applySsrPlanGeometryRecuts) {
+    if (applySsrZoneCapVsBenchmarkOnGrid) {
       applyZoneCapsVsBenchmark(
         recommendedPositions,
         zoneByTickerAfterLine,
         benchZones,
         planZoneCapMultiplier(),
-        isPlanWeightProtected,
+        isPlanWeightProtectedAfterUi,
       );
     }
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     /* O tecto por linha tem de voltar a correr depois dos caps por zona: a renormalização interna
      * pode inflacionar uma linha (ex. única EU) acima do máximo. */
-    if (applySsrPlanGeometryRecuts) {
+    if (applySsrLineGeometryRecuts) {
       applyPerTickerMaxWeightPct(
         recommendedPositions,
         planPerTickerMaxWeightPct(),
-        isPlanWeightProtected,
+        isPlanWeightProtectedAfterUi,
       );
       recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
     }
@@ -1782,11 +1839,6 @@ async function getClientReportServerSidePropsImpl(
     if (safeNumber(p.weightPct, 0) <= 1e-6) recommendedPositions.splice(i, 1);
   }
   recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
-
-  /** Ainda ``TBILL_PROXY`` (antes da troca UI por MM EUR) — usado nas ordens MM; não confundir com ``cashSinkForScale``. */
-  const tbillPos = recommendedPositions.find(
-    (p) => String(p.ticker || "").trim().toUpperCase() === "TBILL_PROXY",
-  );
 
   const proposedTrades: ProposedTrade[] = tradePlanRows
     .filter((r) => {
@@ -1990,11 +2042,11 @@ async function getClientReportServerSidePropsImpl(
 
   proposedTrades.sort((a, b) => Math.abs(b.deltaValueEst) - Math.abs(a.deltaValueEst));
 
-  // Carteira recomendada (UI): o modelo usa TBILL_PROXY no JSON; na execução vira MM EUR (UCITS). Mostrar CSH2/XEON + EURUSD quando existir hedge no plano.
+  // Carteira recomendada (UI): TBILL_PROXY → MM EUR já foi fundido antes do cap 1,3×; aqui só resta TBILL residual (se houver) + EURUSD.
   {
     const tbIdx = recommendedPositions.findIndex((p) => p.ticker === "TBILL_PROXY");
     if (tbIdx >= 0) {
-      const prev = recommendedPositions[tbIdx];
+      const prev = recommendedPositions[tbIdx]!;
       const w = safeNumber(prev.weightPct, 0);
       const ow = safeNumber(prev.originalWeightPct, w);
       const excl = prev.excluded;
@@ -2013,7 +2065,7 @@ async function getClientReportServerSidePropsImpl(
         }
         tgt.sector = tgt.sector || "Money market UCITS (EUR)";
         tgt.region = tgt.region || "EU";
-      } else {
+      } else if (w > 1e-12) {
         recommendedPositions.push({
           ticker: eurMmSym,
           nameShort: `MM EUR / caixa (${eurMmSym})`,
@@ -2050,14 +2102,8 @@ async function getClientReportServerSidePropsImpl(
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
   }
 
-  const isPlanWeightProtectedAfterUi = (p: (typeof recommendedPositions)[number]) =>
-    !!p.excluded ||
-    String(p.ticker || "").trim().toUpperCase() === "EURUSD" ||
-    String(p.ticker || "").trim().toUpperCase() === "TBILL_PROXY" ||
-    isDecideCashSleeveBrokerSymbol(String(p.ticker || ""));
-
-  /** Segunda passagem: a grelha já pode ter CSH2/MM em vez de TBILL_PROXY — o sink do cap tem de encontrar caixa. EURUSD fica de fora (overlay). */
-  if (applySsrPlanGeometryRecuts) {
+  /** Segunda passagem: a grelha já tem CSH2/MM; o sink do cap coincide com a primeira passagem. EURUSD fica de fora (overlay). */
+  if (applySsrLineGeometryRecuts) {
     const perTickerMax = planPerTickerMaxWeightPct();
     applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
@@ -2070,7 +2116,7 @@ async function getClientReportServerSidePropsImpl(
       const z = planZoneForTicker(p.ticker, p.region, p.country, p.csvBenchZone);
       mergePlanBenchmarkZoneForTicker(zoneByTickerLate, p.ticker, z);
     }
-    if (applySsrPlanGeometryRecuts) {
+    if (applySsrZoneCapVsBenchmarkOnGrid) {
       applyZoneCapsVsBenchmark(
         recommendedPositions,
         zoneByTickerLate,
@@ -2080,7 +2126,7 @@ async function getClientReportServerSidePropsImpl(
       );
     }
     recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
-    if (applySsrPlanGeometryRecuts) {
+    if (applySsrLineGeometryRecuts) {
       applyPerTickerMaxWeightPct(
         recommendedPositions,
         planPerTickerMaxWeightPct(),
@@ -2167,9 +2213,11 @@ async function getClientReportServerSidePropsImpl(
       }
       return m;
     };
-    if (applySsrPlanGeometryRecuts) {
+    if (applySsrLineGeometryRecuts) {
       enforceAbsolutePerTickerCeiling(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
       recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    }
+    if (applySsrZoneCapVsBenchmarkOnGrid) {
       applyZoneCapsVsBenchmark(
         recommendedPositions,
         zoneMapPostDisplay(),
@@ -2178,6 +2226,8 @@ async function getClientReportServerSidePropsImpl(
         isPlanWeightProtectedAfterUi,
       );
       recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
+    }
+    if (applySsrLineGeometryRecuts) {
       applyPerTickerMaxWeightPct(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
       recommendedPositions.sort((a, b) => b.weightPct - a.weightPct);
       enforceAbsolutePerTickerCeiling(recommendedPositions, perTickerMax, isPlanWeightProtectedAfterUi);
@@ -2385,7 +2435,11 @@ async function getClientReportServerSidePropsImpl(
     planGeoAdjustmentsDisabled: planGeoAdjustmentsDisabled(),
     planZoneCapVsBenchmarkDisabled: planZoneCapDisabled(),
     planZoneCapMult: planZoneCapMultiplier(),
-    planSsrGeometryRecutsRanOnGrid: applySsrPlanGeometryRecuts && !planGeoAdjustmentsDisabled(),
+    planSsrGeometryRecutsRanOnGrid: applySsrLineGeometryRecuts && !planGeoAdjustmentsDisabled(),
+    planSsrZoneCapRanOnGrid:
+      applySsrZoneCapVsBenchmarkOnGrid &&
+      !planGeoAdjustmentsDisabled() &&
+      !planZoneCapDisabled(),
   };
 
   const reportData: ReportData = {

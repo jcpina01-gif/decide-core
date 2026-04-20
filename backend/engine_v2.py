@@ -15,7 +15,7 @@ import pandas as pd
 from price_series_clean import sanitize_extreme_daily_closes
 
 
-ENGINE_VERSION = "DECIDE_ENGINE_V2_M3_SCORE_RANK_POOL_2026_04_17"
+ENGINE_VERSION = "DECIDE_ENGINE_V2_M3_SCORE_RANK_POOL_2026_04_17_ZONE_CAP_SINK"
 
 _TSE_DOT_T_COL = re.compile(r"^\d+\.[Tt]$|^\d+-[Tt]$")
 
@@ -387,6 +387,70 @@ def load_ticker_zone_lookup(labels: Iterable[str]) -> dict[str, str]:
     return out
 
 
+_ZONE_CAP_SINK_TICKER = "TBILL_PROXY"
+
+
+def _redistribute_zone_cap_freed_weights(
+    w: pd.Series,
+    zone_of,
+    zones: tuple[str, ...],
+    bench: dict[str, float],
+    mult: float,
+    freed: float,
+    *,
+    sink_ticker: str,
+) -> float:
+    """
+    Coloca ``freed`` em linhas de zonas com folga sob ``mult * bench[Z]`` (só zonas com ≥1 ticker
+    no índice). Devolve o que não coube (vai para o sink de caixa).
+    """
+    rem = float(freed)
+    for _ in range(50):
+        if rem <= 1e-12:
+            return 0.0
+        risk_idx = [t for t in w.index if str(t).strip().upper() != sink_ticker]
+        wt = float(sum(float(w.loc[t]) for t in risk_idx))
+        if wt <= 1e-18:
+            return rem
+        z_w: dict[str, float] = {z: 0.0 for z in zones}
+        for t in risk_idx:
+            z_w[zone_of(str(t))] = z_w.get(zone_of(str(t)), 0.0) + float(w.loc[t])
+        zones_with_rows = [z for z in zones if any(zone_of(str(t)) == z for t in risk_idx)]
+        head: dict[str, float] = {}
+        total_head = 0.0
+        for z in zones_with_rows:
+            b = float(bench.get(z, 0.0))
+            if b < 1e-12:
+                head[z] = 0.0
+                continue
+            max_w = mult * b * wt
+            h = max(0.0, max_w - float(z_w.get(z, 0.0)))
+            head[z] = h
+            total_head += h
+        if total_head <= 1e-9:
+            return rem
+        to_place = min(rem, total_head)
+        placed = 0.0
+        for z in zones_with_rows:
+            if head[z] <= 1e-9:
+                continue
+            add_z = min(head[z], to_place * (head[z] / total_head))
+            ztick = [t for t in risk_idx if zone_of(str(t)) == z]
+            if not ztick:
+                continue
+            sw = float(sum(float(w.loc[t]) for t in ztick))
+            if sw <= 1e-18:
+                per = add_z / max(1, len(ztick))
+                for t in ztick:
+                    w.loc[t] = float(w.loc[t]) + per
+            else:
+                for t in ztick:
+                    w.loc[t] = float(w.loc[t]) + add_z * (float(w.loc[t]) / sw)
+            placed += add_z
+        rem -= placed
+    return rem
+
+
 def apply_zone_caps_vs_benchmark_weights(
     weights: pd.Series,
     ticker_zone: dict[str, str],
@@ -396,8 +460,13 @@ def apply_zone_caps_vs_benchmark_weights(
     max_iterations: int = 500,
 ) -> pd.Series:
     """
-    Garante, por zona Z, ``sum_i w_i 1{zone(i)=Z} <= multiplier * bench_zones[Z]`` quando ``bench_zones[Z]>0``.
-    Zonas com peso ~0 no benchmark **não** são limitadas (evita banir activos).
+    Garante, por zona Z, ``sum_i w_i 1{zone(i)=Z} <= multiplier * bench_zones[Z] * S_risk`` quando
+    ``bench_zones[Z]>0``, com ``S_risk`` = soma das linhas **excepto** o sink de caixa.
+
+    A versão anterior renormalizava a carteira inteira após cortar uma zona; quando **toda** a massa
+    está nessa zona (ex. só JP), o factor ``cap/ex`` e a divisão pela soma **anulam-se** e o tecto
+    nunca baixa. Aqui: corta a zona mais violada, redistribui folga para outras zonas com tickers,
+    e o restante acumula em ``TBILL_PROXY`` (alinhado ao produto Next / relatório).
     """
     w = pd.to_numeric(weights, errors="coerce").fillna(0.0).clip(lower=0.0)
     if w.size == 0 or w.sum() <= 1e-18:
@@ -409,40 +478,84 @@ def apply_zone_caps_vs_benchmark_weights(
     bench = _normalize_zone_weight_dict({str(k): float(v) for k, v in bench_zones.items()})
 
     zones = ("US", "EU", "JP", "CAN", "OTHER")
+    sink = _ZONE_CAP_SINK_TICKER
 
     def zone_of(ticker: str) -> str:
-        z = ticker_zone.get(_normalize_ticker_key_meta(ticker))
-        return z if z in zones else "OTHER"
+        raw = str(ticker).strip()
+        for key in (
+            _normalize_ticker_key_meta(raw),
+            raw.upper().replace(" ", ""),
+            raw.upper(),
+        ):
+            if not key:
+                continue
+            z = ticker_zone.get(key)
+            if z and z in zones:
+                return z
+        return "OTHER"
 
-    def exposure(ww: pd.Series) -> dict[str, float]:
-        ex = {z: 0.0 for z in zones}
-        for t, wt in ww.items():
-            ex[zone_of(str(t))] += float(wt)
-        return ex
+    def risk_index(ww: pd.Series) -> list:
+        return [t for t in ww.index if str(t).strip().upper() != sink]
 
-    for _ in range(max_iterations):
-        ex = exposure(w)
-        factors: dict[str, float] = {z: 1.0 for z in zones}
-        tightened = False
+    for _ in range(max(50, int(max_iterations))):
+        ridx = risk_index(w)
+        wt = float(sum(float(w.loc[t]) for t in ridx))
+        if wt <= 1e-18:
+            break
+        worst_z: str | None = None
+        worst_excess = 0.0
         for z in zones:
             b = float(bench.get(z, 0.0))
             if b < 1e-12:
                 continue
-            cap = multiplier * b
-            if ex[z] > cap + 1e-12:
-                factors[z] = cap / ex[z] if ex[z] > 1e-18 else 1.0
-                tightened = True
-        if not tightened:
+            cap_f = multiplier * b
+            sw = float(sum(float(w.loc[t]) for t in ridx if zone_of(str(t)) == z))
+            ex_z = sw / wt
+            if ex_z > cap_f + 1e-7:
+                target_w = cap_f * wt
+                excess = sw - target_w
+                if excess > worst_excess + 1e-12:
+                    worst_excess = excess
+                    worst_z = z
+        if worst_z is None or worst_excess <= 1e-9:
             break
-        nw = w.copy()
-        for t in w.index:
-            z = zone_of(str(t))
-            nw.loc[t] = float(w.loc[t]) * float(factors.get(z, 1.0))
-        s = float(nw.sum())
-        if s <= 1e-18:
+        cap_f = multiplier * float(bench.get(worst_z, 0.0))
+        z_rows = [t for t in ridx if zone_of(str(t)) == worst_z]
+        sw_z = float(sum(float(w.loc[t]) for t in z_rows))
+        if sw_z <= 1e-12:
             break
-        w = nw / s
+        target_w = cap_f * wt
+        fac = target_w / sw_z
+        freed = 0.0
+        for t in z_rows:
+            wi = float(w.loc[t])
+            nw = wi * fac
+            freed += wi - nw
+            w.loc[t] = nw
+        if freed > 1e-9:
+            to_sink = _redistribute_zone_cap_freed_weights(
+                w, zone_of, zones, bench, multiplier, freed, sink_ticker=sink
+            )
+            if to_sink > 1e-9:
+                if sink not in w.index:
+                    w.loc[sink] = 0.0
+                w.loc[sink] = float(w.loc[sink]) + to_sink
 
+    w = w.clip(lower=0.0)
+    w = w.where(w >= 1e-8, 0.0)
+    s = float(w.sum())
+    if s > 1e-18:
+        w = w / s
+    if sink in w.index and float(w.loc[sink]) < 1e-12:
+        w = w.drop(index=[sink], errors="ignore")
+        s2 = float(w.sum())
+        if s2 > 1e-18:
+            w = w / s2
+
+    w = w[w > 1e-12]
+    s3 = float(w.sum())
+    if s3 > 1e-18:
+        w = w / s3
     return w.sort_values(ascending=False)
 
 

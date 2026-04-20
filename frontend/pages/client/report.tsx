@@ -155,10 +155,15 @@ export type PlanWeightsProvenance = {
   /** Multiplicador vs benchmark (por defeito 1,3). */
   planZoneCapMult?: number;
   /**
-   * ``true`` se o SSR reaplicou caps geométricos (zona vs benchmark, tecto por linha, pó, etc.) sobre a grelha.
+   * ``true`` se o SSR reaplicou **pó** e **tecto por linha** (e tectos duros associados) sobre a grelha.
    * ``false`` no modo ``official_csv`` por defeito (export já reflecte o motor).
    */
   planSsrGeometryRecutsRanOnGrid?: boolean;
+  /**
+   * ``true`` se o SSR aplicou o tecto **1,3× por zona vs benchmark** no sleeve de risco.
+   * No ``official_csv`` corre por defeito (opt-out: ``DECIDE_SKIP_ZONE_CAP_ON_OFFICIAL_CSV``).
+   */
+  planSsrZoneCapRanOnGrid?: boolean;
 };
 
 export type ReportData = {
@@ -3502,18 +3507,15 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     <span style={{ color: "#fca5a5" }}>
                       — <strong>OFF</strong> com <code style={{ color: "#d9f99d" }}>DECIDE_DISABLE_ZONE_CAP_VS_BENCHMARK</code>
                     </span>
-                  ) : reportData.planWeightsProvenance.planSsrGeometryRecutsRanOnGrid === false &&
+                  ) : reportData.planWeightsProvenance.planSsrZoneCapRanOnGrid === false &&
                     reportData.planWeightsProvenance.mode === "official_csv" ? (
                     <span style={{ color: "#fde047" }}>
-                      neste modo (<code style={{ color: "#d9f99d" }}>official_csv</code>) o alvo vem do CSV oficial já
-                      tratado no motor; <strong>não</strong> repetimos aqui (1) fusão de pó, (3) tecto por linha{" "}
-                      <code style={{ color: "#d9f99d" }}>min(% NAV, % sleeve)</code> nem (4) tecto 1,3× vs benchmark
-                      global — reaplicar comprimia linhas EU pequenas (ex. RMS-PA) e cortava tops já a 15% no ficheiro.
-                      Em <code style={{ color: "#d9f99d" }}>live_model</code> /{" "}
-                      <code style={{ color: "#d9f99d" }}>freeze_snapshot</code> mantêm-se as regras abaixo. Para forçar
-                      no CSV: <code style={{ color: "#d9f99d" }}>DECIDE_APPLY_SSR_PLAN_CAPS_TO_OFFICIAL_CSV=1</code>{" "}
-                      (ou <code style={{ color: "#d9f99d" }}>DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV=1</code> — mesmo
-                      efeito).
+                      neste modo (<code style={{ color: "#d9f99d" }}>official_csv</code>) desactivámos o tecto{" "}
+                      <strong>(4)</strong> 1,3× vs benchmark no SSR (
+                      <code style={{ color: "#d9f99d" }}>DECIDE_SKIP_ZONE_CAP_ON_OFFICIAL_CSV=1</code>
+                      ). (1) pó e (3) tecto por linha continuam a reflectir só o export salvo que force o opt-in:{" "}
+                      <code style={{ color: "#d9f99d" }}>DECIDE_APPLY_SSR_PLAN_CAPS_TO_OFFICIAL_CSV=1</code> ou{" "}
+                      <code style={{ color: "#d9f99d" }}>DECIDE_APPLY_ZONE_CAP_TO_OFFICIAL_CSV=1</code>.
                     </span>
                   ) : (
                     <>

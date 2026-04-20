@@ -126,9 +126,16 @@ export function canonZoneForCountryCap(regionRaw: string): "US" | "EU" | "JP" | 
     .toUpperCase();
   if (!s || s === "FX" || s === "N/A") return "OTHER";
   if (s === "US" || s === "USA") return "US";
-  if (s === "EU" || s === "UK" || s === "EUROPE") return "EU";
+  if (s === "EU" || s === "UK" || s === "EUROPE" || s === "EUROPA" || s === "EUROZONE" || s === "EMU") return "EU";
   if (s === "JP" || s === "JAPAN" || s === "JPN") return "JP";
   if (s === "CAN" || s === "CANADA" || s === "CA") return "CAN";
+  /* Rótulos de UI / CSV (PT): «Ásia (JP)», «Asia (JP)», etc. — sem isto o cap 1,3× via ``csvBenchZone`` caía em OTHER. */
+  if (/\bJAPAN\b|\bJAPÃO\b|\bJAPAO\b/.test(s)) return "JP";
+  if ((/\bASIA\b/.test(s) || /\bÁSIA\b/.test(s)) && /\bJP\b|\bJAPAN\b|\bJAPÃO\b|\bJAPAO\b/.test(s)) return "JP";
+  if (/\(JP\)/.test(s) || /\bJP\b/.test(s)) return "JP";
+  if (/\bEUROPE\b|\bEUROPA\b|\bEMU\b|\bEEA\b/.test(s)) return "EU";
+  if (/\bNORTH\s+AMERICA\b|\bAMÉRICA\s+DO\s+NORTE\b|\bAMERICA\s+DO\s+NORTE\b/.test(s)) return "US";
+  if (/\bCANADA\b|\bCANADÁ\b|\bCANADA\b/.test(s)) return "CAN";
   return "OTHER";
 }
 
@@ -344,9 +351,10 @@ function redistributeZoneCapFreedToUndercappedEquities(
       const z = zoneOfTicker(r.ticker);
       zW[z] = (zW[z] || 0) + safeNumber(r.weightPct, 0);
     }
+    const zonesWithRows = zones.filter((z) => eqRows.some((r) => zoneOfTicker(r.ticker) === z));
     const head: Record<string, number> = {};
     let totalHead = 0;
-    for (const z of zones) {
+    for (const z of zonesWithRows) {
       const b = bench[z] || 0;
       if (b < 1e-12) {
         head[z] = 0;
@@ -359,7 +367,8 @@ function redistributeZoneCapFreedToUndercappedEquities(
     }
     if (totalHead <= 1e-9) break;
     const toPlace = Math.min(rem, totalHead);
-    for (const z of zones) {
+    let placed = 0;
+    for (const z of zonesWithRows) {
       if (head[z] <= 1e-9) continue;
       const addZ = Math.min(head[z], toPlace * (head[z] / totalHead));
       const zRows = eqRows.filter((r) => zoneOfTicker(r.ticker) === z);
@@ -367,6 +376,7 @@ function redistributeZoneCapFreedToUndercappedEquities(
       const wts = zRows.map((r) => planRankAllocationWeight(r));
       const s = wts.reduce((a, b) => a + b, 0);
       if (s <= 1e-18) continue;
+      placed += addZ;
       for (let i = 0; i < zRows.length; i += 1) {
         const r = zRows[i];
         const w0 = safeNumber(r.weightPct, 0);
@@ -378,7 +388,7 @@ function redistributeZoneCapFreedToUndercappedEquities(
         }
       }
     }
-    rem -= toPlace;
+    rem -= placed;
   }
   return rem;
 }
