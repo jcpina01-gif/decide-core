@@ -96,6 +96,15 @@ def _qualify_eur_ucits(ib: IB, sym: str):
         except Exception:
             return None
 
+    # CSH2: ``IBIS`` (Xetra) em EUR qualifica na API mas MKT cancela na paper (RTH / BBO); na TWS manual
+    # costuma funcionar **LSE** (GBP ou EUR). Preferir LSE antes de Xetra.
+    if sym == "CSH2":
+        for exchange in ("LSE", "LSEETF"):
+            for ccy in ("GBP", "EUR"):
+                qc = _try(Stock(sym, exchange, ccy))
+                if qc:
+                    return qc
+
     # 1) Venues EUR (Xetra / Euronext / LSE EUR / …)
     for exchange in ("IBIS", "AEB", "LSEETF", "LSE", "BVLP.ETF", "SWB", "ETFP", "SMART"):
         qc = _try(Stock(sym, exchange, "EUR"))
@@ -299,11 +308,13 @@ def _place_eur_mm_ucits(ib: IB, o: OrderIn) -> dict[str, Any]:
         if float(trade2.orderStatus.filled or 0) > 0 or not _status_inactive_like(st2):
             return _ucits_fill_dict(trade2, f"UCITS LIMIT ~{lp} {ccy} ({ex})")
 
+    last_ucits_trade: Any = trade
     for outside_rth in (False, True):
         mo = MarketOrder(side, qty)
         mo.tif = "DAY"
         mo.outsideRth = outside_rth
         trade3 = ib.placeOrder(qc, mo)
+        last_ucits_trade = trade3
         _wait_trade_after_place(ib, trade3, float(qty), max_sec=10.0)
         st3 = str(trade3.orderStatus.status or "").strip()
         if float(trade3.orderStatus.filled or 0) > 0 or not _status_inactive_like(st3):
@@ -315,8 +326,8 @@ def _place_eur_mm_ucits(ib: IB, o: OrderIn) -> dict[str, Any]:
             _cancel_trade_safe(ib, trade3)
 
     return _ucits_fill_dict(
-        trade,
-        f"UCITS {sym} ({ccy}): mercado inactivo ou sem preço — horário EU/UK e permissões ETF.",
+        last_ucits_trade,
+        f"UCITS {sym} ({ccy}): mercado inactivo ou sem preço — horário EU/UK e permissões ETF. Última tentativa: MARKET (exchange={ex}).",
     )
 
 
