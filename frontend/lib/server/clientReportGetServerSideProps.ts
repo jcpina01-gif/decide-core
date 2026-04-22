@@ -1952,6 +1952,7 @@ async function getClientReportServerSidePropsImpl(
     proposedTrades.map((t) => exclusionTickerGroup(normalizeTickerKey(t.ticker)))
   );
   const entryMinPct = planEntryMinWeightPct();
+  const exitFloorPct = planExitWeightPct();
   for (const r of recommendedPositions) {
     if (
       isReportPlanCashSleeveTicker(r.ticker) ||
@@ -1960,8 +1961,17 @@ async function getClientReportServerSidePropsImpl(
     ) {
       continue;
     }
-    /* Entrada: só linha BUY sugerida se alvo **estritamente** > mínimo (default 1%). */
-    if (!(safeNumber(r.weightPct, 0) > entryMinPct + 1e-12)) continue;
+    /**
+     * Entrada na grelha «Alterações»: por defeito alvo > 1% (reduz pó).
+     * Títulos **zona JP** (ADR / Tóquio) com pesos 0,5–1% apareciam na recomendada mas sumiam
+     * daqui — usamos o mesmo piso que a **saída** (0,5% tip.) para esses tickers.
+     */
+    const wRec = safeNumber(r.weightPct, 0);
+    const jpLine =
+      isJapaneseEquityTicker(r.ticker) ||
+      planZoneForTicker(r.ticker, r.region, r.country, r.csvBenchZone) === "JP";
+    const minForLine = jpLine ? exitFloorPct : entryMinPct;
+    if (!(wRec > minForLine + 1e-12)) continue;
     proposedTrades.push({
       ticker: r.ticker,
       side: "BUY",

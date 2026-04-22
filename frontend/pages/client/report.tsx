@@ -4504,7 +4504,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                             ? "Detalhe desta execução"
                             : showPlanVsExecResponseMismatch
                               ? "Resposta da corretora (este envio — não é o plano completo)"
-                              : "Detalhe das ordens deste envio"}
+                              : "Detalhe das execuções deste envio"}
                         <div
                           style={{
                             marginTop: 8,
@@ -4525,11 +4525,16 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           ) : (
                             <>
                               Esta grelha reflecta o último «Executar ordens» do plano (envio via{" "}
-                              <code style={{ color: "#a1a1aa" }}>send-orders</code>) — por isso, depois de **comprar** o
-                              plano, quase todas as linhas são naturalmente{" "}
-                              <strong style={{ color: "#e2e8f0" }}>BUY</strong>. Depois de «Zerar posições», a grelha
-                              passa a mostrar o <strong style={{ color: "#e2e8f0" }}>flatten</strong> (vendas / fechos)
-                              até voltar a «Executar ordens».
+                              <code style={{ color: "#a1a1aa" }}>send-orders</code>). Após reforçar o plano, quase
+                              todas as linhas tendem a ser <strong style={{ color: "#e2e8f0" }}>BUY</strong> até a
+                              carteira se aproximar do alvo. No{" "}
+                              <strong style={{ color: "#e2e8f0" }}>Client Portal (paper)</strong>, abra a página
+                              <strong style={{ color: "#e2e8f0" }}>«Orders &amp; Trades»</strong> e use o separador
+                              <strong style={{ color: "#e2e8f0" }}>Trades</strong> para cruzar execuções já concluídas. O
+                              separador <strong style={{ color: "#e2e8f0" }}>Orders</strong> mostra sobretudo ordens
+                              ainda em aberto: compras a mercado preenchidas podem deixar de figurar aí muito
+                              cedo. Depois de «Zerar posições», a grelha abaixo passa a reflectir o fecho
+                              (vendas) até haver um novo «Executar ordens».
                             </>
                           )}
                         </div>
