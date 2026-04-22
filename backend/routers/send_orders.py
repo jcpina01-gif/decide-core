@@ -83,7 +83,8 @@ def _isin_for_mm_symbol(sym: str) -> Optional[str]:
 def _qualify_eur_ucits(ib: IB, sym: str):
     """
     ETF UCITS — tenta várias rotas: exchanges EUR, reqContractDetails, ISIN, e por fim listagem GBP (LSE).
-    CSH2 por vezes só aparece como GBP no LSE; nesse caso a ordem segue em GBP (preços na TWS em GBP).
+    CSH2: por defeito tenta LSE (GBP/EUR) antes de Xetra (ver comentário no corpo). Com
+    ``DECIDE_CSH2_PREFER_EUR_VENUES=1``, CSH2 segue o mesmo fluxo EUR que os outros símbolos (IBIS, …).
     """
     sym = (sym or "").strip().upper()
     if not sym:
@@ -96,9 +97,16 @@ def _qualify_eur_ucits(ib: IB, sym: str):
         except Exception:
             return None
 
-    # CSH2: ``IBIS`` (Xetra) em EUR qualifica na API mas MKT cancela na paper (RTH / BBO); na TWS manual
-    # costuma funcionar **LSE** (GBP ou EUR). Preferir LSE antes de Xetra.
-    if sym == "CSH2":
+    # CSH2: por defeito LSE (GBP/EUR) antes de Xetra — na paper o MKT em ``IBIS`` (EUR) qualifica mas
+    # costuma cancelar; LSE costuma executar. Para forçar listagem **EUR primeiro** (Xetra / SMART EUR):
+    # ``DECIDE_CSH2_PREFER_EUR_VENUES=1`` na VM (backend/.env) + reiniciar uvicorn.
+    _cs2_eur_first = os.environ.get("DECIDE_CSH2_PREFER_EUR_VENUES", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    if sym == "CSH2" and not _cs2_eur_first:
         for exchange in ("LSE", "LSEETF"):
             for ccy in ("GBP", "EUR"):
                 qc = _try(Stock(sym, exchange, ccy))
@@ -189,6 +197,9 @@ def _place_eur_mm_ucits(ib: IB, o: OrderIn) -> dict[str, Any]:
     """Compra/venda UCITS MM em EUR (ex. CSH2)."""
     sym = (o.ticker or "").strip().upper()
     if sym == "EUR_MM_PROXY":
+        sym = _EUR_MM_IB
+    # Plano/CSV com «CSH2» explícito: alinhar a ``EUR_MM_IB_TICKER`` (ex. XEON) quando configurado.
+    if sym == "CSH2" and _EUR_MM_IB != "CSH2":
         sym = _EUR_MM_IB
     side = (o.side or "").strip().upper()
     qty = int(float(o.qty))
@@ -378,25 +389,37 @@ def _ib_us_equity_symbol_for_contract(sym: str) -> str:
     return s
 
 
+def _try_qualify_usd_stock(ib: IB, sym_q: str, exchange: str) -> Optional[Any]:
+    """qualifyContracts pode falhar por venue; ADRs OTC (muitos JP em USD) qualificam melhor em PINK/OTCQB."""
+    try:
+        q = ib.qualifyContracts(Stock(sym_q, exchange, "USD"))
+        return q[0] if q else None
+    except Exception:
+        return None
+
+
 def _qualify_us_stock_contract(ib: IB, sym: str):
     """Qualifica STK USD: para ETFs TBILL-proxy tenta SMART primeiro (paper costuma rotear melhor)."""
     sym_in = (sym or "").strip().upper()
     sym_q = _ib_us_equity_symbol_for_contract(sym_in)
     if sym_q in _ETF_ARCA_US:
         for exchange in ("SMART", "ARCA"):
-            c = Stock(sym_q, exchange, "USD")
-            qualified = ib.qualifyContracts(c)
-            if qualified:
-                return qualified[0]
+            qc = _try_qualify_usd_stock(ib, sym_q, exchange)
+            if qc:
+                return qc
         return None
     if sym_q == "BRK B":
         for exchange in ("SMART", "NYSE"):
-            qualified = ib.qualifyContracts(Stock("BRK B", exchange, "USD"))
-            if qualified:
-                return qualified[0]
+            qc = _try_qualify_usd_stock(ib, "BRK B", exchange)
+            if qc:
+                return qc
         return None
-    qualified = ib.qualifyContracts(Stock(sym_q, "SMART", "USD"))
-    return qualified[0] if qualified else None
+    # ADRs / OTC em USD (ex. SoftBank SFTBY): SMART por vezes não devolve contrato na paper; tentar venues OTC.
+    for exchange in ("SMART", "PINK", "VALUE", "OTCQB", "OTCQX", "NASDAQ", "NYSE", "AMEX"):
+        qc = _try_qualify_usd_stock(ib, sym_q, exchange)
+        if qc:
+            return qc
+    return None
 
 
 def _etf_aggressive_limit_price(ib: IB, qc: Any, side: str) -> Optional[float]:
@@ -561,7 +584,10 @@ def _place_stock(ib: IB, o: OrderIn, attach_fx_hedge: bool = False) -> dict[str,
             "filled": 0.0,
             "avg_fill_price": None,
             "status": "contract_not_qualified",
-            "message": None,
+            "message": (
+                "Contrato STK USD não qualificou (tentámos SMART, PINK, OTCQB, …). "
+                "Na TWS/Gateway: pesquise o ticker, confirme listagem USD e trading US/OTC na conta paper."
+            ),
         }
 
     def _return_fill(
