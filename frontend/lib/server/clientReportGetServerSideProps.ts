@@ -1917,11 +1917,20 @@ async function getClientReportServerSidePropsImpl(
     if (cp > 0) t.closePrice = cp;
   }
 
-  const targetWeightByTicker = new Map<string, number>(
-    recommendedPositions.map((p) => [p.ticker, safeNumber(p.weightPct, 0)])
-  );
+  /**
+   * Cruzar alvo com chave de grupo (``RMS.PA`` no plano vs ``RMS-PA`` na recomendada) —
+   * o mapa exacto dava `targetWeightPct: 0` e a linha BUY era apagada ou sem qty.
+   */
+  const targetWeightByGroup = new Map<string, number>();
+  for (const p of recommendedPositions) {
+    const gk = exclusionTickerGroup(normalizeTickerKey(p.ticker));
+    const w = safeNumber(p.weightPct, 0);
+    const prev = targetWeightByGroup.get(gk) ?? 0;
+    if (w > prev) targetWeightByGroup.set(gk, w);
+  }
   for (const t of proposedTrades) {
-    t.targetWeightPct = safeNumber(targetWeightByTicker.get(t.ticker), 0);
+    const gk = exclusionTickerGroup(normalizeTickerKey(t.ticker));
+    t.targetWeightPct = safeNumber(targetWeightByGroup.get(gk), 0);
   }
   // BUY sem peso-alvo:
   // - se foi excluído pelo cliente, manter visível como INATIVO;

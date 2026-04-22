@@ -877,7 +877,8 @@ export async function loadApprovalAlignedProposedTrades(
     const k = exclusionTickerGroup(normalizeTickerKey(p.ticker));
     const prev = dedupByTicker.get(k);
     if (!prev || safeNumber(p.weightPct, 0) > safeNumber(prev.weightPct, 0)) {
-      dedupByTicker.set(k, { ...p, ticker: k });
+      /** Manter símbolo do motor/CSV; `k` é só chave (alinhar a `clientReportGetServerSideProps`). */
+      dedupByTicker.set(k, { ...p });
     }
   }
   const recommendedRawUnique = Array.from(dedupByTicker.values());
@@ -965,11 +966,16 @@ export async function loadApprovalAlignedProposedTrades(
     if (cp > 0) t.closePrice = cp;
   }
 
-  const targetWeightByTicker = new Map<string, number>(
-    recommendedPositions.map((p) => [p.ticker, safeNumber(p.weightPct, 0)]),
-  );
+  const targetWeightByGroup = new Map<string, number>();
+  for (const p of recommendedPositions) {
+    const gk = exclusionTickerGroup(normalizeTickerKey(p.ticker));
+    const w = safeNumber(p.weightPct, 0);
+    const prev = targetWeightByGroup.get(gk) ?? 0;
+    if (w > prev) targetWeightByGroup.set(gk, w);
+  }
   for (const t of proposedTrades) {
-    t.targetWeightPct = safeNumber(targetWeightByTicker.get(t.ticker), 0);
+    const gk = exclusionTickerGroup(normalizeTickerKey(t.ticker));
+    t.targetWeightPct = safeNumber(targetWeightByGroup.get(gk), 0);
   }
 
   for (let i = proposedTrades.length - 1; i >= 0; i -= 1) {
