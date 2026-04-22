@@ -1034,6 +1034,25 @@ function sendOrdersErrorLooksLikeUpstreamTimeout(msg: string): boolean {
   );
 }
 
+/** Evita mostrar HTML de erro (502/Cloudflare/nginx) no cartão «Detalhe». */
+function sanitizeExecutionErrorForUi(raw: string): string {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  const compact = s.replace(/^\uFEFF/, "").replace(/^\s+/, "");
+  if (
+    /^<!DOCTYPE\s+html/i.test(compact) ||
+    /^<html[\s>]/i.test(compact) ||
+    /<!DOCTYPE\s+html/i.test(s) ||
+    (/<html[\s>]/i.test(s) && /<\/html>/i.test(s))
+  ) {
+    return (
+      "Resposta HTML em vez de JSON (erro no proxy ou no backend). Confirme na Vercel o " +
+      "`BACKEND_URL` / `DECIDE_BACKEND_URL`, logs do FastAPI na VM, e que o processo uvicorn/gunicorn está a correr."
+    );
+  }
+  return s.length > 1200 ? `${s.slice(0, 1200)}…` : s;
+}
+
 /** Rótulo DECIDE/Yahoo: IB usa «BRK B»; alinhamos a BRK.B na UI. */
 function displayTickerLabel(ticker: string): string {
   const t = ticker.trim().toUpperCase();
@@ -1368,7 +1387,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 "A página foi recarregada durante o envio. Confirme no IB Gateway ou na TWS se as ordens concluíram; pode usar «Executar ordens» se algo ficou incompleto.";
             }
             setPostApprovalStage(stage);
-            if (msg) setExecutionMessage(msg);
+            if (msg) setExecutionMessage(sanitizeExecutionErrorForUi(msg));
             if (parsed.execSummary !== undefined) setExecSummary(parsed.execSummary);
             if (Array.isArray(parsed.execFills)) setExecFills(parsed.execFills);
             if (typeof parsed.lastExecBatchResidual === "boolean") setLastExecBatchResidual(parsed.lastExecBatchResidual);
@@ -2126,8 +2145,9 @@ export default function ClientReportPage({ reportData }: PageProps) {
       try {
         payload = JSON.parse(rawSend);
       } catch {
+        const snippet = rawSend?.slice(0, 400) || "";
         throw new Error(
-          rawSend?.slice(0, 200) ||
+          sanitizeExecutionErrorForUi(snippet) ||
             `Resposta inválida do proxy (${res.status}). Tente recarregar a página.`
         );
       }
@@ -2210,11 +2230,12 @@ export default function ClientReportPage({ reportData }: PageProps) {
             lower === "load failed"
           ? "Sem ligação ao Next ou ao backend. Confirme: (1) npm run dev na pasta frontend (porta 4701), (2) uvicorn na porta de BACKEND_URL no .env.local (ex. 8090), (3) firewall/antivírus a não bloquear localhost."
           : raw;
-      setExecutionMessage(msg || "Falha ao enviar ordens para a corretora.");
+      const safeMsg = sanitizeExecutionErrorForUi(msg || "Falha ao enviar ordens para a corretora.");
+      setExecutionMessage(safeMsg);
       setPostApprovalStage("failed");
       recordSendOrdersResponse(sendOrdersPayload, {
         source: "Plano — DECISÃO FINAL",
-        batchError: msg || "Falha ao enviar ordens para a corretora.",
+        batchError: safeMsg,
       });
     } finally {
       if (typeof abortTimer === "number") window.clearTimeout(abortTimer);
