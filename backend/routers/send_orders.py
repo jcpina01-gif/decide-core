@@ -389,13 +389,87 @@ def _ib_us_equity_symbol_for_contract(sym: str) -> str:
     return s
 
 
-def _try_qualify_usd_stock(ib: IB, sym_q: str, exchange: str) -> Optional[Any]:
+def _try_qualify_stock(ib: IB, sym_q: str, exchange: str, currency: str) -> Optional[Any]:
     """qualifyContracts pode falhar por venue; ADRs OTC (muitos JP em USD) qualificam melhor em PINK/OTCQB."""
     try:
-        q = ib.qualifyContracts(Stock(sym_q, exchange, "USD"))
+        q = ib.qualifyContracts(Stock(sym_q, exchange, currency))
         return q[0] if q else None
     except Exception:
         return None
+
+
+def _try_qualify_usd_stock(ib: IB, sym_q: str, exchange: str) -> Optional[Any]:
+    return _try_qualify_stock(ib, sym_q, exchange, "USD")
+
+
+def _intl_listing_spec(sym_u: str) -> Optional[tuple[str, str, tuple[str, ...]]]:
+    """
+    Tickers estilo Yahoo (ex. RMS.PA → Paris EUR) ou Tóquio (8306.T → JPY).
+    Devolve (símbolo IB, moeda, exchanges a tentar por ordem) ou None → pipeline STK USD.
+    """
+    s = (sym_u or "").strip().upper()
+    compact = s.replace(" ", "")
+    if "." not in compact:
+        return None
+    base, suf = compact.rsplit(".", 1)
+    if not base or not suf:
+        return None
+    # Berkshire e similares: não confundir com listagem europeia.
+    if base == "BRK" and len(suf) <= 2:
+        return None
+
+    if suf == "T" and base.isdigit():
+        return (base, "JPY", ("TSEJ", "SMART"))
+
+    suf_u = suf.upper()
+    # Paris, Xetra, Amsterdam, Madrid, Milano, Bruxelas, Euronext Dublin, …
+    specs: dict[str, tuple[str, tuple[str, ...]]] = {
+        "PA": ("EUR", ("SBF", "AEB", "SMART", "EBS")),
+        "DE": ("EUR", ("IBIS", "AEB", "SMART")),
+        "AS": ("EUR", ("AEB", "SMART", "EBS")),
+        "MI": ("EUR", ("BVME", "SMART", "AEB")),
+        "MC": ("EUR", ("SMART", "MC", "BVME")),
+        "BR": ("EUR", ("ENEXT.BR", "AEB", "SMART")),
+        "LS": ("GBP", ("LSE", "SMART")),
+        "L": ("GBP", ("LSE", "SMART")),
+        "LN": ("GBP", ("LSE", "SMART")),
+        "SW": ("CHF", ("EBS", "SMART", "SIX")),
+        "ST": ("SEK", ("SFB", "SMART")),
+        "OL": ("NOK", ("OSL", "SMART")),
+        "CO": ("DKK", ("CPH", "SMART")),
+        "HE": ("EUR", ("SFB", "SMART")),
+        "VI": ("EUR", ("VSE", "SMART")),
+        "TO": ("CAD", ("TSE", "SMART")),
+        "V": ("CAD", ("VENTURE", "TSE", "SMART")),
+        "IS": ("ISK", ("SMART",)),
+        "IC": ("EUR", ("SMART", "BVME")),
+    }
+    row = specs.get(suf_u)
+    if not row:
+        return None
+    ccy, exchanges = row
+    return (base, ccy, exchanges)
+
+
+def _qualify_intl_listed_stock(ib: IB, sym_u: str) -> Optional[Any]:
+    spec = _intl_listing_spec(sym_u)
+    if not spec:
+        return None
+    ib_sym, currency, exchanges = spec
+    for ex in exchanges:
+        qc = _try_qualify_stock(ib, ib_sym, ex, currency)
+        if qc:
+            return qc
+    return None
+
+
+def _qualify_equity_contract(ib: IB, sym: str) -> Optional[Any]:
+    """STK: USD (US/ADR) ou listagem internacional (.PA, .DE, .T, …)."""
+    sym_u = (sym or "").strip().upper()
+    qc_intl = _qualify_intl_listed_stock(ib, sym_u)
+    if qc_intl:
+        return qc_intl
+    return _qualify_us_stock_contract(ib, sym_u)
 
 
 def _qualify_us_stock_contract(ib: IB, sym: str):
@@ -575,7 +649,7 @@ def _place_stock(ib: IB, o: OrderIn, attach_fx_hedge: bool = False) -> dict[str,
             "status": "skip_zero",
             "message": "invalid qty or side",
         }
-    qc = _qualify_us_stock_contract(ib, sym)
+    qc = _qualify_equity_contract(ib, sym)
     if not qc:
         return {
             "ticker": sym,
@@ -585,8 +659,8 @@ def _place_stock(ib: IB, o: OrderIn, attach_fx_hedge: bool = False) -> dict[str,
             "avg_fill_price": None,
             "status": "contract_not_qualified",
             "message": (
-                "Contrato STK USD não qualificou (tentámos SMART, PINK, OTCQB, …). "
-                "Na TWS/Gateway: pesquise o ticker, confirme listagem USD e trading US/OTC na conta paper."
+                "Contrato de acção não qualificou na IB (USD: SMART/PINK/OTC…; "
+                "EUR: .PA/.DE/.AS…; JP TSE: NNNN.T). Confirme o símbolo na TWS/Gateway e permissões paper."
             ),
         }
 
@@ -623,6 +697,11 @@ def _place_stock(ib: IB, o: OrderIn, attach_fx_hedge: bool = False) -> dict[str,
     def _place_or_parent_fx(contr: Any, ord_: Order) -> tuple[Any, Optional[bool], Optional[str]]:
         """Devolve (trade_mãe, fx_hedge_attached ou None se N/A, sufixo de mensagem)."""
         if attach_fx_hedge and side == "BUY":
+            ccy = (getattr(contr, "currency", None) or "").strip().upper()
+            if ccy and ccy != "USD":
+                # Hedge EUR.USD anexado é pensado para exposição USD; em STK EUR/JPY evita rejeição na IB.
+                t = ib.placeOrder(contr, ord_)
+                return t, False, f" Compra em {ccy}: sem hedge EUR.USD anexado (só STK USD)."
             t, err = _place_equity_order_with_attached_fx_hedge(ib, contr, ord_)
             ok = err is None
             suffix = f" {err}" if err else " Hedge FX EUR.USD anexado (IB hedgeType=F, filho qty=0)."

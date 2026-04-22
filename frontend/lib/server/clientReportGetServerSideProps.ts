@@ -678,8 +678,12 @@ function exclusionTickerGroup(ticker: string): string {
 
 function normalizeTickerKey(ticker: string): string {
   let u = ticker.trim().toUpperCase().replace(/\./g, "-").replace(/\s+/g, "");
-  /** IBKR / CSV: «HON IB», «AEP US» compactados — alinhar ao índice `metaByTicker` (HON, AEP, …). */
-  for (const suf of ["IB", "US", "LSE", "PA", "DE", "AS", "CN", "HK"] as const) {
+  /**
+   * IBKR / CSV: «HON IB», «AEP US» compactados — alinhar ao índice `metaByTicker` (HON, AEP, …).
+   * Não retirar «PA», «DE», «AS» como sufixo: em símbolos tipo `RMS-PA` / `RMS.PA` isso quebrava o ticker
+   * para `RMS-`, a grelha «Carteira recomendada» mostrava o nome certo mas «Alterações» ficava sem preço/qty.
+   */
+  for (const suf of ["IB", "US", "LSE", "CN", "HK"] as const) {
     if (u.endsWith(suf) && u.length > suf.length + 1) {
       u = u.slice(0, -suf.length);
       break;
@@ -1641,7 +1645,8 @@ async function getClientReportServerSidePropsImpl(
     const k = exclusionTickerGroup(normalizeTickerKey(p.ticker));
     const prev = dedupByTicker.get(k);
     if (!prev || safeNumber(p.weightPct, 0) > safeNumber(prev.weightPct, 0)) {
-      dedupByTicker.set(k, { ...p, ticker: k });
+      /** Manter o símbolo do motor/CSV (`RMS.PA`, …); `k` é só chave de dedupe — não substituir por `k`. */
+      dedupByTicker.set(k, { ...p });
     }
   }
   const recommendedRawUnique = stripPlanBenchmarkIndexRows(Array.from(dedupByTicker.values()));

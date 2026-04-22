@@ -585,12 +585,84 @@ function summarizeFlattenCloses(closes: unknown[]) {
   return { skipped, filled, pending, errors, attempted, total: closes.length };
 }
 
-function formatFlattenPortfolioUserMessage(sum: ReturnType<typeof summarizeFlattenCloses>): string {
+/** Mapeia `closes` do POST flatten-paper-portfolio para o mesmo formato que `send-orders` → grelha de execução. */
+function flattenClosesToExecFills(closes: unknown[]): ReportExecFillRow[] {
+  const out: ReportExecFillRow[] = [];
+  for (const row of closes) {
+    if (!row || typeof row !== "object") continue;
+    const o = row as Record<string, unknown>;
+    const ticker = String(o.ticker ?? "").trim();
+    if (!ticker) continue;
+    const status = String(o.status ?? "").trim();
+    const stLower = status.toLowerCase();
+    const sideRaw = String(o.side ?? "").trim().toUpperCase();
+    if (stLower === "skipped" && sideRaw !== "BUY" && sideRaw !== "SELL") continue;
+    const action = sideRaw === "SELL" || sideRaw === "BUY" ? sideRaw : "SELL";
+    const requested = Math.max(0, Math.floor(Number(o.requested_qty ?? 0)));
+    const filled = Math.max(0, Math.floor(Number(o.filled ?? 0)));
+    const ap = o.avg_fill_price;
+    const avg =
+      typeof ap === "number" && Number.isFinite(ap) && ap > 0
+        ? ap
+        : null;
+    const msg = typeof o.message === "string" ? o.message : null;
+    const executedAs =
+      typeof o.executed_as === "string" && o.executed_as.trim() ? String(o.executed_as).trim() : null;
+    out.push({
+      ticker,
+      action,
+      requested_qty: requested,
+      filled,
+      avg_fill_price: avg,
+      status: status || "Submitted",
+      message: msg,
+      executed_as: executedAs,
+      ib_order_id: typeof o.ib_order_id === "number" ? o.ib_order_id : null,
+      ib_perm_id: typeof o.ib_perm_id === "number" ? o.ib_perm_id : null,
+    });
+  }
+  return out;
+}
+
+function formatFlattenPortfolioUserMessage(
+  sum: ReturnType<typeof summarizeFlattenCloses>,
+  closes: unknown[],
+): string {
+  let fxBuy = 0;
+  let fxSell = 0;
+  let stkBuy = 0;
+  let stkSell = 0;
+  for (const row of closes) {
+    if (!row || typeof row !== "object") continue;
+    const o = row as Record<string, unknown>;
+    const ex = String(o.executed_as ?? "").toUpperCase();
+    const side = String(o.side ?? "").toUpperCase();
+    const isFx = ex === "IDEALPRO" || ex === "CASH";
+    if (isFx) {
+      if (side === "BUY") fxBuy += 1;
+      else if (side === "SELL") fxSell += 1;
+    } else if (ex === "STK" || !ex) {
+      if (side === "SELL") stkSell += 1;
+      else if (side === "BUY") stkBuy += 1;
+    }
+  }
+  const fxExplain =
+    fxBuy + fxSell > 0
+      ? ` Incluiu fecho **cambial** (ex. EUR.USD): ${fxSell} ordem(ns) SELL e ${fxBuy} ordem(ns) BUY. Na IB, **BUY em FX após ter vendido todas as acções** é normal — fecha a perna cambial (posição negativa em moeda), **não** é recomprar o livro de acções.`
+      : "";
+
   if (sum.attempted === 0 && sum.skipped > 0) {
     return `Nenhuma ordem de mercado enviada (${sum.skipped} linha(s) ignoradas — p.ex. não-STK).`;
   }
   if (sum.errors === 0 && sum.pending === 0 && sum.filled === sum.attempted && sum.attempted > 0) {
-    return `Ordens de fecho executadas na corretora (${sum.filled}/${sum.attempted}). A carteira em baixo foi sincronizada com o snapshot IBKR — confirme no IB Gateway ou na TWS se quiser.`;
+    return (
+      `Ordens de fecho executadas na corretora (${sum.filled}/${sum.attempted}). ` +
+      (stkSell + stkBuy > 0
+        ? `Acções: ${stkSell} SELL / ${stkBuy} BUY (BUY = apenas cobrir shorts em STK).`
+        : "") +
+      fxExplain +
+      ` A carteira em baixo foi sincronizada com o snapshot IBKR — confirme no IB Gateway ou na TWS se quiser.`
+    );
   }
   const bits: string[] = [
     `Pedidos enviados à corretora: ${sum.attempted} linha(s) com ordem (` +
@@ -598,6 +670,10 @@ function formatFlattenPortfolioUserMessage(sum: ReturnType<typeof summarizeFlatt
       (sum.skipped ? `, ignoradas: ${sum.skipped}` : "") +
       `).`,
   ];
+  if (stkSell + stkBuy > 0) {
+    bits.push(`Acções: ${stkSell} SELL / ${stkBuy} BUY (BUY STK = cobrir short).`);
+  }
+  if (fxExplain) bits.push(fxExplain.trim());
   bits.push(
     "Enviar não é o mesmo que executar: com mercado aberto ou latência, o IB Gateway ou a TWS pode ainda mostrar as posições até as ordens preencherem. A tabela só reflete o que o snapshot IBKR devolver — atualizámos agora e voltaremos a pedir dentro de segundos."
   );
@@ -1159,6 +1235,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
   /** True quando esta corrida enviou só um subconjunto (ex.: completar falhadas) — não é o plano completo de uma só vez. */
   const [lastExecBatchResidual, setLastExecBatchResidual] = useState(false);
   const [execFills, setExecFills] = useState<ExecFill[]>([]);
+  /** ``plan`` = último ``send-orders``; ``flatten`` = último «Zerar posições» (grelha alinhada a fechos / Trades). */
+  const [execFillsBatchKind, setExecFillsBatchKind] = useState<"plan" | "flatten">("plan");
   const execFillsRef = useRef<ExecFill[]>([]);
   /** useLayoutEffect: ref alinhada ao DOM antes do paint — evita clique em «Actualizar estado» com ref vazia. */
   useLayoutEffect(() => {
@@ -1272,6 +1350,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
           execSummary?: ExecSummary;
           execFills?: ExecFill[];
           lastExecBatchResidual?: boolean;
+          execFillsBatchKind?: "plan" | "flatten";
         };
         if (parsed.v === 1 && parsed.accountCode === reportData.accountCode) {
           if (
@@ -1293,6 +1372,9 @@ export default function ClientReportPage({ reportData }: PageProps) {
             if (parsed.execSummary !== undefined) setExecSummary(parsed.execSummary);
             if (Array.isArray(parsed.execFills)) setExecFills(parsed.execFills);
             if (typeof parsed.lastExecBatchResidual === "boolean") setLastExecBatchResidual(parsed.lastExecBatchResidual);
+            if (parsed.execFillsBatchKind === "flatten" || parsed.execFillsBatchKind === "plan") {
+              setExecFillsBatchKind(parsed.execFillsBatchKind);
+            }
             restoredFromSession = true;
           }
         }
@@ -1333,6 +1415,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
           execSummary,
           execFills,
           lastExecBatchResidual,
+          execFillsBatchKind,
           ts: Date.now(),
         })
       );
@@ -1345,6 +1428,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
     execSummary,
     execFills,
     lastExecBatchResidual,
+    execFillsBatchKind,
     reportData.accountCode,
   ]);
 
@@ -1479,6 +1563,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
     setExecFills([]);
     setExecSummary(null);
     setLastExecBatchResidual(false);
+    setExecFillsBatchKind("plan");
     setPostApprovalStage("ready");
     setSyncExecError(null);
     setSyncExecNote(null);
@@ -1728,6 +1813,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
     let flattenActivityRecorded = false;
     const ok = window.confirm(
       `Conta IBKR paper (teste): enviar ordens de mercado para fechar TODAS as posições em ações (incl. ${tbillIb} / proxy T-Bills) e posições Forex em pares (CASH / IDEALPRO), p.ex. EUR.USD — para poder recomprar o plano e executar hedge FX limpo.\n\n` +
+        "Ordem: primeiro SELL nos longos de acções; depois BUY só para shorts em acção; por fim fecho FX. " +
+        "Nota: o fecho da perna cambial pode aparecer na IB como COMPRA (BUY) em EUR.USD mesmo depois de todas as vendas — é fechar FX, não é recomprar acções.\n\n" +
         "Saldo de caixa e linha de margem não são «zerados» — apenas fecho de títulos e FX.\n\nContinuar?"
     );
     if (!ok) return;
@@ -1761,9 +1848,15 @@ export default function ClientReportPage({ reportData }: PageProps) {
       recordFlattenPaperPortfolioResponse(closes);
       flattenActivityRecorded = true;
       const sum = summarizeFlattenCloses(closes);
+      const ff = flattenClosesToExecFills(closes);
+      if (ff.length > 0) {
+        setExecFills(ff);
+        setExecSummary(buildExecSummaryFromFills(ff));
+        setExecFillsBatchKind("flatten");
+      }
       setFlattenMessage("A sincronizar a carteira com o IBKR…");
       await refreshIbkrPositionsFromIb();
-      setFlattenMessage(formatFlattenPortfolioUserMessage(sum));
+      setFlattenMessage(formatFlattenPortfolioUserMessage(sum, closes));
       if (sum.pending > 0) {
         window.setTimeout(() => {
           void refreshIbkrPositionsFromIb();
@@ -1915,6 +2008,10 @@ export default function ClientReportPage({ reportData }: PageProps) {
     if (u === "EUR_MM_PROXY") {
       return eurMmIbTicker();
     }
+    /** Plano antigo com «CSH2» explícito: respeitar ``NEXT_PUBLIC_EUR_MM_IB_TICKER`` (ex. XEON). */
+    if (u === "CSH2" && eurMmIbTicker() !== "CSH2") {
+      return eurMmIbTicker();
+    }
     const compact = u.replace(/\s+/g, "");
     if (compact === "BRK.B" || compact === "BRK-B" || compact === "BRKB" || u === "BRK B") {
       return "BRK B";
@@ -1972,6 +2069,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
     /** Envio completo: não mostrar linhas de um envio anterior (session/sync) enquanto este POST está em curso ou se falhar sem `fills`. */
     if (!override || override.length === 0) {
       setExecFills([]);
+      setExecFillsBatchKind("plan");
     }
     executeCancelRequestedRef.current = false;
     setExecutionMessage(
@@ -2057,6 +2155,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
         executed_as?: string;
       }>;
       setExecFills(fills as ExecFill[]);
+      setExecFillsBatchKind("plan");
       const execSum = buildExecSummaryFromFills(fills as ReportExecFillRow[]);
       setExecSummary(execSum);
       const batchComplete =
@@ -2094,6 +2193,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
         const bootstrap = buildBootstrapExecFillsFromProposedTrades(proposedTradesFiltered, resolveIbkrSendTicker);
         if (bootstrap.length > 0) {
           setExecFills(bootstrap);
+          setExecFillsBatchKind("plan");
           setExecSummary(buildExecSummaryFromFills(bootstrap));
           bootstrappedAfterTimeout = true;
         }
@@ -2298,6 +2398,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
   const showPlanVsExecResponseMismatch =
     postApprovalStage === "done" &&
     !lastExecBatchResidual &&
+    execFillsBatchKind !== "flatten" &&
     planTradeCount > 0 &&
     execResponseLineCount > 0 &&
     execResponseLineCount !== planTradeCount;
@@ -3322,8 +3423,10 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     ações (STK), incluindo {tbillIb}, e depois posições <strong style={{ color: "#fef2f2" }}>Forex</strong>{" "}
                     (EUR.USD, etc.) para ficar limpo a recomprar e executar o FX no mesmo envio. Ordem no IB Gateway ou na TWS:{" "}
                     <strong style={{ color: "#fef2f2" }}>SELL</strong> (longos) primeiro; só depois{" "}
-                    <strong style={{ color: "#fef2f2" }}>BUY</strong> para shorts — depois pausa e fecho FX. A tabela
-                    só actualiza quando o snapshot IBKR mostrar quantidades a zero. O botão laranja pede à IB um{" "}
+                    <strong style={{ color: "#fef2f2" }}>BUY</strong> para shorts em acção — depois pausa e{" "}
+                    <strong style={{ color: "#fef2f2" }}>fecho FX</strong> (pode ser <strong style={{ color: "#fef2f2" }}>BUY</strong> em EUR.USD
+                    na corretora: é fechar a perna cambial, não recomprar acções). A tabela só actualiza quando o snapshot IBKR mostrar quantidades a
+                    zero. O botão laranja pede à IB um{" "}
                     <strong style={{ color: "#fef2f2" }}>cancelamento global</strong> de todas as ordens ainda abertas
                     (inclui ordens criadas por outro cliente API ou na TWS). Conta{" "}
                     <strong style={{ color: "#fef2f2" }}>paper</strong> apenas.
@@ -4262,7 +4365,9 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     </div>
                     {execSummary ? (
                       <div style={{ marginTop: 8 }}>
-                        Resposta da corretora neste envio:{" "}
+                        {execFillsBatchKind === "flatten"
+                          ? "Linhas do último «Zerar posições» (flatten):"
+                          : "Resposta da corretora neste envio:"}{" "}
                         <strong style={{ color: "#ffffff" }}>{execResponseLineCount}</strong> linha
                         {execResponseLineCount === 1 ? "" : "s"} (tabela abaixo)
                         {lastExecBatchResidual ? (
@@ -4393,11 +4498,13 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           fontWeight: 700,
                         }}
                       >
-                        {lastExecBatchResidual
-                          ? "Detalhe desta execução"
-                          : showPlanVsExecResponseMismatch
-                          ? "Resposta da corretora (este envio — não é o plano completo)"
-                          : "Detalhe das ordens deste envio"}
+                        {execFillsBatchKind === "flatten"
+                          ? "Fecho «Zerar posições» na paper (último flatten)"
+                          : lastExecBatchResidual
+                            ? "Detalhe desta execução"
+                            : showPlanVsExecResponseMismatch
+                              ? "Resposta da corretora (este envio — não é o plano completo)"
+                              : "Detalhe das ordens deste envio"}
                         <div
                           style={{
                             marginTop: 8,
@@ -4407,10 +4514,24 @@ export default function ClientReportPage({ reportData }: PageProps) {
                             lineHeight: 1.45,
                           }}
                         >
-                          Esta grelha reflecta apenas o último «Executar ordens» do plano (envio via{" "}
-                          <code style={{ color: "#a1a1aa" }}>send-orders</code>). «Zerar posições na paper» e «Cancelar
-                          ordens não executadas» usam outros endpoints — o resultado aparece na mensagem do bloco
-                          temporário (testes) e na TWS, não substitui automaticamente as linhas aqui.
+                          {execFillsBatchKind === "flatten" ? (
+                            <>
+                              Estas linhas vêm do último <strong style={{ color: "#e2e8f0" }}>POST flatten-paper-portfolio</strong>{" "}
+                              (fechos na IB). Alinham com o separador <strong style={{ color: "#e2e8f0" }}>Trades</strong> do
+                              Client Portal (execuções concluídas). O separador <strong style={{ color: "#e2e8f0" }}>Orders</strong>{" "}
+                              mostra sobretudo ordens <em>activas</em> — vendas a mercado já preenchidas deixam de aparecer aí
+                              rapidamente.
+                            </>
+                          ) : (
+                            <>
+                              Esta grelha reflecta o último «Executar ordens» do plano (envio via{" "}
+                              <code style={{ color: "#a1a1aa" }}>send-orders</code>) — por isso, depois de **comprar** o
+                              plano, quase todas as linhas são naturalmente{" "}
+                              <strong style={{ color: "#e2e8f0" }}>BUY</strong>. Depois de «Zerar posições», a grelha
+                              passa a mostrar o <strong style={{ color: "#e2e8f0" }}>flatten</strong> (vendas / fechos)
+                              até voltar a «Executar ordens».
+                            </>
+                          )}
                         </div>
                       </div>
                       <div style={{ overflowX: "auto" }}>

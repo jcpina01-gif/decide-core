@@ -4,11 +4,25 @@ Inclui ações (STK), incl. proxy T-Bills, e posições Forex IDEALPRO (CASH), p
 para poder voltar a comprar o plano e submeter hedge FX limpo no mesmo envio.
 Uso temporário / testes — não expor a contas reais (paper_mode obrigatório).
 Ligação: IB Gateway (recomendado) ou TWS — `IB_GATEWAY_HOST` / `IB_GATEWAY_PORT` ou `TWS_HOST` / `TWS_PORT`.
+
+Após fechar **acções** (SELL nos longos), o fecho inclui posições **Forex CASH** (ex. EUR.USD); com posição FX
+**negativa** a ordem de fecho é **BUY** — na corretora pode parecer «uma série de compras» após as vendas.
+Para **não** enviar fecho cambial na paper: ``DECIDE_FLATTEN_PAPER_SKIP_FX=1`` no ambiente do FastAPI.
+
+Para **nunca** enviar ``BUY`` em acções/UCITS (só ``SELL`` em posições longas; shorts em STK/FUND ficam na conta
+até fecho manual): ``DECIDE_FLATTEN_PAPER_SELL_LONGS_ONLY=1``. Útil se a IB mostrar linhas com ``position`` negativo
+que não reconheces como short (ex. efeito de margem / contrato) e queres evitar «compras» de fecho em STK.
+
+**Inconsistência corrigida:** o ``portfolio()`` da IB pode devolver **várias linhas** do mesmo título com quantidades
+de sinal oposto (lotes / duplicados). O código antigo emitia **SELL** numa linha e **BUY** noutra; a posição **líquida**
+podia ser long — agora agrega por instrumento antes de decidir o lado.
 """
 from __future__ import annotations
 
 import asyncio
 import os
+from typing import Any
+
 from ib_insync import IB, MarketOrder
 from pydantic import BaseModel
 
@@ -22,6 +36,11 @@ IBKR_POLL_SECONDS = 1
 # Após fechar longs (SELL), breve pausa antes de cobrir shorts (BUY) — alinha com libertação de margem na IBKR.
 IBKR_FLATTEN_PHASE_GAP_SEC = float(os.getenv("IBKR_FLATTEN_PHASE_GAP_SEC", "2.5"))
 IBKR_REQUIRE_PAPER = os.getenv("IBKR_REQUIRE_PAPER", "1").strip() != "0"
+
+
+def _truthy_env(key: str) -> bool:
+    s = (os.getenv(key) or "").strip().lower()
+    return s in ("1", "true", "yes", "on")
 
 
 class FlattenRequest(BaseModel):
@@ -80,10 +99,24 @@ def run_flatten_paper_portfolio(req: FlattenRequest) -> dict:
                 "accounts": accounts,
             }
 
-        # Ações (STK): primeiro todos os SELL (fechar longos); depois BUY (cobrir shorts).
-        work_rows: list[tuple[int, str, object, float, int, str]] = []
+        # Ações (STK/FUND): primeiro todos os SELL (fechar longos); depois BUY (cobrir shorts).
+        # ``ib.portfolio()`` pode devolver **várias linhas** para o mesmo título (lotes, contas, ou duplicados da API).
+        # Tratar cada linha isoladamente gera SELL numa e BUY noutra com o mesmo símbolo — a posição **líquida**
+        # pode ser long. Agregamos por (conta, conId) ou (conta, símbolo, moeda, troca, tipo) antes de decidir o lado.
+        work_rows: list[dict[str, Any]] = []
         # Forex (CASH / IDEALPRO): fechar depois das ações para libertar margem antes do FX.
         fx_rows: list[tuple[str, object, float, float, str]] = []
+
+        def _equity_bucket_key(acct: str, c: Any, sym_u: str, st_u: str) -> tuple[Any, ...]:
+            con_id = int(getattr(c, "conId", 0) or 0)
+            ccy = str(getattr(c, "currency", "") or "").strip().upper()
+            exch = str(getattr(c, "primaryExchange", "") or getattr(c, "exchange", "") or "").strip().upper()
+            st_norm = st_u if st_u in ("STK", "FUND") else ("STK" if not st_u else st_u)
+            if con_id > 0:
+                return ("C", acct, con_id)
+            return ("S", acct, sym_u, ccy, exch, st_norm)
+
+        eq_buckets: dict[tuple[Any, ...], dict[str, Any]] = {}
 
         for item in ib.portfolio():
             c = item.contract
@@ -93,6 +126,8 @@ def run_flatten_paper_portfolio(req: FlattenRequest) -> dict:
             st = str(getattr(c, "secType", "") or "").upper()
 
             if st == "CASH":
+                if _truthy_env("DECIDE_FLATTEN_PAPER_SKIP_FX"):
+                    continue
                 local_sym = str(getattr(c, "localSymbol", "") or "").strip()
                 sym_stk = str(getattr(c, "symbol", "") or "").strip().upper()
                 disp = local_sym if local_sym else sym_stk
@@ -108,7 +143,8 @@ def run_flatten_paper_portfolio(req: FlattenRequest) -> dict:
             sym = str(getattr(c, "symbol", "") or "").strip().upper()
             if not sym:
                 continue
-            if st and st != "STK":
+            # UCITS / ETF por vezes vêm como ``FUND`` em ``portfolio()`` — antes eram ignorados e não fechavam.
+            if st not in ("", "STK", "FUND"):
                 closes.append(
                     {
                         "ticker": sym,
@@ -118,18 +154,71 @@ def run_flatten_paper_portfolio(req: FlattenRequest) -> dict:
                 )
                 continue
 
-            qty = int(round(abs(pos)))
+            acct = str(getattr(item, "account", "") or "").strip()
+            key = _equity_bucket_key(acct, c, sym, st)
+            ent = eq_buckets.setdefault(
+                key,
+                {"net": 0.0, "best_c": c, "best_abs": -1.0, "sym": sym, "st": st or "STK", "acct": acct},
+            )
+            ent["net"] = float(ent["net"]) + pos
+            ap = abs(pos)
+            if ap > float(ent["best_abs"]):
+                ent["best_abs"] = ap
+                ent["best_c"] = c
+
+        for _key, ent in sorted(eq_buckets.items(), key=lambda kv: kv[0]):
+            net = float(ent["net"])
+            sym = str(ent["sym"])
+            c = ent["best_c"]
+            st = str(ent["st"] or "STK")
+            if abs(net) < 1e-9:
+                continue
+            qty = int(round(abs(net)))
             if qty < 1:
                 continue
-            side = "SELL" if pos > 0 else "BUY"
+            side = "SELL" if net > 0 else "BUY"
+            if _truthy_env("DECIDE_FLATTEN_PAPER_SELL_LONGS_ONLY") and side == "BUY":
+                closes.append(
+                    {
+                        "ticker": sym,
+                        "side": side,
+                        "requested_qty": qty,
+                        "status": "skipped",
+                        "message": (
+                            "DECIDE_FLATTEN_PAPER_SELL_LONGS_ONLY=1: não envia BUY para cobrir short em STK/FUND. "
+                            "Feche manualmente na IB ou desligue esta opção se a posição negativa for intencional."
+                        ),
+                        "position_before": net,
+                        "planned_leg": "short_cover",
+                        "executed_as": "STK" if st == "STK" else "FUND",
+                    }
+                )
+                continue
             phase = 0 if side == "SELL" else 1
-            work_rows.append((phase, sym, c, pos, qty, side))
+            work_rows.append(
+                {
+                    "phase": phase,
+                    "sym": sym,
+                    "c": c,
+                    "net": net,
+                    "qty": qty,
+                    "side": side,
+                    "st": st,
+                }
+            )
 
-        work_rows.sort(key=lambda r: (r[0], r[1]))
+        work_rows.sort(key=lambda r: (r["phase"], r["sym"]))
 
-        for i, (_phase, sym, c, _pos, qty, side) in enumerate(work_rows):
-            if i > 0 and work_rows[i - 1][0] == 0 and work_rows[i][0] == 1:
+        for i, row in enumerate(work_rows):
+            if i > 0 and work_rows[i - 1]["phase"] == 0 and row["phase"] == 1:
                 ib.sleep(IBKR_FLATTEN_PHASE_GAP_SEC)
+
+            sym = row["sym"]
+            c = row["c"]
+            qty = int(row["qty"])
+            side = str(row["side"])
+            net = float(row["net"])
+            st = str(row["st"] or "STK")
 
             try:
                 qualified = ib.qualifyContracts(c)
@@ -148,6 +237,7 @@ def run_flatten_paper_portfolio(req: FlattenRequest) -> dict:
             avg_price = float(avg) if avg is not None and avg > 0 else None
             msg = getattr(trade.orderStatus, "whyHeld", None) or None
 
+            st_out = "STK" if st in ("", "STK") else "FUND"
             closes.append(
                 {
                     "ticker": sym,
@@ -157,7 +247,9 @@ def run_flatten_paper_portfolio(req: FlattenRequest) -> dict:
                     "filled": filled,
                     "avg_fill_price": avg_price,
                     "message": msg,
-                    "executed_as": "STK",
+                    "executed_as": st_out,
+                    "position_before": net,
+                    "planned_leg": "long_close" if side == "SELL" else "short_cover",
                 }
             )
 
@@ -201,6 +293,8 @@ def run_flatten_paper_portfolio(req: FlattenRequest) -> dict:
                     "avg_fill_price": avg_price,
                     "message": msg,
                     "executed_as": "IDEALPRO",
+                    "position_before": _pos,
+                    "planned_leg": "fx_close",
                 }
             )
     finally:

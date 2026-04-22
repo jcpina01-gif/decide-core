@@ -338,7 +338,8 @@ export function lookupCompanyMetaEntry(ticker: string): CompanyMetaEntry | undef
   if (!raw0) return undefined;
   const stripIbkrSuffix = (s: string): string => {
     let x = s;
-    for (const suf of ["IB", "US", "LSE", "PA", "DE", "AS", "CN", "HK"]) {
+    /** Não retirar PA/DE/AS — «RMS.PA» terminava em «PA» e virava «RMS.», quebrando o meta Hermès. */
+    for (const suf of ["IB", "US", "LSE", "CN", "HK"]) {
       if (x.endsWith(suf) && x.length > suf.length + 1) {
         x = x.slice(0, -suf.length);
         break;
