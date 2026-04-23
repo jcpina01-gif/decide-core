@@ -37,6 +37,14 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     });
   }
 
+  const lastD =
+    built.dates.length > 0 ? String(built.dates[built.dates.length - 1]) : null;
+  const m = lastD && lastD.match(/(\d{4}-\d{2}-\d{2})/);
+  const seriesEndYmd = m ? m[1] : lastD;
+  const seriesDataSource = built.meta.aligned_cap15_m100
+    ? "freeze_model_outputs"
+    : "landing_freeze_cap15";
+
   return res.status(200).json({
     ok: true,
     series: {
@@ -47,6 +55,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     },
     result: {
       kind: "freeze_v5_plafonado_embed_aligned",
+      series_end: seriesEndYmd,
+      series_data_source: seriesDataSource,
       profile: built.meta.profile,
       note:
         "Mesma construção que o cartão «Modelo CAP15» / `/api/embed-plafonado-cagr` (kpi_server): CAP15 + m100 plafonado; moderado ≈1× vol ref. (motor + alinhamento no cliente); conservador/dinâmico com alvo vs benchmark.",

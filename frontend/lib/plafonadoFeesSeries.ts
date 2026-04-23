@@ -280,6 +280,44 @@ function modelEquityCsvLooksComplete(filePath: string): boolean {
 }
 
 /**
+ * Quando o CSV de `model_equity` rebenta numericamente na cauda (ex.: 1e19–1e23 com benchmark ~5),
+ * log-scale e «Base 100» no cliente ficam ilegíveis. Isto **não** corrige o motor Python — só
+ * limita a série servida ao cliente a um múltiplo plausível do benchmark e a um crescimento
+ * diário coerente com o dia anterior (após o *clip*, o ponto i usa já `out[i-1]` *capped*).
+ */
+function capEquitySeriesVsBenchmarkRail(benchmark_equity: number[], equity: number[]): number[] {
+  const MAX_MODEL_OVER_BENCH = 120;
+  const MAX_DAILY_MULT = 1.22;
+
+  const out = equity.slice();
+  for (let i = 0; i < out.length; i += 1) {
+    const b = benchmark_equity[i];
+    if (!(typeof b === "number") || !Number.isFinite(b) || b <= 0) continue;
+
+    let v = out[i];
+    if (!(typeof v === "number") || !Number.isFinite(v) || v <= 0) continue;
+
+    const hardCap = b * MAX_MODEL_OVER_BENCH;
+    if (i === 0) {
+      out[i] = Math.min(v, hardCap);
+      continue;
+    }
+
+    const b0 = benchmark_equity[i - 1];
+    const v0 = out[i - 1];
+    if (!(typeof b0 === "number") || !Number.isFinite(b0) || b0 <= 0 || !(v0 > 0) || !Number.isFinite(v0)) {
+      out[i] = Math.min(v, hardCap);
+      continue;
+    }
+
+    const bRatio = b / b0;
+    const benchLinked = v0 * Math.min(MAX_DAILY_MULT, Math.max(1 / MAX_DAILY_MULT, bRatio * 1.08));
+    out[i] = Math.min(v, hardCap, benchLinked);
+  }
+  return out;
+}
+
+/**
  * Benchmark longo para o mesmo `model_outputs/` que o iframe (`benchmark_equity_final_20y.csv` ou clone).
  * O `cwd` da série (`resolveDecideProjectRoot`) é a mesma convenção que nas outras rotas: monorepo em
  * dev e raiz de *deploy* (ex. `/var/task` com `freeze/`) com *file tracing* da Vercel.
@@ -379,17 +417,19 @@ export function buildLandingFreezeCap15Series(
     }
   }
 
-  const equity_overlayed = applyModelEquityProfilePolicy(baseEq, benchmark_equity, pk, {
+  let equity_overlayed = applyModelEquityProfilePolicy(baseEq, benchmark_equity, pk, {
     usedProfileFile,
     clientEmbed: true,
     forceSyntheticProfileVol: forceSyntheticVol,
   });
+  equity_overlayed = capEquitySeriesVsBenchmarkRail(benchmark_equity, equity_overlayed);
+  const equity_rawCapped = capEquitySeriesVsBenchmarkRail(benchmark_equity, equity_raw.slice());
 
   return {
     dates,
     benchmark_equity,
     equity_overlayed,
-    equity_raw: equity_raw.slice(),
+    equity_raw: equity_rawCapped,
     meta: {
       profile: pk,
       aligned_cap15_m100: false,
@@ -464,18 +504,20 @@ function buildPlafonadoEmbedLikeSeriesFromFreezeOnly(
   const alignedRaw = alignM100EquityToCapDates(capDates, m100P.dates, m100P.equity);
   if (!alignedRaw) return null;
 
-  const equity_raw = alignedRaw;
-  const equity_overlayed = applyModelEquityProfilePolicy(equity_raw, benchmark_equity, pk, {
+  const equity_rawAligned = alignedRaw;
+  let equity_overlayed = applyModelEquityProfilePolicy(equity_rawAligned, benchmark_equity, pk, {
     usedProfileFile,
     clientEmbed: true,
     forceSyntheticProfileVol: forceSyntheticVol,
   });
+  equity_overlayed = capEquitySeriesVsBenchmarkRail(benchmark_equity, equity_overlayed);
+  const equity_rawCapped = capEquitySeriesVsBenchmarkRail(benchmark_equity, equity_rawAligned);
 
   return {
     dates: capDates,
     benchmark_equity,
     equity_overlayed,
-    equity_raw,
+    equity_raw: equity_rawCapped,
     meta: {
       profile: pk,
       aligned_cap15_m100: true,

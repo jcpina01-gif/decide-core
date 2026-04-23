@@ -436,6 +436,41 @@ def apply_model_equity_profile_policy(
     )
 
 
+def cap_equity_vs_benchmark_rail(bench_eq: pd.Series, model_eq: pd.Series) -> pd.Series:
+    """
+    Quando o CSV de equity rebenta na cauda (ex.: 1e19–1e23 com benchmark ~5), o Plotly em escala log
+    no iframe fica ilegível. Isto **não** corrige o motor de geração do freeze — só limita a série
+    servida ao cliente (múltiplo máximo vs benchmark + crescimento diário coerente com o dia anterior).
+    Paridade com `capEquitySeriesVsBenchmarkRail` em `frontend/lib/plafonadoFeesSeries.ts`.
+    """
+    if len(bench_eq) != len(model_eq):
+        return model_eq.astype(float)
+    MAX_OVER = 120.0
+    MAX_DAY = 1.22
+    b = bench_eq.to_numpy(dtype=float, copy=False)
+    m = model_eq.to_numpy(dtype=float, copy=True)
+    for i in range(len(m)):
+        bv = float(b[i])
+        if not (np.isfinite(bv) and bv > 0):
+            continue
+        mv = float(m[i])
+        if not (np.isfinite(mv) and mv > 0):
+            continue
+        hard = bv * MAX_OVER
+        if i == 0:
+            m[i] = min(mv, hard)
+            continue
+        b0 = float(b[i - 1])
+        v0 = float(m[i - 1])
+        if not (np.isfinite(b0) and b0 > 0 and np.isfinite(v0) and v0 > 0):
+            m[i] = min(mv, hard)
+            continue
+        br = bv / b0
+        linked = v0 * min(MAX_DAY, max(1.0 / MAX_DAY, br * 1.08))
+        m[i] = min(mv, hard, linked)
+    return pd.Series(m, index=model_eq.index, dtype=float)
+
+
 def load_run_model_snapshot(profile_key: str) -> dict | None:
     """Load a live run_model snapshot if one is available."""
     candidates = [
@@ -4786,7 +4821,8 @@ HTML_TEMPLATE = """
         eqDatasets.push({
           label: compareCap100IsMargin ? 'Modelo CAP15 com margem' : 'Modelo CAP15',
           data: max100Equity,
-          borderColor: '#fbbf24',
+          borderColor: compareCap100IsMargin ? '#fb923c' : '#fbbf24',
+          borderDash: compareCap100IsMargin ? [5, 4] : undefined,
           tension: 0.05,
           pointRadius: 0,
         });
@@ -4864,7 +4900,8 @@ HTML_TEMPLATE = """
         ddDatasets.push({
           label: compareCap100IsMargin ? 'Modelo CAP15 com margem' : 'Modelo CAP15',
           data: max100DD,
-          borderColor: '#fbbf24',
+          borderColor: compareCap100IsMargin ? '#fb923c' : '#fbbf24',
+          borderDash: compareCap100IsMargin ? [5, 4] : undefined,
           borderWidth: 1,
           tension: 0.05,
           pointRadius: 0,
@@ -6650,6 +6687,7 @@ def load_cap15_margin_series_distinct_from_plafonado(
             margin_series = _backfill_cap15_flat_model_prefix_with_benchmark(
                 margin_series, bench_eq, dates
             )
+            margin_series = cap_equity_vs_benchmark_rail(bench_eq, margin_series)
             # Não rejeitar se coincidir com o plafonado: com `equity_overlay_margin` do motor V5, nos dias em
             # que o teto NAV 100% não activa, as duas curvas são a mesma série — isso é correcto.
             return margin_series, margem_path
@@ -9203,6 +9241,7 @@ def compute_client_embed_plafonado_kpis(profile_key: str) -> dict | None:
         m100_series = _backfill_cap15_flat_model_prefix_with_benchmark(
             m100_series, bench_eq, dates
         )
+        m100_series = cap_equity_vs_benchmark_rail(bench_eq, m100_series)
         compare_cap100_kpis, _ = compute_kpis(m100_series)
         cagr_pct = round(float(compare_cap100_kpis.cagr) * 100.0, 2)
         sharpe_raw = float(compare_cap100_kpis.sharpe)
@@ -9335,6 +9374,11 @@ def index():
             _, _, bench_eq, bench_dates = load_equity_curve(bench_path, "benchmark_equity")
             bench_eq = align_equity_series_to_target_dates(bench_eq, bench_dates, dates)
 
+    # Cauda corrompida no CSV (ordens 1e19+) rebenta `pct_change`/`std` em `scale_model_equity_to_profile_vol`
+    # (curva «morta» ~1,0 + degrau no fim). Sanitizar **antes** da política de perfil e de `raw_eq = model_eq.copy()`.
+    if len(model_eq) == len(bench_eq):
+        model_eq = cap_equity_vs_benchmark_rail(bench_eq, model_eq.astype(float))
+
     # Iframe dashboard: nunca usar `tmp_diag/run_model_live.json` para a curva/KPIs «teóricos» —
     # esse snapshot costuma repetir a série plafonada (CAGR/vol iguais ao CAP15).
     if client_embed:
@@ -9407,6 +9451,9 @@ def index():
     if cap15_only and model_key == "v5_overlay_cap15_max100exp" and len(raw_eq) == len(model_eq):
         raw_eq, raw_path = resolve_distinct_smooth_theoretical_vs_plafonado(dates, model_eq, raw_eq, raw_path)
 
+    if cap15_only and len(raw_eq) == len(bench_eq):
+        raw_eq = cap_equity_vs_benchmark_rail(bench_eq, raw_eq)
+
     # CAP15 e restantes: ver `apply_model_equity_profile_policy`.
     model_eq = apply_model_equity_profile_policy(
         model_eq,
@@ -9419,6 +9466,8 @@ def index():
     )
     if model_key in ("v5_overlay_cap15", "v5_overlay_cap15_max100exp"):
         model_eq = _backfill_cap15_flat_model_prefix_with_benchmark(model_eq, bench_eq, dates)
+
+    model_eq = cap_equity_vs_benchmark_rail(bench_eq, model_eq)
 
     profile_source_note = (
         f"Perfil: {profile_key} (curva por ficheiro)."
@@ -9536,6 +9585,7 @@ def index():
                     m100_series = _backfill_cap15_flat_model_prefix_with_benchmark(
                         m100_series, bench_eq, dates
                     )
+                    m100_series = cap_equity_vs_benchmark_rail(bench_eq, m100_series)
                     compare_cap100_kpis, m100_dd_s = compute_kpis(m100_series)
                     compare_max100_equity = [float(x) for x in m100_series.values]
                     compare_max100_drawdowns = [float(x) for x in m100_dd_s]
