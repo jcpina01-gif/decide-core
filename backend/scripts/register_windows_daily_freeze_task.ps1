@@ -29,9 +29,10 @@ if (-not (Test-Path -LiteralPath $runner)) {
 }
 
 $runnerFull = (Resolve-Path -LiteralPath $runner).Path
-$argLine = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$runnerFull`""
+# Aspas vía concatenação — evita erro de parser com `` `" `` dentro de strings "..."
+$argLine = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $runnerFull + '"'
 if ($RepoRoot) {
-    $argLine += " -RepoRoot `"$( (Resolve-Path -LiteralPath $RepoRoot).Path )`""
+    $argLine += ' -RepoRoot "' + (Resolve-Path -LiteralPath $RepoRoot).Path + '"'
 }
 
 try {
@@ -62,7 +63,7 @@ Register-ScheduledTask `
     -Description "DECIDE: Yahoo -> prices_close.csv + regenera freeze CAP15 (22h)." `
     -Force | Out-Null
 
-Write-Host "Tarefa '$TaskName' registada — diária às $At (utilizador: $env:USERNAME)."
+Write-Host "Tarefa '$TaskName' registada - diaria as $At (utilizador: $env:USERNAME)."
 Write-Host "Log: (raiz do repo)\logs\freeze_daily_update.log"
-Write-Host "Teste manual: powershell -NoProfile -ExecutionPolicy Bypass -File `"$runnerFull`""
+Write-Host ([string]::Format("Teste manual: powershell -NoProfile -ExecutionPolicy Bypass -File `"{0}`"", $runnerFull))
 exit 0
