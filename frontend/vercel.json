@@ -3,6 +3,9 @@
   "functions": {
     "pages/client/report.tsx": {
       "maxDuration": 120
+    },
+    "pages/api/send-orders.ts": {
+      "maxDuration": 300
     }
   }
 }
