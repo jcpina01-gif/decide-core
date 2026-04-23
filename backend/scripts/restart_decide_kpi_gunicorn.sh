@@ -2,6 +2,9 @@
 # Reinicia / recarrega o Gunicorn do KPI (Linux) — mesmo padrão que na VM:
 #   gunicorn -w 2 -b 127.0.0.1:5000 --timeout 120 kpi_server:app
 #
+# Variáveis opcionais (ex.: DECIDE_KPI_EQUITY_RAIL=0): ficheiro na raiz do repo `$ROOT/.env.kpi`
+# (KEY=VAL por linha; não fazer commit — ver `backend/scripts/env.kpi.example`). Carregado antes do nohup.
+#
 # Uso:
 #   ./backend/scripts/restart_decide_kpi_gunicorn.sh
 #   ./backend/scripts/restart_decide_kpi_gunicorn.sh /home/jcpina01/decide-core
@@ -28,6 +31,13 @@ if [[ -z "$ROOT" ]]; then
   ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 fi
 ROOT="$(cd "$ROOT" && pwd)"
+
+if [[ -f "$ROOT/.env.kpi" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env.kpi"
+  set +a
+fi
 
 KPI_PY="$ROOT/kpi_server.py"
 if [[ ! -f "$KPI_PY" ]]; then

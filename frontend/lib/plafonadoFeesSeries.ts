@@ -279,13 +279,26 @@ function modelEquityCsvLooksComplete(filePath: string): boolean {
   return countCsvDataRows(filePath) >= MIN_MODEL_EQUITY_PROFILE_ROWS;
 }
 
+/** Paridade com `kpi_equity_vs_benchmark_rail_enabled` no Flask. `DECIDE_KPI_EQUITY_RAIL=0` = séries sem *clip*. */
+function kpiEquityVsBenchmarkRailEnabled(): boolean {
+  const v = String(process.env.DECIDE_KPI_EQUITY_RAIL ?? "1")
+    .trim()
+    .toLowerCase();
+  return !["0", "false", "off", "no"].includes(v);
+}
+
 /**
  * Quando o CSV de `model_equity` rebenta numericamente na cauda (ex.: 1e19–1e23 com benchmark ~5),
  * log-scale e «Base 100» no cliente ficam ilegíveis. Isto **não** corrige o motor Python — só
  * limita a série servida ao cliente a um múltiplo plausível do benchmark e a um crescimento
  * diário coerente com o dia anterior (após o *clip*, o ponto i usa já `out[i-1]` *capped*).
+ *
+ * Desligar (curvas = freeze): `DECIDE_KPI_EQUITY_RAIL=0` no processo Node (Vercel / dev).
  */
 function capEquitySeriesVsBenchmarkRail(benchmark_equity: number[], equity: number[]): number[] {
+  if (!kpiEquityVsBenchmarkRailEnabled()) {
+    return equity.slice();
+  }
   const MAX_MODEL_OVER_BENCH = 120;
   const MAX_DAILY_MULT = 1.22;
 

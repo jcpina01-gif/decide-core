@@ -436,13 +436,27 @@ def apply_model_equity_profile_policy(
     )
 
 
+def kpi_equity_vs_benchmark_rail_enabled() -> bool:
+    """
+    *Rail* de sanidade (múltiplo máximo vs benchmark + crescimento diário coerente). Por defeito **ligado**
+    para o gráfico log não ficar ilegível com CSV corrupto. Para curvas **exactamente** iguais ao freeze
+    (sem *clip*), define ``DECIDE_KPI_EQUITY_RAIL=0`` (ou ``false`` / ``off`` / ``no``) no Gunicorn / ambiente.
+    """
+    v = str(os.environ.get("DECIDE_KPI_EQUITY_RAIL", "1")).strip().lower()
+    return v not in ("0", "false", "off", "no")
+
+
 def cap_equity_vs_benchmark_rail(bench_eq: pd.Series, model_eq: pd.Series) -> pd.Series:
     """
     Quando o CSV de equity rebenta na cauda (ex.: 1e19–1e23 com benchmark ~5), o Plotly em escala log
     no iframe fica ilegível. Isto **não** corrige o motor de geração do freeze — só limita a série
     servida ao cliente (múltiplo máximo vs benchmark + crescimento diário coerente com o dia anterior).
     Paridade com `capEquitySeriesVsBenchmarkRail` em `frontend/lib/plafonadoFeesSeries.ts`.
+
+    Desligar (*portfolio* = dados do CSV sem alterar): ``DECIDE_KPI_EQUITY_RAIL=0`` — ver ``kpi_equity_vs_benchmark_rail_enabled``.
     """
+    if not kpi_equity_vs_benchmark_rail_enabled():
+        return model_eq.astype(float)
     if len(bench_eq) != len(model_eq):
         return model_eq.astype(float)
     MAX_OVER = 120.0
@@ -9143,6 +9157,7 @@ def api_health():
     # Corpo JSON explícito (evita confusão com builds antigos que só tinham ok+app no jsonify).
     _health_payload: dict = {"ok": True, "app": "DecideAI KPI Flask", "build": KPI_SERVER_BUILD_TAG}
     _health_payload["kpi_repo_root"] = str(REPO_ROOT)
+    _health_payload["equity_vs_benchmark_rail"] = kpi_equity_vs_benchmark_rail_enabled()
     _health_payload["cap15_bench_prefix_backfill"] = True
     try:
         _vk = _PLAFONADO_CAP15_OUTPUTS / "v5_kpis.json"
