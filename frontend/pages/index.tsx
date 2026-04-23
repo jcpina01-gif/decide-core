@@ -452,7 +452,10 @@ export default function DecideLandingPage() {
           raw_volmatch_k_max: 4.0,
         };
         // 1) Freeze Modelo CAP15 (≤100% NV) — alinhado ao cartão no kpi_server (:5000)
-        let r = await fetch("/api/landing/freeze-cap15-backtest", { method: "GET" });
+        let r = await fetch("/api/landing/freeze-cap15-backtest", {
+          method: "GET",
+          cache: "no-store",
+        });
         let j = (await r.json()) as CoreOverlayResp;
         if (cancelled) return;
         if (!r.ok || j?.ok === false) {
@@ -460,6 +463,7 @@ export default function DecideLandingPage() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
+            cache: "no-store",
           });
           j = (await r.json()) as CoreOverlayResp;
         }

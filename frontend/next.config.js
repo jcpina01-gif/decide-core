@@ -13,6 +13,18 @@ const path = require("path");
 
 const projectDir = __dirname;
 
+/**
+ * `../freeze` no *output file tracing* cria ficheiros sob `.next/trace/freeze/`. No Windows, com
+ * o repo em OneDrive/Documentos (ou antivírus) isso dispara muitas vezes
+ * `EPERM: scandir '.next\\trace\\freeze'`. Em Linux (Vercel) o mesmo *glob* funciona. Para
+ * forçar o *trace* do *freeze* no Windows, define `DECIDE_WIN_FREEZE_TRACE=1` (caminho fora
+ * de OneDrive ajuda) ou muda a pasta de *build* com `NEXT_DIST_DIR` para um disco local.
+ */
+const shouldIncludeFreezeInOutputTrace =
+  process.platform !== "win32" || String(process.env.DECIDE_WIN_FREEZE_TRACE || "").trim() === "1";
+
+const traceFreezeGlobs = shouldIncludeFreezeInOutputTrace ? ["../freeze/**/*"] : [];
+
 function resolveDistDir() {
   if (process.env.DECIDE_NEXT_DIST_IN_PROJECT === "1") {
     return ".next";
@@ -51,16 +63,17 @@ const nextConfig = {
 
   /** Garante que os CSV/JSON da landing entram no bundle serverless (fs em /api/landing/*). */
   outputFileTracingIncludes: {
-    "/api/landing/freeze-cap15-backtest": ["./data/landing/**/*"],
+    /** Lê `../freeze/.../model_outputs` (mesmo padrão que /api/client/plan-decision-kpis); sem isto, em Vercel só o landing entra no *trace* e o gráfico cai a 15-04. */
+    "/api/landing/freeze-cap15-backtest": [...traceFreezeGlobs, "./data/landing/**/*"],
     "/api/landing/core-overlayed": ["./data/landing/**/*"],
     /** Plano de aprovação (freeze + CSVs) em deploy Vercel com root `frontend/`. */
-    "/api/client/approval-plan": ["../freeze/**/*", "../backend/data/**/*"],
-    "/api/client/plan-decision-kpis": ["../freeze/**/*", "../backend/data/**/*"],
+    "/api/client/approval-plan": [...traceFreezeGlobs, "../backend/data/**/*"],
+    "/api/client/plan-decision-kpis": [...traceFreezeGlobs, "../backend/data/**/*"],
     /** Histórico de pesos + SSR do relatório leem `weights_by_rebalance*` (mesmo merge que o API). */
-    "/api/client/recommendations-history": ["../freeze/**/*", "../backend/data/**/*"],
-    "/client/approve": ["../freeze/**/*", "../backend/data/**/*"],
+    "/api/client/recommendations-history": [...traceFreezeGlobs, "../backend/data/**/*"],
+    "/client/approve": [...traceFreezeGlobs, "../backend/data/**/*"],
     "/client/report": [
-      "../freeze/**/*",
+      ...traceFreezeGlobs,
       "../backend/data/**/*",
       "./data/landing/freeze-cap15/**/*",
     ],

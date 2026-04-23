@@ -46,16 +46,12 @@ function normalizePlafonadoProfile(
   return normalizeRiskProfileKeyForKpi(raw);
 }
 
-/** Pasta `frontend/` do monorepo, ou `projectRoot` se já for a app Next. */
-export function resolvePlafonadoNextFrontendCwd(projectRoot: string): string {
-  const front = path.join(projectRoot, "frontend");
-  try {
-    if (fs.existsSync(path.join(front, "package.json"))) return front;
-  } catch {
-    /* ignore */
-  }
-  return projectRoot;
-}
+/**
+ * @deprecated use `resolveNextFrontendAppDir` com o mesmo *cwd* a partir do qual
+ * se resolve o monorepo (o nome antigo fica re-exportado para ficheiros que ainda
+ * o importam).
+ */
+export { resolveNextFrontendAppDir as resolvePlafonadoNextFrontendCwd } from "./decideProjectRoot";
 
 function cagrDisplayFromEquity(eq: number[]): number | null {
   if (eq.length < MIN_EQUITY_POINTS) return null;
@@ -111,8 +107,9 @@ function parseModelEquityColumn(text: string): number[] {
 }
 
 /**
- * CAGR em % do hero «Plano recomendado»: primeiro `frontend/data/landing/freeze-cap15` (produto / custos),
- * senão freeze do repo (paridade com iframe quando landing não existe).
+ * CAGR em % do hero «Plano recomendado»: mesmo critério que `buildPlanHeroPlafonadoSeries` — primeiro
+ * `freeze/.../model_outputs` (alinhado ao iframe), senão `frontend/data/landing/freeze-cap15` quando
+ * o freeze local não estiver acessível.
  */
 export function readPlanRecommendedCagrDisplayPercent(
   projectRoot: string,

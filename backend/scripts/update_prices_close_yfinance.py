@@ -136,11 +136,11 @@ def main() -> int:
             if not block.empty:
                 pieces.append(block)
         except Exception as exc:  # noqa: BLE001
-            print("Aviso: chunk falhou:", syms[:3], "…", exc, file=sys.stderr)
+            print("Aviso: chunk falhou:", syms[:3], "...", exc, file=sys.stderr)
         time.sleep(SLEEP_SEC)
 
     if not pieces:
-        print("Nenhum dado novo do Yahoo (rede, tickers ou fim‑de‑semana).")
+        print("Nenhum dado novo do Yahoo (rede, tickers ou fim de semana).")
         return 0
 
     yahoo_w = pd.concat(pieces, axis=1)
@@ -176,7 +176,7 @@ def main() -> int:
         out = out.rename(columns={out.columns[0]: "date"})
     out["date"] = out["date"].dt.strftime("%Y-%m-%d")
     out.to_csv(CSV_PATH, index=False)
-    print("OK — gravado até", out["date"].iloc[-1], "| linhas:", len(out))
+    print("OK - gravado ate", out["date"].iloc[-1], "| linhas:", len(out))
     return 0
 
 

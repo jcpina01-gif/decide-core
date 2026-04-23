@@ -6,6 +6,7 @@
 import fs from "fs";
 import path from "path";
 
+import { resolveDecideProjectRoot } from "./server/decideProjectRoot";
 import { FREEZE_PLAFONADO_MODEL_DIR } from "./freezePlafonadoDir";
 
 export type PlafonadoFeesSeriesResult = {
@@ -280,6 +281,8 @@ function modelEquityCsvLooksComplete(filePath: string): boolean {
 
 /**
  * Benchmark longo para o mesmo `model_outputs/` que o iframe (`benchmark_equity_final_20y.csv` ou clone).
+ * O `cwd` da série (`resolveDecideProjectRoot`) é a mesma convenção que nas outras rotas: monorepo em
+ * dev e raiz de *deploy* (ex. `/var/task` com `freeze/`) com *file tracing* da Vercel.
  */
 function resolveCoercedBenchmarkPath(repoRoot: string, modelOutputsDir: string): string {
   const primary = path.join(modelOutputsDir, "benchmark_equity_final_20y.csv");
@@ -300,7 +303,7 @@ function resolveCoercedBenchmarkPath(repoRoot: string, modelOutputsDir: string):
 }
 
 function resolveCap15M100Dirs(cwd: string): DirPair | null {
-  const repoRoot = path.resolve(path.join(cwd, ".."));
+  const repoRoot = resolveDecideProjectRoot(cwd);
   const smooth = path.join(repoRoot, "freeze", FREEZE_PLAFONADO_MODEL_DIR, "model_outputs");
   const m100Model = path.join(smooth, "model_equity_final_20y.csv");
   const capModelSmooth = path.join(smooth, "model_equity_final_20y.csv");
@@ -316,10 +319,13 @@ function resolveCap15M100Dirs(cwd: string): DirPair | null {
 }
 
 function resolveLandingDir(cwd: string): string | null {
-  const d = path.join(cwd, "data", "landing", "freeze-cap15");
-  const modelP = path.join(d, "model_equity_final_20y.csv");
-  const benchP = path.join(d, "benchmark_equity_final_20y.csv");
-  if (fs.existsSync(modelP) && fs.existsSync(benchP)) return d;
+  const repoRoot = resolveDecideProjectRoot(cwd);
+  const candidates = [path.join(cwd, "data", "landing", "freeze-cap15"), path.join(repoRoot, "frontend", "data", "landing", "freeze-cap15")];
+  for (const d of candidates) {
+    const modelP = path.join(d, "model_equity_final_20y.csv");
+    const benchP = path.join(d, "benchmark_equity_final_20y.csv");
+    if (fs.existsSync(modelP) && fs.existsSync(benchP)) return d;
+  }
   return null;
 }
 
@@ -394,16 +400,19 @@ export function buildLandingFreezeCap15Series(
 }
 
 /**
- * Rentabilidade anual do «Plano recomendado»: prefere o artefacto embebido `landing/freeze-cap15`
- * (narrativa de produto / custos), senão a mesma série que o iframe (`freeze` + benchmark coerced).
+ * Rentabilidade anual do «Plano recomendado» — quando existem *freeze* e *landing* com a mesma
+ * construção, escolhe a série que acaba numa data mais recente (evita landing em git desactualizado
+ * a ganhar se o *freeze* local/traçado estiver nessa frente, e o contrário após o Passo 2.5
+ * a actualizar o embed).
  */
 export function buildPlanHeroPlafonadoSeries(
   profileKeyRaw: string,
   cwd: string,
 ): PlafonadoFeesSeriesResult | null {
-  const fromLanding = buildLandingFreezeCap15Series(profileKeyRaw, cwd);
-  if (fromLanding) return fromLanding;
-  return buildPlafonadoEmbedLikeSeriesFromFreezeOnly(profileKeyRaw, cwd);
+  return pickNewerPlafonadoSeries(
+    buildPlafonadoEmbedLikeSeriesFromFreezeOnly(profileKeyRaw, cwd),
+    buildLandingFreezeCap15Series(profileKeyRaw, cwd),
+  );
 }
 
 /** Série a partir do `freeze/` do repo (paridade com o iframe Flask); sem fallback landing. */
@@ -416,7 +425,7 @@ function buildPlafonadoEmbedLikeSeriesFromFreezeOnly(
   const pair = resolveCap15M100Dirs(cwd);
   if (!pair) return null;
 
-  const repoRoot = path.resolve(path.join(cwd, ".."));
+  const repoRoot = resolveDecideProjectRoot(cwd);
   const capModelPath = path.join(pair.cap15Dir, "model_equity_final_20y.csv");
   const benchPath = resolveCoercedBenchmarkPath(repoRoot, pair.cap15Dir);
   const m100Default = path.join(pair.m100Dir, "model_equity_final_20y.csv");
@@ -476,15 +485,35 @@ function buildPlafonadoEmbedLikeSeriesFromFreezeOnly(
   };
 }
 
+/** Datas alinhadas a `YYYY-MM-DD` para comparação lexicográfica. */
+function lastYmdInSeries(ser: PlafonadoFeesSeriesResult | null): string {
+  if (!ser?.dates?.length) return "";
+  const t = String(ser.dates[ser.dates.length - 1]);
+  const m = t.match(/(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  return t;
+}
+
+function pickNewerPlafonadoSeries(
+  a: PlafonadoFeesSeriesResult | null,
+  b: PlafonadoFeesSeriesResult | null,
+): PlafonadoFeesSeriesResult | null {
+  if (a && !b) return a;
+  if (b && !a) return b;
+  if (!a && !b) return null;
+  return lastYmdInSeries(b) > lastYmdInSeries(a) ? b! : a!;
+}
+
 /**
  * Constrói datas + benchmark + equity «overlay» como no iframe / `/api/embed-plafonado-cagr`.
+ * Há *freeze* (repo ou traçado) e *landing*: usa a série que acaba numa data mais recente.
  */
 export function buildPlafonadoEmbedLikeSeries(
   profileKeyRaw: string,
   cwd: string,
 ): PlafonadoFeesSeriesResult | null {
-  return (
-    buildPlafonadoEmbedLikeSeriesFromFreezeOnly(profileKeyRaw, cwd) ??
-    buildLandingFreezeCap15Series(profileKeyRaw, cwd)
+  return pickNewerPlafonadoSeries(
+    buildPlafonadoEmbedLikeSeriesFromFreezeOnly(profileKeyRaw, cwd),
+    buildLandingFreezeCap15Series(profileKeyRaw, cwd),
   );
 }

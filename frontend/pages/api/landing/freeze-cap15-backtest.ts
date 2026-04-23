@@ -4,6 +4,7 @@
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
+import { resolveNextFrontendAppDir } from "../../../lib/server/decideProjectRoot";
 import {
   buildPlafonadoEmbedLikeSeries,
   normalizeRiskProfileKeyForKpi,
@@ -25,7 +26,9 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     typeof req.query.profile === "string" ? req.query.profile : undefined,
   );
 
-  const built = buildPlafonadoEmbedLikeSeries(profile, process.cwd());
+  res.setHeader("Cache-Control", "private, no-store, no-cache, must-revalidate");
+
+  const built = buildPlafonadoEmbedLikeSeries(profile, resolveNextFrontendAppDir());
   if (!built) {
     return res.status(404).json({
       ok: false,

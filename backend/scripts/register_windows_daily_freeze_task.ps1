@@ -60,7 +60,7 @@ Register-ScheduledTask `
     -Trigger $trigger `
     -Settings $settings `
     -Principal $principal `
-    -Description "DECIDE: Yahoo -> prices_close.csv + regenera freeze CAP15 (22h)." `
+    -Description "DECIDE: precos (TWS+YF) + regenera freeze CAP15 + copia p/ landing freeze-cap15 (22h). Def.: DECIDE_SYNC_LANDING, ver run_daily_freeze_update.ps1." `
     -Force | Out-Null
 
 Write-Host "Tarefa '$TaskName' registada - diaria as $At (utilizador: $env:USERNAME)."

@@ -1,18 +1,5 @@
-#Requires -Version 5.1
-<#
-.SYNOPSIS
-    Regenera o freeze CAP15 smooth a partir de `prices_close.csv` (e opcionalmente preços Yahoo).
-.DESCRIPTION
-    Por defeito tenta primeiro `update_prices_close_yfinance.py` (Yahoo). Se actualizas preços **só pela IB**
-    (TWS / export / outro fluxo) e já gravaste `backend/data/prices_close.csv`, define
-    `$env:DECIDE_SKIP_PRICE_UPDATE = "1"` na tarefa agendada — assim só corre:
-    `regenerate_smooth_freeze_outputs.py` (por defeito **motor V5** `export_smooth_freeze_from_v5.py`;
-    requer `DECIDE_CORE22_CLONE` ou `DECIDE_V5_ENGINE_ROOT`; fallback: `DECIDE_FREEZE_FALLBACK_ENGINE_V2=1`
-    ou `--legacy-engine-v2`) e reinício local do KPI.
-    Define `DECIDE_KPI_REPO_ROOT` / `DECIDE_PROJECT_ROOT` para a raiz do repo.
-.NOTES
-    Log: `<repo>/logs/freeze_daily_update.log`
-#>
+﻿#Requires -Version 5.1
+# (Doc: logs/freeze_daily_update.log; Passo 2.5: DECIDE_SYNC_LANDING=0 desactiva copia p/ landing)
 param(
     [string] $RepoRoot = "",
     [string] $LogPath = ""
@@ -22,11 +9,13 @@ $ErrorActionPreference = "Continue"
 $stamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
 function Write-LogLine([string] $msg) {
-    $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $msg"
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $line = $ts + " " + $msg
     Write-Host $line
     if ($script:LogFile) {
         $enc = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::AppendAllText($script:LogFile, "$line`r`n", $enc)
+        $n = [Environment]::NewLine
+        [System.IO.File]::AppendAllText($script:LogFile, $line + $n, $enc)
     }
 }
 
@@ -39,9 +28,8 @@ try {
         if (-not $here) { $here = Split-Path -Parent $MyInvocation.MyCommand.Path }
         $root = (Resolve-Path -LiteralPath (Join-Path $here "..\..")).Path
     }
-}
-catch {
-    Write-Host "ERRO: não consegui resolver a raiz do repositório. RepoRoot='$RepoRoot' PSScriptRoot='$PSScriptRoot'"
+} catch {
+    Write-Host "ERRO: nao consegui resolver a raiz do repositorio. RepoRoot='$RepoRoot' PSScriptRoot='$PSScriptRoot'"
     exit 1
 }
 
@@ -54,7 +42,7 @@ if (-not $LogPath) {
 }
 $script:LogFile = $LogPath
 
-Write-LogLine "===== Início (repo=$root) ====="
+Write-LogLine (("===== Início (repo=" + $root + ") ====="))
 
 $pyCandidates = @(
     (Join-Path $root "backend\.venv\Scripts\python.exe"),
@@ -99,69 +87,100 @@ $env:DECIDE_KPI_REPO_ROOT = $root
 $env:DECIDE_PROJECT_ROOT = $root
 Write-LogLine "Python: $pythonExe"
 
-function Invoke-Py([string] $scriptPath) {
-    Push-Location (Join-Path $root "backend")
-    try {
-        if ($pythonExe -eq "py") {
-            & py -3 $scriptPath
-        }
-        else {
-            & $pythonExe $scriptPath
-        }
-        return $LASTEXITCODE
+# Python escreve para a pipeline: se a funcao fizer "return $c", $c1 = Invoke-Py capturava
+# as linhas de saida (ex. "TWS indisponivel...") em vez do exit code. Reenviar para o host
+# e devolver so o codigo.
+function Invoke-Py {
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string] $scriptPath
+    )
+    $backend = Join-Path $root "backend"
+    Push-Location $backend
+    if ($pythonExe -eq "py") {
+        $pout = & py -3 $scriptPath 2>&1
+    } else {
+        $pout = & $pythonExe $scriptPath 2>&1
     }
-    finally {
-        Pop-Location
-    }
+    $c = 0
+    if ($null -ne $LASTEXITCODE) { $c = [int]$LASTEXITCODE }
+    if ($pout) { $pout | ForEach-Object { Write-Host $_ } }
+    Pop-Location
+    return $c
 }
 
-$upd = Join-Path $root "backend\scripts\update_prices_close_yfinance.py"
+# Por defeito: TWS/IB (Gateway) primeiro, Yahoo para falhados. Ver `update_prices_close.py`.
+# DECIDE_PRICES_SOURCE=yf forca so Yahoo; tws = so TWS. DECIDE_SKIP_PRICE_UPDATE=1 pula tudo.
+$upd = Join-Path $root "backend\scripts\update_prices_close.py"
 if ($env:DECIDE_SKIP_PRICE_UPDATE -eq "1") {
-    Write-LogLine "Aviso: DECIDE_SKIP_PRICE_UPDATE=1 — a saltar actualização Yahoo."
+    Write-LogLine "Aviso: DECIDE_SKIP_PRICE_UPDATE=1 - a saltar actualizacao de precos (Passo 1 ignorado)."
 }
-elseif (Test-Path -LiteralPath $upd) {
-    Write-LogLine "Passo 1: actualizar prices_close (Yahoo)…"
+if ($env:DECIDE_SKIP_PRICE_UPDATE -ne "1" -and (Test-Path -LiteralPath $upd)) {
+    Write-LogLine "Passo 1: actualizar prices_close (TWS/IB se disponivel, depois Yahoo para falhados)..."
     $c1 = Invoke-Py $upd
     if ($c1 -ne 0) {
-        Write-LogLine "ERRO: update_prices_close_yfinance terminou com código $c1"
+        Write-LogLine "ERRO: update_prices_close.py terminou com codigo $c1"
         exit $c1
     }
-    Write-LogLine "OK: passo 1 concluído."
+    Write-LogLine "OK: passo 1 concluido."
 }
-else {
-    Write-LogLine "Aviso: não existe $upd — só regenero o freeze com o CSV actual."
+if ($env:DECIDE_SKIP_PRICE_UPDATE -ne "1" -and -not (Test-Path -LiteralPath $upd)) {
+    Write-LogLine "Aviso: nao existe $upd - so regenero o freeze com o CSV actual."
 }
 
-Write-LogLine "Passo 2: regenerar freeze smooth…"
+Write-LogLine "Passo 2: regenerar freeze smooth (V5/CAP)..."
 $code = Invoke-Py $regen
 
 if ($code -ne 0) {
-    Write-LogLine "ERRO: regenerate terminou com código $code"
+    Write-LogLine "ERRO: regenerate terminou com codigo $code"
     exit $code
 }
 
-Write-LogLine "OK: pipeline concluído (preços + freeze)."
+# Passo 2.5: espelha model_outputs (freeze) -> frontend/data/landing/freeze-cap15 (Next/Vercel, APIs landing)
+# Desactivar: DECIDE_SYNC_LANDING=0 ou false|no
+$doLanding = $true
+$sl = ($env:DECIDE_SYNC_LANDING -as [string])
+if ($null -ne $sl -and $sl -match '^(0|no|false)\s*$') { $doLanding = $false }
+if ($doLanding) {
+    $mout = Join-Path $root "freeze\DECIDE_MODEL_V5_V2_3_SMOOTH\model_outputs"
+    $land = Join-Path $root "frontend\data\landing\freeze-cap15"
+    if (Test-Path -LiteralPath $mout) {
+        if (-not (Test-Path -LiteralPath $land)) { New-Item -ItemType Directory -Path $land -Force | Out-Null }
+        $n = 0
+        Get-ChildItem -LiteralPath $mout -File -ErrorAction SilentlyContinue | ForEach-Object {
+            $ext = $_.Extension.ToLowerInvariant()
+            if ($ext -eq ".csv" -or $ext -eq ".json") {
+                Copy-Item -LiteralPath $_.FullName -Destination $land -Force
+                $n = $n + 1
+            }
+        }
+        Write-LogLine "Passo 2.5: copiado freeze model_outputs -> frontend\data\landing\freeze-cap15 ($n ficheiros csv/json)."
+    } else {
+        Write-LogLine "Aviso: Passo 2.5 saltado (nao existe $mout)."
+    }
+} else {
+    Write-LogLine "Aviso: DECIDE_SYNC_LANDING=0 - nao actualizo frontend\data\landing\freeze-cap15."
+}
+
+Write-LogLine "OK: pipeline concluido (precos + freeze)."
 
 if ($env:DECIDE_KPI_NO_RESTART -eq "1") {
-    Write-LogLine "Aviso: DECIDE_KPI_NO_RESTART=1 — não reinicio o Flask KPI."
-}
-else {
+    Write-LogLine "Aviso: DECIDE_KPI_NO_RESTART=1 - nao reinicio o Flask KPI local."
+} else {
     $restart = Join-Path $PSScriptRoot "restart_decide_kpi_server.ps1"
     if (Test-Path -LiteralPath $restart) {
-        Write-LogLine "Passo 3: reiniciar kpi_server (Flask) local…"
+        Write-LogLine "Passo 3: reiniciar kpi_server (Flask) local..."
         try {
             & $restart -RepoRoot $root -PythonExe $pythonExe
-            Write-LogLine "OK: passo 3 concluído (ver mensagens KPI acima se correres em consola)."
+            Write-LogLine "OK: passo 3 concluido (ver mensagens KPI se correres em consola)."
+        } catch {
+            Write-LogLine "ERRO no reinicio KPI: $_"
         }
-        catch {
-            Write-LogLine "ERRO no reinício KPI: $_"
-        }
-    }
-    else {
-        Write-LogLine "Aviso: falta restart_decide_kpi_server.ps1 ao lado deste script."
+    } else {
+        Write-LogLine "Aviso: falta restart_decide_kpi_server.ps1 junto a este script."
     }
 }
 
 Write-LogLine "===== Fim ====="
-Write-LogLine "Nota: se o dashboard for Vercel/producao, o iframe usa KPI_EMBED_UPSTREAM — lá também precisa de CSV/build actualizados."
+Write-LogLine "Nota: dashboard Vercel/prod pode precisar de build/CSV a jusante (KPI_EMBED_UPSTREAM)."
 exit 0

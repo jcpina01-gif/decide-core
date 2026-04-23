@@ -1,11 +1,23 @@
 import fs from "fs";
 import path from "path";
+import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
+
+/** Ficheiro característico do *freeze* CAP15 plafonado (Vercel pode pôr `freeze/` debaixo de `/var/task`). */
+function hasPlafonadoFreezeAt(root: string): boolean {
+  try {
+    return fs.existsSync(
+      path.join(root, "freeze", FREEZE_PLAFONADO_MODEL_DIR, "model_outputs", "model_equity_final_20y.csv"),
+    );
+  } catch {
+    return false;
+  }
+}
 
 function hasRepoRootMarkers(root: string): boolean {
   try {
+    if (hasPlafonadoFreezeAt(root)) return true;
     return (
-      fs.existsSync(path.join(root, "freeze")) ||
-      fs.existsSync(path.join(root, "backend", "data"))
+      fs.existsSync(path.join(root, "freeze")) || fs.existsSync(path.join(root, "backend", "data"))
     );
   } catch {
     return false;
@@ -42,4 +54,18 @@ export function resolveDecideProjectRoot(cwd: string = process.cwd()): string {
   if (hasRepoRootMarkers(cwd)) return cwd;
   if (hasRepoRootMarkers(parent)) return parent;
   return parent;
+}
+
+/**
+ * Onde a app Next e `data/landing/...` vivem: `decide-core/frontend` no monorepo, ou
+ * a raiz do *deploy* Vercel (`package.json` decide-frontend) quando o *build* traz tudo
+ * nessa pasta (sem `frontend/` de nível intermédio).
+ */
+export function resolveNextFrontendAppDir(cwd: string = process.cwd()): string {
+  const project = resolveDecideProjectRoot(cwd);
+  const front = path.join(project, "frontend");
+  if (fs.existsSync(path.join(front, "package.json"))) {
+    return path.resolve(front);
+  }
+  return project;
 }
