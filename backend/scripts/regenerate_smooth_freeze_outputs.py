@@ -24,6 +24,10 @@ Uso (a partir da pasta ``backend/``)::
   python scripts/regenerate_smooth_freeze_outputs.py
   python scripts/regenerate_smooth_freeze_outputs.py --prices data/prices_close.csv
   python scripts/regenerate_smooth_freeze_outputs.py --legacy-engine-v2
+
+CAGR alvo (ex. ~22,4% **moderado** com momentum **v2_prudent**): o export canónico é
+com o motor **research V5** (comando de cima, **sem** ``--legacy-engine-v2``). O proxy
+``engine_v2`` costuma dar CAGR mais baixo (~20%) — não é o mesmo backtest.
 """
 
 from __future__ import annotations

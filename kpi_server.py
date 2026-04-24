@@ -8908,6 +8908,25 @@ def apply_fx_hedge_to_equity_series(
     return pd.Series(eq)
 
 
+def _align_cap15_margin_to_model_nt0(
+    margin: pd.Series,
+    model: pd.Series,
+) -> pd.Series:
+    """
+    Ajusta o nível do NAV da série «com margem» para o primeiro ponto coincidir com o do
+    modelo (escala alinhada à curva plafonada, normalmente 1,0 no t=0). Multiplica por
+    (model0/margin0) — a dinâmica de retornos e os KPIs em % relativos a esse ponto
+    (CAGR, vol) mantêm-se; só a escala absoluta inicia alinhada ao verde.
+    """
+    if len(margin) == 0 or len(model) == 0 or len(margin) != len(model):
+        return margin
+    s0, m0 = float(margin.iloc[0]), float(model.iloc[0])
+    if not (np.isfinite(s0) and abs(s0) > 1e-18 and np.isfinite(m0)):
+        return margin
+    k = m0 / s0
+    return (margin * k).astype(float)
+
+
 def cap15_margin_equity_list_aligned(
     dates: pd.Series,
     bench_eq: pd.Series,
@@ -8931,7 +8950,8 @@ def cap15_margin_equity_list_aligned(
             force_synthetic_profile_vol=force_synthetic_profile_vol,
         )
         if loaded is not None:
-            return [float(x) for x in loaded[0].values]
+            s = _align_cap15_margin_to_model_nt0(loaded[0], plafonado_eq)
+            return [float(x) for x in s.values]
     resolved = resolve_cap15_margin_model_csv(
         profile_key,
         force_synthetic_profile_vol=force_synthetic_profile_vol,
@@ -8977,6 +8997,10 @@ def cap15_margin_equity_list_aligned(
         margin_series = _backfill_cap15_flat_model_prefix_with_benchmark(
             margin_series, bench_eq, dates
         )
+        if plafonado_eq is not None and len(margin_series) == len(plafonado_eq):
+            margin_series = _align_cap15_margin_to_model_nt0(
+                margin_series, plafonado_eq.astype(float)
+            )
         return [float(x) for x in margin_series.values]
     except Exception:
         return None
@@ -9629,6 +9653,7 @@ def index():
         )
         if loaded_m is not None:
             margin_series, _margem_src = loaded_m
+            margin_series = _align_cap15_margin_to_model_nt0(margin_series, model_eq.astype(float))
             try:
                 compare_cap100_kpis, margin_dd_s = compute_kpis(margin_series)
                 compare_max100_equity = [float(x) for x in margin_series.values]
