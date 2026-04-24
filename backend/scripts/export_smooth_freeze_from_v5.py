@@ -20,8 +20,8 @@ Overlay **bear + baixa vol** (smooth): por defeito **histerese** entrada/saída 
 **p40 / p65**, **N = 10** dias seguidos na condição de saída em vol (ver ``ResearchConfig`` no motor).
 Use ``--no-bear-low-vol`` para export sem esta regra.
 
-**Momentum (produto smooth):** por defeito ``momentum_mode=v2_prudent`` (multi-horizonte 63/126/252).
-Use ``--momentum-mode default`` (ou ``v2_smooth``) para variantes.
+**Momentum (produto smooth):** por defeito ``momentum_mode=v2_prudent`` (**126d/252d** em 50/50, sem 63d).
+``v2_smooth`` usa **63/126/252d** em 40/35/25. Use ``--momentum-mode default`` (ou ``v2_smooth``) para variantes.
 
 Requisitos
 -----------
@@ -32,10 +32,15 @@ Requisitos
 - O clone deve incluir ``equity_overlay_margin`` no dict devolvido por ``run_research_v1``. Se faltar,
   tenta ``equity_overlay_pre_vol`` (legado) e por fim ``equity_raw_volmatched``, com aviso em stderr.
 
+Fricção (auditável, omissão = canónica **5+5+0**): ``--transaction-cost-bps``,
+``--slippage-bps``, ``--fx-conversion-bps`` passam a ``run_research_v1`` e reflectem-se em
+``v5_kpis.json`` (e no merge ``export_friction_bps``).
+
 Uso (na raiz do ``decide-core``)::
 
   python backend/scripts/export_smooth_freeze_from_v5.py
   python backend/scripts/export_smooth_freeze_from_v5.py --prices backend/data/prices_close.csv
+  python backend/scripts/export_smooth_freeze_from_v5.py --transaction-cost-bps 5 --slippage-bps 5 --fx-conversion-bps 0
 """
 
 from __future__ import annotations
@@ -131,6 +136,24 @@ def main() -> int:
         default="v2_prudent",
         help='Motor momentum_mode (default: v2_prudent). Ex.: "default", "v2_smooth".',
     )
+    ap.add_argument(
+        "--transaction-cost-bps",
+        type=float,
+        default=5.0,
+        help="Fricção explícita (alinhado ResearchConfig): transaction_cost_bps (default: 5).",
+    )
+    ap.add_argument(
+        "--slippage-bps",
+        type=float,
+        default=5.0,
+        help="Fricção explícita: slippage_bps (default: 5).",
+    )
+    ap.add_argument(
+        "--fx-conversion-bps",
+        type=float,
+        default=0.0,
+        help="Fricção explícita: fx_conversion_bps (default: 0).",
+    )
     args = ap.parse_args()
 
     prices_path = Path(args.prices.strip()).resolve()
@@ -163,6 +186,9 @@ def main() -> int:
             # Uma corrida: plafonado = `equity_overlayed` (teto 100% NAV); margem = `equity_overlay_margin` (sem teto).
             "max_effective_exposure": 1.0,
             "momentum_mode": str(args.momentum_mode).strip().lower(),
+            "transaction_cost_bps": float(args.transaction_cost_bps),
+            "slippage_bps": float(args.slippage_bps),
+            "fx_conversion_bps": float(args.fx_conversion_bps),
         }
         if bool(getattr(args, "no_bear_low_vol", False)):
             kwargs["bear_low_vol_overlay_enabled"] = False
@@ -220,6 +246,15 @@ def main() -> int:
         meta["prices_input"] = str(prices_path.resolve())
         meta["smooth_export_momentum_mode"] = str(args.momentum_mode).strip().lower()
         meta["smooth_export_overlay_vol_moderado"] = True
+        tcb, sb, fxb = float(args.transaction_cost_bps), float(args.slippage_bps), float(args.fx_conversion_bps)
+        meta["export_transaction_cost_bps"] = tcb
+        meta["export_slippage_bps"] = sb
+        meta["export_fx_conversion_bps"] = fxb
+
+        def _fmt_bps(x: float) -> str:
+            return str(int(x)) if float(x) == int(x) else str(x)
+
+        meta["export_friction_bps"] = f"{_fmt_bps(tcb)}+{_fmt_bps(sb)}+{_fmt_bps(fxb)}"
         v5_json.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     # O merge oficial (Next) lê primeiro ``freeze/.../weights_by_rebalance.csv``; o motor só
