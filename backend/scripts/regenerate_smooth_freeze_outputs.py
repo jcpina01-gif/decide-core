@@ -23,6 +23,7 @@ Uso (a partir da pasta ``backend/``)::
 
   python scripts/regenerate_smooth_freeze_outputs.py
   python scripts/regenerate_smooth_freeze_outputs.py --prices data/prices_close.csv
+  python scripts/regenerate_smooth_freeze_outputs.py --transaction-cost-bps 3 --slippage-bps 3
   python scripts/regenerate_smooth_freeze_outputs.py --legacy-engine-v2
 
 CAGR alvo (ex. ~22,4% **moderado** com momentum **v2_prudent**): o export canónico é
@@ -127,11 +128,28 @@ def _extend_cash_sleeve(new_date_strs: list[str]) -> None:
     ).to_csv(cash_path, index=False)
 
 
-def _run_v5_smooth_export(prices_csv: Path) -> int:
+def _run_v5_smooth_export(
+    prices_csv: Path,
+    *,
+    transaction_cost_bps: float = 5.0,
+    slippage_bps: float = 5.0,
+    fx_conversion_bps: float = 0.0,
+) -> int:
     if not EXPORT_V5_SCRIPT.is_file():
         print("Falta script:", EXPORT_V5_SCRIPT, file=sys.stderr)
         return 1
-    cmd = [sys.executable, str(EXPORT_V5_SCRIPT), "--prices", str(prices_csv.resolve())]
+    cmd = [
+        sys.executable,
+        str(EXPORT_V5_SCRIPT),
+        "--prices",
+        str(prices_csv.resolve()),
+        "--transaction-cost-bps",
+        str(float(transaction_cost_bps)),
+        "--slippage-bps",
+        str(float(slippage_bps)),
+        "--fx-conversion-bps",
+        str(float(fx_conversion_bps)),
+    ]
     print("[smooth] Motor V5 (export_smooth_freeze_from_v5):", " ".join(cmd), file=sys.stderr)
     proc = subprocess.run(cmd, cwd=str(REPO_ROOT))
     return int(proc.returncode)
@@ -292,6 +310,24 @@ def main() -> int:
         default=str(PRICES_CSV),
         help="Caminho para prices_close.csv",
     )
+    ap.add_argument(
+        "--transaction-cost-bps",
+        type=float,
+        default=5.0,
+        help="Comissão por turnover (default 5; teste 3+3: use 3).",
+    )
+    ap.add_argument(
+        "--slippage-bps",
+        type=float,
+        default=5.0,
+        help="Slippage bps (default 5; teste 3+3: use 3).",
+    )
+    ap.add_argument(
+        "--fx-conversion-bps",
+        type=float,
+        default=0.0,
+        help="FX sobre conversão (default 0).",
+    )
     args = ap.parse_args()
     prices_path = Path(args.prices.strip()).resolve()
     if not prices_path.is_file():
@@ -301,7 +337,12 @@ def main() -> int:
     if args.legacy_engine_v2:
         return _legacy_engine_v2_freeze(prices_path)
 
-    rc = _run_v5_smooth_export(prices_path)
+    rc = _run_v5_smooth_export(
+        prices_path,
+        transaction_cost_bps=float(args.transaction_cost_bps),
+        slippage_bps=float(args.slippage_bps),
+        fx_conversion_bps=float(args.fx_conversion_bps),
+    )
     if rc == 0:
         print("[smooth] OK — motor engine_research_v5 (ver curve_engine em v5_kpis.json).", file=sys.stderr)
         return 0
