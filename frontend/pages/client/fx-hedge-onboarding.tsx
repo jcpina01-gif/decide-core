@@ -171,7 +171,7 @@ export default function FxHedgeOnboardingPage() {
                 boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
               }}
             >
-              Continuar para a corretora
+              Continuar para plano e pagamento
             </button>
           </div>
         }

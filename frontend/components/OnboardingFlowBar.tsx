@@ -6,6 +6,7 @@ import {
   applyOnboardingBackNavigation,
   syncSessionMaxWithPage,
 } from "../lib/onboardingFlowState";
+import { ONBOARDING_STEP_6_LABEL } from "../lib/onboardingStep6Label";
 
 export type { OnboardingStepId } from "../lib/onboardingFlowState";
 export { ONBOARDING_FLOW_MAX_IDX_KEY } from "../lib/onboardingFlowState";
@@ -38,7 +39,7 @@ function buildSteps(authStepHref: string): Step[] {
     { id: "mifid", n: 3, label: "Perfil de investidor", href: "/mifid-test" },
     { id: "kyc", n: 4, label: "Identidade", href: "/persona-onboarding" },
     { id: "hedge", n: 5, label: "Hedge cambial", href: "/client/fx-hedge-onboarding" },
-    { id: "approve", n: 6, label: "Corretora", href: "/client/ibkr-prep" },
+    { id: "approve", n: 6, label: ONBOARDING_STEP_6_LABEL, href: "/client/ibkr-prep" },
   ];
 }
 
@@ -48,7 +49,7 @@ const STEP_ACCENT: Record<OnboardingStepId, { solid: string; ring: string; soft:
   onboarding: { solid: "#2f7a72", ring: "#5eead4", soft: "rgba(45,212,191,0.2)", label: "Valor a investir" },
   mifid: { solid: "#2d7f76", ring: "#99f6e4", soft: "rgba(45,212,191,0.2)", label: "Perfil de investidor" },
   kyc: { solid: "#2d6d66", ring: "#5eead4", soft: "rgba(45,212,191,0.22)", label: "Identidade" },
-  approve: { solid: "#2f7a72", ring: "#fafafa", soft: "rgba(94,234,212,0.18)", label: "Corretora" },
+  approve: { solid: "#2f7a72", ring: "#fafafa", soft: "rgba(94,234,212,0.18)", label: ONBOARDING_STEP_6_LABEL },
   hedge: { solid: "#2d6d66", ring: "#99f6e4", soft: "rgba(45,212,191,0.2)", label: "Hedge cambial" },
 };
 

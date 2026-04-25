@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import OnboardingFlowBar, {
   ONBOARDING_LOCALSTORAGE_CHANGED_EVENT,
   ONBOARDING_STORAGE_KEYS,
@@ -10,6 +11,10 @@ import { extractDisplayNameFromPersonaRecord } from "../../lib/personaDisplayNam
 import { isFxHedgeOnboardingApplicable } from "../../lib/clientSegment";
 import { isHedgeOnboardingDone } from "../../lib/fxHedgePrefs";
 import { personaRecordAllowsIbkrPrep } from "../../lib/personaKycGate";
+import { ONBOARDING_STEP_6_LABEL } from "../../lib/onboardingStep6Label";
+
+const STRIPE_ONBOARDING_OK_KEY = "decide_onboarding_stripe_checkout_v1";
+const STRIPE_UI_ENABLED = process.env.NEXT_PUBLIC_STRIPE_ONBOARDING === "1";
 
 function safeNumber(x: unknown, fallback = 0): number {
   if (typeof x === "number") return Number.isFinite(x) ? x : fallback;
@@ -111,16 +116,26 @@ export default function IbkrPrepPage() {
   /** Nome no registo de identidade (servidor DECIDE), quando existir. */
   const [personaNameOnRecord, setPersonaNameOnRecord] = useState<string | null>(null);
   const [ibkrPrepDone, setIbkrPrepDone] = useState(false);
-  /** Hedge (0/50/100%) antes da corretora — segmentos elegíveis. */
+  /** Hedge (0/50/100%) antes de «Plano e pagamento» — segmentos elegíveis. */
   const [hedgeGateOk, setHedgeGateOk] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [ibkrLive, setIbkrLive] = useState<IbkrLiveState>(initialLive);
+  const [stripeRedirecting, setStripeRedirecting] = useState(false);
+  const [stripeFeedback, setStripeFeedback] = useState<null | "success" | "cancel" | "fail">(null);
+  const [stripeCheckoutDoneLs, setStripeCheckoutDoneLs] = useState(false);
+  const router = useRouter();
+  const stripeReturnInFlight = useRef(false);
 
   const refreshOnboardingFlagsFromLs = useCallback(() => {
     try {
       setIbkrPrepDone(window.localStorage.getItem(IBKR_PREP_DONE_KEY) === "1");
     } catch {
       setIbkrPrepDone(false);
+    }
+    try {
+      setStripeCheckoutDoneLs(window.localStorage.getItem(STRIPE_ONBOARDING_OK_KEY) === "1");
+    } catch {
+      setStripeCheckoutDoneLs(false);
     }
     try {
       setHedgeGateOk(!isFxHedgeOnboardingApplicable() || isHedgeOnboardingDone());
@@ -211,6 +226,30 @@ export default function IbkrPrepPage() {
     }
   }, []);
 
+  const startStripeCheckout = useCallback(async () => {
+    if (stripeRedirecting) return;
+    setStripeRedirecting(true);
+    setStripeFeedback(null);
+    try {
+      const r = await fetch("/api/stripe/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        credentials: "same-origin",
+      });
+      const j = (await r.json().catch(() => ({}))) as { ok?: boolean; url?: string };
+      if (j?.ok && j?.url) {
+        window.location.href = j.url;
+        return;
+      }
+      setStripeFeedback("fail");
+    } catch {
+      setStripeFeedback("fail");
+    } finally {
+      setStripeRedirecting(false);
+    }
+  }, [stripeRedirecting]);
+
   useLayoutEffect(() => {
     refreshOnboardingFlagsFromLs();
   }, [refreshOnboardingFlagsFromLs]);
@@ -228,6 +267,50 @@ export default function IbkrPrepPage() {
   useEffect(() => {
     void refreshIbkrSnapshot();
   }, [refreshIbkrSnapshot]);
+
+  /** Redirect Stripe Checkout: confirmar sessão e limpar query. */
+  useEffect(() => {
+    if (!router.isReady) return;
+    if (stripeReturnInFlight.current) return;
+    const ch = router.query.checkout;
+    if (ch === "cancelled") {
+      stripeReturnInFlight.current = true;
+      setStripeFeedback("cancel");
+      void router.replace({ pathname: "/client/ibkr-prep" }, undefined, { shallow: true });
+      return;
+    }
+    if (ch !== "success" || typeof router.query.session_id !== "string" || !router.query.session_id) {
+      return;
+    }
+    stripeReturnInFlight.current = true;
+    const sid = router.query.session_id;
+    let dead = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/stripe/verify-checkout-session?session_id=${encodeURIComponent(sid)}`);
+        const j = (await r.json().catch(() => ({}))) as { ok?: boolean; complete?: boolean };
+        if (dead) return;
+        if (j?.ok && j?.complete) {
+          try {
+            window.localStorage.setItem(STRIPE_ONBOARDING_OK_KEY, "1");
+            window.dispatchEvent(new Event(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT));
+            setStripeCheckoutDoneLs(true);
+          } catch {
+            // ignore
+          }
+          setStripeFeedback("success");
+        } else {
+          setStripeFeedback("fail");
+        }
+      } catch {
+        if (!dead) setStripeFeedback("fail");
+      }
+      void router.replace({ pathname: "/client/ibkr-prep" }, undefined, { shallow: true });
+    })();
+    return () => {
+      dead = true;
+    };
+  }, [router.isReady, router.query, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -361,7 +444,7 @@ export default function IbkrPrepPage() {
     if (!hedgeGateOk) {
       return {
         title: "Falta o passo «Hedge cambial»",
-        body: "Indique 0%, 50% ou 100% para a simulação de cobertura nos indicadores do dashboard (não envia ordens à IBKR). Este passo vem antes da corretora.",
+        body: "Indique 0%, 50% ou 100% para a simulação de cobertura nos indicadores do dashboard (não envia ordens à IBKR). Este passo vem antes do passo de plano e pagamento (conta e subscrição).",
         ctaHref: "/client/fx-hedge-onboarding",
         ctaLabel: "Ir para Hedge cambial",
       };
@@ -397,11 +480,29 @@ export default function IbkrPrepPage() {
   return (
     <>
       <Head>
-        <title>DECIDE — Preparar a sua conta para investir</title>
+        <title>DECIDE — {ONBOARDING_STEP_6_LABEL}</title>
       </Head>
       <main className="min-h-screen bg-zinc-950 text-zinc-50">
         <div className="mx-auto max-w-5xl px-6 py-8">
           <OnboardingFlowBar currentStepId="approve" authStepHref="/client/login" compact />
+
+          {stripeFeedback === "success" ? (
+            <div className="mb-4 rounded-xl border border-emerald-500/40 bg-emerald-950/35 px-4 py-3 text-sm text-emerald-100" role="status">
+              Pagamento concluído. O registo do Checkout Stripe foi validado; pode continuar a preparar a conta IBKR e
+              aprovar o plano.
+            </div>
+          ) : null}
+          {stripeFeedback === "cancel" ? (
+            <div className="mb-4 rounded-xl border border-zinc-600/50 bg-zinc-900/50 px-4 py-3 text-sm text-zinc-300" role="status">
+              Pagamento anulado — nada foi cobrado. Pode voltar a tentar quando quiser, na secção abaixo.
+            </div>
+          ) : null}
+          {stripeFeedback === "fail" ? (
+            <div className="mb-4 rounded-xl border border-amber-500/35 bg-amber-950/30 px-4 py-3 text-sm text-amber-100" role="alert">
+              Não foi possível concluir o pagamento com Stripe. Confirme as chaves e o Price no servidor (variáveis de
+              ambiente) ou tente outra vez.
+            </div>
+          ) : null}
 
           {/* 1 — Estado / bloqueio: primeira coisa visível após o stepper */}
           {!canPrepare && prepareBlocker ? (
@@ -438,13 +539,15 @@ export default function IbkrPrepPage() {
 
           {/* Título compacto — decisão, não manual */}
           <header className="mb-5 border-b border-zinc-800 pb-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Passo corretora</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{ONBOARDING_STEP_6_LABEL}</p>
             <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">
-              Preparar a sua conta para investir
+              Preparar a sua conta e subscrição
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-              Interactive Brokers — organizamos a conta para, a seguir, <strong className="text-zinc-300">rever e aprovar</strong>{" "}
-              o plano. Nada é executado sem a sua decisão.
+              Interactive Brokers — organizamos a conta; no fim deste passo pode activar a subscrição (comissões) via
+              Stripe. A seguir, <strong className="text-zinc-300">rever e aprovar</strong> o plano. Nada é executado sem
+              a sua decisão. O depósito de investimento continua a ser feito perante a IBKR, à parte deste pagamento
+              à DECIDE.
             </p>
           </header>
 
@@ -607,6 +710,38 @@ export default function IbkrPrepPage() {
                   Identidade confirmada; o nome pode não aparecer aqui. Para rever, use o passo «Identidade».
                 </p>
               )}
+            </section>
+          ) : null}
+
+          {STRIPE_UI_ENABLED ? (
+            <section className="mb-8 rounded-xl border border-violet-500/25 bg-zinc-900/50 p-5 sm:p-6" aria-labelledby="ibkr-prep-stripe-h2">
+              <h2 id="ibkr-prep-stripe-h2" className="text-base font-semibold text-zinc-100">
+                Pagamento da subscrição (Stripe)
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
+                No fim do registo, active o pagamento seguro de comissões (subscrição Premium) com cartão. Isto é
+                independente do <strong className="text-zinc-300">depósito de investimento</strong> na Interactive
+                Brokers — o dinheiro alocado ao plano continua a ser transferido para a corretora como já documentámos.
+              </p>
+              {stripeCheckoutDoneLs ? (
+                <p className="mt-3 text-sm font-medium text-emerald-400" role="status">
+                  Último checkout Stripe validado neste dispositivo.
+                </p>
+              ) : null}
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void startStripeCheckout()}
+                  disabled={stripeRedirecting}
+                  className={
+                    !stripeRedirecting
+                      ? "min-h-[44px] rounded-full border border-violet-400/45 bg-violet-800/50 px-6 text-sm font-bold text-violet-50 shadow-md shadow-violet-950/30 transition hover:bg-violet-700/50"
+                      : "min-h-[44px] cursor-wait rounded-full border border-violet-500/20 bg-violet-900/30 px-6 text-sm font-bold text-violet-200/80"
+                  }
+                >
+                  {stripeRedirecting ? "A abrir o Stripe…" : "Pagar com cartão (Stripe)"}
+                </button>
+              </div>
             </section>
           ) : null}
         </div>

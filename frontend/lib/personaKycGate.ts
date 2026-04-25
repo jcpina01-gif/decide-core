@@ -1,5 +1,5 @@
 /**
- * Regra única: quando o registo Persona no servidor desbloqueia o passo Corretora (IBKR prep).
+ * Regra única: quando o registo Persona no servidor desbloqueia o passo «Plano e pagamento» (IBKR prep, Stripe no fim).
  * Antes só `completed` era aceite — a Persona pode gravar `approved`, `pending`, etc. após o fluxo no widget,
  * e o bypass DECIDE usa `manual_review_pending`.
  */

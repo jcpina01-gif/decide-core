@@ -1920,7 +1920,7 @@ export default function MifidTestPage() {
                   </button>
                 </div>
                 <div style={{ color: "#71717a", fontSize: 10, lineHeight: 1.35, textAlign: "center", width: "100%", marginTop: 4 }}>
-                  A seguir: identidade · corretora depois
+                  A seguir: identidade, depois plano e pagamento (IBKR e subscrição)
                 </div>
               </div>
             </div>

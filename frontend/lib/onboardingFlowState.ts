@@ -31,7 +31,7 @@ export function inferMaxCompletedIndexFromLocalStorage(): number {
     /** Passos à frente no LS implicam progressão — evita «buracos» (ex.: step3 sem step2) e stepper desalinhado. */
     const kycDone = readLsFlag("decide_onboarding_step3_done");
     if (kycDone) max = Math.max(max, 3);
-    /** Ordem no stepper: KYC → hedge (se aplicável) → Corretora/aprovação. */
+    /** Ordem no stepper: KYC → hedge (se aplicável) → plano e pagamento / aprovação. */
     const hedgeApplicable = isFxHedgeOnboardingApplicable();
     const hedgeDone = window.localStorage.getItem(HEDGE_DONE_KEY) === "1";
     const hedgeResolved = !hedgeApplicable || hedgeDone;

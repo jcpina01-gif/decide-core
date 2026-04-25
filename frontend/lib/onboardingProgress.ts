@@ -14,7 +14,7 @@ const IBKR_PREP_DONE_KEY = "decide_onboarding_ibkr_prep_done_v1";
 
 /**
  * Próximo destino no funil (client-side, após login).
- * Ordem: Valor → MiFID → Identidade → **Hedge cambial** (se aplicável) → Corretora (IBKR prep) → Aprovar plano → dashboard.
+ * Ordem: Valor → MiFID → Identidade → **Hedge cambial** (se aplicável) → Plano e pagamento (IBKR + Stripe) → Aprovar plano → dashboard.
  */
 export function getNextOnboardingHref(): string {
   if (typeof window === "undefined") return "/client-montante";
@@ -31,11 +31,11 @@ export function getNextOnboardingHref(): string {
     if (!onboardingDone) return "/client-montante";
     if (!mifidDone) return "/mifid-test";
     if (!kycDone) return "/persona-onboarding";
-    /** Antes da corretora: escolha 0% / 50% / 100% (só segmentos elegíveis). Depois pode depositar no fim do registo. */
+    /** Antes do passo 6 (plano e pagamento): escolha 0% / 50% / 100% (só segmentos elegíveis). */
     if (isFxHedgeOnboardingApplicable() && !isHedgeOnboardingDone()) return "/client/fx-hedge-onboarding";
     /**
      * `approveDone` = decisão de aprovação do plano gravada.
-     * Antes disso: se já passou pelo passo Corretora (prep IBKR), o passo correcto é **Aprovar plano**,
+     * Antes disso: se já passou pelo passo 6 (prep IBKR / subscrição), o passo correcto é **Aprovar plano**,
      * não voltar eternamente a `/client/ibkr-prep`.
      */
     if (!approveDone) {
@@ -49,7 +49,7 @@ export function getNextOnboardingHref(): string {
 
 /**
  * Após «Aprovação de recomendações» (`/client/approve`): depósito na IBKR.
- * O hedge cambial (quando aplicável) já foi escolhido antes da Corretora — não voltar a esse passo aqui.
+ * O hedge cambial (quando aplicável) já foi escolhido antes do passo 6 (plano e pagamento) — não voltar a esse passo aqui.
  */
 export function getHrefAfterTradePlanApprovalStep(): string {
   return "/client/fund-account?from=approve";

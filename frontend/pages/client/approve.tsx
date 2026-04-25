@@ -14,7 +14,6 @@ import { getHrefAfterTradePlanApprovalStep } from "../../lib/onboardingProgress"
 import { DECIDE_DASHBOARD, ONBOARDING_SHELL_MAX_WIDTH_PX } from "../../lib/decideClientTheme";
 import { DECIDE_MIN_INVEST_EUR } from "../../lib/decideInvestPrefill";
 import { isBuyMissingEquityClosePrice } from "../../lib/approvalPlanTradeDisplay";
-import { queryIndicatesDailyEntryPlanWeights } from "../../lib/server/buildRecommendationOfficialHistory";
 import { loadApprovalAlignedProposedTrades } from "../../lib/server/approvalTradePlan";
 import { resolveDecideProjectRoot } from "../../lib/server/decideProjectRoot";
 import path from "path";
@@ -192,7 +191,7 @@ const EMPTY_APPROVE_PROPS: PageProps = {
   accountCode: "",
 };
 
-export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => {
+export const getServerSideProps: GetServerSideProps<PageProps> = async () => {
   try {
     const projectRoot = resolveDecideProjectRoot();
     const tmpDir = path.join(projectRoot, "tmp_diag");
@@ -213,9 +212,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
     const att0 = attempts0 && typeof attempts0 === "object" ? (attempts0 as Record<string, unknown>) : undefined;
 
     const { trades, navEur, coverageNote, csvRowCount } =
-      await loadApprovalAlignedProposedTrades(projectRoot, {
-        queryWantsDailyEntryTarget: queryIndicatesDailyEntryPlanWeights(ctx.query as Record<string, unknown>),
-      });
+      await loadApprovalAlignedProposedTrades(projectRoot);
 
     return {
       props: {
@@ -251,7 +248,7 @@ export default function ApprovePage({
   const [mifidDone, setMifidDone] = useState(false);
   const [kycDone, setKycDone] = useState(false);
   const [ibkrPrepDone, setIbkrPrepDone] = useState(false);
-  /** Hedge cambial (0/50/100%) concluído antes da corretora — segmentos elegíveis. */
+  /** Hedge cambial (0/50/100%) concluído antes de «Plano e pagamento» — segmentos elegíveis. */
   const [hedgeGateOk, setHedgeGateOk] = useState(false);
   const [userApproved, setUserApproved] = useState(false);
   /** Confirmação explícita (MiFID / conversão) antes de registar aprovação. */
@@ -600,13 +597,13 @@ export default function ApprovePage({
     if (isFxHedgeOnboardingApplicable() && !isHedgeOnboardingDone()) {
       // eslint-disable-next-line no-alert
       alert(
-        "Aprovação bloqueada: conclua primeiro o passo «Hedge cambial» (0%, 50% ou 100% nos indicadores), antes da corretora.",
+        "Aprovação bloqueada: conclua primeiro o passo «Hedge cambial» (0%, 50% ou 100% nos indicadores), antes de «Plano e pagamento».",
       );
       return;
     }
     if (!ibkrPrepDone) {
       // eslint-disable-next-line no-alert
-      alert("Aprovação bloqueada: confirme a preparação IBKR (passo Corretora).");
+      alert("Aprovação bloqueada: confirme a preparação IBKR (passo «Plano e pagamento»).");
       return;
     }
     if (ibkrLive.loading) {
@@ -654,7 +651,7 @@ export default function ApprovePage({
     }
     setUserApproved(true);
 
-    /** Após aprovar: página de depósito (IBKR); o hedge já foi escolhido antes da corretora. */
+    /** Após aprovar: página de depósito (IBKR); o hedge já foi escolhido antes de «Plano e pagamento». */
     let nextHref = "/client/fund-account?from=approve";
     try {
       nextHref = getHrefAfterTradePlanApprovalStep();
@@ -685,7 +682,7 @@ export default function ApprovePage({
     if (!mifidDone) return "Botão desactivo: falta concluir o teste MiFID.";
     if (!kycDone) return "Botão desactivo: falta concluir o KYC (Persona).";
     if (!hedgeGateOk) return "Botão desactivo: falta concluir o passo «Hedge cambial» (0%, 50% ou 100%).";
-    if (!ibkrPrepDone) return "Botão desactivo: falta concluir a preparação IBKR (passo Corretora).";
+    if (!ibkrPrepDone) return "Botão desactivo: falta concluir a preparação IBKR (passo «Plano e pagamento»).";
     if (ibkrLive.loading) return "Botão desactivo: a ler liquidez na conta IBKR paper…";
     if (!paperFundsVerified) {
       if (ibkrLive.loading) {
@@ -799,7 +796,9 @@ export default function ApprovePage({
                 {mifidDone && kycDone && !hedgeGateOk
                   ? " Falta concluir o hedge cambial (0%, 50% ou 100% nos indicadores)."
                   : null}
-                {mifidDone && kycDone && hedgeGateOk && !ibkrPrepDone ? " Falta preparar IBKR (passo Corretora)." : null}
+                {mifidDone && kycDone && hedgeGateOk && !ibkrPrepDone
+                  ? " Falta preparar IBKR (passo «Plano e pagamento»)."
+                  : null}
                 {mifidDone && kycDone && hedgeGateOk && ibkrPrepDone && !hasTradePlan
                   ? displayNavEur <= 0
                     ? `Património inválido (${formatEuro(displayNavEur)}).`
@@ -940,7 +939,7 @@ export default function ApprovePage({
                     </label>
                   ) : (
                     <p className="mt-5 text-sm text-slate-500">
-                      Complete os passos em falta (MiFID, KYC, corretora e plano disponível) para poder confirmar.
+                      Complete os passos em falta (MiFID, KYC, plano e pagamento, e plano disponível) para poder confirmar.
                     </p>
                   )}
                 </div>
