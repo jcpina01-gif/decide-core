@@ -406,11 +406,8 @@ export default function RecommendationsHistoryPanel() {
                     {hasFlow ? (
                       <span style={{ color: "#71717a" }}>
                         {" "}
-                        · {entAll.length} ent., {exAll.length} saí. — {ent.length} com |peso| ≥
-                        {ENTRY_SIDE_LIST_MIN_ABS_PCT}%
-                        (entr.
-                        {entOmitted > 0 ? ` +${entOmitted} com &lt;1%` : ""}){" · "}
-                        {exAll.length} saídas (todas)
+                        · Diff: {entAll.length} nov{entAll.length === 1 ? "o" : "os"} no alvo, {exAll.length} a sair ·
+                        tabela: {mo.rows.length} posições
                       </span>
                     ) : null}
                   </div>
@@ -443,18 +440,15 @@ export default function RecommendationsHistoryPanel() {
                           maxWidth: 720,
                         }}
                       >
-                        <strong style={{ color: "#a1a1aa" }}>Comparativo entre rebalances do modelo:</strong>{" "}
-                        <strong>Saídas</strong> são títulos que tinham peso no{" "}
-                        <strong>mês anterior desta série</strong> e <strong>deixam de existir</strong> nesta data (saem
-                        por completo do alvo). <strong>Entradas</strong> são títulos <strong>novos</strong> nesta data.
-                        Reduções de peso sem o ticker desaparecer <strong>não</strong> aparecem nestas listas — só a
-                        tabela completa abaixo reflecte o alvo do mês.                         Na margem, <strong>entradas</strong> (≥ 1% do alvo) usam o
-                        <strong> mesmo peso que a tabela</strong> deste mês (o API do diff às vezes traz resíduos
-                        abaixo de 1% que a grelha já mostrou renormalizada). A liquidez (TBILL/BIL/SHV) lista-se
-                        ainda com peso baixo. <strong>Saídas</strong> listam <strong>todas</strong>. Um ticker
-                        que <strong>já estava</strong> no mês anterior com peso relevante pode surgir com frações de %
-                        no alvo seguinte (sobra do modelo após CAP ou renormas) — isso não é uma «entrada» nova. Resíduos
-                        de continuação abaixo de 0,05% do NAV são mostrados agregados na liquidez nesta vista.
+                        <strong style={{ color: "#a1a1aa" }}>O que entra nestas listas (não é a tabela inteira):</strong>{" "}
+                        <strong>Entrada</strong> = ticker <strong>que ainda não existia</strong> no alvo publicado do
+                        mês <strong>imediatamente anterior</strong> nesta série (ficheiro CSV/merge).{" "}
+                        <strong>Saída</strong> = deixou de constar. Redução de peso sem o nome sair
+                        <strong> não</strong> entra em «entradas/saídas». A <strong>grelha a baixo</strong> é o alvo
+                        completo ({mo.rows.length} linhas); pode ter muito mais títulos do que a caixa «entradas», porque
+                        a maior parte <strong>já constava</strong> no mês passado. Os % na caixa (≥{" "}
+                        {ENTRY_SIDE_LIST_MIN_ABS_PCT}%) vêm alinhados ao peso da grelha. A liquidez (TBILL/BIL/SHV) pode
+                        listar com peso baixo. Resíduos de continuação abaixo de 0,05% do NAV agregam em liquidez.
                       </p>
                     <div
                       style={{
@@ -474,14 +468,25 @@ export default function RecommendationsHistoryPanel() {
                         }}
                       >
                         <div style={{ fontSize: 13, fontWeight: 800, color: "#d4d4d8", marginBottom: 6 }}>
-                          Entradas{" "}
+                          Entradas (novos vs. mês passado){" "}
                           <span style={{ fontWeight: 600, color: "#a1a1aa", fontSize: 12 }}>
-                            (todas com |peso| ≥ {ENTRY_SIDE_LIST_MIN_ABS_PCT}%
+                            ({ent.length} com alvo ≥ {ENTRY_SIDE_LIST_MIN_ABS_PCT}%
                             {entOmitted > 0 ? (
-                              <span style={{ color: "#71717a" }}> · +{entOmitted} com &lt;1% não listados</span>
+                              <span style={{ color: "#71717a" }}> · +{entOmitted} &lt;1% não listados</span>
                             ) : null}
                             )
                           </span>
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "#71717a",
+                            lineHeight: 1.4,
+                            marginBottom: 8,
+                          }}
+                        >
+                          Só títulos <strong>ainda inexistentes</strong> no ficheiro do mês anterior; não listam
+                          ajustes em nomes (ex. MU, INTC) que aí já constavam.
                         </div>
                         {entOmitted > 0 ? (
                           <div style={{ fontSize: 11, color: "#52525b", marginBottom: 6, lineHeight: 1.4 }}>
