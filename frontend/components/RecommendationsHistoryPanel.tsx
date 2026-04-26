@@ -66,13 +66,53 @@ function isCashSleeveTicker(ticker: string): boolean {
 /** Só a caixa de **entradas**: títulos com |peso| abaixo disto (exc. liquidez) ficam fora. Saídas listam-se todas. */
 const ENTRY_SIDE_LIST_MIN_ABS_PCT = 1;
 
-function filterEntradasListMin1Pct(rows: FlowRow[]): { shown: FlowRow[]; omitted: number } {
-  const shown = rows.filter((r) => {
+/** Peso alvo (%) alinhado à tabela do mês — a lista `entries` do API pode trazer resíduos &lt;1% que não batem com o alvo. */
+function resolveEntradaPesoFromMonthTable(ticker: string, flow: FlowRow, rowByTicker: Map<string, HistRow>): number {
+  const k = ticker.trim().toUpperCase();
+  const hr = rowByTicker.get(k);
+  if (hr) {
+    if (typeof hr.weightPct === "number" && Number.isFinite(hr.weightPct)) {
+      return Math.abs(hr.weightPct);
+    }
+    if (typeof hr.weight === "number" && Number.isFinite(hr.weight)) {
+      return Math.abs(hr.weight) * 100;
+    }
+  }
+  if (typeof flow.weightPct === "number" && Number.isFinite(flow.weightPct)) {
+    return Math.abs(flow.weightPct);
+  }
+  return 0;
+}
+
+function buildRowMap(rows: HistRow[]): Map<string, HistRow> {
+  const m = new Map<string, HistRow>();
+  for (const r of rows) {
+    m.set(r.ticker.trim().toUpperCase(), r);
+  }
+  return m;
+}
+
+/**
+ * Entradas com |peso| ≥ 1%: filtro e texto «→ X%» com base na grelha `mo.rows` (mesma que em baixo), não só no
+ * `weightPct` bruto de `entries[]`.
+ */
+function filterEntradasMin1UsingMonthTable(
+  entAll: FlowRow[],
+  mo: HistMonth,
+): { shown: FlowRow[]; omitted: number } {
+  if (entAll.length === 0) return { shown: [], omitted: 0 };
+  const rowByTicker = buildRowMap(mo.rows);
+  const enriched: FlowRow[] = entAll.map((e) => {
+    const w = resolveEntradaPesoFromMonthTable(e.ticker, e, rowByTicker);
+    return { ...e, weightPct: w };
+  });
+  const pass = enriched.filter((r) => {
     if (isCashSleeveTicker(r.ticker)) return true;
-    const w = typeof r.weightPct === "number" && Number.isFinite(r.weightPct) ? Math.abs(r.weightPct) : 0;
+    const w = typeof r.weightPct === "number" && Number.isFinite(r.weightPct) ? r.weightPct : 0;
     return w >= ENTRY_SIDE_LIST_MIN_ABS_PCT - 1e-9;
   });
-  return { shown, omitted: rows.length - shown.length };
+  pass.sort((a, b) => (b.weightPct ?? 0) - (a.weightPct ?? 0));
+  return { shown: pass, omitted: entAll.length - pass.length };
 }
 
 /** Mini-gráfico: retorno mensal do modelo (%) nos 3 meses civis antes do mês do rebalance. */
@@ -318,7 +358,7 @@ export default function RecommendationsHistoryPanel() {
             const hasFlow = mo.entries !== undefined && mo.exits !== undefined;
             const entAll = mo.entries ?? [];
             const exAll = mo.exits ?? [];
-            const { shown: ent, omitted: entOmitted } = filterEntradasListMin1Pct(entAll);
+            const { shown: ent, omitted: entOmitted } = filterEntradasMin1UsingMonthTable(entAll, mo);
             const ex = exAll;
             const chrono = mo.chronologicalIndex;
             const chartTooEarly = chrono != null && chrono < 2;
@@ -408,9 +448,10 @@ export default function RecommendationsHistoryPanel() {
                         <strong>mês anterior desta série</strong> e <strong>deixam de existir</strong> nesta data (saem
                         por completo do alvo). <strong>Entradas</strong> são títulos <strong>novos</strong> nesta data.
                         Reduções de peso sem o ticker desaparecer <strong>não</strong> aparecem nestas listas — só a
-                        tabela completa abaixo reflecte o alvo do mês. Na margem, <strong>entradas</strong> listam
-                        títulos novos com |peso| ≥ 1% (a liquidez entra ainda com peso baixo) — entradas com
-                        &lt;1% ficam só no contador. <strong>Saídas</strong> listam <strong>todas</strong>. Um ticker
+                        tabela completa abaixo reflecte o alvo do mês.                         Na margem, <strong>entradas</strong> (≥ 1% do alvo) usam o
+                        <strong> mesmo peso que a tabela</strong> deste mês (o API do diff às vezes traz resíduos
+                        abaixo de 1% que a grelha já mostrou renormalizada). A liquidez (TBILL/BIL/SHV) lista-se
+                        ainda com peso baixo. <strong>Saídas</strong> listam <strong>todas</strong>. Um ticker
                         que <strong>já estava</strong> no mês anterior com peso relevante pode surgir com frações de %
                         no alvo seguinte (sobra do modelo após CAP ou renormas) — isso não é uma «entrada» nova. Resíduos
                         de continuação abaixo de 0,05% do NAV são mostrados agregados na liquidez nesta vista.
