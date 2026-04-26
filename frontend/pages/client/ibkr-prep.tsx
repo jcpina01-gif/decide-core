@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -109,8 +109,11 @@ function ibkrRefreshButtonStyle(loading: boolean): React.CSSProperties {
 
 /**
  * Pós-redirect (Stripe) ou noutro origin, as chaves MiFID/KYC do funil podem faltar
- * ainda o utilizador estando além desses passos. Repara quando o estado o implica
- * (hedge concluído, quando aplicável; ou pagamento Stripe validado com sessão activa).
+ * ainda o utilizador estando além desses passos. Repara quando o estado o implica:
+ * - pagamento Checkout validado nesta origem (chave decide_onboarding_stripe…);
+ * - hedge concluído (só segmentos com passo obrigatório; noutros o stepper dá ✓ no 5/6
+ *   sem chave no LS, por isso não basta isHedgeOnboardingDone()).
+ * Não exigimos isClientLoggedIn() com stripeOk: a chave Stripe só a app grava após verify.
  */
 function repairKycMifidLsIfFunnelImpliesIt(): void {
   if (typeof window === "undefined") return;
@@ -120,9 +123,11 @@ function repairKycMifidLsIfFunnelImpliesIt(): void {
   try {
     if (window.localStorage.getItem(mK) === "1" && window.localStorage.getItem(kK) === "1") return;
     const stripeOk = window.localStorage.getItem(STRIPE_ONBOARDING_OK_KEY) === "1";
-    const inferFromHedge = isFxHedgeOnboardingApplicable() && isHedgeOnboardingDone();
-    const inferFromStripe = stripeOk && isClientLoggedIn();
-    if (!inferFromHedge && !inferFromStripe) return;
+    const hedgeRequired = isFxHedgeOnboardingApplicable();
+    const inferFromHedge = hedgeRequired && isHedgeOnboardingDone();
+    // Premium/fee A: o stepper mostra 5/6 com ✓ sem `step5_hedge_done`; quem chegou a pagar passou o funil.
+    const inferFromFunnelNoHedgeStep = !hedgeRequired && (stripeOk || isClientLoggedIn());
+    if (!inferFromHedge && !inferFromFunnelNoHedgeStep && !stripeOk) return;
     if (window.localStorage.getItem(mK) !== "1") {
       window.localStorage.setItem(mK, "1");
       changed = true;
@@ -163,7 +168,6 @@ export default function IbkrPrepPage() {
   const [stripeFeedback, setStripeFeedback] = useState<null | "success" | "cancel" | "fail">(null);
   const [stripeCheckoutDoneLs, setStripeCheckoutDoneLs] = useState(false);
   const router = useRouter();
-  const stripeReturnInFlight = useRef(false);
 
   const refreshOnboardingFlagsFromLs = useCallback(() => {
     repairKycMifidLsIfFunnelImpliesIt();
@@ -294,6 +298,15 @@ export default function IbkrPrepPage() {
     refreshOnboardingFlagsFromLs();
   }, [refreshOnboardingFlagsFromLs]);
 
+  /** Pós-redirect: garante reparação MiFID/KYC quando a verificação Stripe já preencheu a chave (ou feedback success). */
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    const lsStripe = window.localStorage.getItem(STRIPE_ONBOARDING_OK_KEY) === "1";
+    if (!lsStripe && stripeFeedback !== "success" && !stripeCheckoutDoneLs) return;
+    repairKycMifidLsIfFunnelImpliesIt();
+    refreshOnboardingFlagsFromLs();
+  }, [stripeFeedback, stripeCheckoutDoneLs, refreshOnboardingFlagsFromLs]);
+
   useEffect(() => {
     const bump = () => refreshOnboardingFlagsFromLs();
     window.addEventListener("storage", bump);
@@ -311,10 +324,8 @@ export default function IbkrPrepPage() {
   /** Redirect Stripe Checkout: confirmar sessão e limpar query. */
   useEffect(() => {
     if (!router.isReady) return;
-    if (stripeReturnInFlight.current) return;
     const ch = router.query.checkout;
     if (ch === "cancelled") {
-      stripeReturnInFlight.current = true;
       setStripeFeedback("cancel");
       void router.replace({ pathname: "/client/ibkr-prep" }, undefined, { shallow: true });
       return;
@@ -322,7 +333,6 @@ export default function IbkrPrepPage() {
     if (ch !== "success" || typeof router.query.session_id !== "string" || !router.query.session_id) {
       return;
     }
-    stripeReturnInFlight.current = true;
     const sid = router.query.session_id;
     let dead = false;
     (async () => {
@@ -335,10 +345,11 @@ export default function IbkrPrepPage() {
             window.localStorage.setItem(STRIPE_ONBOARDING_OK_KEY, "1");
             window.dispatchEvent(new Event(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT));
             setStripeCheckoutDoneLs(true);
+            setStripeFeedback("success");
+            refreshOnboardingFlagsFromLs();
           } catch {
             // ignore
           }
-          setStripeFeedback("success");
         } else {
           setStripeFeedback("fail");
         }
@@ -350,7 +361,7 @@ export default function IbkrPrepPage() {
     return () => {
       dead = true;
     };
-  }, [router.isReady, router.query, router]);
+  }, [router.isReady, router.query, router, refreshOnboardingFlagsFromLs]);
 
   useEffect(() => {
     if (!router.isReady) return;

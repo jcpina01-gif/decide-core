@@ -17,8 +17,8 @@ type Out = {
   /** Dev: OTP na resposta do send, sem SMS real se não houver Twilio */
   devSignupSmsSimulate?: boolean;
   /**
-   * Se false, o UI pode concluir o registo sem código SMS (ex.: ALLOW_SIGNUP_WITHOUT_PHONE_SMS=1).
-   * O painel SMS pode continuar visível para testes.
+   * Se false, o UI conclui o registo sem código SMS. True só com Twilio+API e `REQUIRE_PHONE_SMS_FOR_SIGNUP=1`
+   * (ou `ALLOW_SIGNUP_WITHOUT_PHONE_SMS=0` na lógica de gate; ver phoneVerificationGate).
    */
   phoneSmsRequiredForSignup?: boolean;
   /** VERIFY_EMAIL_SECRET ≥ 16 — sem isto, em Vercel/serverless o POST verify não tem prova HMAC nem ficheiro partilhado. */

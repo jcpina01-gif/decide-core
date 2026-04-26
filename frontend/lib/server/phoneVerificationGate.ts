@@ -17,12 +17,17 @@ export function isPhoneVerificationApiEnabled(): boolean {
 /**
  * Se true, o registo cliente exige telemóvel confirmado por SMS (quando a API SMS está activa).
  * `ALLOW_SIGNUP_WITHOUT_PHONE_SMS=1` desliga essa exigência em qualquer ambiente.
- * Em **development**, por defeito o SMS também não bloqueia o registo (Twilio trial/403 comum); para testar o fluxo
- * completo: `REQUIRE_PHONE_SMS_FOR_SIGNUP=1` no `frontend/.env.local`.
+ * Em **development**, por defeito o SMS não bloqueia; para forçar SMS: `REQUIRE_PHONE_SMS_FOR_SIGNUP=1`.
+ * Em **produção** Twilio + `ALLOW_CLIENT_PHONE_VERIFY` **não** implicam SMS obrigatório: sem isto, o utilizador
+ * cria a conta com o telefone só recolhido, sem depender de entregas de SMS a PT (trial, geo, etc.). Para tornar
+ * o SMS bloqueante no registo, defina explicitamente `REQUIRE_PHONE_SMS_FOR_SIGNUP=1`.
  */
 export function isPhoneSmsRequiredForClientSignup(): boolean {
   if (process.env.ALLOW_SIGNUP_WITHOUT_PHONE_SMS === "1") return false;
   if (process.env.NODE_ENV === "development" && process.env.REQUIRE_PHONE_SMS_FOR_SIGNUP !== "1") {
+    return false;
+  }
+  if (process.env.REQUIRE_PHONE_SMS_FOR_SIGNUP !== "1") {
     return false;
   }
   return isPhoneVerificationApiEnabled();

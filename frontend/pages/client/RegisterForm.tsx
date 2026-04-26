@@ -573,6 +573,12 @@ export default function ClientRegisterPage() {
    */
   const registerDevUi =
     process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_DECIDE_REGISTER_DEV_UI === "1";
+  /** O painel de código SMS (passo 2) só quando é obrigatório ou (dev) simulação de SMS. Evita textos a prometer SMS que não chega. */
+  const showPhoneSmsInWizardStep2 = useMemo(
+    () =>
+      phoneSmsRequiredForSignup || (registerDevUi && smsVerificationEnabled && phoneVerifyDiag.devSignupSmsSimulate),
+    [phoneSmsRequiredForSignup, registerDevUi, smsVerificationEnabled, phoneVerifyDiag.devSignupSmsSimulate],
+  );
   const [wizardStep, setWizardStep] = useState<1 | 2>(1);
   /** Depois de restaurar sessionStorage (ou confirmar que não há rascunho), gravamos alterações sem sobrescrever o draft antes da leitura. */
   const [registerDraftReady, setRegisterDraftReady] = useState(false);
@@ -786,8 +792,7 @@ export default function ClientRegisterPage() {
       setPhoneConfigLoadFailed(false);
       const smsOn = j.smsVerificationEnabled === true;
       setSmsVerificationEnabled(smsOn);
-      const req =
-        typeof j.phoneSmsRequiredForSignup === "boolean" ? j.phoneSmsRequiredForSignup : smsOn;
+      const req = typeof j.phoneSmsRequiredForSignup === "boolean" ? j.phoneSmsRequiredForSignup : false;
       setPhoneSmsRequiredForSignup(req);
       setPhoneVerifyDiag({
         twilioConfigured: j.twilioConfigured === true,
@@ -2188,7 +2193,8 @@ export default function ClientRegisterPage() {
                     )}
                   </div>
 
-                  <div style={REGISTER_STEP2_CARD_PHONE}>
+                  {showPhoneSmsInWizardStep2 ? (
+                    <div style={REGISTER_STEP2_CARD_PHONE}>
                     <div
                       style={{
                         display: "flex",
@@ -2599,6 +2605,7 @@ export default function ClientRegisterPage() {
                       </div>
                     )}
                   </div>
+                  ) : null}
                   </div>
                   </div>
 
