@@ -7,7 +7,7 @@ type Body = { priceId?: string; modeOverride?: string };
 /**
  * Cria um Stripe Checkout no final do onboarding (passo 6).
  * Env: `STRIPE_SECRET_KEY`, `STRIPE_ONBOARDING_PRICE_ID`; opcional `STRIPE_ONBOARDING_CHECKOUT_MODE` = `subscription` | `payment`.
- * Em deploy **Preview**, as URLs de regresso usam o host do pedido (mesmo `localStorage` que o onboarding).
+ * `success_url` / `cancel_url`: vê `stripeCheckoutPublicBaseUrl` — por defeito `NEXT_PUBLIC_APP_URL` (produção).
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {

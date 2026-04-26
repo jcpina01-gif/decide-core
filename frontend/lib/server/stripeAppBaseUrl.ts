@@ -10,11 +10,20 @@ export function stripeAppBaseUrl(): string {
 }
 
 /**
- * URL para success/cancel do Checkout: em **Preview** na Vercel usa o host do pedido
- * (`*.vercel.app`), para o regresso bater no mesmo domínio que o `localStorage` do onboarding.
- * Em **production** usa `NEXT_PUBLIC_APP_URL` / `stripeAppBaseUrl()` (evita confundir com deploys de preview).
+ * URL para success/cancel do Checkout.
+ *
+ * Com `NEXT_PUBLIC_APP_URL` definida (p.ex. `https://www.…`) usamo-la por defeito: cada **Preview** Vercel tem
+ * outro `*.vercel.app`; a Persona exige o domínio no painel — o KYC/iframe quebra em subdomínios ainda não listados.
+ * Regresso para o domínio canónico evita isso após o pagamento.
+ *
+ * Para testar **só** no preview (mesmo `localStorage` que o início do fluxo): `STRIPE_CHECKOUT_USE_PREVIEW_HOST=1` na
+ * Vercel, e na Persona autorize esse host ou padrão que usem.
  */
 export function stripeCheckoutPublicBaseUrl(req: NextApiRequest): string {
+  const app = (process.env.NEXT_PUBLIC_APP_URL || "").trim().replace(/\/$/, "");
+  if (app && (process.env.STRIPE_CHECKOUT_USE_PREVIEW_HOST || "").trim() !== "1") {
+    return app;
+  }
   if (process.env.VERCEL_ENV === "preview") {
     const xfHost = (req.headers["x-forwarded-host"] as string | undefined)?.split(",")[0]?.trim();
     const host = xfHost || (req.headers.host as string | undefined)?.trim();
