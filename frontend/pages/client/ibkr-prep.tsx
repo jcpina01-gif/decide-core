@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import OnboardingFlowBar, {
   ONBOARDING_LOCALSTORAGE_CHANGED_EVENT,
+  ONBOARDING_MONTANTE_KEY,
   ONBOARDING_STORAGE_KEYS,
 } from "../../components/OnboardingFlowBar";
 import { buildPersonaReferenceIdFromSession } from "../../lib/personaReference";
@@ -16,6 +17,13 @@ import { ONBOARDING_STEP_6_LABEL } from "../../lib/onboardingStep6Label";
 
 const STRIPE_ONBOARDING_OK_KEY = "decide_onboarding_stripe_checkout_v1";
 const STRIPE_UI_ENABLED = process.env.NEXT_PUBLIC_STRIPE_ONBOARDING === "1";
+/**
+ * 1: se Persona responde 404 (sem registo) ou 503 (BD não configurada), o pagamento Stripe
+ * estiver validado e KYC=1 no localStorage, aceitamos a preparação IBKR na mesma (E2E / Vercel sem DB).
+ * Em produção com KYC a sério, omita a variável; o normal é 200+Persona+Neon.
+ */
+const IBKR_PREP_PERSONA_TRUST_LSKYC =
+  process.env.NEXT_PUBLIC_DECIDE_IBKR_PREP_TRUST_LSKYC_PERSONA_LS === "1";
 
 function safeNumber(x: unknown, fallback = 0): number {
   if (typeof x === "number") return Number.isFinite(x) ? x : fallback;
@@ -148,6 +156,43 @@ function repairKycMifidLsIfFunnelImpliesIt(): void {
   }
 }
 
+/**
+ * O stepper 2/6 lê `decide_onboarding_step1_done` (chave "onboarding"). Pós-redirect, outro host, ou
+ * reparos a MiFID/KYC, esse bit pode faltar; se o funil o implica, repomos o ✓.
+ */
+function repairOnboardingStep1IfFunnelImpliesIt(): void {
+  if (typeof window === "undefined") return;
+  const s1 = ONBOARDING_STORAGE_KEYS.onboarding;
+  if (!s1) return;
+  let changed = false;
+  try {
+    if (window.localStorage.getItem(s1) === "1") return;
+    const mif = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.mifid) === "1";
+    const kyc = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.kyc) === "1";
+    let hasMontante = false;
+    try {
+      hasMontante = (window.localStorage.getItem(ONBOARDING_MONTANTE_KEY) || "").length > 0;
+    } catch {
+      // ignore
+    }
+    const stripeOk = window.localStorage.getItem(STRIPE_ONBOARDING_OK_KEY) === "1";
+    const canInfer =
+      (mif && kyc) || (hasMontante && (mif || kyc)) || (stripeOk && kyc) || (stripeOk && mif);
+    if (!canInfer) return;
+    window.localStorage.setItem(s1, "1");
+    changed = true;
+  } catch {
+    return;
+  }
+  if (changed) {
+    try {
+      window.dispatchEvent(new Event(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT));
+    } catch {
+      // ignore
+    }
+  }
+}
+
 export default function IbkrPrepPage() {
   const [mifidDone, setMifidDone] = useState(false);
   const [kycDone, setKycDone] = useState(false);
@@ -155,6 +200,8 @@ export default function IbkrPrepPage() {
   const [approveDone, setApproveDone] = useState(false);
   /** null = a verificar no backend; true se existir registo Persona com estado suficiente (ver `personaRecordAllowsIbkrPrep`). */
   const [serverKycOk, setServerKycOk] = useState<boolean | null>(null);
+  /** Código HTTP do último GET /api/persona/status (para copy e bypass). */
+  const [personaHttpStatus, setPersonaHttpStatus] = useState<number | null>(null);
   /** Nome no registo de identidade (servidor DECIDE), quando existir. */
   const [personaNameOnRecord, setPersonaNameOnRecord] = useState<string | null>(null);
   /** Evita o aviso «Falta perfil» enquanto o primeiro GET Persona ainda decorre. */
@@ -171,6 +218,7 @@ export default function IbkrPrepPage() {
 
   const refreshOnboardingFlagsFromLs = useCallback(() => {
     repairKycMifidLsIfFunnelImpliesIt();
+    repairOnboardingStep1IfFunnelImpliesIt();
     try {
       setIbkrPrepDone(window.localStorage.getItem(IBKR_PREP_DONE_KEY) === "1");
     } catch {
@@ -380,6 +428,7 @@ export default function IbkrPrepPage() {
       const ref = buildPersonaReferenceIdFromSession();
       if (!ref) {
         // Sem sessão (referência) não dá para validar Persona no servidor.
+        setPersonaHttpStatus(-1);
         setServerKycOk(false);
         setPersonaNameOnRecord(null);
         setPersonaGatePending(false);
@@ -391,9 +440,12 @@ export default function IbkrPrepPage() {
       // já estar confirmada na base de dados.
       setServerKycOk(null);
       setPersonaNameOnRecord(null);
+      setPersonaHttpStatus(null);
 
       try {
         const r = await fetch(`/api/persona/status?reference_id=${encodeURIComponent(ref)}`);
+        if (cancelled) return;
+        setPersonaHttpStatus(r.status);
         const j = await r.json().catch(() => ({}));
         if (cancelled) return;
         const rec = j?.record;
@@ -420,6 +472,7 @@ export default function IbkrPrepPage() {
       } catch {
         if (cancelled) return;
         // Erro de rede/API: não limpar KYC no cliente; `canPrepare` fica false até o servidor responder.
+        setPersonaHttpStatus(0);
         setServerKycOk(false);
         setPersonaNameOnRecord(null);
       } finally {
@@ -433,7 +486,15 @@ export default function IbkrPrepPage() {
 
   const mifidSatisfied = mifidDone || kycDone || approveDone;
 
-  const canPrepare = mifidSatisfied && kycDone && serverKycOk === true && hedgeGateOk;
+  const identityServerSatisfied = useMemo(() => {
+    if (serverKycOk === true) return true;
+    if (!IBKR_PREP_PERSONA_TRUST_LSKYC) return false;
+    if (!stripeCheckoutDoneLs || !kycDone) return false;
+    if (personaHttpStatus == null) return false;
+    return personaHttpStatus === 404 || personaHttpStatus === 503;
+  }, [serverKycOk, kycDone, stripeCheckoutDoneLs, personaHttpStatus]);
+
+  const canPrepare = mifidSatisfied && kycDone && identityServerSatisfied && hedgeGateOk;
   /** Só mostramos o atalho para aprovação depois de «Preparar» (evita saltar o passo). */
   const canGoToApprove = canPrepare && ibkrPrepDone;
 
@@ -442,12 +503,12 @@ export default function IbkrPrepPage() {
       if (personaGatePending) {
         return "A validar identidade no sistema…";
       }
-      if (kycDone && serverKycOk !== true) {
+      if (kycDone && !identityServerSatisfied) {
         return serverKycOk === null
           ? "A validar identidade no sistema…"
           : "Pendente — identidade ainda não confirmada no servidor";
       }
-      if (kycDone && serverKycOk === true && !hedgeGateOk) {
+      if (kycDone && identityServerSatisfied && !hedgeGateOk) {
         return "Pendente — falta escolher o hedge cambial (0%, 50% ou 100%)";
       }
       if (!kycDone) return "Pendente — falta concluir a identidade";
@@ -457,7 +518,7 @@ export default function IbkrPrepPage() {
     if (preparing) return "A preparar…";
     if (ibkrPrepDone) return "Preparado neste dispositivo";
     return "Pronto para preparar";
-  }, [canPrepare, preparing, ibkrPrepDone, kycDone, serverKycOk, mifidSatisfied, hedgeGateOk, personaGatePending]);
+  }, [canPrepare, preparing, ibkrPrepDone, kycDone, serverKycOk, mifidSatisfied, hedgeGateOk, personaGatePending, identityServerSatisfied]);
 
   /** Aviso accionável: o que falta, onde ir, botão directo (nunca só texto técnico). */
   const prepareBlocker = useMemo((): {
@@ -499,10 +560,28 @@ export default function IbkrPrepPage() {
         ctaLabel: null,
       };
     }
-    if (serverKycOk !== true) {
+    if (!identityServerSatisfied) {
+      if (personaHttpStatus === 503) {
+        return {
+          title: "Armazenamento de identidade indisponível (servidor)",
+          body:
+            "A variável POSTGRES_URL ou DATABASE_URL (Neon) não está definida ou ligada no deployment, por isso a identidade não fica à prova de servidor. Na Vercel, em Settings → Environment Variables, defina POSTGRES_URL e faça Redeploy. O passo «Identidade» conclui no browser, mas a gravação caiu em falta.",
+          ctaHref: "/client-dashboard",
+          ctaLabel: "Ir para o painel",
+        };
+      }
+      if (personaHttpStatus === 404) {
+        return {
+          title: "Identidade ainda não registada no servidor",
+          body:
+            "A base de dados não devolveu um registo Persona com o seu id de referência. Volte ao passo «Identidade» (com a base a funcionar) para gravar, ou, em Vercel com POSTGRES, confirme o mesmo domínio/sessão de login.",
+          ctaHref: "/persona-onboarding",
+          ctaLabel: "Ir para Identidade",
+        };
+      }
       return {
         title: "Identidade ainda não confirmada no sistema",
-        body: "Volte ao passo «Identidade», conclua a verificação e assegure que a confirmação fica guardada no servidor.",
+        body: "O estado devolvido no servidor ainda não permite a preparação. Volte ao passo «Identidade» ou tente concluir de novo, assegurando a gravação (Neon) no mesmo ambiente (ex.: o mesmo subdomínio de produção).",
         ctaHref: "/persona-onboarding",
         ctaLabel: "Ir para Identidade",
       };
@@ -521,7 +600,7 @@ export default function IbkrPrepPage() {
       ctaHref: "/client-dashboard",
       ctaLabel: "Ir para o painel",
     };
-  }, [canPrepare, mifidSatisfied, kycDone, serverKycOk, hedgeGateOk, personaGatePending]);
+  }, [canPrepare, mifidSatisfied, kycDone, serverKycOk, hedgeGateOk, personaGatePending, identityServerSatisfied, personaHttpStatus]);
 
   function handlePrepareIbkr() {
     if (!canPrepare || preparing) return;
@@ -567,6 +646,20 @@ export default function IbkrPrepPage() {
             <div className="mb-4 rounded-xl border border-amber-500/35 bg-amber-950/30 px-4 py-3 text-sm text-amber-100" role="alert">
               Não foi possível concluir o pagamento com Stripe. Confirme as chaves e o Price no servidor (variáveis de
               ambiente) ou tente outra vez.
+            </div>
+          ) : null}
+          {canPrepare &&
+          IBKR_PREP_PERSONA_TRUST_LSKYC &&
+          !serverKycOk &&
+          (personaHttpStatus === 404 || personaHttpStatus === 503) ? (
+            <div
+              className="mb-4 rounded-xl border border-cyan-500/35 bg-cyan-950/20 px-4 py-3 text-sm text-cyan-100/95"
+              role="status"
+            >
+              <strong>Modo de teste (Persona):</strong> a preparação foi desbloqueada com{" "}
+              <code className="rounded bg-black/20 px-1.5 text-[11px]">NEXT_PUBLIC_DECIDE_IBKR_PREP_TRUST_LSKYC_PERSONA_LS=1</code>{" "}
+              enquanto a API devolveu {personaHttpStatus} (registo inexistente ou base não configurada). Em produção com
+              KYC, use Neon/POSTRES e o registo após o passo «Identidade».
             </div>
           ) : null}
 
