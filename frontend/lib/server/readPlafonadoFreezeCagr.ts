@@ -14,6 +14,7 @@ import {
   overlayedCagrToDisplayPercent,
 } from "../planDecisionKpiMath";
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
+import { resolveNextFrontendAppDir } from "./decideProjectRoot";
 
 /** Mesmo freeze que `MODEL_PATHS["v5_overlay_cap15_max100exp"]` no kpi_server. */
 const FREEZE_MODEL_OUTPUTS = ["freeze", FREEZE_PLAFONADO_MODEL_DIR, "model_outputs"] as const;
@@ -47,11 +48,12 @@ function normalizePlafonadoProfile(
 }
 
 /**
- * @deprecated use `resolveNextFrontendAppDir` com o mesmo *cwd* a partir do qual
- * se resolve o monorepo (o nome antigo fica re-exportado para ficheiros que ainda
- * o importam).
+ * Nome legado: mesmo que `resolveNextFrontendAppDir` (import local necessário: um re-export
+ * puro `export { … } from` não cria o identificador no módulo e rebentava a runtime
+ * com ReferenceError nas funções abaixo).
  */
-export { resolveNextFrontendAppDir as resolvePlafonadoNextFrontendCwd } from "./decideProjectRoot";
+export const resolvePlafonadoNextFrontendCwd: typeof resolveNextFrontendAppDir = resolveNextFrontendAppDir;
+export { resolveNextFrontendAppDir };
 
 function cagrDisplayFromEquity(eq: number[]): number | null {
   if (eq.length < MIN_EQUITY_POINTS) return null;
