@@ -648,8 +648,17 @@ export default function PersonaOnboardingPage({
         pageHostname === "[::1]" ||
         pageHostname === "::1";
       const parsedHost = normalizeNextPublicPersonaHostForSdk(personaHostRaw);
-      // Fora de origem local, não forçar `host` a partir do env (o SDK usa production por omissão).
-      const personaHostOpt = isLocalPage ? parsedHost : undefined;
+      /**
+       * Sandbox Persona (`NEXT_PUBLIC_PERSONA_HOST=staging`): o SDK precisa de `host: staging` também em
+       * `*.vercel.app` / produção — antes só passávamos `host` em localhost → widget 400 / domínio errado.
+       * Com `host` omitido, o SDK assume production (inquiry.withpersona.com), correcto para env_id de produção.
+       */
+      const personaHostOpt =
+        isLocalPage
+          ? parsedHost
+          : parsedHost === "staging" || parsedHost === "canary"
+            ? parsedHost
+            : undefined;
 
       /** O SDK Persona cria um overlay fullscreen; não aninhar dentro de #persona-flow-container (overflow:hidden / caixa pequena) — o modal ficava invisível ou sem «open». */
       const embedParent = typeof document !== "undefined" ? document.body : undefined;
