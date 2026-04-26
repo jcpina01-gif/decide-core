@@ -8,6 +8,7 @@ import OnboardingFlowBar, {
 } from "../../components/OnboardingFlowBar";
 import { buildPersonaReferenceIdFromSession } from "../../lib/personaReference";
 import { extractDisplayNameFromPersonaRecord } from "../../lib/personaDisplayName";
+import { isClientLoggedIn } from "../../lib/clientAuth";
 import { isFxHedgeOnboardingApplicable } from "../../lib/clientSegment";
 import { isHedgeOnboardingDone } from "../../lib/fxHedgePrefs";
 import { personaRecordAllowsIbkrPrep } from "../../lib/personaKycGate";
@@ -106,6 +107,42 @@ function ibkrRefreshButtonStyle(loading: boolean): React.CSSProperties {
   };
 }
 
+/**
+ * Pós-redirect (Stripe) ou noutro origin, as chaves MiFID/KYC do funil podem faltar
+ * ainda o utilizador estando além desses passos. Repara quando o estado o implica
+ * (hedge concluído, quando aplicável; ou pagamento Stripe validado com sessão activa).
+ */
+function repairKycMifidLsIfFunnelImpliesIt(): void {
+  if (typeof window === "undefined") return;
+  const mK = ONBOARDING_STORAGE_KEYS.mifid;
+  const kK = ONBOARDING_STORAGE_KEYS.kyc;
+  let changed = false;
+  try {
+    if (window.localStorage.getItem(mK) === "1" && window.localStorage.getItem(kK) === "1") return;
+    const stripeOk = window.localStorage.getItem(STRIPE_ONBOARDING_OK_KEY) === "1";
+    const inferFromHedge = isFxHedgeOnboardingApplicable() && isHedgeOnboardingDone();
+    const inferFromStripe = stripeOk && isClientLoggedIn();
+    if (!inferFromHedge && !inferFromStripe) return;
+    if (window.localStorage.getItem(mK) !== "1") {
+      window.localStorage.setItem(mK, "1");
+      changed = true;
+    }
+    if (window.localStorage.getItem(kK) !== "1") {
+      window.localStorage.setItem(kK, "1");
+      changed = true;
+    }
+  } catch {
+    return;
+  }
+  if (changed) {
+    try {
+      window.dispatchEvent(new Event(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT));
+    } catch {
+      // ignore
+    }
+  }
+}
+
 export default function IbkrPrepPage() {
   const [mifidDone, setMifidDone] = useState(false);
   const [kycDone, setKycDone] = useState(false);
@@ -129,6 +166,7 @@ export default function IbkrPrepPage() {
   const stripeReturnInFlight = useRef(false);
 
   const refreshOnboardingFlagsFromLs = useCallback(() => {
+    repairKycMifidLsIfFunnelImpliesIt();
     try {
       setIbkrPrepDone(window.localStorage.getItem(IBKR_PREP_DONE_KEY) === "1");
     } catch {
