@@ -1,13 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import Stripe from "stripe";
-import { stripeAppBaseUrl } from "../../../lib/server/stripeAppBaseUrl";
+import { stripeCheckoutPublicBaseUrl } from "../../../lib/server/stripeAppBaseUrl";
 
 type Body = { priceId?: string; modeOverride?: string };
 
 /**
  * Cria um Stripe Checkout no final do onboarding (passo 6).
  * Env: `STRIPE_SECRET_KEY`, `STRIPE_ONBOARDING_PRICE_ID`; opcional `STRIPE_ONBOARDING_CHECKOUT_MODE` = `subscription` | `payment`.
- * Base de URLs: `NEXT_PUBLIC_APP_URL` ou `VERCEL_URL` (Vercel).
+ * Em deploy **Preview**, as URLs de regresso usam o host do pedido (mesmo `localStorage` que o onboarding).
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -33,7 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(503).json({ ok: false, error: "stripe_not_configured" });
   }
 
-  const site = stripeAppBaseUrl();
+  const site = stripeCheckoutPublicBaseUrl(req);
   const modeRaw = (body.modeOverride || process.env.STRIPE_ONBOARDING_CHECKOUT_MODE || "subscription").trim();
   const mode: Stripe.Checkout.SessionCreateParams.Mode =
     modeRaw === "payment" ? "payment" : "subscription";
