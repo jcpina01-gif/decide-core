@@ -22,6 +22,15 @@ function isSiteGateBypass(pathname: string): boolean {
   if (pathname.startsWith("/api/persona/")) return true;
   /** Rotas internas com `isBackofficeEnabled()` próprio; o fetch do browser não envia Basic Auth automaticamente. */
   if (pathname.startsWith("/api/backoffice")) return true;
+  /**
+   * Vistas /embed/* — iframes a partir do kpi_server (Flask) e pedidos a correr noutro contexto de navegação
+   * não carregam credenciais Basic; sem bypass o gate devolve 401 e o browser mostra ecrã em branco /
+   * «resposta inválida».
+   * Conteúdo: noindex (histórico ilustrativo, FAQ) — a exposição fica alinhada ao desenho original do embed.
+   */
+  if (pathname === "/embed" || pathname.startsWith("/embed/")) return true;
+  /** Iframe «Histórico de decisões» (embed) chama isto; mesmo racional que o HTML /embed — sem Basic no fetch. */
+  if (pathname === "/api/client/recommendations-history") return true;
   return false;
 }
 

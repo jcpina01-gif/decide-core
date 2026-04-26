@@ -63,14 +63,14 @@ function isCashSleeveTicker(ticker: string): boolean {
   return t === "TBILL_PROXY" || t === "BIL" || t === "SHV";
 }
 
-/** Igual ao piso de sugestão BUY no plano: entradas/saídas com |Δ| &lt; 1% são ruído na lista lateral. */
-const FLOW_SIDE_LIST_MIN_ABS_PCT = 1;
+/** Só a caixa de **entradas**: títulos com |peso| abaixo disto (exc. liquidez) ficam fora. Saídas listam-se todas. */
+const ENTRY_SIDE_LIST_MIN_ABS_PCT = 1;
 
-function filterFlowSideList(rows: FlowRow[]): { shown: FlowRow[]; omitted: number } {
+function filterEntradasListMin1Pct(rows: FlowRow[]): { shown: FlowRow[]; omitted: number } {
   const shown = rows.filter((r) => {
     if (isCashSleeveTicker(r.ticker)) return true;
     const w = typeof r.weightPct === "number" && Number.isFinite(r.weightPct) ? Math.abs(r.weightPct) : 0;
-    return w >= FLOW_SIDE_LIST_MIN_ABS_PCT - 1e-9;
+    return w >= ENTRY_SIDE_LIST_MIN_ABS_PCT - 1e-9;
   });
   return { shown, omitted: rows.length - shown.length };
 }
@@ -318,8 +318,8 @@ export default function RecommendationsHistoryPanel() {
             const hasFlow = mo.entries !== undefined && mo.exits !== undefined;
             const entAll = mo.entries ?? [];
             const exAll = mo.exits ?? [];
-            const { shown: ent, omitted: entOmitted } = filterFlowSideList(entAll);
-            const { shown: ex, omitted: exOmitted } = filterFlowSideList(exAll);
+            const { shown: ent, omitted: entOmitted } = filterEntradasListMin1Pct(entAll);
+            const ex = exAll;
             const chrono = mo.chronologicalIndex;
             const chartTooEarly = chrono != null && chrono < 2;
             const monthHeading = formatMonthHeadingPt(mo.date);
@@ -366,7 +366,11 @@ export default function RecommendationsHistoryPanel() {
                     {hasFlow ? (
                       <span style={{ color: "#71717a" }}>
                         {" "}
-                        · +{entAll.length} entradas / −{exAll.length} saídas
+                        · {entAll.length} ent., {exAll.length} saí. — {ent.length} com |peso| ≥
+                        {ENTRY_SIDE_LIST_MIN_ABS_PCT}%
+                        (entr.
+                        {entOmitted > 0 ? ` +${entOmitted} com &lt;1%` : ""}){" · "}
+                        {exAll.length} saídas (todas)
                       </span>
                     ) : null}
                   </div>
@@ -404,13 +408,12 @@ export default function RecommendationsHistoryPanel() {
                         <strong>mês anterior desta série</strong> e <strong>deixam de existir</strong> nesta data (saem
                         por completo do alvo). <strong>Entradas</strong> são títulos <strong>novos</strong> nesta data.
                         Reduções de peso sem o ticker desaparecer <strong>não</strong> aparecem nestas listas — só a
-                        tabela completa abaixo reflecte o alvo do mês. As caixas laterais só listam movimentos com |Δ| ≥
-                        1% (exceto liquidez); posições com entrada ou saída abaixo desse limiar continuam na tabela. Um
-                        ticker que <strong>já estava</strong> no mês anterior com peso relevante pode surgir com frações
-                        de % no alvo seguinte (sobra do modelo após CAP ou renormas) — isso não é uma «entrada»
-                        nova. Nomes que aparecem pela <strong>primeira vez</strong> nesta série de CSV (mesmo com
-                        &lt;1%) são entradas reais nesse snapshot do modelo. Resíduos de continuação abaixo de 0,05%
-                        do NAV são mostrados agregados na liquidez nesta vista.
+                        tabela completa abaixo reflecte o alvo do mês. Na margem, <strong>entradas</strong> listam
+                        títulos novos com |peso| ≥ 1% (a liquidez entra ainda com peso baixo) — entradas com
+                        &lt;1% ficam só no contador. <strong>Saídas</strong> listam <strong>todas</strong>. Um ticker
+                        que <strong>já estava</strong> no mês anterior com peso relevante pode surgir com frações de %
+                        no alvo seguinte (sobra do modelo após CAP ou renormas) — isso não é uma «entrada» nova. Resíduos
+                        de continuação abaixo de 0,05% do NAV são mostrados agregados na liquidez nesta vista.
                       </p>
                     <div
                       style={{
@@ -432,17 +435,17 @@ export default function RecommendationsHistoryPanel() {
                         <div style={{ fontSize: 13, fontWeight: 800, color: "#d4d4d8", marginBottom: 6 }}>
                           Entradas{" "}
                           <span style={{ fontWeight: 600, color: "#a1a1aa", fontSize: 12 }}>
-                            ({ent.length} com |Δ| ≥ 1%
+                            (todas com |peso| ≥ {ENTRY_SIDE_LIST_MIN_ABS_PCT}%
                             {entOmitted > 0 ? (
-                              <span style={{ color: "#71717a" }}> · +{entOmitted} só na tabela (&lt;1%)</span>
+                              <span style={{ color: "#71717a" }}> · +{entOmitted} com &lt;1% não listados</span>
                             ) : null}
                             )
                           </span>
                         </div>
                         {entOmitted > 0 ? (
                           <div style={{ fontSize: 11, color: "#52525b", marginBottom: 6, lineHeight: 1.4 }}>
-                            O resumo do mês acima indica +{entAll.length} entradas no total; aqui mostram-se as de peso
-                            ≥1% (exc. liquidez).
+                            Há {entOmitted} entrada(s) com &lt;{ENTRY_SIDE_LIST_MIN_ABS_PCT}% (ainda a contar no
+                            +{entAll.length} de cima) — vê a tabela completa abaixo.
                           </div>
                         ) : null}
                         {ent.length === 0 ? (
@@ -473,19 +476,9 @@ export default function RecommendationsHistoryPanel() {
                         <div style={{ fontSize: 13, fontWeight: 800, color: "#a1a1aa", marginBottom: 6 }}>
                           Saídas{" "}
                           <span style={{ fontWeight: 600, color: "#a1a1aa", fontSize: 12 }}>
-                            ({ex.length} com |Δ| ≥ 1%
-                            {exOmitted > 0 ? (
-                              <span style={{ color: "#71717a" }}> · +{exOmitted} só na tabela (&lt;1%)</span>
-                            ) : null}
-                            )
+                            (todas)
                           </span>
                         </div>
-                        {exOmitted > 0 ? (
-                          <div style={{ fontSize: 11, color: "#52525b", marginBottom: 6, lineHeight: 1.4 }}>
-                            O resumo do mês acima indica −{exAll.length} saídas no total; aqui mostram-se as de peso ≥1%
-                            (exc. liquidez).
-                          </div>
-                        ) : null}
                         {ex.length === 0 ? (
                           <div style={{ fontSize: 12, color: "#71717a" }}>—</div>
                         ) : (
