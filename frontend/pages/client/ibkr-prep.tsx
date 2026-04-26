@@ -115,6 +115,8 @@ export default function IbkrPrepPage() {
   const [serverKycOk, setServerKycOk] = useState<boolean | null>(null);
   /** Nome no registo de identidade (servidor DECIDE), quando existir. */
   const [personaNameOnRecord, setPersonaNameOnRecord] = useState<string | null>(null);
+  /** Evita o aviso «Falta perfil» enquanto o primeiro GET Persona ainda decorre. */
+  const [personaGatePending, setPersonaGatePending] = useState(true);
   const [ibkrPrepDone, setIbkrPrepDone] = useState(false);
   /** Hedge (0/50/100%) antes de «Plano e pagamento» — segmentos elegíveis. */
   const [hedgeGateOk, setHedgeGateOk] = useState(false);
@@ -313,8 +315,10 @@ export default function IbkrPrepPage() {
   }, [router.isReady, router.query, router]);
 
   useEffect(() => {
+    if (!router.isReady) return;
     let cancelled = false;
     (async () => {
+      setPersonaGatePending(true);
       let k = false;
       try {
         k = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.kyc) === "1";
@@ -324,20 +328,20 @@ export default function IbkrPrepPage() {
       if (cancelled) return;
       setKycDone(k);
 
-      if (!k) {
+      const ref = buildPersonaReferenceIdFromSession();
+      if (!ref) {
+        // Sem sessão (referência) não dá para validar Persona no servidor.
         setServerKycOk(false);
         setPersonaNameOnRecord(null);
+        setPersonaGatePending(false);
         return;
       }
 
-      const ref = buildPersonaReferenceIdFromSession();
-      if (!ref) {
-        // Sem referência não conseguimos validar no servidor; não apagar o passo «Identidade» no LS
-        // (o stepper deixa de mostrar ✓ e o utilizador fica bloqueado sem motivo claro).
-        setServerKycOk(false);
-        setPersonaNameOnRecord(null);
-        return;
-      }
+      // Sempre que há referência, consultar o servidor — o LS pode estar vazio após redirect
+      // do Stripe, domínio de preview vs produção, ou noutro separador, mas a identidade
+      // já estar confirmada na base de dados.
+      setServerKycOk(null);
+      setPersonaNameOnRecord(null);
 
       try {
         const r = await fetch(`/api/persona/status?reference_id=${encodeURIComponent(ref)}`);
@@ -369,12 +373,14 @@ export default function IbkrPrepPage() {
         // Erro de rede/API: não limpar KYC no cliente; `canPrepare` fica false até o servidor responder.
         setServerKycOk(false);
         setPersonaNameOnRecord(null);
+      } finally {
+        if (!cancelled) setPersonaGatePending(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router.isReady, stripeFeedback]);
 
   const mifidSatisfied = mifidDone || kycDone || approveDone;
 
@@ -384,6 +390,9 @@ export default function IbkrPrepPage() {
 
   const stepStateLabel = useMemo(() => {
     if (!canPrepare) {
+      if (personaGatePending) {
+        return "A validar identidade no sistema…";
+      }
       if (kycDone && serverKycOk !== true) {
         return serverKycOk === null
           ? "A validar identidade no sistema…"
@@ -399,7 +408,7 @@ export default function IbkrPrepPage() {
     if (preparing) return "A preparar…";
     if (ibkrPrepDone) return "Preparado neste dispositivo";
     return "Pronto para preparar";
-  }, [canPrepare, preparing, ibkrPrepDone, kycDone, serverKycOk, mifidSatisfied, hedgeGateOk]);
+  }, [canPrepare, preparing, ibkrPrepDone, kycDone, serverKycOk, mifidSatisfied, hedgeGateOk, personaGatePending]);
 
   /** Aviso accionável: o que falta, onde ir, botão directo (nunca só texto técnico). */
   const prepareBlocker = useMemo((): {
@@ -409,6 +418,14 @@ export default function IbkrPrepPage() {
     ctaLabel: string | null;
   } | null => {
     if (canPrepare) return null;
+    if (personaGatePending) {
+      return {
+        title: "A validar a identidade no sistema",
+        body: "Aguarde um momento enquanto confirmamos o registo de identidade com o servidor…",
+        ctaHref: null,
+        ctaLabel: null,
+      };
+    }
     if (!mifidSatisfied) {
       return {
         title: "Falta confirmar o perfil de investidor",
@@ -455,7 +472,7 @@ export default function IbkrPrepPage() {
       ctaHref: "/client-dashboard",
       ctaLabel: "Ir para o painel",
     };
-  }, [canPrepare, mifidSatisfied, kycDone, serverKycOk, hedgeGateOk]);
+  }, [canPrepare, mifidSatisfied, kycDone, serverKycOk, hedgeGateOk, personaGatePending]);
 
   function handlePrepareIbkr() {
     if (!canPrepare || preparing) return;
