@@ -7029,15 +7029,22 @@ def patch_equity_knot_dates_linear(
         return
     date_strs: list[str] = []
     for d in dates:
-        if isinstance(d, pd.Timestamp):
-            date_strs.append(d.strftime("%Y-%m-%d"))
-        elif hasattr(d, "strftime"):
-            date_strs.append(d.strftime("%Y-%m-%d"))
-        else:
-            s = str(d)
-            if " " in s:
-                s = s.split(" ")[0]
-            date_strs.append(s[:10] if len(s) >= 10 else s)
+        try:
+            nrm = pd.Timestamp(d).normalize().strftime("%Y-%m-%d")
+        except (TypeError, ValueError, OSError):
+            try:
+                nrm = pd.to_datetime(d, errors="coerce")
+                nrm = (
+                    nrm.normalize().strftime("%Y-%m-%d")
+                    if nrm is not None and not pd.isna(nrm)
+                    else ""
+                )
+            except (TypeError, ValueError):
+                s = str(d)
+                s = s.split(" ")[0] if " " in s else s
+                s = s.split("T")[0] if "T" in s else s
+                nrm = s[:10] if len(s) >= 10 else s
+        date_strs.append(nrm)
     for bad in _EQUITY_KNOT_DATES:
         try:
             i = date_strs.index(bad)
@@ -9606,7 +9613,7 @@ def index():
     num_years = num_days / TRADING_DAYS_PER_YEAR
 
     # Alisa artefacto pontual (p.ex. 2021-05-13) nos CSVs congelados antes de drawdowns e KPIs no iframe.
-    patch_equity_knot_dates_linear(dates, model_eq, raw_eq)
+    patch_equity_knot_dates_linear(dates, model_eq, raw_eq, bench_eq)
 
     raw_kpis, raw_drawdowns = compute_kpis(raw_eq)
     _snap_raw = os.environ.get("DECIDE_KPI_USE_RAW_KPI_SNAPSHOT", "").strip().lower() in {
