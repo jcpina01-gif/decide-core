@@ -4269,9 +4269,25 @@ HTML_TEMPLATE = """
 
     <!-- ABA 4: histórico de decisões da carteira (embed Next) -->
     <div id="tab-portfolio-history" class="tab-content{% if tab_default == 'portfolio_history' %} active{% endif %}">
+      <div
+        class="muted"
+        style="font-size: 0.78rem; line-height: 1.5; margin-bottom: 10px; padding: 8px 10px; border-radius: 8px; background: rgba(55, 48, 30, 0.55); border: 1px solid rgba(170, 140, 60, 0.45); color: #d4d4d8"
+      >
+        <strong>Base do iframe (Next):</strong>
+        <code style="color: #f4f4f5; white-space: nowrap;">{{ frontend_url }}</code>
+        <span style="color: #a1a1aa"
+          >— O histórico com <strong>4 colunas</strong> (nomes novos, reforços, saídas totais, reduções de peso) está no
+          repositório local. Se ainda vês <em>só duas</em> caixas (texto &laquo;novos vs. m&ecirc;s passado&raquo;), o
+          <code style="color: #e5e7eb">FRONTEND_URL</code> ainda aponta para o site p&uacute;blico. Para testar: arranca
+          <code style="color: #e5e7eb">npm run dev</code> em <code style="color: #e5e7eb">frontend/</code> (porta 4701) e
+          coloca <code style="color: #e5e7eb">FRONTEND_URL=http://127.0.0.1:4701</code> no ambiente do
+          <code style="color: #e5e7eb">kpi_server</code> (ou vazio para o default 127.0.0.1:4701), reinicia o Flask, Ctrl+F5 no painel. Em
+          produ&ccedil;&atilde;o, faz deploy do frontend.
+        </span>
+      </div>
       {# Sem loading="lazy": o separador começa com display:none — em vários browsers o iframe nunca entra no viewport e fica cinza vazio. #}
       <iframe
-        src="{{ frontend_url }}/embed/recommendations-history"
+        src="{{ frontend_url }}/embed/recommendations-history?v=flow-4col-1"
         title="Histórico de decisões da carteira — DECIDE"
         style="width:100%; border:0; min-height:520px; height:3200px; background:#09090b; border-radius: 12px; display:block;"
         referrerpolicy="no-referrer-when-downgrade"

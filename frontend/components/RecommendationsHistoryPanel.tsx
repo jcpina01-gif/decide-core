@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import React, { useEffect, useMemo, useState } from "react";
 import { formatPtDate } from "../lib/clientPortfolioSchedule";
 import { DECIDE_APP_FONT_FAMILY } from "../lib/decideClientTheme";
@@ -20,6 +21,9 @@ type FlowRow = {
   ticker: string;
   company?: string;
   weightPct?: number;
+  prevWeightPct?: number;
+  deltaWeightPct?: number;
+  kind?: "new" | "increase" | "decrease" | "remove" | "cash_synthetic";
 };
 
 type PriorMonthBar = {
@@ -47,6 +51,8 @@ type HistMonth = {
   equitySleeveTotalPct?: number;
   entries?: FlowRow[];
   exits?: FlowRow[];
+  diffOverlapEquityTickerCount?: number;
+  prevRebalanceYmdForDiff?: string;
   priorThreeMonthReturns?: PriorMonthBar[];
   equityChartSource?: string;
   chronologicalIndex?: number;
@@ -58,6 +64,19 @@ function formatCompanyLine(r: FlowRow): string {
   return r.ticker;
 }
 
+function isNovoNomeEntrada(e: FlowRow): boolean {
+  return e.kind === "new" || (e.kind == null && e.ticker.trim().toUpperCase() !== "TBILL_PROXY");
+}
+function isReforcoEntrada(e: FlowRow): boolean {
+  return e.kind === "increase";
+}
+function isSaidaTudoDoAlvo(e: FlowRow): boolean {
+  return e.kind === "remove" || (e.kind == null && e.ticker.trim().toUpperCase() !== "TBILL_PROXY");
+}
+function isReduçãoPesoSaida(e: FlowRow): boolean {
+  return e.kind === "decrease";
+}
+
 function isCashSleeveTicker(ticker: string): boolean {
   const t = ticker.trim().toUpperCase();
   return t === "TBILL_PROXY" || t === "BIL" || t === "SHV";
@@ -65,6 +84,80 @@ function isCashSleeveTicker(ticker: string): boolean {
 
 /** Só a caixa de **entradas**: títulos com |peso| abaixo disto (exc. liquidez) ficam fora. Saídas listam-se todas. */
 const ENTRY_SIDE_LIST_MIN_ABS_PCT = 1;
+/** Mínimo |Δ| p.p. para reforço/redução; alinhado com `OFFICIAL_HISTORY_REBALANCE_FLOW_MIN_ABS_PP` no build do histórico. */
+const REBALANCE_REWEIGHT_MIN_PP = 0.5;
+/** Altera ao mudar a UI do histórico: se o ecrã não mostrar isto, o browser está a outro build/host. */
+const HISTORY_UI_BUILD = "4col-Δ0p5-2026-04-25";
+
+function flowLiEntradaNovo(r: FlowRow, moDate: string): ReactNode {
+  const w = r.weightPct;
+  const wStr = w != null && Number.isFinite(w) ? ` → ${w.toFixed(2)}%` : "";
+  const t = (r.ticker || "").trim().toUpperCase();
+  const isSyn = r.kind === "cash_synthetic" || t === "TBILL_PROXY";
+  const isNovo = r.kind === "new" || (r.kind == null && t !== "TBILL_PROXY" && !isSyn);
+  const key = `e-n-${moDate}-${r.ticker}-${r.kind ?? "x"}`;
+  return (
+    <li
+      key={key}
+      style={isCashSleeveTicker(r.ticker) ? { color: "#fafafa", fontWeight: 800 } : undefined}
+    >
+      <strong>{formatCompanyLine(r)}</strong>
+      {wStr}
+      {isNovo ? " · Novo" : null}
+      {isSyn && !isCashSleeveTicker(r.ticker) ? " · (ajuste agregado T-Bills)" : null}
+      {isCashSleeveTicker(r.ticker) ? " · Liquidez" : null}
+    </li>
+  );
+}
+
+function flowLiReforco(r: FlowRow, moDate: string): ReactNode {
+  if (r.deltaWeightPct == null || r.prevWeightPct == null) return null;
+  const key = `e-r-${moDate}-${r.ticker}`;
+  return (
+    <li
+      key={key}
+      style={isCashSleeveTicker(r.ticker) ? { color: "#fafafa", fontWeight: 800 } : undefined}
+    >
+      <strong>{formatCompanyLine(r)}</strong>
+      {` · +${r.deltaWeightPct.toFixed(2)} p.p. (era ${r.prevWeightPct.toFixed(2)}% → ${(r.weightPct ?? 0).toFixed(2)}%)`}
+      {isCashSleeveTicker(r.ticker) ? " · Liquidez" : null}
+    </li>
+  );
+}
+
+function flowLiSaidaFimAlvo(r: FlowRow, moDate: string): ReactNode {
+  const w = r.weightPct;
+  const t = (r.ticker || "").trim().toUpperCase();
+  const isSyn = r.kind === "cash_synthetic" || t === "TBILL_PROXY";
+  const wStr = w != null && Number.isFinite(w) ? ` (era ${w.toFixed(2)}%)` : "";
+  const key = `x-f-${moDate}-${r.ticker}-${r.kind ?? "x"}`;
+  return (
+    <li
+      key={key}
+      style={isCashSleeveTicker(r.ticker) ? { color: "#fafafa", fontWeight: 800 } : undefined}
+    >
+      <strong>{formatCompanyLine(r)}</strong>
+      {wStr}
+      {isSyn && !isCashSleeveTicker(r.ticker) ? " (ajuste agregado T-Bills)" : null}
+      {isCashSleeveTicker(r.ticker) ? " · Liquidez" : null}
+    </li>
+  );
+}
+
+function flowLiSaidaReducao(r: FlowRow, moDate: string): ReactNode {
+  if (r.deltaWeightPct == null || r.prevWeightPct == null) return null;
+  const key = `x-d-${moDate}-${r.ticker}`;
+  return (
+    <li
+      key={key}
+      style={isCashSleeveTicker(r.ticker) ? { color: "#fafafa", fontWeight: 800 } : undefined}
+    >
+      <strong>{formatCompanyLine(r)}</strong>
+      {` · ${r.deltaWeightPct.toFixed(2)} p.p. (era ${r.prevWeightPct.toFixed(2)}% → ${(r.weightPct ?? 0).toFixed(2)}%) — continua`}
+      {isCashSleeveTicker(r.ticker) ? " · Liquidez" : null}
+    </li>
+  );
+}
 
 /** Peso alvo (%) alinhado à tabela do mês — a lista `entries` do API pode trazer resíduos &lt;1% que não batem com o alvo. */
 function resolveEntradaPesoFromMonthTable(ticker: string, flow: FlowRow, rowByTicker: Map<string, HistRow>): number {
@@ -107,11 +200,26 @@ function filterEntradasMin1UsingMonthTable(
     return { ...e, weightPct: w };
   });
   const pass = enriched.filter((r) => {
+    if (r.kind === "cash_synthetic") return true;
     if (isCashSleeveTicker(r.ticker)) return true;
+    if (
+      r.kind === "increase" &&
+      typeof r.deltaWeightPct === "number" &&
+      Number.isFinite(r.deltaWeightPct) &&
+      Math.abs(r.deltaWeightPct) >= REBALANCE_REWEIGHT_MIN_PP - 1e-9
+    ) {
+      return true;
+    }
     const w = typeof r.weightPct === "number" && Number.isFinite(r.weightPct) ? r.weightPct : 0;
     return w >= ENTRY_SIDE_LIST_MIN_ABS_PCT - 1e-9;
   });
-  pass.sort((a, b) => (b.weightPct ?? 0) - (a.weightPct ?? 0));
+  const sortKey = (r: FlowRow) => {
+    if (r.kind === "increase" && typeof r.deltaWeightPct === "number") {
+      return Math.max(r.weightPct ?? 0, r.deltaWeightPct);
+    }
+    return r.weightPct ?? 0;
+  };
+  pass.sort((a, b) => sortKey(b) - sortKey(a));
   return { shown: pass, omitted: entAll.length - pass.length };
 }
 
@@ -206,11 +314,21 @@ type HistResponse = {
   months?: HistMonth[];
 };
 
+function isLocalNextHost(host: string | null): boolean {
+  if (!host) return false;
+  return host.startsWith("127.0.0.1") || host.startsWith("localhost");
+}
+
 export default function RecommendationsHistoryPanel() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [data, setData] = useState<HistResponse | null>(null);
   const [filter, setFilter] = useState("");
+  const [clientHost, setClientHost] = useState<string | null>(null);
+
+  useEffect(() => {
+    setClientHost(typeof window !== "undefined" ? window.location.host : null);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -218,7 +336,7 @@ export default function RecommendationsHistoryPanel() {
       setLoading(true);
       setErr("");
       try {
-        const r = await fetch("/api/client/recommendations-history");
+        const r = await fetch("/api/client/recommendations-history", { cache: "no-store" });
         const j = (await r.json()) as HistResponse;
         if (cancelled) return;
         if (!r.ok || j.ok === false) {
@@ -306,9 +424,36 @@ export default function RecommendationsHistoryPanel() {
         padding: "12px 14px 16px",
       }}
     >
+      {clientHost && !isLocalNextHost(clientHost) ? (
+        <div
+          style={{
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: "#fef3c7",
+            background: "rgba(120, 53, 15, 0.45)",
+            border: "1px solid rgba(245, 158, 11, 0.55)",
+            borderRadius: 10,
+            padding: "10px 12px",
+            marginBottom: 12,
+          }}
+        >
+          <strong>Host actual:</strong> {clientHost} — a vista antiga (duas caixas) costuma vir de um{" "}
+          <strong>deploy ainda sem as últimas alterações</strong> do repositório. O código com{" "}
+          <strong>4 colunas e reforço/redução (Δ ≥ 0,5 p.p.)</strong> corre em{" "}
+          <code style={{ color: "#fbbf24" }}>http://127.0.0.1:4701</code> com <code style={{ color: "#fbbf24" }}>npm run dev</code>{" "}
+          no <code style={{ color: "#fbbf24" }}>frontend/</code> e, no painel Flask,{" "}
+          <code style={{ color: "#fbbf24" }}>FRONTEND_URL=http://127.0.0.1:4701</code>.
+        </div>
+      ) : clientHost && isLocalNextHost(clientHost) ? (
+        <div style={{ fontSize: 12, color: "#22c55e", marginBottom: 8 }}>Next local · {clientHost} · 4 colunas ativas</div>
+      ) : null}
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 18, fontWeight: 900, color: "#f4f4f5" }}>
-          Histórico de decisões da carteira
+        <div style={{ fontSize: 18, fontWeight: 900, color: "#f4f4f5" }}>Histórico de decisões da carteira</div>
+        <div
+          style={{ fontSize: 11, color: "#3f3f46", fontFamily: "ui-monospace, Consolas, monospace", marginTop: 4 }}
+          title="Se não vires esta linha, o painel ainda aponta para outro build ou cache antigo (Ctrl+F5 no iframe)."
+        >
+          {HISTORY_UI_BUILD} · Novos e reforços (entradas) + saídas e reduções (4 colunas)
         </div>
         <div style={{ fontSize: 14, color: "#a1a1aa", marginTop: 6, lineHeight: 1.5, maxWidth: 560 }}>
           Evolução mensal da composição da sua carteira ao longo do tempo.
@@ -358,6 +503,10 @@ export default function RecommendationsHistoryPanel() {
             const hasFlow = mo.entries !== undefined && mo.exits !== undefined;
             const entAll = mo.entries ?? [];
             const exAll = mo.exits ?? [];
+            const nEntNovoNome = entAll.filter(isNovoNomeEntrada).length;
+            const nEntReforco = entAll.filter(isReforcoEntrada).length;
+            const nExSaiuAlvo = exAll.filter(isSaidaTudoDoAlvo).length;
+            const nExReduPeso = exAll.filter(isReduçãoPesoSaida).length;
             const { shown: ent, omitted: entOmitted } = filterEntradasMin1UsingMonthTable(entAll, mo);
             const ex = exAll;
             const chrono = mo.chronologicalIndex;
@@ -406,7 +555,31 @@ export default function RecommendationsHistoryPanel() {
                     {hasFlow ? (
                       <span style={{ color: "#71717a" }}>
                         {" "}
-                        · Diff: {entAll.length} nov{entAll.length === 1 ? "o" : "os"} no alvo, {exAll.length} a sair ·
+                        · Diff: {entAll.length} em entradas ({nEntNovoNome} nome{nEntNovoNome === 1 ? "" : "s"} novos
+                        {nEntReforco > 0
+                          ? `, ${nEntReforco} reforço${nEntReforco === 1 ? "" : "s"} de peso`
+                          : ""}
+                        ) — {exAll.length} em saídas
+                        {nExSaiuAlvo + nExReduPeso > 0
+                          ? ` (${nExSaiuAlvo} saída${nExSaiuAlvo === 1 ? "" : "s"} do alvo${
+                              nExReduPeso > 0
+                                ? `, ${nExReduPeso} redução${nExReduPeso === 1 ? "" : "ões"} de peso (continua no alvo)`
+                                : ""
+                            })`
+                          : ""}
+                        {mo.prevRebalanceYmdForDiff
+                          ? ` (vs. mês de ${mo.prevRebalanceYmdForDiff})`
+                          : " (vs. mês anterior no CSV)"}
+                        {typeof mo.diffOverlapEquityTickerCount === "number" ? (
+                          <>
+                            {" "}
+                            · {mo.diffOverlapEquityTickerCount} título
+                            {mo.diffOverlapEquityTickerCount === 1 ? "" : "s"} de risco
+                            {mo.prevRebalanceYmdForDiff ? ` já em ${mo.prevRebalanceYmdForDiff}` : " no mês anterior"}{" "}
+                            (sem alteração de nome, só ajuste de %)
+                          </>
+                        ) : null}
+                        {" · "}
                         tabela: {mo.rows.length} posições
                       </span>
                     ) : null}
@@ -441,19 +614,35 @@ export default function RecommendationsHistoryPanel() {
                         }}
                       >
                         <strong style={{ color: "#a1a1aa" }}>O que entra nestas listas (não é a tabela inteira):</strong>{" "}
-                        <strong>Entrada</strong> = ticker <strong>que ainda não existia</strong> no alvo publicado do
-                        mês <strong>imediatamente anterior</strong> nesta série (ficheiro CSV/merge).{" "}
-                        <strong>Saída</strong> = deixou de constar. Redução de peso sem o nome sair
-                        <strong> não</strong> entra em «entradas/saídas». A <strong>grelha a baixo</strong> é o alvo
-                        completo ({mo.rows.length} linhas); pode ter muito mais títulos do que a caixa «entradas», porque
-                        a maior parte <strong>já constava</strong> no mês passado. Os % na caixa (≥{" "}
-                        {ENTRY_SIDE_LIST_MIN_ABS_PCT}%) vêm alinhados ao peso da grelha. A liquidez (TBILL/BIL/SHV) pode
-                        listar com peso baixo. Resíduos de continuação abaixo de 0,05% do NAV agregam em liquidez.
+                        <strong>Entradas</strong> = nomes <strong>novos</strong> (inexistentes no ficheiro do mês
+                        anterior) e <strong>reforços</strong> (aumento ≥{REBALANCE_REWEIGHT_MIN_PP} p.p. no alvo, mesmo
+                        ticker mês a mês). <strong>Saídas</strong> = títulos que <strong>deixam o alvo</strong> e{" "}
+                        <strong>reduções de peso</strong> (≥{REBALANCE_REWEIGHT_MIN_PP} p.p.) em títulos que
+                        se mantêm no alvo. Se
+                        contares 16
+                        títulos com {">"}1% nesse alvo, a maior parte
+                        {typeof mo.diffOverlapEquityTickerCount === "number" ? (
+                          <span>
+                            {" "}
+                            ({mo.diffOverlapEquityTickerCount} títulos de risco já constavam no ficheiro anterior){" "}
+                          </span>
+                        ) : null}
+                        : a maior parte são <strong>posições de continuação</strong> (sem nome novo, sem
+                        ajuste ≥{REBALANCE_REWEIGHT_MIN_PP} p.p.). A grelha abaixo tem {mo.rows.length} posições. Os
+                        alvos a listar (≥{ENTRY_SIDE_LIST_MIN_ABS_PCT}%) vêm alinhados à grelha; ajuste de peso
+                        mexe-se (≥{REBALANCE_REWEIGHT_MIN_PP} p.p.) ainda com alvo abaixo de{" "}
+                        {ENTRY_SIDE_LIST_MIN_ABS_PCT}%. Liquidez (TBILL/BIL/SHV) segue a regra reservada acima.
                       </p>
+                    {(() => {
+                      const entNovoFilt = ent.filter((e) => e.kind !== "increase");
+                      const entRefFilt = ent.filter((e) => e.kind === "increase");
+                      const exFimFilt = ex.filter((e) => e.kind !== "decrease");
+                      const exRedFilt = ex.filter((e) => e.kind === "decrease");
+                      return (
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
                         gap: 10,
                         marginBottom: 12,
                         marginTop: 4,
@@ -468,11 +657,11 @@ export default function RecommendationsHistoryPanel() {
                         }}
                       >
                         <div style={{ fontSize: 13, fontWeight: 800, color: "#d4d4d8", marginBottom: 6 }}>
-                          Entradas (novos vs. mês passado){" "}
+                          1 · Nomes <strong>novos</strong> (e caixa){" "}
                           <span style={{ fontWeight: 600, color: "#a1a1aa", fontSize: 12 }}>
-                            ({ent.length} com alvo ≥ {ENTRY_SIDE_LIST_MIN_ABS_PCT}%
+                            ({entNovoFilt.length} mostrados, alvo ≥{ENTRY_SIDE_LIST_MIN_ABS_PCT}
                             {entOmitted > 0 ? (
-                              <span style={{ color: "#71717a" }}> · +{entOmitted} &lt;1% não listados</span>
+                              <span style={{ color: "#71717a" }}> · +{entOmitted} fora do critério</span>
                             ) : null}
                             )
                           </span>
@@ -485,29 +674,43 @@ export default function RecommendationsHistoryPanel() {
                             marginBottom: 8,
                           }}
                         >
-                          Só títulos <strong>ainda inexistentes</strong> no ficheiro do mês anterior; não listam
-                          ajustes em nomes (ex. MU, INTC) que aí já constavam.
+                          Ticker inexistente no ficheiro do mês anterior (ou ajuste TBILL agregado); pesa a grelha
+                          (≥{ENTRY_SIDE_LIST_MIN_ABS_PCT}% alvo) para o filtro de lista.
                         </div>
                         {entOmitted > 0 ? (
                           <div style={{ fontSize: 11, color: "#52525b", marginBottom: 6, lineHeight: 1.4 }}>
-                            Há {entOmitted} entrada(s) com &lt;{ENTRY_SIDE_LIST_MIN_ABS_PCT}% (ainda a contar no
-                            +{entAll.length} de cima) — vê a tabela completa abaixo.
+                            Há {entOmitted} com alvo abaixo de {ENTRY_SIDE_LIST_MIN_ABS_PCT}% entre as {entAll.length} linhas
+                            brutas do diff — vê tabela.
                           </div>
                         ) : null}
-                        {ent.length === 0 ? (
+                        {entNovoFilt.length === 0 ? (
                           <div style={{ fontSize: 12, color: "#71717a" }}>—</div>
                         ) : (
                           <ul style={{ margin: 0, paddingLeft: 16, fontSize: 13, color: "#e4e4e7", lineHeight: 1.45 }}>
-                            {ent.map((r) => (
-                              <li
-                                key={`e-${mo.date}-${r.ticker}`}
-                                style={isCashSleeveTicker(r.ticker) ? { color: "#fafafa", fontWeight: 800 } : undefined}
-                              >
-                                <strong>{formatCompanyLine(r)}</strong>
-                                {r.weightPct != null ? ` → ${r.weightPct.toFixed(2)}%` : ""}
-                                {isCashSleeveTicker(r.ticker) ? " · Liquidez" : ""}
-                              </li>
-                            ))}
+                            {entNovoFilt.map((r) => flowLiEntradaNovo(r, mo.date))}
+                          </ul>
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          borderRadius: 10,
+                          border: "1px solid rgba(52, 211, 153, 0.35)",
+                          background: "rgba(20, 83, 45, 0.18)",
+                          padding: "8px 10px",
+                        }}
+                      >
+                        <div style={{ fontSize: 13, fontWeight: 800, color: "#d4d4d8", marginBottom: 6 }}>
+                          2 · <strong>Reforços</strong> (mesmo ticker){" "}
+                          <span style={{ fontWeight: 600, color: "#a1a1aa", fontSize: 12 }}>({entRefFilt.length} · |Δ| ≥{REBALANCE_REWEIGHT_MIN_PP} p.p.)</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: "#71717a", lineHeight: 1.4, marginBottom: 8 }}>
+                          Aumento de peso face ao mês de comparação; permanece no alvo.
+                        </div>
+                        {entRefFilt.length === 0 ? (
+                          <div style={{ fontSize: 12, color: "#71717a" }}>—</div>
+                        ) : (
+                          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 13, color: "#e4e4e7", lineHeight: 1.45 }}>
+                            {entRefFilt.map((r) => flowLiReforco(r, mo.date))}
                           </ul>
                         )}
                       </div>
@@ -520,29 +723,43 @@ export default function RecommendationsHistoryPanel() {
                         }}
                       >
                         <div style={{ fontSize: 13, fontWeight: 800, color: "#a1a1aa", marginBottom: 6 }}>
-                          Saídas{" "}
-                          <span style={{ fontWeight: 600, color: "#a1a1aa", fontSize: 12 }}>
-                            (todas)
-                          </span>
+                          3 · Deixou o <strong>alvo</strong>{" "}
+                          <span style={{ fontWeight: 600, color: "#a1a1aa", fontSize: 12 }}>({exFimFilt.length} linhas)</span>
                         </div>
-                        {ex.length === 0 ? (
+                        {exFimFilt.length === 0 ? (
                           <div style={{ fontSize: 12, color: "#71717a" }}>—</div>
                         ) : (
                           <ul style={{ margin: 0, paddingLeft: 16, fontSize: 13, color: "#d4d4d8", lineHeight: 1.45 }}>
-                            {ex.map((r) => (
-                              <li
-                                key={`x-${mo.date}-${r.ticker}`}
-                                style={isCashSleeveTicker(r.ticker) ? { color: "#fafafa", fontWeight: 800 } : undefined}
-                              >
-                                <strong>{formatCompanyLine(r)}</strong>
-                                {r.weightPct != null ? ` (era ${r.weightPct.toFixed(2)}%)` : ""}
-                                {isCashSleeveTicker(r.ticker) ? " · Liquidez" : ""}
-                              </li>
-                            ))}
+                            {exFimFilt.map((r) => flowLiSaidaFimAlvo(r, mo.date))}
+                          </ul>
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          borderRadius: 10,
+                          border: "1px solid rgba(248, 113, 113, 0.3)",
+                          background: "rgba(88, 28, 28, 0.22)",
+                          padding: "8px 10px",
+                        }}
+                      >
+                        <div style={{ fontSize: 13, fontWeight: 800, color: "#a1a1aa", marginBottom: 6 }}>
+                          4 · <strong>Reduções</strong> (ainda no alvo){" "}
+                          <span style={{ fontWeight: 600, color: "#a1a1aa", fontSize: 12 }}>({exRedFilt.length} · |Δ| ≥{REBALANCE_REWEIGHT_MIN_PP} p.p.)</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: "#71717a", lineHeight: 1.4, marginBottom: 8 }}>
+                          Diminuiu o peso alvo; o nome continua na tabela.
+                        </div>
+                        {exRedFilt.length === 0 ? (
+                          <div style={{ fontSize: 12, color: "#71717a" }}>—</div>
+                        ) : (
+                          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 13, color: "#d4d4d8", lineHeight: 1.45 }}>
+                            {exRedFilt.map((r) => flowLiSaidaReducao(r, mo.date))}
                           </ul>
                         )}
                       </div>
                     </div>
+                    );
+                    })()}
                     </>
                   ) : (
                     <div style={{ fontSize: 12, color: "#71717a", marginBottom: 10 }}>

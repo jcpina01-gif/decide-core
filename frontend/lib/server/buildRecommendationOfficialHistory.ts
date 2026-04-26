@@ -46,6 +46,15 @@ export type FlowRow = {
   ticker: string;
   company?: string;
   weightPct?: number;
+  /** Peso mês anterior (nomes comuns) ou, em saída total, o peso que deixou de se aplicar. */
+  prevWeightPct?: number;
+  /** Variação em p.p. (mês corrente − mês anterior). */
+  deltaWeightPct?: number;
+  /**
+   * `new` = ticker não constava no mês anterior; `increase` = reforço de peso; `decrease` = redução;
+   * `remove` = saída do alvo; `cash_synthetic` = ajuste agregado T-Bills quando não há linhas explícitas.
+   */
+  kind?: "new" | "increase" | "decrease" | "remove" | "cash_synthetic";
 };
 
 export type PriorMonthBar = {
@@ -79,6 +88,10 @@ export type RecommendationMonth = {
   equitySleeveTotalPct?: number;
   entries?: FlowRow[];
   exits?: FlowRow[];
+  /** Títulos de risco (fora de caixa) presentes em mês n e n−1; o resto da grelha são títulos novos ou ajuste mês a mês. */
+  diffOverlapEquityTickerCount?: number;
+  /** Data (ISO) usada como «mês anterior» no diff. */
+  prevRebalanceYmdForDiff?: string;
   priorThreeMonthReturns?: PriorMonthBar[];
   equityChartSource?: string;
   chronologicalIndex?: number;
@@ -1071,6 +1084,11 @@ function normalizeEquitySleeveWeightsOnly(
 }
 
 /** Sobra de NAV (fração) abaixo da qual um ticker «continuação» é agregado à liquidez no histórico só para leitura. */
+/**
+ * Só se listam ajustes de peso (reforço/redução) se |Δ| for ≥ este valor em p.p.
+ * Manter alinhado com `REBALANCE_REWEIGHT_MIN_PP` em `RecommendationsHistoryPanel.tsx`.
+ */
+const OFFICIAL_HISTORY_REBALANCE_FLOW_MIN_ABS_PP = 0.5;
 const OFFICIAL_HISTORY_CONTINUATION_DUST_W = 0.0005;
 /** No mês anterior tinha de ser material (≥1%) para tratar a sobra como resíduo de rebalance, não entrada nova. */
 const OFFICIAL_HISTORY_PREV_MATERIAL_W = 0.01;
@@ -1147,6 +1165,17 @@ function weightMap(rows: RecommendationRow[]): Map<string, RecommendationRow> {
     m.set(r.ticker.trim().toUpperCase(), r);
   }
   return m;
+}
+
+function rowTargetWeightPct(r: RecommendationRow | undefined): number {
+  if (!r) return 0;
+  if (typeof r.weightPct === "number" && Number.isFinite(r.weightPct)) {
+    return r.weightPct;
+  }
+  if (typeof r.weight === "number" && Number.isFinite(r.weight)) {
+    return r.weight * 100;
+  }
+  return 0;
 }
 
 type ParsedWeightsFile = {
@@ -1465,24 +1494,64 @@ function buildMonthsFromMerged(
       const cm = weightMap(cur.rows);
       const entries: FlowRow[] = [];
       const exits: FlowRow[] = [];
-      for (const [t, row] of cm) {
-        if (!pm.has(t)) {
+      const allTickers = new Set<string>([...pm.keys(), ...cm.keys()]);
+      const minPP = OFFICIAL_HISTORY_REBALANCE_FLOW_MIN_ABS_PP;
+      for (const t of allTickers) {
+        const pRow = pm.get(t);
+        const cRow = cm.get(t);
+        const pW = rowTargetWeightPct(pRow);
+        const cW = rowTargetWeightPct(cRow);
+        if (!pRow && cRow) {
           entries.push({
-            ticker: row.ticker,
-            company: row.company,
-            weightPct: row.weightPct,
+            ticker: cRow.ticker,
+            company: cRow.company,
+            weightPct: cW,
+            kind: "new",
           });
+          continue;
         }
-      }
-      for (const [t, row] of pm) {
-        if (!cm.has(t)) {
+        if (pRow && !cRow) {
           exits.push({
-            ticker: row.ticker,
-            company: row.company,
-            weightPct: row.weightPct,
+            ticker: pRow.ticker,
+            company: pRow.company,
+            weightPct: pW,
+            kind: "remove",
           });
+          continue;
+        }
+        if (pRow && cRow) {
+          const d = cW - pW;
+          if (d >= minPP) {
+            entries.push({
+              ticker: cRow.ticker,
+              company: cRow.company,
+              weightPct: cW,
+              prevWeightPct: pW,
+              deltaWeightPct: d,
+              kind: "increase",
+            });
+          } else if (d <= -minPP) {
+            exits.push({
+              ticker: cRow.ticker,
+              company: cRow.company,
+              weightPct: cW,
+              prevWeightPct: pW,
+              deltaWeightPct: d,
+              kind: "decrease",
+            });
+          }
         }
       }
+      const entrySortKey = (r: FlowRow) =>
+        r.kind === "increase" && typeof r.deltaWeightPct === "number"
+          ? r.deltaWeightPct
+          : (r.weightPct ?? 0);
+      const exitSortKey = (r: FlowRow) => {
+        if (r.kind === "decrease" && typeof r.deltaWeightPct === "number") {
+          return Math.abs(r.deltaWeightPct);
+        }
+        return r.weightPct ?? 0;
+      };
       const tbillInTickerFlows =
         entries.some((e) => CASH_SLEEVE_TICKERS.has(e.ticker.trim().toUpperCase())) ||
         exits.some((e) => CASH_SLEEVE_TICKERS.has(e.ticker.trim().toUpperCase()));
@@ -1498,19 +1567,30 @@ function buildMonthsFromMerged(
             ticker: "TBILL_PROXY",
             company: "T-Bills (ajuste vs. mês anterior)",
             weightPct: cashDeltaPct,
+            kind: "cash_synthetic",
           });
         } else {
           exits.push({
             ticker: "TBILL_PROXY",
             company: "T-Bills (ajuste vs. mês anterior)",
             weightPct: -cashDeltaPct,
+            kind: "cash_synthetic",
           });
         }
       }
-      entries.sort((a, b) => (b.weightPct || 0) - (a.weightPct || 0));
-      exits.sort((a, b) => (b.weightPct || 0) - (a.weightPct || 0));
+      entries.sort((a, b) => entrySortKey(b) - entrySortKey(a));
+      exits.sort((a, b) => exitSortKey(b) - exitSortKey(a));
       cur.entries = entries;
       cur.exits = exits;
+      {
+        let overlapEq = 0;
+        for (const t of cm.keys()) {
+          if (CASH_SLEEVE_TICKERS.has(t)) continue;
+          if (pm.has(t)) overlapEq += 1;
+        }
+        cur.diffOverlapEquityTickerCount = overlapEq;
+        cur.prevRebalanceYmdForDiff = String(prev.date || "").slice(0, 10);
+      }
     }
 
     if (i >= 2 && monthlyModel) {

@@ -6,7 +6,8 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "dev": "node -r ./scripts/next-trace-eperm-workaround.cjs ./node_modules/next/dist/bin/next dev -H 127.0.0.1 -p 4701 --turbo",
+    "dev": "node ./scripts/dev-4701.cjs",
+    "dev:raw": "node -r ./scripts/next-trace-eperm-workaround.cjs ./node_modules/next/dist/bin/next dev -H 127.0.0.1 -p 4701 --turbo",
     "dev:webpack": "node -r ./scripts/next-trace-eperm-workaround.cjs ./node_modules/next/dist/bin/next dev -H 127.0.0.1 -p 4701",
     "dev:lan": "node -r ./scripts/next-trace-eperm-workaround.cjs ./node_modules/next/dist/bin/next dev -H 0.0.0.0 -p 4701 --turbo",
     "dev:clean": "node ./scripts/dev-4701.cjs",
