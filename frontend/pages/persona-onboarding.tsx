@@ -313,12 +313,13 @@ export default function PersonaOnboardingPage({
       const sessionEmail = getCurrentSessionUserEmail();
       setEmail(sessionEmail || "");
 
+      /** Só usar LS quando os props do servidor vêm vazios — evita IDs de dev antigos a mascarar produção. */
       const t = window.localStorage.getItem("persona_templateId") || "";
       const tv = window.localStorage.getItem("persona_templateVersionId") || "";
       const e = window.localStorage.getItem("persona_environmentId") || "";
-      if (!templateId.trim() && t.trim()) setTemplateId(t);
-      if (!templateVersionId.trim() && tv.trim()) setTemplateVersionId(tv);
-      if (!environmentId.trim() && e.trim()) setEnvironmentId(e);
+      if (!personaTemplateId.trim() && t.trim()) setTemplateId(sanitizePersonaPublicId(t));
+      if (!personaTemplateVersionId.trim() && tv.trim()) setTemplateVersionId(sanitizePersonaPublicId(tv));
+      if (!personaEnvironmentId.trim() && e.trim()) setEnvironmentId(sanitizePersonaPublicId(e));
     } catch {}
 
     return () => {
@@ -330,6 +331,34 @@ export default function PersonaOnboardingPage({
     // Intentionally run once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Props do `getServerSideProps` (env Vercel em cada pedido) têm prioridade sobre estado/LS. */
+  useEffect(() => {
+    if (personaTemplateId.trim()) {
+      setTemplateId(sanitizePersonaPublicId(personaTemplateId));
+      try {
+        window.localStorage.setItem("persona_templateId", personaTemplateId.trim());
+      } catch {
+        // ignore
+      }
+    }
+    if (personaEnvironmentId.trim()) {
+      setEnvironmentId(sanitizePersonaPublicId(personaEnvironmentId));
+      try {
+        window.localStorage.setItem("persona_environmentId", personaEnvironmentId.trim());
+      } catch {
+        // ignore
+      }
+    }
+    if (personaTemplateVersionId.trim()) {
+      setTemplateVersionId(sanitizePersonaPublicId(personaTemplateVersionId));
+      try {
+        window.localStorage.setItem("persona_templateVersionId", personaTemplateVersionId.trim());
+      } catch {
+        // ignore
+      }
+    }
+  }, [personaTemplateId, personaEnvironmentId, personaTemplateVersionId]);
 
   // Não redireccionar localhost → 127.0.0.1: o Domain Manager da Persona aceita «localhost» mas rejeita «127.0.0.1».
 
@@ -517,9 +546,19 @@ export default function PersonaOnboardingPage({
       referenceId,
     });
 
-    let tid = sanitizePersonaPublicId(templateId);
-    let eid = sanitizePersonaPublicId(environmentId);
-    let tvid = sanitizePersonaPublicId(templateVersionId);
+    /** Ordem: props SSR (Vercel) → estado → LS → bundle — nunca deixar LS de outro host mascarar IDs correctos. */
+    let tid =
+      sanitizePersonaPublicId(personaTemplateId) ||
+      sanitizePersonaPublicId(templateId) ||
+      "";
+    let eid =
+      sanitizePersonaPublicId(personaEnvironmentId) ||
+      sanitizePersonaPublicId(environmentId) ||
+      "";
+    let tvid =
+      sanitizePersonaPublicId(personaTemplateVersionId) ||
+      sanitizePersonaPublicId(templateVersionId) ||
+      "";
     try {
       if (!tid && typeof window !== "undefined") {
         tid = sanitizePersonaPublicId(window.localStorage.getItem("persona_templateId") || "");
