@@ -7003,6 +7003,58 @@ def compute_kpis(equity):
     )
 
 
+# Datas (YYYY-MM-DD) com artefacto pontual na série congelada (ex. salto a solo que cria pico falso de drawdown).
+# Substituir por interpolação linear (média do dia anterior e seguinte) antes dos KPIs.
+_EQUITY_KNOT_DATES: tuple[str, ...] = ("2021-05-13",)
+
+
+def patch_equity_knot_dates_linear(
+    dates,
+    *series: pd.Series,
+) -> None:
+    """
+    In-place: para cada data em _EQUITY_KNOT_DATES, substitui o valor na série pela
+    (vizinho-anterior + vizinho-seguinte) / 2. Desactivar com DECIDE_KPI_SKIP_EQUITY_KNOT_PATCH=1.
+    """
+    if not _EQUITY_KNOT_DATES:
+        return
+    if (os.environ.get("DECIDE_KPI_SKIP_EQUITY_KNOT_PATCH", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }):
+        return
+    n = len(dates)
+    if n < 3:
+        return
+    date_strs: list[str] = []
+    for d in dates:
+        if isinstance(d, pd.Timestamp):
+            date_strs.append(d.strftime("%Y-%m-%d"))
+        elif hasattr(d, "strftime"):
+            date_strs.append(d.strftime("%Y-%m-%d"))
+        else:
+            s = str(d)
+            if " " in s:
+                s = s.split(" ")[0]
+            date_strs.append(s[:10] if len(s) >= 10 else s)
+    for bad in _EQUITY_KNOT_DATES:
+        try:
+            i = date_strs.index(bad)
+        except ValueError:
+            continue
+        if i <= 0 or i >= n - 1:
+            continue
+        for s in series:
+            if s is None or not isinstance(s, pd.Series):
+                continue
+            if len(s) != n:
+                continue
+            a = float(s.iloc[i - 1])
+            b = float(s.iloc[i + 1])
+            s.iloc[i] = 0.5 * (a + b)
+
+
 def compute_monthly_stats(model_equity: pd.Series, bench_equity: pd.Series, dates: pd.Series) -> dict:
     """Compute monthly stats from daily equity series (index = range; dates given separately)."""
     model_equity = model_equity.copy()
@@ -9553,6 +9605,9 @@ def index():
     num_days = len(model_eq)
     num_years = num_days / TRADING_DAYS_PER_YEAR
 
+    # Alisa artefacto pontual (p.ex. 2021-05-13) nos CSVs congelados antes de drawdowns e KPIs no iframe.
+    patch_equity_knot_dates_linear(dates, model_eq, raw_eq)
+
     raw_kpis, raw_drawdowns = compute_kpis(raw_eq)
     _snap_raw = os.environ.get("DECIDE_KPI_USE_RAW_KPI_SNAPSHOT", "").strip().lower() in {
         "1",
@@ -9641,6 +9696,7 @@ def index():
                         m100_series, bench_eq, dates
                     )
                     m100_series = cap_equity_vs_benchmark_rail(bench_eq, m100_series)
+                    patch_equity_knot_dates_linear(dates, m100_series)
                     compare_cap100_kpis, m100_dd_s = compute_kpis(m100_series)
                     compare_max100_equity = [float(x) for x in m100_series.values]
                     compare_max100_drawdowns = [float(x) for x in m100_dd_s]
@@ -9670,6 +9726,7 @@ def index():
         if loaded_m is not None:
             margin_series, _margem_src = loaded_m
             margin_series = _align_cap15_margin_to_model_nt0(margin_series, model_eq.astype(float))
+            patch_equity_knot_dates_linear(dates, margin_series)
             try:
                 compare_cap100_kpis, margin_dd_s = compute_kpis(margin_series)
                 compare_max100_equity = [float(x) for x in margin_series.values]
