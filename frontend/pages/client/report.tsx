@@ -240,6 +240,12 @@ export type ReportData = {
    */
   planTargetRebalanceDate?: string;
   planWeightsProvenance?: PlanWeightsProvenance;
+  /**
+   * Identificador de build (SSR) — p.ex. commit Vercel curto + ambiente.
+   * Se em produção não bater com o `git log` de `main`, ainda estão a carregar JavaScript antigo
+   * ou o deploy do projecto Vercel não usou o último push.
+   */
+  clientUiBuildLabel: string;
 };
 
 export type PageProps = {
@@ -3070,6 +3076,46 @@ export default function ClientReportPage({ reportData }: PageProps) {
               );
             })}
           </div>
+          {postApprovalStage === "ready" && planTab !== "execucao" ? (
+            <div
+              style={{
+                marginTop: 0,
+                marginBottom: 20,
+                padding: "12px 16px",
+                borderRadius: 12,
+                border: "1px solid rgba(45, 212, 191, 0.35)",
+                background: "rgba(6, 78, 74, 0.2)",
+                color: "#a7f3d0",
+                fontSize: 14,
+                lineHeight: 1.55,
+                maxWidth: 820,
+              }}
+            >
+              <strong style={{ color: "#ecfdf5" }}>Envio em dois lotes (acções + T-Bills USD + FX / separado, EUR):</strong> abra
+              o separador{" "}
+              <button
+                type="button"
+                onClick={() => setPlanTab("execucao")}
+                style={{
+                  display: "inline",
+                  margin: "0 4px",
+                  padding: "3px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #2dd4bf",
+                  background: "rgba(45, 212, 191, 0.15)",
+                  color: "#5eead4",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                }}
+              >
+                Execução
+              </button>{" "}
+              (secção <strong style={{ color: "#e2e8f0" }}>Decisão final</strong>) — a caixa de teste amarela no topo é só
+              atalho para o 1.º lote; o 2.º lote (liquidez EUR) está nesse separador.
+            </div>
+          ) : null}
 
           {planTab === "resumo" ? (
           <>
@@ -4282,6 +4328,17 @@ export default function ClientReportPage({ reportData }: PageProps) {
               }}
             >
               Decisão final
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                color: "#64748b",
+                margin: "0 0 12px 0",
+                letterSpacing: 0.02,
+              }}
+              title="Identificador do build no servidor (Vercel). Deve alinhar com o último deploy de main; se não, o browser pode estar a usar JavaScript em cache."
+            >
+              Build: <code style={{ color: "#94a3b8" }}>{reportData.clientUiBuildLabel}</code>
             </div>
             <h2
               style={{

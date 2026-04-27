@@ -88,6 +88,42 @@ function trimmedCell(x: unknown): string {
 }
 
 /**
+ * ``getServerSideProps`` exige JSON puro: ``Date`` em ``reportData`` faz o Next 15 recusar a serialização.
+ * Normaliza ``rebalance_date``/``date`` (string ISO, `Date` ou ms) para ``YYYY-MM-DD``.
+ */
+function rebalanceDateYmdForProps(v: unknown): string | undefined {
+  if (v == null) return undefined;
+  if (v instanceof Date) {
+    const t = v.getTime();
+    return Number.isNaN(t) ? undefined : v.toISOString().slice(0, 10);
+  }
+  if (typeof v === "string") {
+    const t = v.trim();
+    if (!t) return undefined;
+    if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+    const d = new Date(t);
+    return Number.isNaN(d.getTime()) ? t.slice(0, 10) : d.toISOString().slice(0, 10);
+  }
+  if (typeof v === "number" && Number.isFinite(v)) {
+    return new Date(v).toISOString().slice(0, 10);
+  }
+  const s = String(v).trim();
+  if (!s) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const d2 = new Date(s);
+  return Number.isNaN(d2.getTime()) ? s.slice(0, 10) : d2.toISOString().slice(0, 10);
+}
+
+/** ``getServerSideProps`` (Next 15) não serializa chaves com valor ``undefined`` — têm de ser omissas ou ``null``. */
+function pruneUndefinedShallow<T extends Record<string, unknown>>(o: T): T {
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(o) as (keyof T)[]) {
+    if (o[k] !== undefined) (out as T)[k] = o[k];
+  }
+  return out as T;
+}
+
+/**
  * Antes da UI trocar ``TBILL_PROXY`` → MM EUR (CSH2/XEON): proxies e UCITS MM contam como caixa.
  * Sem isto, CSH2 entrava no cap por zona / rescale como se fosse acção e a grelha podia ficar só com a linha de caixa.
  */
@@ -114,6 +150,15 @@ function reverseAdrToJpListingTicker(adrTicker: string): string | undefined {
     cachedAdrToJpListing = m;
   }
   return cachedAdrToJpListing.get(a);
+}
+
+/** Só informativo na UI; ajuda a confirmar que o browser recebeu o bundle do deploy certo. */
+function clientUiBuildLabelFromEnv(): string {
+  const sha = String(process.env.VERCEL_GIT_COMMIT_SHA || "").trim();
+  const venv = String(process.env.VERCEL_ENV || "local").trim();
+  if (sha.length >= 7) return `${sha.slice(0, 7)} (${venv})`;
+  if (String(process.env.VERCEL || "").trim() === "1") return `? (${venv})`;
+  return `dev (${venv})`;
 }
 
 /** Evita página 500 no `/client/report` se algum passo do SSR lançar — o cliente vê `backendError` na UI. */
@@ -175,6 +220,7 @@ function buildSsrFailureReportData(backendError: string): ReportData {
       planEntryMinPct: entryMin,
       planTableConsolidatePct: planExitWeightPct(),
     },
+    clientUiBuildLabel: clientUiBuildLabelFromEnv(),
   };
 }
 
@@ -1560,7 +1606,7 @@ async function getClientReportServerSidePropsImpl(
   let recommendedRaw: RecommendedPosition[];
   if (!preferLiveWeights && officialMonth?.rows?.length) {
     planWeightsGridMode = "official_csv";
-    planTargetRebalanceDate = String(officialMonth.date || "").slice(0, 10);
+    planTargetRebalanceDate = rebalanceDateYmdForProps(officialMonth.date);
     const cashFromRows = sumCashSleeveWeight(officialMonth.rows);
     if (cashFromRows >= 0 && cashFromRows <= 0.95) {
       cashSleeveFrac = cashFromRows;
@@ -2554,17 +2600,17 @@ async function getClientReportServerSidePropsImpl(
     navEur * 0.05
   );
 
-  const planWeightsProvenance: PlanWeightsProvenance = {
+  const planWeightsProvenance = pruneUndefinedShallow({
     mode: planWeightsGridMode,
     rebalanceDate:
       planWeightsGridMode === "official_csv"
-        ? String(officialMonth!.date || "").slice(0, 10)
+        ? rebalanceDateYmdForProps(officialMonth?.date)
         : planTargetRebalanceDate ?? modelPayloadAsOfDateYmd(modelPayload) ?? undefined,
     officialCalendarRebalanceDate:
       planWeightsGridMode === "official_csv" &&
       useLatestCsvVersusMonthlyForEntryDay &&
       officialMonthCalendarSeries
-        ? String(officialMonthCalendarSeries.date || "").slice(0, 10)
+        ? rebalanceDateYmdForProps(officialMonthCalendarSeries.date)
         : undefined,
     dailyEntryPlanTargetApplied:
       planWeightsGridMode === "official_csv" && useLatestCsvVersusMonthlyForEntryDay ? true : undefined,
@@ -2584,7 +2630,7 @@ async function getClientReportServerSidePropsImpl(
       applySsrZoneCapVsBenchmarkOnGrid &&
       !planGeoAdjustmentsDisabled() &&
       !planZoneCapDisabled(),
-  };
+  } as Record<string, unknown>) as PlanWeightsProvenance;
 
   const reportData: ReportData = {
     generatedAt: new Date().toISOString(),
@@ -2629,6 +2675,7 @@ async function getClientReportServerSidePropsImpl(
     ...(initialIbkrStructure ? { initialIbkrStructure } : {}),
     ...(planTargetRebalanceDate ? { planTargetRebalanceDate } : {}),
     planWeightsProvenance,
+    clientUiBuildLabel: clientUiBuildLabelFromEnv(),
   };
 
   return {
