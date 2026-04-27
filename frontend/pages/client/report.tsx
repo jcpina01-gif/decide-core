@@ -252,6 +252,31 @@ export type PageProps = {
   reportData: ReportData;
 };
 
+/** Hidratação/serialização: garante listas e campos mínimos — evita a secção «Decisão final» a desaparecer. */
+function normalizeReportDataForClient(d: ReportData): ReportData {
+  const planSummary: ReportData["planSummary"] = d.planSummary ?? {
+    strategyLabel: "—",
+    riskLabel: "—",
+    positionCount: 0,
+    turnoverPct: 0,
+    buyCount: 0,
+    sellCount: 0,
+  };
+  return {
+    ...d,
+    planSummary,
+    excludedTickersApplied: d.excludedTickersApplied ?? [],
+    exclusionCandidates: d.exclusionCandidates ?? [],
+    actualPositions: d.actualPositions ?? [],
+    recommendedPositions: d.recommendedPositions ?? [],
+    proposedTrades: (d.proposedTrades ?? []).filter(
+      (t): t is ProposedTrade => t != null && typeof t === "object" && t !== null,
+    ),
+    series: d.series ?? [],
+    clientUiBuildLabel: d.clientUiBuildLabel ?? "—",
+  };
+}
+
 /**
  * Proximidade da carteira real aos pesos-alvo do plano (só linhas do plano com peso ≥ 0,05%).
  * Σ min(peso_actual, peso_alvo) / Σ peso_alvo — títulos fora do plano não penalizam.
@@ -1286,7 +1311,8 @@ function PlanoDevResetTestPanel({ onExecuteIbkr, executeBusy }: PlanoDevResetTes
   );
 }
 
-export default function ClientReportPage({ reportData }: PageProps) {
+export default function ClientReportPage({ reportData: reportDataIn }: PageProps) {
+  const reportData = normalizeReportDataForClient(reportDataIn);
   const router = useRouter();
   const dailyEntryQueryActive = queryIndicatesDailyEntryPlanWeights(router.query as Record<string, unknown>);
   const isClientB = reportData.feeSegment === "B";

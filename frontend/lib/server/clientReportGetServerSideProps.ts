@@ -124,12 +124,34 @@ function pruneUndefinedShallow<T extends Record<string, unknown>>(o: T): T {
 }
 
 /**
- * ``getServerSideProps`` (Next 15) exige que ``props`` seja 100% JSON: qualquer ``undefined`` aninhado
- * (ex. em entradas de tabelas ou objectos mesclados) provoca 500 e a UI fica a meio. ``Date`` também falha
- * o serializador. Um round-trip JSON remove ``undefined`` e converte ``Date`` em ISO.
+ * ``getServerSideProps`` (Next 15) rejeita ``undefined`` e ``Date`` nas props. **Não** usar
+ * ``JSON.parse(JSON.stringify)`` — transforma ``NaN``/``undefined`` de formas que rebentam a UI (hidratação).
+ * Remove só chaves ``undefined`` (recursivo) e normaliza ``Date`` → string ISO.
  */
-function reportDataForGsspSerial<T extends ReportData>(d: T): T {
-  return JSON.parse(JSON.stringify(d)) as T;
+function deepOmitUndefinedForGssp<T>(v: T): T {
+  if (v == null) return v;
+  if (typeof v === "object") {
+    if (v instanceof Date) {
+      const t = v.getTime();
+      return (Number.isNaN(t) ? "" : v.toISOString()) as unknown as T;
+    }
+    if (Array.isArray(v)) {
+      return (v as unknown[])
+        .map((e) => deepOmitUndefinedForGssp(e))
+        .filter((e) => e !== undefined) as T;
+    }
+    if (Object.getPrototypeOf(v) === Object.prototype) {
+      const src = v as Record<string, unknown>;
+      const o: Record<string, unknown> = {};
+      for (const k of Object.keys(src)) {
+        const x = src[k];
+        if (x === undefined) continue;
+        o[k] = deepOmitUndefinedForGssp(x);
+      }
+      return o as T;
+    }
+  }
+  return v;
 }
 
 /**
@@ -981,7 +1003,7 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
         : typeof e === "string"
           ? e
           : "Erro desconhecido no servidor ao montar o plano.";
-    return { props: { reportData: reportDataForGsspSerial(buildSsrFailureReportData(msg)) } };
+    return { props: { reportData: deepOmitUndefinedForGssp(buildSsrFailureReportData(msg)) } };
   }
 };
 
@@ -2689,7 +2711,7 @@ async function getClientReportServerSidePropsImpl(
 
   return {
     props: {
-      reportData: reportDataForGsspSerial(reportData),
+      reportData: deepOmitUndefinedForGssp(reportData),
     },
   };
 }
