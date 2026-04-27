@@ -38,6 +38,7 @@ import {
 } from "../../lib/clientOrderActivityLog";
 import {
   cashSleevePlanUiSubtitle,
+  clientUsTbillProxyIbTicker,
   isDecideCashSleeveBrokerSymbol,
 } from "../../lib/decideCashSleeveDisplay";
 import {
@@ -312,6 +313,30 @@ function planLiquidezVsAccoesPctFromRecommended(
     liquidezPct: (liquidez / t) * 100,
     acoesPct: (acoes / t) * 100,
   };
+}
+
+/** TBILL_PROXY e ETF USD do sleeve (BIL, SHV, …) — fora do lote UCITS EUR. */
+function isTbillProxyPlanTicker(ticker: string): boolean {
+  const u = String(ticker || "").trim().toUpperCase();
+  if (u === "TBILL_PROXY") return true;
+  const us = clientUsTbillProxyIbTicker();
+  if (us && u === us) return true;
+  return false;
+}
+
+/**
+ * UCITS «money market» em EUR (XEON, CSH2, EUR_MM_PROXY, …) — alinhado a `send_orders._KNOWN_EUR_MM_UCITS`
+ * (incl. CSH2 explícito no plano com `EUR_MM_IB_TICKER=XEON` no env).
+ * Negocia em horário Europeu; separado de TBILL_PROXY (USD) e de acções.
+ */
+function isEurMmUcitsPlanTicker(ticker: string): boolean {
+  if (isTbillProxyPlanTicker(ticker)) return false;
+  const u = String(ticker || "").trim().toUpperCase();
+  if (u === "EUR_MM_PROXY" || u === "EURMM_PROXY" || u === "LQDE") return true;
+  if (u === "CSH2" || u === "XEON") return true;
+  const eurM = eurMmIbTicker();
+  if (eurM && u === eurM) return true;
+  return isDecideCashSleeveBrokerSymbol(ticker) && !isTbillProxyPlanTicker(ticker);
 }
 
 function formatEuro(v: number): string {
@@ -929,6 +954,20 @@ function buildBootstrapExecFillsFromProposedTrades(
   return rows;
 }
 
+function execFillMergeKey(f: { ticker?: string; action?: string }): string {
+  return `${String(f.ticker || "").toUpperCase()}_${String(f.action || "").toUpperCase()}`;
+}
+
+/** Segundo envio (UCITS EUR): substitui em `prev` as linhas com o mesmo par ticker+ação e junta o novo lote. */
+function mergeExecFillsAppend(
+  prev: ReportExecFillRow[],
+  newFills: ReportExecFillRow[],
+): ReportExecFillRow[] {
+  const keys = new Set(newFills.map(execFillMergeKey));
+  const kept = prev.filter((f) => !keys.has(execFillMergeKey(f)));
+  return [...kept, ...newFills];
+}
+
 /**
  * Após cancelamento paper na IB: actualiza o instantâneo local da tabela (antes só `send-orders` gravava aqui).
  */
@@ -1179,10 +1218,12 @@ function PlanoDevResetTestPanel({ onExecuteIbkr, executeBusy }: PlanoDevResetTes
               boxShadow: "0 2px 12px rgba(0,0,0,0.35)",
             }}
           >
-            {executeBusy ? "A enviar ordens…" : "Executar ordens na IBKR"}
+            {executeBusy ? "A enviar ordens…" : "Atalho: 1.º lote (acções / TBILL USD / FX)"}
           </button>
           <div style={{ fontSize: 11, color: "#fde68a", marginTop: 6, lineHeight: 1.4, opacity: 0.92 }}>
-            Paper — confirme IB Gateway/TWS e backend; abre o separador Execução antes do envio.
+            Os <strong>dois botões</strong> (acções+FX e liquidez EUR) estão no separador <strong>Execução</strong> — desça
+            ou mude o separador. Este atalho confirma só o <strong>primeiro lote</strong> (igual ao botão verde principal
+            nesse separador). Paper: IB Gateway/TWS + backend.
           </div>
         </div>
       ) : null}
@@ -1301,6 +1342,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
   const sendOrdersAbortRef = useRef<AbortController | null>(null);
   /** Evita duplo envio se o utilizador carregar várias vezes em «Executar ordens» antes do re-render. */
   const sendOrdersInFlightRef = useRef(false);
+  /** Último lote enviado (acções+FX vs UCITS EUR) — «Tentar novamente» repete o mesmo. */
+  const lastExecuteBatchRef = useRef<"equities_fx" | "eur_mm">("equities_fx");
   /** true só quando o utilizador carrega «Cancelar envio» (distingue de timeout automático). */
   const executeCancelRequestedRef = useRef(false);
 
@@ -2038,14 +2081,34 @@ export default function ClientReportPage({ reportData }: PageProps) {
     return u;
   };
 
-  const executeOrdersNow = async (ordersOverride?: Array<{ ticker: string; side: string; qty: number }>) => {
+  const executeOrdersNow = async (
+    ordersOverride?: Array<{ ticker: string; side: string; qty: number }>,
+    options?: { batch?: "equities_fx" | "eur_mm" },
+  ) => {
     if (sendOrdersInFlightRef.current) return;
     sendOrdersInFlightRef.current = true;
     try {
     const override = Array.isArray(ordersOverride) ? ordersOverride : undefined;
+    const batch: "equities_fx" | "eur_mm" =
+      override && override.length > 0
+        ? lastExecuteBatchRef.current
+        : options?.batch ?? "equities_fx";
+    if (!override || override.length === 0) {
+      lastExecuteBatchRef.current = batch;
+    }
+
     setLiveActualPositions(null);
     setLiveIbkrStructure(null);
     setLiveSnapshotError("");
+
+    const planTradesForBatch =
+      override && override.length > 0
+        ? proposedTradesFiltered
+        : proposedTradesFiltered.filter((t) => {
+            const mm = isEurMmUcitsPlanTicker(String(t.ticker || ""));
+            return batch === "eur_mm" ? mm : !mm;
+          });
+
     const rawOrders =
       override && override.length > 0
         ? override.map((o) => ({
@@ -2054,7 +2117,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
             side: String(o.side || "BUY").toUpperCase(),
             qty: Math.max(0, Math.floor(Number(o.qty) || 0)),
           }))
-        : proposedTradesFiltered
+        : planTradesForBatch
             .filter(
               (t) =>
                 (t.side === "BUY" || t.side === "SELL") &&
@@ -2077,7 +2140,11 @@ export default function ClientReportPage({ reportData }: PageProps) {
     });
 
     if (orders.length === 0) {
-      setExecutionMessage("Sem ordens válidas para executar.");
+      setExecutionMessage(
+        batch === "eur_mm"
+          ? "Sem ordens UCITS EUR (liquidez, ex. XEON) para executar neste plano."
+          : "Sem ordens de acções, T-Bills (USD) ou vendas respeitando este filtro — nada a enviar.",
+      );
       setPostApprovalStage("failed");
       return;
     }
@@ -2085,17 +2152,22 @@ export default function ClientReportPage({ reportData }: PageProps) {
     setLastExecBatchResidual(Boolean(override && override.length > 0));
 
     setExecSummary(null);
-    /** Envio completo: não mostrar linhas de um envio anterior (session/sync) enquanto este POST está em curso ou se falhar sem `fills`. */
+    /** Lote acções+FX: limpar grelha. Lote UCITS EUR: manter linhas anteriores e juntar ao concluir. */
     if (!override || override.length === 0) {
-      setExecFills([]);
+      if (batch === "equities_fx") {
+        setExecFills([]);
+      }
       setExecFillsBatchKind("plan");
     }
     executeCancelRequestedRef.current = false;
     setExecutionMessage(
-      "A enviar ordens para a corretora… (até ~5 min com muitas linhas — IB Gateway/TWS + qualificação + FX opcional)",
+      batch === "eur_mm"
+        ? "A enviar ordens UCITS EUR (caixa) para a corretora… (horário Europeu; pode diferir do US RTH)"
+        : "A enviar ordens para a corretora (acções, T-Bills USD, FX opcional)… (até ~5 min — IB Gateway/TWS + qualificação)",
     );
     setPostApprovalStage("executing");
 
+    const isBatchSend = !override || override.length === 0;
     const ac = new AbortController();
     sendOrdersAbortRef.current = ac;
     const abortTimer =
@@ -2109,20 +2181,22 @@ export default function ClientReportPage({ reportData }: PageProps) {
         typeof window !== "undefined"
           ? `${window.location.origin}/api/send-orders`
           : "/api/send-orders";
-      const isFullPlanSend = !override || override.length === 0;
       const prefs =
         typeof window !== "undefined"
           ? readFxHedgePrefs()
           : null;
-      const fxHedgeUsdEstimate = isFullPlanSend
-        ? fxHedgeUsdNotionalForCoordinatedSend(proposedTradesFiltered, prefs)
-        : 0;
+      const equityTradesForFx = proposedTradesFiltered.filter(
+        (t) => !isEurMmUcitsPlanTicker(String(t.ticker || "")),
+      );
+      const fxHedgeUsdEstimate =
+        isBatchSend && batch === "equities_fx"
+          ? fxHedgeUsdNotionalForCoordinatedSend(equityTradesForFx, prefs)
+          : 0;
       /**
-       * Envio completo do plano: pedir sempre `coordinate_fx_hedge` para o backend devolver uma linha EURUSD
-       * (executada, em curso ou skip_*). Assim a tabela nunca fica sem FX só porque a estimativa USD veio a 0 ou a
-       * caixa estava desmarcada. Envios residuais («completar falhadas») não repetem FX aqui.
+       * Só o primeiro lote (acções + TBILL USD + linha FX): UCITS MM EUR noutro POST — horário e percurso de qualificação distintos.
+       * Envios residuais («completar falhadas») não repetem FX aqui.
        */
-      const sendCoordinatedFx = isFullPlanSend;
+      const sendCoordinatedFx = isBatchSend && batch === "equities_fx";
 
       const res = await fetch(sendUrl, {
         method: "POST",
@@ -2133,7 +2207,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
           coordinate_fx_hedge: sendCoordinatedFx,
           /** Envio completo: hedge FX por compra (TWS-style); retries residuais não repetem. */
           attach_fx_hedge_per_order: sendCoordinatedFx,
-          fx_hedge_usd_estimate: isFullPlanSend ? fxHedgeUsdEstimate : 0,
+          fx_hedge_usd_estimate: isBatchSend && batch === "equities_fx" ? fxHedgeUsdEstimate : 0,
         }),
         credentials: "same-origin",
         cache: "no-store",
@@ -2174,10 +2248,21 @@ export default function ClientReportPage({ reportData }: PageProps) {
         message?: string;
         executed_as?: string;
       }>;
-      setExecFills(fills as ExecFill[]);
+      if (batch === "eur_mm" && (!override || override.length === 0)) {
+        setExecFills((prev) => {
+          const next = mergeExecFillsAppend(
+            prev as ReportExecFillRow[],
+            fills as ReportExecFillRow[],
+          );
+          setExecSummary(buildExecSummaryFromFills(next));
+          return next as ExecFill[];
+        });
+      } else {
+        setExecFills(fills as ExecFill[]);
+        setExecSummary(buildExecSummaryFromFills(fills as ReportExecFillRow[]));
+      }
       setExecFillsBatchKind("plan");
       const execSum = buildExecSummaryFromFills(fills as ReportExecFillRow[]);
-      setExecSummary(execSum);
       const batchComplete =
         fills.length > 0 &&
         execSum.filled === fills.length &&
@@ -2206,15 +2291,22 @@ export default function ClientReportPage({ reportData }: PageProps) {
         (typeof e?.message === "string" && e.message.includes("aborted"));
       const raw = e instanceof Error ? e.message : String(e);
       const lower = raw.toLowerCase();
-      const isFullPlanSend = !override || override.length === 0;
       const looksLikeUpstreamTimeout = sendOrdersErrorLooksLikeUpstreamTimeout(raw);
       let bootstrappedAfterTimeout = false;
-      if (isFullPlanSend && (isAbort || looksLikeUpstreamTimeout)) {
-        const bootstrap = buildBootstrapExecFillsFromProposedTrades(proposedTradesFiltered, resolveIbkrSendTicker);
+      if (isBatchSend && (isAbort || looksLikeUpstreamTimeout)) {
+        const bootstrap = buildBootstrapExecFillsFromProposedTrades(planTradesForBatch, resolveIbkrSendTicker);
         if (bootstrap.length > 0) {
-          setExecFills(bootstrap);
+          if (batch === "eur_mm" && (!override || override.length === 0)) {
+            setExecFills((prev) => {
+              const next = mergeExecFillsAppend(prev as ReportExecFillRow[], bootstrap);
+              setExecSummary(buildExecSummaryFromFills(next));
+              return next as ExecFill[];
+            });
+          } else {
+            setExecFills(bootstrap);
+            setExecSummary(buildExecSummaryFromFills(bootstrap));
+          }
           setExecFillsBatchKind("plan");
-          setExecSummary(buildExecSummaryFromFills(bootstrap));
           bootstrappedAfterTimeout = true;
         }
       }
@@ -2315,6 +2407,34 @@ export default function ClientReportPage({ reportData }: PageProps) {
     });
   }, [reportData.recommendedPositions]);
   const proposedTradesFiltered = reportData.proposedTrades || [];
+  const proposedTradesEquitiesFx = useMemo(
+    () => proposedTradesFiltered.filter((t) => !isEurMmUcitsPlanTicker(String(t.ticker || ""))),
+    [proposedTradesFiltered],
+  );
+  const proposedTradesEurMm = useMemo(
+    () => proposedTradesFiltered.filter((t) => isEurMmUcitsPlanTicker(String(t.ticker || ""))),
+    [proposedTradesFiltered],
+  );
+  const equityFxExecutableCount = useMemo(
+    () =>
+      proposedTradesEquitiesFx.filter(
+        (t) =>
+          (t.side === "BUY" || t.side === "SELL") &&
+          t.absQty > 0 &&
+          String(t.ticker).toUpperCase() !== "EURUSD",
+      ).length,
+    [proposedTradesEquitiesFx],
+  );
+  const eurMmExecutableCount = useMemo(
+    () =>
+      proposedTradesEurMm.filter(
+        (t) =>
+          (t.side === "BUY" || t.side === "SELL") &&
+          t.absQty > 0 &&
+          String(t.ticker).toUpperCase() !== "EURUSD",
+      ).length,
+    [proposedTradesEurMm],
+  );
 
   const handleDownloadMonthlyRecommendationPdf = useCallback(async () => {
     if (typeof window === "undefined") return;
@@ -2402,8 +2522,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
   }, [execFills]);
 
   const fxCoordinatedUsdEstimate = useMemo(
-    () => fxHedgeUsdNotionalForCoordinatedSend(proposedTradesFiltered, fxHedgePrefsClient),
-    [proposedTradesFiltered, fxHedgePrefsClient],
+    () => fxHedgeUsdNotionalForCoordinatedSend(proposedTradesEquitiesFx, fxHedgePrefsClient),
+    [proposedTradesEquitiesFx, fxHedgePrefsClient],
   );
 
   const planTradeCount = proposedTradesFiltered.length;
@@ -2485,15 +2605,38 @@ export default function ClientReportPage({ reportData }: PageProps) {
 
   const runExecuteOrdersFromUi = () => {
     if (postApprovalStage === "executing") return;
+    if (equityFxExecutableCount < 1) {
+      window.alert("Neste plano não há ordens de acções / T-Bills (USD) — use o outro botão se houver liquidez UCITS EUR (XEON, …).");
+      return;
+    }
     if (
       !window.confirm(
-        "Enviar as ordens propostas deste plano à Interactive Brokers (paper)?\n\nConfirme: IB Gateway ou TWS ligado, backend DECIDE acessível.",
+        "Enviar acções, sleeve T-Bills (USD) e, se activo, cobertura FX na mesma operação. UCITS de liquidez em EUR (XEON) fica de fora — use o segundo botão noutro horário se precisar.\n\nConta paper IBKR. Confirme: IB Gateway ou TWS, backend DECIDE acessível.",
       )
     ) {
       return;
     }
     setPlanTab("execucao");
-    void executeOrdersNow();
+    void executeOrdersNow(undefined, { batch: "equities_fx" });
+  };
+
+  const runExecuteEurMmFromUi = () => {
+    if (postApprovalStage === "executing") return;
+    if (eurMmExecutableCount < 1) {
+      window.alert(
+        "Não há ordens de liquidez UCITS EUR (EUR_MM_PROXY, XEON, …) neste plano — nada a enviar neste lote.",
+      );
+      return;
+    }
+    if (
+      !window.confirm(
+        "Enviar só o money market em EUR (p.ex. XEON) — listagem/horário Europeu, distinto de acções em USD e T-Bills.\n\nConta paper IBKR.",
+      )
+    ) {
+      return;
+    }
+    setPlanTab("execucao");
+    void executeOrdersNow(undefined, { batch: "eur_mm" });
   };
 
   return (
@@ -4189,7 +4332,8 @@ export default function ClientReportPage({ reportData }: PageProps) {
                 <strong style={{ color: "#fffbeb" }}>Onde “comprar” na DECIDE:</strong> não é no dashboard de KPIs. Abra o{" "}
                 <strong style={{ color: "#fffbeb" }}>plano</strong> (esta página), separador{" "}
                 <strong style={{ color: "#fffbeb" }}>Execução</strong>, secção <strong style={{ color: "#fffbeb" }}>Decisão final</strong>:{" "}
-                primeiro <strong>Aprovar plano</strong> → depois o botão <strong>Executar ordens</strong> (envia para o IB
+                primeiro <strong>Aprovar plano</strong> → depois <strong>Executar acções…</strong> e/ou{" "}
+                <strong>Executar liquidez EUR</strong> (envia para o IB
                 Gateway ou TWS).
               </div>
             )}
@@ -4837,11 +4981,11 @@ export default function ClientReportPage({ reportData }: PageProps) {
                   )}
                 {postApprovalStage === "ready" && (
                   <p style={{ color: "#cbd5e1", fontSize: 14, margin: "0 0 14px 0", maxWidth: 760 }}>
-                    As ordens serão enviadas para a corretora apenas após confirmação. Com margem elevada, o envio faz-se
-                    por fases: <strong style={{ color: "#e2e8f0" }}>vendas (SELL) primeiro</strong>, breve pausa, depois{" "}
-                    <strong style={{ color: "#e2e8f0" }}>compras (BUY)</strong>, para o IB Gateway ou a TWS aceitar o lote. Linhas «
-                    <strong style={{ color: "#e2e8f0" }}>TBILL_PROXY</strong>» no plano são enviadas como ETF{" "}
-                    <strong style={{ color: "#e2e8f0" }}>{tbillIb}</strong> (sleeve T-Bills — contrato negociável na IBKR).
+                    Há <strong style={{ color: "#e2e8f0" }}>dois envios</strong> (dois botões abaixo): o primeiro trata
+                    <strong style={{ color: "#e2e8f0" }}> acções, T-Bills em USD (TBILL_PROXY → {tbillIb}) e FX</strong>{" "}
+                    se activo; o segundo trata <strong style={{ color: "#e2e8f0" }}>só a liquidez em EUR</strong> (UCITS, p.ex.
+                    XEON) — listagens/horário diferentes. Depois de confirmar, com margem elevada cada lote faz{" "}
+                    <strong style={{ color: "#e2e8f0" }}>SELL</strong> antes de <strong style={{ color: "#e2e8f0" }}>BUY</strong>.
                   </p>
                 )}
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
@@ -4876,17 +5020,17 @@ export default function ClientReportPage({ reportData }: PageProps) {
                             style={{ marginTop: 4, width: 18, height: 18, flexShrink: 0 }}
                           />
                           <span>
-                            <strong style={{ color: "#ecfdf5" }}>Cobertura FX no mesmo envio:</strong> depois das ordens de
-                            acções e do proxy de T-Bills (<strong style={{ color: "#e2e8f0" }}>TBILL_PROXY</strong> → ETF),
-                            o backend pode submeter uma ordem à mercado em <strong style={{ color: DECIDE_DASHBOARD.accentSky }}>EUR.USD</strong>{" "}
-                            (comprar EUR, vender USD no IDEALPRO) com montante derivado da soma das{" "}
-                            <strong>compras</strong> em USD (qty × preço), incluindo esse sleeve. Se tiver{" "}
+                            <strong style={{ color: "#ecfdf5" }}>Cobertura FX no 1.º lote (acções / TBILL USD):</strong> no
+                            mesmo envio do <strong>primeiro botão</strong>, após as ordens de acções e do{" "}
+                            <strong style={{ color: "#e2e8f0" }}>TBILL_PROXY</strong> (→ ETF {tbillIb} em USD, não o UCITS
+                            EUR), o backend pode submeter <strong style={{ color: DECIDE_DASHBOARD.accentSky }}>EUR.USD</strong>{" "}
+                            (IDEALPRO) com montante a partir das <strong>compras</strong> em USD (qty × preço) desse lote. Se tiver{" "}
                             <strong style={{ color: "#e2e8f0" }}>preferência de hedge EUR/USD</strong> no dashboard (50% ou
                             100%), essa percentagem aplica-se ao montante das compras e a opção fica normalmente activada
                             aqui. Outros pares no onboarding afectam só os KPIs ilustrativos; neste envio a ordem na IBKR é
                             sempre <strong style={{ color: "#e2e8f0" }}>EUR.USD</strong>. Requer permissões FX e mercado
-                            aberto; mín. ~500 USD para a corretora aceitar a ordem. No <strong>envio completo</strong>, a
-                            linha EURUSD aparece na mesma na tabela (se abaixo do mínimo, verá o motivo «não enviada»).{" "}
+                            aberto; mín. ~500 USD para a corretora aceitar a ordem. No <strong>primeiro lote</strong>, a
+                            linha EURUSD aparece na tabela (se abaixo do mínimo, verá o motivo «não enviada»).{" "}
                             {fxCoordinatedUsdEstimate >= 500 ? (
                               <span style={{ color: DECIDE_DASHBOARD.accentSky }}>
                                 Estimativa a cobrir: ~{formatUsdPrice(fxCoordinatedUsdEstimate)}.
@@ -4900,24 +5044,61 @@ export default function ClientReportPage({ reportData }: PageProps) {
                           </span>
                         </label>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void executeOrdersNow()}
-                        title="O envio fala com o IB Gateway ou a TWS e pode demorar até cerca de 2 minutos — aguarde a resposta."
-                        style={{
-                          background: DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
-                          border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
-                          color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
-                          borderRadius: 14,
-                          padding: "14px 22px",
-                          fontWeight: 800,
-                          fontSize: 15,
-                          cursor: "pointer",
-                          boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
-                        }}
-                      >
-                        Executar ordens
-                      </button>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                          <button
+                            type="button"
+                            onClick={() => void executeOrdersNow(undefined, { batch: "equities_fx" })}
+                            disabled={equityFxExecutableCount < 1}
+                            title="Acções, TBILL (USD) e linha FX coerente. O envio fala com o IB Gateway/TWS (vários minutos com muitas linhas)."
+                            style={{
+                              background:
+                                equityFxExecutableCount < 1
+                                  ? "#334155"
+                                  : DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
+                              border:
+                                equityFxExecutableCount < 1
+                                  ? "1px solid #475569"
+                                  : DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                              color: equityFxExecutableCount < 1 ? "#a1a1aa" : DECIDE_DASHBOARD.kpiMenuMainButtonColor,
+                              borderRadius: 14,
+                              padding: "14px 22px",
+                              fontWeight: 800,
+                              fontSize: 15,
+                              cursor: equityFxExecutableCount < 1 ? "not-allowed" : "pointer",
+                              boxShadow: equityFxExecutableCount < 1 ? undefined : DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
+                            }}
+                          >
+                            Executar acções, T-Bills (USD) e FX
+                            {equityFxExecutableCount > 0 ? ` (${equityFxExecutableCount})` : ""}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void executeOrdersNow(undefined, { batch: "eur_mm" })}
+                            disabled={eurMmExecutableCount < 1}
+                            title="Só UCITS de caixa em EUR (p.ex. XEON) — negociação em horário/venues Europeus, separado de US RTH."
+                            style={{
+                              background: eurMmExecutableCount < 1 ? "#334155" : "rgba(20, 83, 45, 0.35)",
+                              border: eurMmExecutableCount < 1 ? "1px solid #475569" : "1px solid rgba(34, 197, 94, 0.45)",
+                              color: eurMmExecutableCount < 1 ? "#a1a1aa" : "#a7f3d0",
+                              borderRadius: 14,
+                              padding: "14px 22px",
+                              fontWeight: 800,
+                              fontSize: 15,
+                              cursor: eurMmExecutableCount < 1 ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            Executar liquidez EUR (UCITS)
+                            {eurMmExecutableCount > 0 ? ` (${eurMmExecutableCount})` : ""}
+                          </button>
+                        </div>
+                        <p style={{ margin: 0, maxWidth: 640, fontSize: 12, lineHeight: 1.5, color: "#64748b" }}>
+                          Não existe, na prática, o mesmo instrumento de caixa em EUR e líquido só em horário US: o proxy do
+                          plano para euros é UCITS; use o <strong style={{ color: "#94a3b8" }}>segundo botão</strong> alinhado
+                          a Xetra/UE. O <strong style={{ color: "#94a3b8" }}>primeiro</strong> trata T-Bills/ETF USD e acções
+                          (e FX) no mesmo lote.
+                        </p>
+                      </div>
                       <button
                         type="button"
                         onClick={scrollToOrders}
@@ -5008,7 +5189,7 @@ export default function ClientReportPage({ reportData }: PageProps) {
                     <>
                       <button
                         type="button"
-                        onClick={() => void executeOrdersNow()}
+                        onClick={() => void executeOrdersNow(undefined, { batch: lastExecuteBatchRef.current })}
                         style={{
                           background: "#b91c1c",
                           border: "1px solid #dc2626",

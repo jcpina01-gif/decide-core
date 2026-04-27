@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import type { GetServerSideProps } from "next";
+import type { GetServerSideProps, GetServerSidePropsContext } from "next";
 import Head from "next/head";
 import OnboardingFlowBar, {
   ONBOARDING_LOCALSTORAGE_CHANGED_EVENT,
@@ -235,6 +235,10 @@ export type PersonaOnboardingPageProps = {
   personaTemplateId: string;
   personaEnvironmentId: string;
   personaTemplateVersionId: string;
+  /** Host da barra de endereço (1º de x-forwarded-host) — aviso de domínio / Persona. */
+  requestHost: string | null;
+  /** p.ex. "preview" em deploy Vercel de branch — Persona muitas vezes exige allowlist do hostname. */
+  vercelEnv: string | null;
 };
 
 /**
@@ -242,7 +246,16 @@ export type PersonaOnboardingPageProps = {
  * se o ambiente só as definir em runtime (Docker, variáveis mudadas sem rebuild), sem isto o SDK Persona
  * recebia template/environment vazios → «template-id is blank» / misconfigured.
  */
-export const getServerSideProps: GetServerSideProps<PersonaOnboardingPageProps> = async () => {
+function hostFromSsrContext(context: GetServerSidePropsContext): string {
+  const xf = context.req.headers["x-forwarded-host"];
+  const fromXf = typeof xf === "string" ? xf.split(",")[0]! : String(xf || "");
+  const h = (fromXf && fromXf.trim() ? fromXf : String(context.req.headers.host || "")).trim();
+  return h.toLowerCase() || "";
+}
+
+export const getServerSideProps: GetServerSideProps<PersonaOnboardingPageProps> = async (context) => {
+  const requestHost = hostFromSsrContext(context);
+  const vercelEnv = String(process.env.VERCEL_ENV || "").trim() || null;
   return {
     props: {
       personaTemplateId: sanitizePersonaPublicId(getResolvedPersonaTemplateId()),
@@ -250,6 +263,8 @@ export const getServerSideProps: GetServerSideProps<PersonaOnboardingPageProps> 
       personaTemplateVersionId: sanitizePersonaPublicId(
         String(process.env.NEXT_PUBLIC_PERSONA_TEMPLATE_VERSION_ID || "").trim(),
       ),
+      requestHost: requestHost || null,
+      vercelEnv,
     },
   };
 };
@@ -258,6 +273,8 @@ export default function PersonaOnboardingPage({
   personaTemplateId,
   personaEnvironmentId,
   personaTemplateVersionId,
+  requestHost,
+  vercelEnv,
 }: PersonaOnboardingPageProps) {
   const [externalUserId, setExternalUserId] = useState("");
   const [email, setEmail] = useState("");
@@ -1040,6 +1057,14 @@ export default function PersonaOnboardingPage({
     stageStr === "persona-save-failed" ||
     stageStr === "persona-validating";
 
+  /** Vercel: o ambiente *Production* pode servir ainda em <project>-<hash>-<team>.vercel.app. Persona exige o hostname exato na allowlist (como com localhost) — independentemente de o deploy ser Production ou Preview. */
+  const personaAllowlistHost = (requestHost || "").split(":")[0] || "";
+  const isVercelAppUrlHost =
+    personaAllowlistHost.length > 0 && personaAllowlistHost.toLowerCase().endsWith(".vercel.app");
+  const showPersonaVercelHostnameCallout = Boolean(
+    personaAllowlistHost && (isVercelAppUrlHost || vercelEnv === "preview"),
+  );
+
   return (
     <>
       <Head>
@@ -1083,6 +1108,37 @@ export default function PersonaOnboardingPage({
         <div style={{ maxWidth: ONBOARDING_SHELL_MAX_WIDTH_PX, margin: "0 auto 8px", width: "100%" }}>
           <OnboardingFlowBar currentStepId="kyc" authStepHref="/client/login" compact />
         </div>
+
+        {showPersonaVercelHostnameCallout ? (
+          <div
+            style={{
+              ...cardStyle(),
+              maxWidth: ONBOARDING_SHELL_MAX_WIDTH_PX,
+              margin: "0 auto 16px",
+              background: "rgba(251, 191, 36, 0.1)",
+              border: "1px solid rgba(251, 191, 36, 0.4)",
+            }}
+          >
+            <div style={{ fontWeight: 800, color: "#fde68a", fontSize: 14, marginBottom: 8 }}>
+              Persona + {isVercelAppUrlHost ? "URL " : ""}Vercel{vercelEnv === "preview" ? " (pré-visualização de branch)" : ""}
+            </div>
+            <p style={{ margin: 0, color: "#fef3c7", fontSize: 13, lineHeight: 1.55 }}>
+              Na Vercel, o site pode ser <strong>Production</strong> e continuar o endereço <code
+                style={{ color: "#fef9c3" }}
+              >
+                *.vercel.app
+              </code>{" "}
+              — a Persona não trata isso de forma diferente: o <strong>hostname exato</strong> da barra de endereços
+              (neste sítio: <code style={{ color: "#fef9c3" }}>{personaAllowlistHost}</code>) tem de constar na{" "}
+              <strong>allowlist</strong> de domínios do embed (no mesmo sítio onde, em dev, se usa{" "}
+              <code style={{ color: "#fef9c3" }}>localhost</code>; só o nome, sem{" "}
+              <code style={{ color: "#fef9c3" }}>https://</code>). Cada URL de <strong>pré-visualização de branch</strong>{" "}
+              é um hostname novo. Se tiverem um <strong>domínio personalizado</strong> de produção (p.ex.{" "}
+              <code style={{ color: "#fef9c3" }}>app.empresa.pt</code>), a demo deve ser aí, ou com esse host também
+              listado.
+            </p>
+          </div>
+        ) : null}
 
         {error ? (
           <div
@@ -1504,7 +1560,17 @@ export default function PersonaOnboardingPage({
                   «Last published» não pode estar vazio). A variável <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_TEMPLATE_VERSION_ID</code>{" "}
                   é opcional. <strong>Não</strong> use <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_HOST=development</code>: no SDK isso aponta o
                   iframe para <code style={{ color: "#a8a29e" }}>localhost:3000</code> (interno Persona). Sandbox usa <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID</code>{" "}
-                  e, se precisar, <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_HOST=production</code> ou omita (omissão = production).
+                  e, se precisar, <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_HOST=production</code> ou omita (omissão = production).{" "}
+                  <strong>Rede (DevTools):</strong> se o pedido a <code style={{ color: "#a8a29e" }}>inquiry.withpersona.com</code> (documento
+                  <code style={{ color: "#a8a29e" }}>widget?…</code>) tiver <strong>403 Forbidden</strong>, a origem (hostname da tua app){" "}
+                  <strong>não</strong> está na allowlist da Persona: em dashboard.withpersona.com → <strong>Domain Manager</strong> (ou
+                  definição equivalente de domínios do embed), adicione o hostname exato, p.ex. o{" "}
+                  <code style={{ color: "#a8a29e" }}>*.vercel.app</code> concreto da barra de endereços — sem <code
+                    style={{ color: "#a8a29e" }}
+                  >
+                    https://
+                  </code>
+                  .
                 </div>
                 {stageStr === "persona-iframe-mounted" ? (
                   <div
@@ -1550,8 +1616,16 @@ export default function PersonaOnboardingPage({
                       lineHeight: 1.55,
                     }}
                   >
-                    O assistente automático está indisponível para este domínio/plano da Persona. Pode continuar em{" "}
-                    <strong>modo manual</strong> e a equipa valida a identidade depois.
+                    O assistente automático pode falhar <strong>neste hostname</strong> (Persona embedded flow): na consola
+                    Persona, no mesmo sítio onde definiu domínios para{" "}
+                    <code style={{ color: "#fef9c3" }}>localhost</code>, adicione{" "}
+                    {requestHost ? (
+                      <code style={{ color: "#fef9c3" }}>{requestHost.split(":")[0]}</code>
+                    ) : (
+                      "o host da barra de endereços (só o nome, sem protocolo)"
+                    )}
+                    , ou abra a app no <strong>domínio de produção</strong> aprovado. Pode continuar em{" "}
+                    <strong>modo manual</strong> (botão abaixo) e a equipa valida a identidade depois.
                   </div>
                 ) : null}
               </div>
