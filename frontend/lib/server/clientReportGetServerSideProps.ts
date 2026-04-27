@@ -138,7 +138,7 @@ function deepOmitUndefinedForGssp<T>(v: T): T {
     if (Array.isArray(v)) {
       return (v as unknown[])
         .map((e) => deepOmitUndefinedForGssp(e))
-        .filter((e) => e !== undefined) as T;
+        .filter((e) => e != null) as T;
     }
     if (Object.getPrototypeOf(v) === Object.prototype) {
       const src = v as Record<string, unknown>;

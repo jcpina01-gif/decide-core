@@ -2,7 +2,7 @@ import type { GetServerSideProps } from "next";
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import {
+import React, {
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -278,6 +278,47 @@ function normalizeReportDataForClient(d: ReportData): ReportData {
 }
 
 /**
+ * Se algum cálculo ou dado inesperado (ex. ``null`` vindo de JSON) rebentar o render, o resto da
+ * página fica; esta secção mostra mensagem em vez de ecrã vazio.
+ */
+class DecisaoFinalAposAprovacaoBoundary extends React.Component<
+  { children: ReactNode },
+  { err: string | null }
+> {
+  constructor(p: { children: ReactNode }) {
+    super(p);
+    this.state = { err: null };
+  }
+  static getDerivedStateFromError(e: Error): { err: string } {
+    return { err: e?.message || "erro" };
+  }
+  render() {
+    if (this.state.err) {
+      return (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 16,
+            maxWidth: 640,
+            borderRadius: 12,
+            border: "1px solid rgba(248,113,113,0.45)",
+            background: "rgba(127,29,29,0.28)",
+            color: "#fecaca",
+            fontSize: 14,
+            lineHeight: 1.55,
+          }}
+        >
+          <strong style={{ color: "#fff" }}>Não foi possível mostrar o texto e botões desta secção.</strong> Recarregue
+          a página, use janela anónima ou confirme que o deploy (Vercel) inclui o último commit. Detalhe técnico:{" "}
+          <code style={{ color: "#a1a1aa", fontSize: 12 }}>{this.state.err}</code>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/**
  * Proximidade da carteira real aos pesos-alvo do plano (só linhas do plano com peso ≥ 0,05%).
  * Σ min(peso_actual, peso_alvo) / Σ peso_alvo — títulos fora do plano não penalizam.
  */
@@ -379,15 +420,16 @@ function formatEuro(v: number): string {
 }
 
 function formatMoneyCompact(v: number, currency: string): string {
+  const n = typeof v === "number" && Number.isFinite(v) ? v : 0;
   const c = typeof currency === "string" && currency.length === 3 ? currency.toUpperCase() : "USD";
   try {
     return new Intl.NumberFormat("pt-PT", {
       style: "currency",
       currency: c,
       maximumFractionDigits: 0,
-    }).format(v);
+    }).format(n);
   } catch {
-    return `${v.toFixed(0)} ${c}`;
+    return `${n.toFixed(0)} ${c}`;
   }
 }
 
@@ -442,7 +484,8 @@ function hedgePrefsImplyCoordinatedFx(): boolean {
 }
 
 function formatPct(v: number, digits = 2): string {
-  return `${v.toFixed(digits)}%`;
+  const n = typeof v === "number" && Number.isFinite(v) ? v : 0;
+  return `${n.toFixed(digits)}%`;
 }
 
 function formatQty(v: number): string {
@@ -2408,7 +2451,9 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
   };
 
   const recommendedFiltered = useMemo(() => {
-    const src = reportData.recommendedPositions || [];
+    const src = (reportData.recommendedPositions || []).filter(
+      (p): p is RecommendedPosition => p != null && typeof p === "object" && String(p.ticker || "").trim() !== "",
+    );
     return src.map((p) => {
       const jp = applyJapaneseEquityDisplayFallback(
         p.ticker,
@@ -2438,7 +2483,9 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
       return { ...p1, geoZone: filled };
     });
   }, [reportData.recommendedPositions]);
-  const proposedTradesFiltered = reportData.proposedTrades || [];
+  const proposedTradesFiltered = (reportData.proposedTrades || []).filter(
+    (t): t is ProposedTrade => t != null && typeof t === "object",
+  );
   const proposedTradesEquitiesFx = useMemo(
     () => proposedTradesFiltered.filter((t) => !isEurMmUcitsPlanTicker(String(t.ticker || ""))),
     [proposedTradesFiltered],
@@ -4505,7 +4552,8 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
                 </p>
               </>
             ) : (
-              <>
+              <DecisaoFinalAposAprovacaoBoundary>
+                <>
                 <p style={{ color: "#cbd5e1", fontSize: 16, lineHeight: 1.65, margin: "0 0 16px 0", maxWidth: 760 }}>
                   {postApprovalStage === "approved" &&
                     "O seu plano foi aprovado. Estamos agora a preparar a execução na sua conta."}
@@ -5571,6 +5619,7 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
                     : "Pode executar ou rever as ordens antes de decidir."}
                 </p>
               </>
+              </DecisaoFinalAposAprovacaoBoundary>
             )}
           </div>
           ) : null}
