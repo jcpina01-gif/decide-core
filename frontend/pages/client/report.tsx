@@ -1245,10 +1245,11 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
 
 type PlanoDevResetTestPanelProps = {
   onExecuteIbkr?: () => void;
+  onExecuteEurCash?: () => void;
   executeBusy?: boolean;
 };
 
-function PlanoDevResetTestPanel({ onExecuteIbkr, executeBusy }: PlanoDevResetTestPanelProps) {
+function PlanoDevResetTestPanel({ onExecuteIbkr, onExecuteEurCash, executeBusy }: PlanoDevResetTestPanelProps) {
   return (
     <div
       style={{
@@ -1278,36 +1279,91 @@ function PlanoDevResetTestPanel({ onExecuteIbkr, executeBusy }: PlanoDevResetTes
         — o botão desta caixa deve dizer <strong>«Atalho: 1.º lote (…)»</strong>; <strong>«Executar ordens na IBKR»</strong> é
         bundle <strong>antigo</strong> (cache) ou outro projecto. O plano fica em{" "}
         <code style={{ color: "#d6d3d1" }}>/client/report</code>, não confundas com a barra do canto ao passar o rato
-        noutro link.
+        noutro link. Abaixo devem aparecer <strong>dois</strong> botão empilhados (1.º lote, depois 2.º caixa EUR) — se só
+        houver <strong>um</strong> botão, faça <strong>hard refresh</strong> (Ctrl+Shift+R) e confirme a linha «Deploy JS».
       </div>
       {onExecuteIbkr ? (
-        <div style={{ marginTop: 12 }}>
-          <button
-            type="button"
-            disabled={executeBusy}
-            onClick={onExecuteIbkr}
+        <div style={{ marginTop: 12, maxWidth: 360, width: "100%" }}>
+          {/** Sempre coluna: o 2.º nunca fica fora de vista por wrap ou ecrã estreito. */}
+          <div
             style={{
-              cursor: executeBusy ? "wait" : "pointer",
-              borderRadius: 10,
-              border: "2px solid #fde68a",
-              background: "linear-gradient(180deg, #0d9488 0%, #0f766e 100%)",
-              color: "#ecfdf5",
-              fontWeight: 800,
-              fontSize: 13,
-              padding: "8px 14px",
-              fontFamily: "inherit",
-              width: "100%",
-              maxWidth: 280,
-              opacity: executeBusy ? 0.75 : 1,
-              boxShadow: "0 2px 12px rgba(0,0,0,0.35)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+              alignItems: "stretch",
             }}
           >
-            {executeBusy ? "A enviar ordens…" : "Atalho: 1.º lote (acções / TBILL USD / FX)"}
-          </button>
-          <div style={{ fontSize: 11, color: "#fde68a", marginTop: 6, lineHeight: 1.4, opacity: 0.92 }}>
-            Os <strong>dois botões</strong> (acções+FX e liquidez EUR) estão no separador <strong>Execução</strong> — desça
-            ou mude o separador. Este atalho confirma só o <strong>primeiro lote</strong> (igual ao botão verde principal
-            nesse separador). Paper: IB Gateway/TWS + backend.
+            <button
+              type="button"
+              disabled={executeBusy}
+              onClick={onExecuteIbkr}
+              style={{
+                cursor: executeBusy ? "wait" : "pointer",
+                borderRadius: 10,
+                border: "2px solid #fde68a",
+                background: "linear-gradient(180deg, #0d9488 0%, #0f766e 100%)",
+                color: "#ecfdf5",
+                fontWeight: 800,
+                fontSize: 13,
+                padding: "10px 14px",
+                fontFamily: "inherit",
+                width: "100%",
+                opacity: executeBusy ? 0.75 : 1,
+                boxShadow: "0 2px 12px rgba(0,0,0,0.35)",
+              }}
+            >
+              {executeBusy ? "A enviar ordens…" : "Atalho: 1.º lote (acções / TBILL USD / FX)"}
+            </button>
+            <button
+              type="button"
+              disabled={executeBusy}
+              onClick={() => {
+                if (typeof onExecuteEurCash === "function") {
+                  onExecuteEurCash();
+                } else {
+                  void window.alert(
+                    "Esta instância do plano não traz o 2.º atalho (bug ou bundle antigo). Tente fechar a página, Ctrl+Shift+R e confirme o «Deploy JS» (commit).",
+                  );
+                }
+              }}
+              style={{
+                cursor: executeBusy ? "wait" : "pointer",
+                borderRadius: 10,
+                border: "2px solid rgba(167, 243, 208, 0.65)",
+                background: "linear-gradient(180deg, rgba(6, 78, 59, 0.95) 0%, rgba(6, 95, 70, 0.98) 100%)",
+                color: "#d1fae5",
+                fontWeight: 800,
+                fontSize: 13,
+                padding: "10px 14px",
+                fontFamily: "inherit",
+                width: "100%",
+                opacity: executeBusy ? 0.75 : 1,
+                boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
+              }}
+            >
+              {executeBusy ? "A enviar ordens…" : `Atalho: 2.º lote (caixa EUR, ${eurMmIbTicker()})`}
+            </button>
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: "#fde68a",
+              marginTop: 6,
+              lineHeight: 1.4,
+              opacity: 0.92,
+            }}
+          >
+            {typeof onExecuteEurCash === "function" ? (
+              <>
+                <strong>2 atalhos</strong> = mesmo que o separador <strong>Execução</strong> (1.º: acções/T-Bill/FX; 2.º:
+                UCITS {eurMmIbTicker()}). Paper: IB Gateway/TWS + backend.
+              </>
+            ) : (
+              <>
+                O 2.º lote fica <strong>no 2.º botão</strong> acima — se faltar, actualize a página. Paper: IB Gateway/TWS
+                + backend.
+              </>
+            )}
           </div>
         </div>
       ) : null}
@@ -2947,6 +3003,7 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
               {planoDevResetUi ? (
                 <PlanoDevResetTestPanel
                   onExecuteIbkr={runExecuteOrdersFromUi}
+                  onExecuteEurCash={runExecuteEurMmFromUi}
                   executeBusy={postApprovalStage === "executing"}
                 />
               ) : null}
@@ -3196,7 +3253,7 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
                 Execução
               </button>{" "}
               (secção <strong style={{ color: "#e2e8f0" }}>Decisão final</strong>) — a caixa de teste amarela no topo é só
-              atalho para o 1.º lote; o 2.º lote (liquidez EUR) está nesse separador.
+              atalho para o 1.º lote; o 2.º lote (caixa EUR, {eurMmIbTicker()}) está nesse separador.
             </div>
           ) : null}
 
@@ -5122,10 +5179,16 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
                   )}
                 {postApprovalStage === "ready" && (
                   <p style={{ color: "#cbd5e1", fontSize: 14, margin: "0 0 14px 0", maxWidth: 760 }}>
-                    Há <strong style={{ color: "#e2e8f0" }}>dois envios</strong> (dois botões abaixo): o primeiro trata
-                    <strong style={{ color: "#e2e8f0" }}> acções, T-Bills em USD (TBILL_PROXY → {tbillIb}) e FX</strong>{" "}
-                    se activo; o segundo trata <strong style={{ color: "#e2e8f0" }}>só a liquidez em EUR</strong> (UCITS, p.ex.
-                    XEON) — listagens/horário diferentes. Depois de confirmar, com margem elevada cada lote faz{" "}
+                    Há <strong style={{ color: "#e2e8f0" }}>dois envios</strong> (dois botões abaixo): o{" "}
+                    <strong style={{ color: "#e2e8f0" }}>1.º lote</strong> trata{" "}
+                    <strong style={{ color: "#e2e8f0" }}>
+                      acções, T-Bills em USD (TBILL_PROXY → {tbillIb}) e FX
+                    </strong>{" "}
+                    se activo. O <strong style={{ color: "#e2e8f0" }}>2.º botão (caixa)</strong> trata{" "}
+                    <strong style={{ color: "#e2e8f0" }}>só a liquidez em EUR/UCITS</strong> (na IB,{" "}
+                    <strong style={{ color: "#e2e8f0" }}>{eurMmIbTicker()}</strong>
+                    {eurMmIbTicker() === "XEON" ? "" : " — ex. XEON com a env correcta"}) — listagem e horário europeu, distintos
+                    do 1.º. Depois de confirmar, com margem elevada cada lote faz{" "}
                     <strong style={{ color: "#e2e8f0" }}>SELL</strong> antes de <strong style={{ color: "#e2e8f0" }}>BUY</strong>.
                   </p>
                 )}
@@ -5217,7 +5280,7 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
                             type="button"
                             onClick={() => void executeOrdersNow(undefined, { batch: "eur_mm" })}
                             disabled={eurMmExecutableCount < 1}
-                            title="Só UCITS de caixa em EUR (p.ex. XEON) — negociação em horário/venues Europeus, separado de US RTH."
+                            title={`Só caixa em EUR/UCITS (${eurMmIbTicker()} na IB, ex. XEON) — negociação em horário Europeu, separada do 1.º lote (USD, acções, FX).`}
                             style={{
                               background: eurMmExecutableCount < 1 ? "#334155" : "rgba(20, 83, 45, 0.35)",
                               border: eurMmExecutableCount < 1 ? "1px solid #475569" : "1px solid rgba(34, 197, 94, 0.45)",
@@ -5229,15 +5292,15 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
                               cursor: eurMmExecutableCount < 1 ? "not-allowed" : "pointer",
                             }}
                           >
-                            Executar liquidez EUR (UCITS)
+                            Só {eurMmIbTicker()} (caixa EUR)
                             {eurMmExecutableCount > 0 ? ` (${eurMmExecutableCount})` : ""}
                           </button>
                         </div>
                         <p style={{ margin: 0, maxWidth: 640, fontSize: 12, lineHeight: 1.5, color: "#64748b" }}>
-                          Não existe, na prática, o mesmo instrumento de caixa em EUR e líquido só em horário US: o proxy do
-                          plano para euros é UCITS; use o <strong style={{ color: "#94a3b8" }}>segundo botão</strong> alinhado
-                          a Xetra/UE. O <strong style={{ color: "#94a3b8" }}>primeiro</strong> trata T-Bills/ETF USD e acções
-                          (e FX) no mesmo lote.
+                          O <strong style={{ color: "#94a3b8" }}>caixa em dólares</strong> (T-Bill/ETF USD) vai no 1.º lote. O{" "}
+                          <strong style={{ color: "#94a3b8" }}>caixa em EUR</strong> (UCITS, p.ex.{" "}
+                          <strong style={{ color: "#94a3b8" }}>{eurMmIbTicker()}</strong> na corretora) é só no{" "}
+                          <strong style={{ color: "#94a3b8" }}>2.º botão</strong> — alinhado a listagens/horário em Europa.
                         </p>
                       </div>
                       <button
