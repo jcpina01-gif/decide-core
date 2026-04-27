@@ -1270,6 +1270,16 @@ function PlanoDevResetTestPanel({ onExecuteIbkr, executeBusy }: PlanoDevResetTes
         (ex. site público final):{" "}
         <code style={{ color: "#e2e8f0" }}>NEXT_PUBLIC_DECIDE_PLANO_DEV_RESET=0</code> no deploy.
       </>
+      <div style={{ fontSize: 10, color: "#a8a29e", marginTop: 8, lineHeight: 1.45, maxWidth: 560 }}>
+        <strong>Deploy JS:</strong>{" "}
+        <code style={{ color: "#d6d3d1" }} title="Primeiros 7 hex do commit; em local = vazio.">
+          {String(process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || "").trim().slice(0, 7) || "local (sem SHA)"}
+        </code>{" "}
+        — o botão desta caixa deve dizer <strong>«Atalho: 1.º lote (…)»</strong>; <strong>«Executar ordens na IBKR»</strong> é
+        bundle <strong>antigo</strong> (cache) ou outro projecto. O plano fica em{" "}
+        <code style={{ color: "#d6d3d1" }}>/client/report</code>, não confundas com a barra do canto ao passar o rato
+        noutro link.
+      </div>
       {onExecuteIbkr ? (
         <div style={{ marginTop: 12 }}>
           <button

@@ -61,6 +61,15 @@ const nextConfig = {
    */
   typedRoutes: false,
 
+  /**
+   * Expõe o commit de build no cliente (Vercel define `VERCEL_GIT_COMMIT_SHA`). Permite ver na caixa
+   * de teste do plano se o browser carregou o JavaScript do deploy recente; sem isto, cache a parecer «nada mudou».
+   */
+  env: {
+    NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA:
+      process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || "",
+  },
+
   /** Garante que os CSV/JSON da landing entram no bundle serverless (fs em /api/landing/*). */
   outputFileTracingIncludes: {
     /** Lê `../freeze/.../model_outputs` (mesmo padrão que /api/client/plan-decision-kpis); sem isto, em Vercel só o landing entra no *trace* e o gráfico cai a 15-04. */
