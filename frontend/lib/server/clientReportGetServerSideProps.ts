@@ -124,6 +124,15 @@ function pruneUndefinedShallow<T extends Record<string, unknown>>(o: T): T {
 }
 
 /**
+ * ``getServerSideProps`` (Next 15) exige que ``props`` seja 100% JSON: qualquer ``undefined`` aninhado
+ * (ex. em entradas de tabelas ou objectos mesclados) provoca 500 e a UI fica a meio. ``Date`` também falha
+ * o serializador. Um round-trip JSON remove ``undefined`` e converte ``Date`` em ISO.
+ */
+function reportDataForGsspSerial<T extends ReportData>(d: T): T {
+  return JSON.parse(JSON.stringify(d)) as T;
+}
+
+/**
  * Antes da UI trocar ``TBILL_PROXY`` → MM EUR (CSH2/XEON): proxies e UCITS MM contam como caixa.
  * Sem isto, CSH2 entrava no cap por zona / rescale como se fosse acção e a grelha podia ficar só com a linha de caixa.
  */
@@ -972,7 +981,7 @@ export const getClientReportServerSideProps: GetServerSideProps<PageProps> = asy
         : typeof e === "string"
           ? e
           : "Erro desconhecido no servidor ao montar o plano.";
-    return { props: { reportData: buildSsrFailureReportData(msg) } };
+    return { props: { reportData: reportDataForGsspSerial(buildSsrFailureReportData(msg)) } };
   }
 };
 
@@ -2680,7 +2689,7 @@ async function getClientReportServerSidePropsImpl(
 
   return {
     props: {
-      reportData,
+      reportData: reportDataForGsspSerial(reportData),
     },
   };
 }
