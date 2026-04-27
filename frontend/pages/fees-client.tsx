@@ -788,7 +788,7 @@ export default function FeesClientPage() {
               </p>
               <p style={{ margin: "0 0 8px", color: "#d4d4d8", fontSize: embed ? 15 : 13.5, lineHeight: 1.55 }}>
                 Configuração típica de fricção no motor: da ordem de{" "}
-                <strong style={{ color: "#fafafa" }}>5 + 5 = 10 bps</strong> sobre o turnover por dia em que há negociação
+                <strong style={{ color: "#fafafa" }}>3 + 3 = 6 bps</strong> sobre o turnover por dia em que há negociação
                 (comissão + slippage), ajustável por cenário. Na suíte de robustez pode stressar custos agregados até
                 valores da ordem de <strong style={{ color: "#fafafa" }}>20–50 bps</strong> para ver a sensibilidade do
                 CAGR — útil para comparar com a sua realidade de execução.
