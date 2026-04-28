@@ -128,6 +128,7 @@ function applyFeesToEquity(
   grossEquityScaled: number[],
   benchmarkEquityScaled: number[],
   planMode: PlanMode,
+  premiumMonthlyFeeEur: number,
 ): { points: FeeBreakdownPoint[]; segment: ClientSegment } {
   const points: FeeBreakdownPoint[] = [];
   const segment: ClientSegment = planMode === "segment_a_fixed" ? "Premium" : "Private";
@@ -166,7 +167,7 @@ function applyFeesToEquity(
   }
 
   if (segment === "Premium" && lastTradingDayOfMonthInSeries(dates, 0)) {
-    const fee = DECIDE_PREMIUM_MONTHLY_FEE_EUR;
+    const fee = premiumMonthlyFeeEur;
     net = Math.max(0, net - fee);
     mgmtFeeCum += fee;
   }
@@ -219,7 +220,7 @@ function applyFeesToEquity(
     }
 
     if (segment === "Premium" && lastTradingDayOfMonthInSeries(dates, i)) {
-      const fee = DECIDE_PREMIUM_MONTHLY_FEE_EUR;
+      const fee = premiumMonthlyFeeEur;
       net = Math.max(0, net - fee);
       mgmtFeeCum += fee;
     }
@@ -275,7 +276,12 @@ function KPIBox({
   );
 }
 
-export default function FeesClientPage() {
+type FeesClientPageProps = {
+  /** Valor servido via SSR (`getServerSideProps`) para não depender só do chunk JS em cache. */
+  premiumMonthlyFeeEur: number;
+};
+
+export default function FeesClientPage({ premiumMonthlyFeeEur }: FeesClientPageProps) {
   const router = useRouter();
   const embed = router.isReady && router.query.embed === "1";
   /** No dashboard: `fees_tab=intro` = texto; `fees_tab=sim` ou ausente = simulador. */
@@ -440,8 +446,8 @@ export default function FeesClientPage() {
   );
 
   const feeResult = useMemo(
-    () => applyFeesToEquity(dates, grossEquity, benchmarkEquity, planMode),
-    [dates, grossEquity, benchmarkEquity, planMode],
+    () => applyFeesToEquity(dates, grossEquity, benchmarkEquity, planMode, premiumMonthlyFeeEur),
+    [dates, grossEquity, benchmarkEquity, planMode, premiumMonthlyFeeEur],
   );
 
   const netEquity = feeResult.points.map((p) => p.net);
@@ -514,7 +520,13 @@ export default function FeesClientPage() {
       };
     }
 
-    const feeSlice = applyFeesToEquity(capSim.sliceDates, capSim.modelVal, capSim.benchVal, planMode);
+    const feeSlice = applyFeesToEquity(
+      capSim.sliceDates,
+      capSim.modelVal,
+      capSim.benchVal,
+      planMode,
+      premiumMonthlyFeeEur,
+    );
     const netSlice = feeSlice.points.map((p) => p.net);
     const nWin = computeKpisFromSeries(capSim.sliceDates, netSlice);
     const lastPt = feeSlice.points[feeSlice.points.length - 1];
@@ -559,6 +571,7 @@ export default function FeesClientPage() {
     capitalInvestido,
     kpiHorizonYears,
     planMode,
+    premiumMonthlyFeeEur,
   ]);
 
   const grossKpis = windowKpis.grossKpis;
@@ -836,7 +849,7 @@ export default function FeesClientPage() {
             </p>
             <p style={{ margin: 0 }}>
               <strong style={{ color: "#fafafa" }}>Comissão de gestão</strong> — montante fixo de{" "}
-              <strong style={{ color: "#fafafa" }}>{DECIDE_PREMIUM_MONTHLY_FEE_EUR} €</strong> por mês, cobrado no{" "}
+              <strong style={{ color: "#fafafa" }}>{premiumMonthlyFeeEur} €</strong> por mês, cobrado no{" "}
               <strong style={{ color: "#fafafa" }}>final de cada mês</strong>, independentemente do valor da carteira.
             </p>
           </div>
@@ -1083,7 +1096,7 @@ export default function FeesClientPage() {
             }}
           >
             <option value="segment_a_fixed">
-              Premium — {DECIDE_PREMIUM_MONTHLY_FEE_EUR}€/mês (fixo no fim do mês)
+              Premium — {premiumMonthlyFeeEur}€/mês (fixo no fim do mês)
             </option>
             <option value="segment_b_mgmt_pf">Private — 0,6% NAV médio + 15% performance (HWM relativo)</option>
           </select>
@@ -1281,8 +1294,12 @@ export default function FeesClientPage() {
   );
 }
 
-/** Evita HTML estático/CDN a servir copy antiga; valor Premium vem do bundle + SSR fresco. */
-export const getServerSideProps: GetServerSideProps = async ({ res }) => {
+/** HTML dinâmico; valor Premium nos `props` — serializado em `__NEXT_DATA__`, fiável após deploy. */
+export const getServerSideProps: GetServerSideProps<FeesClientPageProps> = async ({ res }) => {
   res.setHeader("Cache-Control", "private, no-store, must-revalidate");
-  return { props: {} };
+  return {
+    props: {
+      premiumMonthlyFeeEur: DECIDE_PREMIUM_MONTHLY_FEE_EUR,
+    },
+  };
 };
