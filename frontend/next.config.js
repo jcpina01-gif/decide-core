@@ -149,6 +149,35 @@ const nextConfig = {
           },
         ],
       },
+      /** Simulador de custos / embed no dashboard — evita HTML antigo (20€) servido por CDN/browser. */
+      {
+        source: "/fees-client",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "private, no-store, max-age=0, must-revalidate",
+          },
+        ],
+      },
+      /** Shell que iframeia `/fees-client` — precisa de JS fresco para `fees_embed_rev` no src do iframe. */
+      {
+        source: "/client-dashboard",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "private, no-store, max-age=0, must-revalidate",
+          },
+        ],
+      },
+      {
+        source: "/client/carteira",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "private, no-store, max-age=0, must-revalidate",
+          },
+        ],
+      },
       {
         source: "/embed/:path*",
         headers: [
