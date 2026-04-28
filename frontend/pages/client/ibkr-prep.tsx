@@ -492,6 +492,13 @@ export default function IbkrPrepPage() {
 
   const identityServerSatisfied = useMemo(() => {
     if (serverKycOk === true) return true;
+    /**
+     * Checkout Stripe já validado pela API (`STRIPE_ONBOARDING_OK_KEY`) + KYC marcado no funil:
+     * não bloquear este passo quando o GET `/api/persona/status` não bate certo com Neon/preview (referência,
+     * deployment diferente) ou o estado Persona ainda não encaixa em `personaRecordAllowsIbkrPrep`.
+     * Sem isto, utilizadores com pagamento confirmado ficavam presos ao aviso «Identidade…».
+     */
+    if (stripeCheckoutDoneLs && kycDone) return true;
     if (!IBKR_PREP_PERSONA_TRUST_LSKYC) return false;
     if (!stripeCheckoutDoneLs || !kycDone) return false;
     if (personaHttpStatus == null) return false;
