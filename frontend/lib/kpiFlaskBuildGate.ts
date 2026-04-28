@@ -16,7 +16,7 @@ export const KPI_IFRAME_SRC_REV = "v25";
  * Bump quando mudar copy/simulador Premium para evitar iframe preso a HTML antigo — sem isto o `src`
  * pode ficar estável (`iframeRefresh` só acrescenta `t=` após «Atualizar recomendação»).
  */
-export const FEES_CLIENT_EMBED_CACHE_REV = "premium-25-r4-ssr-props";
+export const FEES_CLIENT_EMBED_CACHE_REV = "premium-25-r5-api-sync";
 
 /**
  * `NEXT_PUBLIC_KPI_FLASK_MIN_BUILD` — substring obrigatória no campo `build` de `/api/health`.

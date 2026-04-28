@@ -310,6 +310,29 @@ export default function FeesClientPage({ premiumMonthlyFeeEur }: FeesClientPageP
   const [dataSource, setDataSource] = useState<FeesDataSource>("v5_cap15_freeze");
   const [runModelIsFallback, setRunModelIsFallback] = useState(false);
 
+  /** SSR + valor fresco da API (último sobrepõe chunks/HTML antigos em cache). */
+  const [premiumLiveEur, setPremiumLiveEur] = useState(premiumMonthlyFeeEur);
+
+  useEffect(() => {
+    setPremiumLiveEur(premiumMonthlyFeeEur);
+  }, [premiumMonthlyFeeEur]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/public/premium-monthly-fee-eur", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { premiumMonthlyFeeEur?: unknown }) => {
+        const raw = d.premiumMonthlyFeeEur;
+        const n = typeof raw === "number" ? raw : Number(raw);
+        if (cancelled || !Number.isFinite(n) || n <= 0) return;
+        setPremiumLiveEur(n);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   /** No embed do dashboard o `src` do iframe inclui `?profile=` — manter o selector alinhado. */
   useEffect(() => {
     if (!router.isReady || !embed) return;
@@ -446,8 +469,8 @@ export default function FeesClientPage({ premiumMonthlyFeeEur }: FeesClientPageP
   );
 
   const feeResult = useMemo(
-    () => applyFeesToEquity(dates, grossEquity, benchmarkEquity, planMode, premiumMonthlyFeeEur),
-    [dates, grossEquity, benchmarkEquity, planMode, premiumMonthlyFeeEur],
+    () => applyFeesToEquity(dates, grossEquity, benchmarkEquity, planMode, premiumLiveEur),
+    [dates, grossEquity, benchmarkEquity, planMode, premiumLiveEur],
   );
 
   const netEquity = feeResult.points.map((p) => p.net);
@@ -525,7 +548,7 @@ export default function FeesClientPage({ premiumMonthlyFeeEur }: FeesClientPageP
       capSim.modelVal,
       capSim.benchVal,
       planMode,
-      premiumMonthlyFeeEur,
+      premiumLiveEur,
     );
     const netSlice = feeSlice.points.map((p) => p.net);
     const nWin = computeKpisFromSeries(capSim.sliceDates, netSlice);
@@ -571,7 +594,7 @@ export default function FeesClientPage({ premiumMonthlyFeeEur }: FeesClientPageP
     capitalInvestido,
     kpiHorizonYears,
     planMode,
-    premiumMonthlyFeeEur,
+    premiumLiveEur,
   ]);
 
   const grossKpis = windowKpis.grossKpis;
@@ -849,7 +872,7 @@ export default function FeesClientPage({ premiumMonthlyFeeEur }: FeesClientPageP
             </p>
             <p style={{ margin: 0 }}>
               <strong style={{ color: "#fafafa" }}>Comissão de gestão</strong> — montante fixo de{" "}
-              <strong style={{ color: "#fafafa" }}>{premiumMonthlyFeeEur} €</strong> por mês, cobrado no{" "}
+              <strong style={{ color: "#fafafa" }}>{premiumLiveEur} €</strong> por mês, cobrado no{" "}
               <strong style={{ color: "#fafafa" }}>final de cada mês</strong>, independentemente do valor da carteira.
             </p>
           </div>
@@ -1096,7 +1119,7 @@ export default function FeesClientPage({ premiumMonthlyFeeEur }: FeesClientPageP
             }}
           >
             <option value="segment_a_fixed">
-              Premium — {premiumMonthlyFeeEur}€/mês (fixo no fim do mês)
+              Premium — {premiumLiveEur}€/mês (fixo no fim do mês)
             </option>
             <option value="segment_b_mgmt_pf">Private — 0,6% NAV médio + 15% performance (HWM relativo)</option>
           </select>

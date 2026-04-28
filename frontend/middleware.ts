@@ -22,6 +22,8 @@ function isSiteGateBypass(pathname: string): boolean {
   if (pathname.startsWith("/api/persona/")) return true;
   /** Rotas internas com `isBackofficeEnabled()` próprio; o fetch do browser não envia Basic Auth automaticamente. */
   if (pathname.startsWith("/api/backoffice")) return true;
+  /** Fee Premium / dados públicos só de leitura — iframe e fetch sem Basic Auth explícito. */
+  if (pathname.startsWith("/api/public/")) return true;
   /**
    * Vistas /embed/* — iframes a partir do kpi_server (Flask) e pedidos a correr noutro contexto de navegação
    * não carregam credenciais Basic; sem bypass o gate devolve 401 e o browser mostra ecrã em branco /
