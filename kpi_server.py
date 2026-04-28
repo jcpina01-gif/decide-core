@@ -8482,6 +8482,9 @@ def load_last_close_as_of_date() -> str:
 def load_holdings_and_breakdowns(base_path: Path):
     # Use portfolio_final.json which contains current holdings + metadata
     portfolio_path = base_path / "portfolio_final.json"
+    if not portfolio_path.is_file():
+        # Deploys mínimos (só CSVs de equity/benchmark) ou git-lfs em falta: evita 500 em GET /
+        return [], [], []
     with portfolio_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
