@@ -3602,7 +3602,7 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
               value={reportData.feeSegment}
               sub={
                 reportData.feeSegment === "A"
-                  ? "20 € / mês"
+                  ? `${formatEuro(reportData.monthlyFixedFeeEur)} / mês`
                   : "0,6% / ano + 15% performance fee"
               }
             />

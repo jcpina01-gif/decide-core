@@ -1,6 +1,7 @@
 import type { GetServerSideProps, GetServerSidePropsContext } from "next";
 import fs from "fs";
 import path from "path";
+import { DECIDE_PREMIUM_MONTHLY_FEE_EUR } from "../decidePremiumFeeEur";
 import {
   fillSyntheticEquityBuyQuantities,
   loadApprovalAlignedProposedTrades,
@@ -237,10 +238,10 @@ function buildSsrFailureReportData(backendError: string): ReportData {
     proposedTrades: [],
     series: [],
     feeSegment: "A",
-    monthlyFixedFeeEur: 20,
+    monthlyFixedFeeEur: DECIDE_PREMIUM_MONTHLY_FEE_EUR,
     annualManagementFeePct: 0,
     estimatedAnnualManagementFeeEur: 0,
-    estimatedMonthlyManagementFeeEur: 20,
+    estimatedMonthlyManagementFeeEur: DECIDE_PREMIUM_MONTHLY_FEE_EUR,
     estimatedPerformanceFeeEur: 0,
     tbillProxyIbTicker: eurMmSym,
     planWeightsProvenance: {
@@ -2612,12 +2613,12 @@ async function getClientReportServerSidePropsImpl(
   const modelDisplayName = PLAFONADO_MODEL_DISPLAY_NAME_PT;
 
   const feeSegment: "A" | "B" = navEur >= 50000 ? "B" : "A";
-  const monthlyFixedFeeEur = feeSegment === "A" ? 20 : 0;
+  const monthlyFixedFeeEur = feeSegment === "A" ? DECIDE_PREMIUM_MONTHLY_FEE_EUR : 0;
   const annualManagementFeePct = feeSegment === "B" ? 0.6 : 0;
   const estimatedAnnualManagementFeeEur =
     feeSegment === "B" ? navEur * 0.006 : 0;
   const estimatedMonthlyManagementFeeEur =
-    feeSegment === "B" ? estimatedAnnualManagementFeeEur / 12 : 20;
+    feeSegment === "B" ? estimatedAnnualManagementFeeEur / 12 : DECIDE_PREMIUM_MONTHLY_FEE_EUR;
 
   /** 15% sobre excesso de CAGR anual vs benchmark, com teto para não alarmar o cliente. */
   const cagrExcessFrac = Math.max(

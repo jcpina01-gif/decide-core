@@ -7,6 +7,7 @@ import { onThousandsFieldRowPointerDownCapture } from "../lib/thousandsFieldRowF
 import { DECIDE_APP_FONT_FAMILY } from "../lib/decideClientTheme";
 import { buildSimulatorSeries } from "../lib/decideSimulator";
 import { computeKpisFromSeries } from "../lib/computeKpisFromSeries";
+import { DECIDE_PREMIUM_MONTHLY_FEE_EUR } from "../lib/decidePremiumFeeEur";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -164,7 +165,7 @@ function applyFeesToEquity(
   }
 
   if (segment === "Premium" && lastTradingDayOfMonthInSeries(dates, 0)) {
-    const fee = 20;
+    const fee = DECIDE_PREMIUM_MONTHLY_FEE_EUR;
     net = Math.max(0, net - fee);
     mgmtFeeCum += fee;
   }
@@ -217,7 +218,7 @@ function applyFeesToEquity(
     }
 
     if (segment === "Premium" && lastTradingDayOfMonthInSeries(dates, i)) {
-      const fee = 20;
+      const fee = DECIDE_PREMIUM_MONTHLY_FEE_EUR;
       net = Math.max(0, net - fee);
       mgmtFeeCum += fee;
     }
@@ -834,7 +835,7 @@ export default function FeesClientPage() {
             </p>
             <p style={{ margin: 0 }}>
               <strong style={{ color: "#fafafa" }}>Comissão de gestão</strong> — montante fixo de{" "}
-              <strong style={{ color: "#fafafa" }}>20 €</strong> por mês, cobrado no{" "}
+              <strong style={{ color: "#fafafa" }}>{DECIDE_PREMIUM_MONTHLY_FEE_EUR} €</strong> por mês, cobrado no{" "}
               <strong style={{ color: "#fafafa" }}>final de cada mês</strong>, independentemente do valor da carteira.
             </p>
           </div>
@@ -1080,7 +1081,9 @@ export default function FeesClientPage() {
               fontSize: 16,
             }}
           >
-            <option value="segment_a_fixed">Premium — 20€/mês (fixo no fim do mês)</option>
+            <option value="segment_a_fixed">
+              Premium — {DECIDE_PREMIUM_MONTHLY_FEE_EUR}€/mês (fixo no fim do mês)
+            </option>
             <option value="segment_b_mgmt_pf">Private — 0,6% NAV médio + 15% performance (HWM relativo)</option>
           </select>
         </div>

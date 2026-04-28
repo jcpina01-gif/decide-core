@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { DECIDE_PREMIUM_MONTHLY_FEE_EUR } from "../lib/decidePremiumFeeEur";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/router";
 import ThousandsNumberInput, { asThousandsNumberChange } from "../components/ThousandsNumberInput";
@@ -296,7 +297,8 @@ export default function FeesBusinessPage() {
         ))}
 
         <div style={{ color: "#a1a1aa", marginTop: 16, fontSize: 14 }}>
-          Segmento A: 20€/mês por cliente. Segmento B: 0,6% management fee + 15% da outperformance anual.
+          Segmento A: {DECIDE_PREMIUM_MONTHLY_FEE_EUR}€/mês por cliente. Segmento B: 0,6% management fee + 15% da
+          outperformance anual.
         </div>
         <div style={{ color: "#a1a1aa", marginTop: 6, fontSize: 14 }}>
           Esta página é apenas de economics e não altera o core do modelo.
