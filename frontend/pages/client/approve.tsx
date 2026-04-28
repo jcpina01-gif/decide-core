@@ -8,8 +8,8 @@ import OnboardingFlowBar, {
   ONBOARDING_STORAGE_KEYS,
 } from "../../components/OnboardingFlowBar";
 import InlineLoadingDots from "../../components/InlineLoadingDots";
-import { isFxHedgeOnboardingApplicable, syncFeeSegmentFromNavEur } from "../../lib/clientSegment";
-import { isHedgeOnboardingDone } from "../../lib/fxHedgePrefs";
+import { syncFeeSegmentFromNavEur } from "../../lib/clientSegment";
+import { isFxHedgeGateOk, syncHedgeOnboardingDoneFromPrefs } from "../../lib/fxHedgePrefs";
 import { getHrefAfterTradePlanApprovalStep } from "../../lib/onboardingProgress";
 import { DECIDE_DASHBOARD, ONBOARDING_SHELL_MAX_WIDTH_PX } from "../../lib/decideClientTheme";
 import { DECIDE_MIN_INVEST_EUR } from "../../lib/decideInvestPrefill";
@@ -389,7 +389,7 @@ export default function ApprovePage({
       const kyc = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.kyc) === "1";
       const approve = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.approve) === "1";
       const ibkrPrep = window.localStorage.getItem(IBKR_PREP_DONE_KEY) === "1";
-      const hedgeOk = !isFxHedgeOnboardingApplicable() || isHedgeOnboardingDone();
+      const hedgeOk = isFxHedgeGateOk();
 
       setMifidDone(mifid);
       setKycDone(kyc);
@@ -578,6 +578,13 @@ export default function ApprovePage({
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
     syncFeeSegmentFromNavEur(navEurForFees);
+    if (syncHedgeOnboardingDoneFromPrefs()) {
+      try {
+        window.dispatchEvent(new Event(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT));
+      } catch {
+        // ignore
+      }
+    }
   }, [navEurForFees]);
 
   const handleApprove = () => {
@@ -594,7 +601,7 @@ export default function ApprovePage({
       alert("Aprovação bloqueada: confirme primeiro o MiFID e o KYC (Persona).");
       return;
     }
-    if (isFxHedgeOnboardingApplicable() && !isHedgeOnboardingDone()) {
+    if (!isFxHedgeGateOk()) {
       // eslint-disable-next-line no-alert
       alert(
         "Aprovação bloqueada: conclua primeiro o passo «Hedge cambial» (0%, 50% ou 100% nos indicadores), antes de «Plano e pagamento».",

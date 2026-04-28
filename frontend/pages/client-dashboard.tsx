@@ -40,10 +40,9 @@ import { ONBOARDING_LOCALSTORAGE_CHANGED_EVENT } from "../components/OnboardingF
 import { useClientKpiEmbed } from "../hooks/useClientKpiEmbed";
 import { FLASK_KPI_EMBED_TABS, normalizeKpiEmbedTabId } from "../lib/kpiEmbedNav";
 import { useSyncedRiskProfileFromOnboarding } from "../hooks/useSyncedRiskProfileFromOnboarding";
-import { isFxHedgeOnboardingApplicable } from "../lib/clientSegment";
 import {
   consumeSkipHedgeGateFromUrl,
-  isHedgeOnboardingDone,
+  isFxHedgeGateOk,
   shouldSkipHedgeGateRedirect,
 } from "../lib/fxHedgePrefs";
 type SeriesPoint = {
@@ -182,7 +181,7 @@ export default function ClientDashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!mounted || !loggedIn || !isFxHedgeOnboardingApplicable() || isHedgeOnboardingDone()) return;
+    if (!mounted || !loggedIn || isFxHedgeGateOk()) return;
     if (shouldSkipHedgeGateRedirect()) return;
     void router.replace("/client/fx-hedge-onboarding");
   }, [mounted, loggedIn, router]);

@@ -3,10 +3,9 @@ export type OnboardingStepId = "auth" | "onboarding" | "mifid" | "kyc" | "approv
 /** Índice 0-based no array de passos do `OnboardingFlowBar`. Sincronizado com cliques e avanços. */
 export const ONBOARDING_FLOW_MAX_IDX_KEY = "decide_onboarding_flow_max_idx_v1";
 
-import { isFxHedgeOnboardingApplicable } from "./clientSegment";
+import { isFxHedgeGateOk } from "./fxHedgePrefs";
 
 const AUTH_OK_KEY = "decide_client_session_ok";
-const HEDGE_DONE_KEY = "decide_onboarding_step5_hedge_done";
 
 function readLsFlag(key: string): boolean {
   try {
@@ -32,9 +31,7 @@ export function inferMaxCompletedIndexFromLocalStorage(): number {
     const kycDone = readLsFlag("decide_onboarding_step3_done");
     if (kycDone) max = Math.max(max, 3);
     /** Ordem no stepper: KYC → hedge (se aplicável) → plano e pagamento / aprovação. */
-    const hedgeApplicable = isFxHedgeOnboardingApplicable();
-    const hedgeDone = window.localStorage.getItem(HEDGE_DONE_KEY) === "1";
-    const hedgeResolved = !hedgeApplicable || hedgeDone;
+    const hedgeResolved = isFxHedgeGateOk();
     if (kycDone && hedgeResolved) max = Math.max(max, 4);
     if (readLsFlag("decide_onboarding_step4_done") && kycDone && hedgeResolved) max = Math.max(max, 5);
     return max;

@@ -30,7 +30,10 @@ from ib_socket_env import ib_socket_host, ib_socket_port
 
 IBKR_HOST = ib_socket_host()
 IBKR_PORT = ib_socket_port()
-IBKR_CLIENT_ID = 95
+# Antes: 95 fixo — desalinhado de `send_orders` (778) e de `cancel_open_orders_paper`, o que impedia
+# inventário/cancelOrder de ver as mesmas ordens do «Zerar posições». Por defeito = envio de ordens.
+_DEFAULT_SEND_ORDERS_CLIENT = int(os.environ.get("TWS_CLIENT_ID_SEND_ORDERS", "778"))
+IBKR_CLIENT_ID = int(os.environ.get("TWS_CLIENT_ID_FLATTEN", str(_DEFAULT_SEND_ORDERS_CLIENT)))
 IBKR_MARKET_DATA_TYPE = 3
 IBKR_POLL_SECONDS = 1
 # Após fechar longs (SELL), breve pausa antes de cobrir shorts (BUY) — alinha com libertação de margem na IBKR.

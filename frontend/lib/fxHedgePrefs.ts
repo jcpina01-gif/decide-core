@@ -1,4 +1,5 @@
 import type { FxHedgePairId } from "./fxHedgePairs";
+import { isFxHedgeOnboardingApplicable } from "./clientSegment";
 
 export type HedgePctOption = 0 | 50 | 100;
 
@@ -44,6 +45,39 @@ export function isHedgeOnboardingDone(): boolean {
   try {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(STEP_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Gate único para barra de onboarding, `approve`, `ibkr-prep`, etc.: quando o hedge é aplicável,
+ * conta como concluído se existir chave step5 **ou** prefs FX válidas (evita bloqueio quando o
+ * segmento fee passa a B ou o LS desalinha dos prefs).
+ */
+export function isFxHedgeGateOk(): boolean {
+  try {
+    if (typeof window === "undefined") return false;
+    if (!isFxHedgeOnboardingApplicable()) return true;
+    if (window.localStorage.getItem(STEP_KEY) === "1") return true;
+    return readFxHedgePrefs() !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Persiste step5=1 quando já existem prefs válidas e o hedge é aplicável — mantém LS coerente.
+ * Devolve true se escreveu (para disparar `ONBOARDING_LOCALSTORAGE_CHANGED_EVENT`).
+ */
+export function syncHedgeOnboardingDoneFromPrefs(): boolean {
+  try {
+    if (typeof window === "undefined") return false;
+    if (!isFxHedgeOnboardingApplicable()) return false;
+    if (window.localStorage.getItem(STEP_KEY) === "1") return false;
+    if (readFxHedgePrefs() == null) return false;
+    setHedgeOnboardingDone(true);
+    return true;
   } catch {
     return false;
   }

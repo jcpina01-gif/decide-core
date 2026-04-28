@@ -139,6 +139,16 @@ const nextConfig = {
    */
   async headers() {
     return [
+      /** HTML do relatório sem cache agressivo — ajuda o browser a apanhar JS novo após deploy. */
+      {
+        source: "/client/report",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "private, no-store, max-age=0, must-revalidate",
+          },
+        ],
+      },
       {
         source: "/embed/:path*",
         headers: [

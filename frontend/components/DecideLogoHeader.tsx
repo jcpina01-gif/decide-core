@@ -35,9 +35,9 @@ export const DECIDE_HEADER_LOGO_BAR_BG = "transparent";
 export const DECIDE_HEADER_LOGO_HEIGHT = "clamp(80px, 13.5vw, 200px)";
 export const DECIDE_HEADER_LOGO_MAX_WIDTH = "min(94vw, 1080px)";
 
-/** Landing: área hero com logo maior (histórico). */
-export const DECIDE_LANDING_LOGO_HEIGHT = "clamp(232px, 47vw, 495px)";
-export const DECIDE_LANDING_LOGO_MAX_WIDTH = "min(99vw, 1600px)";
+/** Landing: hero sóbrio — escala moderada (evita «poster» promocional). */
+export const DECIDE_LANDING_LOGO_HEIGHT = "clamp(132px, 22vw, 220px)";
+export const DECIDE_LANDING_LOGO_MAX_WIDTH = "min(92vw, 640px)";
 
 /**
  * Fallback para `paddingTop` antes do `ResizeObserver`.

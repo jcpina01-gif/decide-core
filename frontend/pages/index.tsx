@@ -14,7 +14,7 @@ const LANDING_SIM_YEARS_DEFAULT = 20;
 
 /** Largura útil da landing (desktop); simulador usa ~100% disto. */
 const LANDING_MAIN_MAX_WIDTH = 1400;
-const LANDING_HEADLINE_MAX_WIDTH = 800;
+const LANDING_HEADLINE_MAX_WIDTH = 680;
 
 type SeriesPack = {
   dates?: string[];
@@ -684,55 +684,16 @@ export default function DecideLandingPage() {
 .landing-sim-outcome-anim {
   animation: landing-sim-outcome-in 0.48s ease-out forwards, landing-sim-outcome-glow 1s ease-out;
 }
-.landing-hero-cta {
-  display: inline-block;
-  background: linear-gradient(180deg, #fdba74 0%, #f97316 42%, #ea580c 100%);
-  color: #1c1917;
-  font-weight: 900;
-  font-size: clamp(16px, 2.1vw, 18px);
-  padding: 17px 40px;
-  border-radius: 16px;
-  border: 2px solid rgba(255,247,237,0.65);
-  box-shadow:
-    0 0 0 1px rgba(251,146,60,0.55),
-    0 0 0 8px rgba(249,115,22,0.12),
-    0 0 48px rgba(249,115,22,0.55),
-    0 0 80px rgba(251,146,60,0.22),
-    0 18px 44px rgba(234,88,12,0.5);
-  cursor: pointer;
-  font-family: inherit;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-  transition: transform 0.2s ease, box-shadow 0.22s ease, filter 0.2s ease;
-}
-.landing-hero-cta:hover {
-  transform: scale(1.02);
-  filter: brightness(1.08);
-  box-shadow:
-    0 0 0 1px rgba(251,146,60,0.72),
-    0 0 0 14px rgba(249,115,22,0.14),
-    0 0 64px rgba(249,115,22,0.62),
-    0 0 110px rgba(251,146,60,0.3),
-    0 22px 52px rgba(234,88,12,0.58);
-}
-.landing-hero-cta:active {
-  transform: scale(0.98);
-  filter: brightness(0.96);
-  box-shadow:
-    0 0 0 1px rgba(251,146,60,0.5),
-    0 0 32px rgba(249,115,22,0.42),
-    0 12px 36px rgba(234,88,12,0.48);
-}
 .landing-simulator-wrap {
   scroll-margin-top: 24px;
   border-radius: 22px;
 }
 @keyframes landing-sim-wrap-glow {
   0% {
-    filter: drop-shadow(0 0 0 rgba(249,115,22,0)) drop-shadow(0 -6px 36px rgba(249,115,22,0.38));
+    filter: drop-shadow(0 0 0 rgba(45,212,191,0)) drop-shadow(0 -4px 28px rgba(45,212,191,0.12));
   }
-  40% {
-    filter: drop-shadow(0 0 22px rgba(45,212,191,0.18)) drop-shadow(0 -4px 48px rgba(249,115,22,0.28));
+  45% {
+    filter: drop-shadow(0 0 18px rgba(45,212,191,0.22)) drop-shadow(0 -3px 36px rgba(45,212,191,0.14));
   }
   100% {
     filter: drop-shadow(0 0 0 rgba(0,0,0,0));
@@ -741,6 +702,7 @@ export default function DecideLandingPage() {
 .landing-simulator-wrap.landing-sim-highlight {
   animation: landing-sim-wrap-glow 1.65s ease-out;
 }
+/* Estilos .landing-cta — ver frontend/styles/globals.css (evita depender só deste bloco no <Head>) */
 `,
           }}
         />
@@ -826,58 +788,58 @@ export default function DecideLandingPage() {
           style={{
             maxWidth: LANDING_MAIN_MAX_WIDTH,
             margin: "0 auto",
-            padding: "32px clamp(16px, 4vw, 40px) 56px",
+            padding: "22px clamp(16px, 4vw, 36px) 44px",
             width: "100%",
             boxSizing: "border-box",
           }}
         >
-          <section style={{ margin: "0 0 36px", width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
+          <section style={{ margin: "0 0 32px", width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
             <div
               style={{
                 textAlign: "center",
                 maxWidth: LANDING_HEADLINE_MAX_WIDTH,
-                margin: "0 auto 28px",
+                margin: "0 auto 20px",
               }}
             >
             <h1
               style={{
-                fontSize: "clamp(1.5rem, 3.8vw, 2.05rem)",
-                fontWeight: 800,
-                lineHeight: 1.22,
-                margin: "0 0 18px",
-                letterSpacing: "-0.02em",
-                color: "#f8fafc",
+                fontSize: "clamp(1.05rem, 2.35vw, 1.35rem)",
+                fontWeight: 600,
+                lineHeight: 1.38,
+                margin: "0 0 12px",
+                letterSpacing: "-0.015em",
+                color: "#e2e8f0",
               }}
             >
               Invista com decisões baseadas em dados,{" "}
-              <span style={{ color: "#86efac" }}>sempre com a sua aprovação</span>.
+              <span style={{ color: "#6ee7b7" }}>sempre com a sua aprovação</span>.
             </h1>
             <p
               style={{
-                fontSize: "clamp(1.35rem, 3.5vw, 1.85rem)",
-                fontWeight: 900,
-                margin: "0 0 14px",
-                letterSpacing: "-0.02em",
+                fontSize: "clamp(0.95rem, 2.15vw, 1.12rem)",
+                fontWeight: 700,
+                margin: "0 0 12px",
+                letterSpacing: "-0.015em",
                 color: "var(--text-primary)",
               }}
             >
               <span
                 style={{
                   display: "block",
-                  fontSize: "0.42em",
-                  fontWeight: 800,
-                  letterSpacing: "0.1em",
+                  fontSize: "0.38em",
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
                   color: "#71717a",
-                  marginBottom: 10,
+                  marginBottom: 8,
                   textTransform: "uppercase",
                 }}
               >
                 Histórico ilustrativo · Modelo CAP15 vs mercado de referência
               </span>
-              <span style={{ fontSize: "0.42em", fontWeight: 700, color: "#a1a1aa", display: "block", marginBottom: 6 }}>
+              <span style={{ fontSize: "0.38em", fontWeight: 600, color: "#a1a1aa", display: "block", marginBottom: 5 }}>
                 CAGR indicativo (moderado: alvo ≈1× vol do referencial no motor)
               </span>
-              <span style={{ color: "#86efac", fontSize: "0.5em", fontWeight: 700 }}>Modelo CAP15 </span>
+              <span style={{ color: "#6ee7b7", fontSize: "0.48em", fontWeight: 650 }}>Modelo CAP15 </span>
               <span style={{ color: "#4ade80" }}>
                 {kpis?.modelCagr != null && isFinite(kpis.modelCagr)
                   ? `${kpis.modelCagr >= 0 ? "+" : ""}${fmtPctPt(kpis.modelCagr, 1)}%`
@@ -890,27 +852,27 @@ export default function DecideLandingPage() {
               <span style={{ color: "#d4d4d4" }}>
                 {kpis?.benchCagr != null && isFinite(kpis.benchCagr) ? `${fmtPctPt(kpis.benchCagr, 1)}%` : loading ? "…" : "—"}
               </span>
-              <span style={{ fontWeight: 600, fontSize: "0.5em", display: "block", marginTop: 10, color: "#71717a", lineHeight: 1.45 }}>
+              <span style={{ fontWeight: 500, fontSize: "0.44em", display: "block", marginTop: 8, color: "#71717a", lineHeight: 1.45 }}>
                 Exposição a risco ≤100% do NAV (freeze MAX100EXP). Indicativo — não é promessa de resultados futuros.
               </span>
             </p>
             <div
               style={{
-                marginTop: 36,
-                marginBottom: 10,
+                marginTop: 26,
+                marginBottom: 8,
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: 14,
+                gap: 12,
               }}
             >
-              <button type="button" onClick={scrollToLandingSimulator} className="landing-hero-cta">
+              <button type="button" onClick={scrollToLandingSimulator} className="landing-cta">
                 Começar com o meu capital
               </button>
               <p
                 style={{
                   margin: 0,
-                  fontSize: 13,
+                  fontSize: 12,
                   fontWeight: 600,
                   color: "#a1a1aa",
                   letterSpacing: "0.02em",
@@ -953,12 +915,12 @@ export default function DecideLandingPage() {
                   paddingTop: "clamp(28px, 4vw, 48px)",
                   borderRadius: 20,
                   background: `
-                    linear-gradient(180deg, rgba(249,115,22,0.16) 0%, rgba(249,115,22,0.04) 14%, transparent 38%),
+                    linear-gradient(180deg, rgba(45,212,191,0.1) 0%, rgba(45,212,191,0.03) 18%, transparent 40%),
                     linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(15,23,42,0.86) 50%, rgba(30,41,59,0.65) 100%)
                   `,
                   border: "1px solid rgba(45,212,191,0.14)",
                   boxShadow:
-                    "0 -20px 48px -28px rgba(249,115,22,0.22), 0 20px 56px rgba(0,0,0,0.42), 0 0 80px rgba(15,118,110,0.06)",
+                    "0 -12px 40px -24px rgba(45,212,191,0.12), 0 18px 48px rgba(0,0,0,0.38), 0 0 60px rgba(15,118,110,0.05)",
                   overflow: "visible",
                 }}
               >
@@ -1430,10 +1392,10 @@ export default function DecideLandingPage() {
 
             <p
               style={{
-                fontSize: 16,
+                fontSize: 14,
                 color: "#a1a1aa",
-                lineHeight: 1.6,
-                margin: "0 auto 26px",
+                lineHeight: 1.55,
+                margin: "0 auto 22px",
                 maxWidth: 520,
                 padding: "0 12px",
               }}
@@ -1457,22 +1419,11 @@ export default function DecideLandingPage() {
               </p>
               <Link
                 href={registerWithExampleHref}
+                className="landing-cta"
                 style={{
-                  display: "inline-block",
-                  background: "linear-gradient(180deg, #fdba74 0%, #f97316 45%, #ea580c 100%)",
-                  color: "#1c1917",
-                  fontWeight: 900,
-                  fontSize: 17,
-                  padding: "16px 36px",
-                  borderRadius: 16,
-                  textDecoration: "none",
-                  border: "1px solid rgba(255,237,213,0.55)",
-                  boxShadow:
-                    "0 0 0 1px rgba(251,146,60,0.45), 0 0 32px rgba(249,115,22,0.55), 0 18px 48px rgba(234,88,12,0.5)",
                   width: "100%",
                   maxWidth: 420,
                   textAlign: "center",
-                  boxSizing: "border-box",
                   minWidth: 0,
                 }}
               >
@@ -1502,7 +1453,7 @@ export default function DecideLandingPage() {
               border: "1px solid rgba(45,212,191,0.2)",
             }}
           >
-            <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 900, color: "#f1f5f9", textAlign: "center" }}>
+            <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700, color: "#e2e8f0", textAlign: "center" }}>
               Como funciona
             </h2>
             <div
@@ -1536,7 +1487,7 @@ export default function DecideLandingPage() {
                   >
                     {step.n}
                   </div>
-                  <div style={{ fontWeight: 800, fontSize: 15, color: "var(--text-primary)", marginBottom: 6 }}>{step.t}</div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)", marginBottom: 6 }}>{step.t}</div>
                   <div style={{ fontSize: 13, color: "#a1a1aa", lineHeight: 1.5 }}>{step.d}</div>
                 </div>
               ))}
@@ -1565,22 +1516,7 @@ export default function DecideLandingPage() {
               </div>
             </div>
             <div style={{ textAlign: "center", marginTop: 22 }}>
-              <Link
-                href={registerWithExampleHref}
-                style={{
-                  display: "inline-block",
-                  background: "linear-gradient(180deg, #fb923c 0%, #ea580c 100%)",
-                  color: "#1c1917",
-                  fontWeight: 900,
-                  fontSize: 17,
-                  padding: "16px 36px",
-                  borderRadius: 16,
-                  textDecoration: "none",
-                  border: "1px solid rgba(255,255,255,0.35)",
-                  boxShadow: "0 14px 44px rgba(234,88,12,0.38)",
-                  minWidth: 220,
-                }}
-              >
+              <Link href={registerWithExampleHref} className="landing-cta" style={{ minWidth: 200 }}>
                 Começar registo seguro
               </Link>
             </div>
@@ -1635,7 +1571,7 @@ export default function DecideLandingPage() {
               }}
             >
               <KpiCard title="Modelo CAP15" subtitle="≤100% NAV · moderado: alvo ≈1× vol ref.">
-                <div style={{ fontSize: 26, fontWeight: 900, color: "#fff" }}>{fmtPct(kpis?.modelCagr, 1)}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>{fmtPct(kpis?.modelCagr, 1)}</div>
                 <div style={{ fontSize: 12, color: "#a1a1aa", marginTop: 4 }}>Crescimento anualizado (indicativo)</div>
                 <div style={{ fontSize: 14, color: "#d4d4d8", marginTop: 10, lineHeight: 1.55 }}>
                   Oscilação ≈ {fmtPct(kpis?.modelVol, 1)} · Queda máx. ≈ {fmtPct(kpis?.modelMaxDd, 1)}
@@ -1651,7 +1587,7 @@ export default function DecideLandingPage() {
                 </div>
               </KpiCard>
               <KpiCard title="Mercado de referência" subtitle="Mesma linha temporal">
-                <div style={{ fontSize: 26, fontWeight: 900, color: "#d4d4d4" }}>{fmtPct(kpis?.benchCagr, 1)}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#d4d4d4" }}>{fmtPct(kpis?.benchCagr, 1)}</div>
                 <div style={{ fontSize: 12, color: "#a1a1aa", marginTop: 4 }}>Crescimento anualizado (indicativo)</div>
                 <div style={{ fontSize: 14, color: "#d4d4d8", marginTop: 10, lineHeight: 1.55 }}>
                   Oscilação ≈ {fmtPct(kpis?.benchVol, 1)} · Queda máx. ≈ {fmtPct(kpis?.benchMaxDd, 1)}
@@ -1692,11 +1628,13 @@ export default function DecideLandingPage() {
               marginBottom: 40,
             }}
           >
-            <h2 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 900 }}>Evolução do modelo vs mercado</h2>
+            <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700, color: "#e2e8f0" }}>
+              Evolução do modelo vs mercado
+            </h2>
             <p
               style={{
                 margin: "0 0 18px",
-                fontSize: 15,
+                fontSize: 14,
                 color: "#a1a1aa",
                 lineHeight: 1.55,
                 maxWidth: 720,
@@ -1716,16 +1654,16 @@ export default function DecideLandingPage() {
           <section
             style={{
               textAlign: "center",
-              padding: "40px 24px",
-              borderRadius: 20,
-              background: "linear-gradient(145deg, rgba(22,163,74,0.22) 0%, rgba(30,58,138,0.45) 45%, rgba(15,23,42,0.95) 100%)",
-              border: "1px solid rgba(45,212,191,0.4)",
+              padding: "28px 20px 32px",
+              borderRadius: 18,
+              background: "linear-gradient(145deg, rgba(45,109,102,0.18) 0%, rgba(30,58,138,0.35) 48%, rgba(15,23,42,0.96) 100%)",
+              border: "1px solid rgba(45,212,191,0.28)",
             }}
           >
-            <h2 style={{ margin: "0 0 14px", fontSize: "clamp(1.35rem, 3.5vw, 1.75rem)", fontWeight: 900, color: "#fff" }}>
+            <h2 style={{ margin: "0 0 10px", fontSize: "clamp(1.05rem, 2.5vw, 1.28rem)", fontWeight: 700, color: "#f1f5f9" }}>
               Começar é simples
             </h2>
-            <p style={{ margin: "0 auto 26px", maxWidth: 520, fontSize: 16, color: "var(--text-primary)", lineHeight: 1.65 }}>
+            <p style={{ margin: "0 auto 20px", maxWidth: 520, fontSize: 14, color: "#cbd5e1", lineHeight: 1.55 }}>
               Crie a sua conta e comece a receber decisões claras, com total controlo — da verificação à corretora.
             </p>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
@@ -1734,23 +1672,7 @@ export default function DecideLandingPage() {
                 <strong style={{ color: "var(--text-primary)" }}>{DECIDE_MIN_INVEST_EUR.toLocaleString("pt-PT")} €</strong>.
               </p>
               <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap", alignItems: "center" }}>
-                <Link
-                  href={registerWithExampleHref}
-                  style={{
-                    display: "inline-block",
-                    background: "linear-gradient(180deg, #fdba74 0%, #f97316 45%, #ea580c 100%)",
-                    color: "#1c1917",
-                    fontWeight: 900,
-                    fontSize: 17,
-                    padding: "16px 36px",
-                    borderRadius: 16,
-                    textDecoration: "none",
-                    boxShadow:
-                      "0 0 0 1px rgba(251,146,60,0.45), 0 0 32px rgba(249,115,22,0.55), 0 18px 48px rgba(234,88,12,0.5)",
-                    border: "1px solid rgba(255,237,213,0.55)",
-                    minWidth: 220,
-                  }}
-                >
+                <Link href={registerWithExampleHref} className="landing-cta" style={{ minWidth: 200 }}>
                   Começar com este valor
                 </Link>
               </div>

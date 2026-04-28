@@ -11,7 +11,7 @@ import { buildPersonaReferenceIdFromSession } from "../../lib/personaReference";
 import { extractDisplayNameFromPersonaRecord } from "../../lib/personaDisplayName";
 import { isClientLoggedIn } from "../../lib/clientAuth";
 import { isFxHedgeOnboardingApplicable } from "../../lib/clientSegment";
-import { isHedgeOnboardingDone } from "../../lib/fxHedgePrefs";
+import { isFxHedgeGateOk, syncHedgeOnboardingDoneFromPrefs } from "../../lib/fxHedgePrefs";
 import { personaRecordAllowsIbkrPrep } from "../../lib/personaKycGate";
 import { ONBOARDING_STEP_6_LABEL } from "../../lib/onboardingStep6Label";
 
@@ -119,8 +119,7 @@ function ibkrRefreshButtonStyle(loading: boolean): React.CSSProperties {
  * Pós-redirect (Stripe) ou noutro origin, as chaves MiFID/KYC do funil podem faltar
  * ainda o utilizador estando além desses passos. Repara quando o estado o implica:
  * - pagamento Checkout validado nesta origem (chave decide_onboarding_stripe…);
- * - hedge concluído (só segmentos com passo obrigatório; noutros o stepper dá ✓ no 5/6
- *   sem chave no LS, por isso não basta isHedgeOnboardingDone()).
+ * - hedge concluído (segmentos com passo obrigatório — `isFxHedgeGateOk()` inclui prefs quando o LS desalinha).
  * Não exigimos isClientLoggedIn() com stripeOk: a chave Stripe só a app grava após verify.
  */
 function repairKycMifidLsIfFunnelImpliesIt(): void {
@@ -132,7 +131,7 @@ function repairKycMifidLsIfFunnelImpliesIt(): void {
     if (window.localStorage.getItem(mK) === "1" && window.localStorage.getItem(kK) === "1") return;
     const stripeOk = window.localStorage.getItem(STRIPE_ONBOARDING_OK_KEY) === "1";
     const hedgeRequired = isFxHedgeOnboardingApplicable();
-    const inferFromHedge = hedgeRequired && isHedgeOnboardingDone();
+    const inferFromHedge = hedgeRequired && isFxHedgeGateOk();
     // Premium/fee A: o stepper mostra 5/6 com ✓ sem `step5_hedge_done`; quem chegou a pagar passou o funil.
     const inferFromFunnelNoHedgeStep = !hedgeRequired && (stripeOk || isClientLoggedIn());
     if (!inferFromHedge && !inferFromFunnelNoHedgeStep && !stripeOk) return;
@@ -220,6 +219,11 @@ export default function IbkrPrepPage() {
     repairKycMifidLsIfFunnelImpliesIt();
     repairOnboardingStep1IfFunnelImpliesIt();
     try {
+      syncHedgeOnboardingDoneFromPrefs();
+    } catch {
+      // ignore
+    }
+    try {
       setIbkrPrepDone(window.localStorage.getItem(IBKR_PREP_DONE_KEY) === "1");
     } catch {
       setIbkrPrepDone(false);
@@ -230,7 +234,7 @@ export default function IbkrPrepPage() {
       setStripeCheckoutDoneLs(false);
     }
     try {
-      setHedgeGateOk(!isFxHedgeOnboardingApplicable() || isHedgeOnboardingDone());
+      setHedgeGateOk(isFxHedgeGateOk());
     } catch {
       setHedgeGateOk(false);
     }

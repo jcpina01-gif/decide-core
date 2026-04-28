@@ -16,7 +16,7 @@ import ClientFlowDashboardButton from "../../components/ClientFlowDashboardButto
 import { ONBOARDING_STORAGE_KEYS } from "../../components/OnboardingFlowBar";
 import InlineLoadingDots from "../../components/InlineLoadingDots";
 import { isFxHedgeOnboardingApplicable, syncFeeSegmentFromNavEur } from "../../lib/clientSegment";
-import { isHedgeOnboardingDone, readFxHedgePrefs } from "../../lib/fxHedgePrefs";
+import { isFxHedgeGateOk, readFxHedgePrefs } from "../../lib/fxHedgePrefs";
 import {
   clearDecideClientLocalTestState,
   isDecidePlanoDevResetVisibleInBrowser,
@@ -1635,7 +1635,7 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
 
   useEffect(() => {
     try {
-      setShowHedgeOnboardingCta(isFxHedgeOnboardingApplicable() && !isHedgeOnboardingDone());
+      setShowHedgeOnboardingCta(isFxHedgeOnboardingApplicable() && !isFxHedgeGateOk());
     } catch {
       setShowHedgeOnboardingCta(false);
     }

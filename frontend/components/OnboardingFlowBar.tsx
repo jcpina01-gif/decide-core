@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { DECIDE_DASHBOARD, ONBOARDING_SHELL_MAX_WIDTH_PX } from "../lib/decideClientTheme";
-import { isFxHedgeOnboardingApplicable } from "../lib/clientSegment";
+import { isFxHedgeGateOk } from "../lib/fxHedgePrefs";
 import {
   type OnboardingStepId,
   applyOnboardingBackNavigation,
@@ -57,9 +57,7 @@ function readStepDone(stepId: OnboardingStepId): boolean {
   try {
     if (typeof window === "undefined") return false;
     if (stepId === "hedge") {
-      if (!isFxHedgeOnboardingApplicable()) return true;
-      const key = ONBOARDING_STORAGE_KEYS.hedge;
-      return window.localStorage.getItem(key) === "1";
+      return isFxHedgeGateOk();
     }
     const key = ONBOARDING_STORAGE_KEYS[stepId];
     if (!key) return false;

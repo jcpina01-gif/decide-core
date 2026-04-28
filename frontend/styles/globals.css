@@ -83,7 +83,8 @@ header.decide-top-header--app .decide-logo-lockup-scale--header {
 }
 
 header.decide-top-header--landing .decide-logo-lockup-scale--landing {
-  transform: scale(1.5);
+  /* Antes scale(1.5) — dominava demasiado o hero; alinhar ao lockup dimensionado em DecideLogoHeader */
+  transform: scale(1.06);
   transform-origin: center center;
 }
 
@@ -1807,4 +1808,50 @@ header.decide-top-header--app .decide-app-main-nav--header-strip a {
   margin-top: 0 !important;
   padding-top: 0 !important;
   width: 100%;
+}
+
+/* ── Landing `/` — CTAs primários (globals garantem aplicação mesmo com cache / ordem de CSS no Head) ── */
+button.landing-cta,
+a.landing-cta {
+  display: inline-block;
+  background: linear-gradient(180deg, #34796f 0%, #2d6d66 46%, #235850 100%) !important;
+  color: #ecfdf5 !important;
+  font-weight: 700;
+  font-size: clamp(13px, 1.55vw, 15px);
+  padding: 12px 26px;
+  border-radius: 12px;
+  border: 1px solid rgba(153, 246, 212, 0.38);
+  box-shadow:
+    0 0 0 1px rgba(15, 118, 110, 0.35),
+    0 2px 14px rgba(0, 0, 0, 0.38),
+    0 0 28px rgba(45, 212, 191, 0.12);
+  cursor: pointer;
+  font-family: inherit;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  text-decoration: none !important;
+  box-sizing: border-box;
+  transition: transform 0.18s ease, box-shadow 0.2s ease, filter 0.18s ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+button.landing-cta:hover,
+a.landing-cta:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow:
+    0 0 0 1px rgba(153, 246, 212, 0.35),
+    0 4px 20px rgba(0, 0, 0, 0.4),
+    0 0 36px rgba(45, 212, 191, 0.18);
+}
+
+button.landing-cta:active,
+a.landing-cta:active {
+  transform: translateY(0);
+  filter: brightness(0.97);
+  box-shadow:
+    0 0 0 1px rgba(15, 118, 110, 0.45),
+    0 1px 10px rgba(0, 0, 0, 0.35),
+    0 0 18px rgba(45, 212, 191, 0.1);
 }
