@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { isFxHedgeOnboardingApplicable } from "../lib/clientSegment";
 import { readFxHedgePrefs } from "../lib/fxHedgePrefs";
-import { KPI_IFRAME_SRC_REV } from "../lib/kpiFlaskBuildGate";
+import { FEES_CLIENT_EMBED_CACHE_REV, KPI_IFRAME_SRC_REV } from "../lib/kpiFlaskBuildGate";
 import {
   ALLOWED_KPI_EMBED_TABS,
   FLASK_KPI_EMBED_TABS,
@@ -144,8 +144,9 @@ export function useClientKpiEmbed({ profile, loggedIn, iframeRefresh }: UseClien
     const tab = normalizeKpiEmbedTabId(kpiEmbedTab);
     const feesT = iframeRefresh ? `&t=${iframeRefresh}` : "";
     const feesProfile = `&profile=${encodeURIComponent(profile)}`;
-    if (tab === "fees_intro") return `/fees-client?embed=1&fees_tab=intro${feesProfile}${feesT}`;
-    if (tab === "fees") return `/fees-client?embed=1&fees_tab=sim${feesProfile}${feesT}`;
+    const feesEmbedRev = `&fees_embed_rev=${encodeURIComponent(FEES_CLIENT_EMBED_CACHE_REV)}`;
+    if (tab === "fees_intro") return `/fees-client?embed=1&fees_tab=intro${feesProfile}${feesT}${feesEmbedRev}`;
+    if (tab === "fees") return `/fees-client?embed=1&fees_tab=sim${feesProfile}${feesT}${feesEmbedRev}`;
     if (tab === "help_contacts") return "";
     if (tab === "help_assistant") return "";
     if (tab === "fiscal") return "";

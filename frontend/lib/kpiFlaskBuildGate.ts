@@ -12,6 +12,13 @@ export const KPI_FLASK_BUILD_MIN_TOKEN = "margin-csv-and-kpi-loader";
 export const KPI_IFRAME_SRC_REV = "v25";
 
 /**
+ * Query `fees_embed_rev` em `/fees-client?embed=1` (dashboard → Custos → Simulador).
+ * Bump quando mudar copy/simulador Premium para evitar iframe preso a HTML antigo — sem isto o `src`
+ * pode ficar estável (`iframeRefresh` só acrescenta `t=` após «Atualizar recomendação»).
+ */
+export const FEES_CLIENT_EMBED_CACHE_REV = "premium-25";
+
+/**
  * `NEXT_PUBLIC_KPI_FLASK_MIN_BUILD` — substring obrigatória no campo `build` de `/api/health`.
  * Em desenvolvimento, se não estiver definida, usa-se `KPI_FLASK_BUILD_MIN_TOKEN` para evitar iframe preso a Flask antigo.
  */

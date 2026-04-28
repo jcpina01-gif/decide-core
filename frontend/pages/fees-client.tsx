@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import type { GetServerSideProps } from "next";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/router";
 import ClientFlowDashboardButton from "../components/ClientFlowDashboardButton";
@@ -1279,3 +1280,9 @@ export default function FeesClientPage() {
     </div>
   );
 }
+
+/** Evita HTML estático/CDN a servir copy antiga; valor Premium vem do bundle + SSR fresco. */
+export const getServerSideProps: GetServerSideProps = async ({ res }) => {
+  res.setHeader("Cache-Control", "private, no-store, must-revalidate");
+  return { props: {} };
+};
