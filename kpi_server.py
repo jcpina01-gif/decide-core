@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import traceback
 import unicodedata
 from urllib.parse import urlparse
 
@@ -9198,6 +9199,22 @@ def equity_series_bundle_for_simulator(
 
 
 app = Flask(__name__)
+
+
+@app.errorhandler(Exception)
+def _kpi_log_unhandled_exception(exc: BaseException):
+    """Em produção (Gunicorn/Render) o traceback por vezes não aparece nos Registos — força stderr."""
+    from werkzeug.exceptions import HTTPException
+
+    if isinstance(exc, HTTPException):
+        return exc
+    traceback.print_exc(file=sys.stderr)
+    sys.stderr.flush()
+    return Response(
+        "Internal Server Error\n",
+        status=500,
+        mimetype="text/plain; charset=utf-8",
+    )
 
 
 def compute_hedged_cap15_kpis_embed(profile_key: str, pair: str, hedge_pct: float) -> dict:
