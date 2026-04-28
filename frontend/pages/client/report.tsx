@@ -552,6 +552,12 @@ function execStatusDisplay(f: {
   return f.status ? String(f.status) : "—";
 }
 
+/** Alinha com o rótulo da grelha — para mensagens pós-cancel quando `fillLooksAwaitingBroker` falha. */
+function execFillLooksOpenInGrid(f: { status?: string; requested_qty?: number; filled?: number }): boolean {
+  const lab = execStatusDisplay(f);
+  return lab === "Em curso" || lab === "Parcial" || lab.includes("Pendente");
+}
+
 /**
  * Ordem com quantidade em falta e elegível para nova submissão.
  * Não duplicar: ordem já na fila (Submitted/PreSubmitted, 0 fill) → não reenviar ao clicar «Completar pendentes».
@@ -882,9 +888,52 @@ async function postSyncPaperExecLinesBrowser(
   return { fills: data.fills, meta: data.meta };
 }
 
-function formatCancelOpenOrdersUserMessage(rows: CancelOpenRow[]): string {
+function formatCancelOpenOrdersUserMessage(
+  rows: CancelOpenRow[],
+  meta?: {
+    inventoryUnavailable?: boolean;
+    globalCancelSentNoRows?: boolean;
+    /** A grelha ainda mostra ordens a aguardar; a resposta veio com 0 linhas (inventário vazio / feed). */
+    localGridHasAwaiting?: boolean;
+    hint?: string;
+    /** Só usado no fluxo do botão laranja: POST devolveu `status: ok` — não inferir «nada na IB». */
+    cancelSucceeded?: boolean;
+  },
+): string {
   if (!rows.length) {
-    return "Nenhuma ordem em curso para cancelar (ou já estavam concluídas / inactivas na lista da IB).";
+    /** Com reqGlobalCancel na resposta, nunca dizer «nada a cancelar» — a lista veio vazia, não a conta. */
+    if (meta?.globalCancelSentNoRows) {
+      const bits: string[] = [];
+      if (meta.hint?.trim()) bits.push(meta.hint.trim());
+      else if (meta.inventoryUnavailable) {
+        bits.push(
+          "A corretora não devolveu linhas no inventário da API; foi enviado reqGlobalCancel na mesma (conta paper).",
+        );
+      } else {
+        bits.push(
+          "A resposta listou 0 ordens, mas o servidor indicou cancel global enviado — confirme no IB Gateway em «Ordens».",
+        );
+      }
+      if (meta?.localGridHasAwaiting) {
+        bits.push(
+          "A grelha do DECIDE ainda mostrava linhas «Em curso» / parciais antes do pedido — use «Sincronizar com IBKR» (ou espere a sincronização automática após o clique).",
+        );
+      }
+      return bits.join(" ");
+    }
+    if (meta?.localGridHasAwaiting) {
+      return [
+        "A tabela ainda mostra ordens a aguardar corretora, mas a resposta do cancelamento listou 0 ordens: a ligação Python/IB pôde não receber o mesmo feed que a janela «Ordens» do IB Gateway.",
+        "Verifique a ligação (host:porta no .env, ex. 4002 para Gateway) e o uvicorn; tente de novo e carregue «Sincronizar com IBKR» na grelha de execução.",
+      ].join(" ");
+    }
+    /** Último recurso: nunca afirmar «nada na IB» só porque `cancellations` veio []. */
+    return [
+      meta?.cancelSucceeded
+        ? "O servidor aceitou o pedido, mas a resposta listou 0 linhas de inventário (feed Python–IB vazio ou resposta mínima)."
+        : "A resposta listou 0 linhas de inventário para cancelar.",
+      "Isto não prova que não há ordens na conta ou na grelha — confirme no IB Gateway, use «Sincronizar com IBKR» e confirme BACKEND_URL, uvicorn e porta 4002 (Gateway) vs 7497 (TWS paper).",
+    ].join(" ");
   }
   const n = rows.length;
   const legacyOk = rows.filter((r) => r.result === "cancel_requested").length;
@@ -1246,10 +1295,28 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => 
 type PlanoDevResetTestPanelProps = {
   onExecuteIbkr?: () => void;
   onExecuteEurCash?: () => void;
-  executeBusy?: boolean;
+  /** Só `resolveIbkrSendTicker` → MM EUR (ex. XEON): uma ordem SELL agregada. */
+  onSellXeonOnly?: () => void;
+  /** Bloqueia ambos enquanto há envio em curso (evita duplo POST). */
+  executeLocked?: boolean;
+  /** Qual destes dois lotes está a enviar — só esse mostra «A enviar ordens…». */
+  executeBusyFirst?: boolean;
+  executeBusySecond?: boolean;
+  executeBusyThird?: boolean;
+  /** Sem linha SELL UCITS EUR no plano — desactiva o atalho só-venda. */
+  sellXeonDisabled?: boolean;
 };
 
-function PlanoDevResetTestPanel({ onExecuteIbkr, onExecuteEurCash, executeBusy }: PlanoDevResetTestPanelProps) {
+function PlanoDevResetTestPanel({
+  onExecuteIbkr,
+  onExecuteEurCash,
+  onSellXeonOnly,
+  executeLocked,
+  executeBusyFirst,
+  executeBusySecond,
+  executeBusyThird,
+  sellXeonDisabled,
+}: PlanoDevResetTestPanelProps) {
   return (
     <div
       style={{
@@ -1279,8 +1346,19 @@ function PlanoDevResetTestPanel({ onExecuteIbkr, onExecuteEurCash, executeBusy }
         — o botão desta caixa deve dizer <strong>«Atalho: 1.º lote (…)»</strong>; <strong>«Executar ordens na IBKR»</strong> é
         bundle <strong>antigo</strong> (cache) ou outro projecto. O plano fica em{" "}
         <code style={{ color: "#d6d3d1" }}>/client/report</code>, não confundas com a barra do canto ao passar o rato
-        noutro link. Abaixo devem aparecer <strong>dois</strong> botão empilhados (1.º lote, depois 2.º caixa EUR) — se só
-        houver <strong>um</strong> botão, faça <strong>hard refresh</strong> (Ctrl+Shift+R) e confirme a linha «Deploy JS».
+        noutro link. Abaixo devem aparecer{" "}
+        {typeof onSellXeonOnly === "function" ? (
+          <>
+            <strong>três</strong> botões empilhados (1.º lote, 2.º caixa EUR, 3.º só vender {eurMmIbTicker()}) — se faltar
+            o 3.º,
+          </>
+        ) : (
+          <>
+            <strong>dois</strong> botões empilhados (1.º lote, depois 2.º caixa EUR) — se só houver <strong>um</strong>,
+          </>
+        )}{" "}
+        faça <strong>hard refresh</strong> (Ctrl+Shift+R) e confirme a linha «Deploy JS» (ou faça <strong>deploy</strong> do
+        commit mais recente).
       </div>
       {onExecuteIbkr ? (
         <div style={{ marginTop: 12, maxWidth: 360, width: "100%" }}>
@@ -1295,10 +1373,10 @@ function PlanoDevResetTestPanel({ onExecuteIbkr, onExecuteEurCash, executeBusy }
           >
             <button
               type="button"
-              disabled={executeBusy}
+              disabled={executeLocked}
               onClick={onExecuteIbkr}
               style={{
-                cursor: executeBusy ? "wait" : "pointer",
+                cursor: executeBusyFirst ? "wait" : executeLocked ? "not-allowed" : "pointer",
                 borderRadius: 10,
                 border: "2px solid #fde68a",
                 background: "linear-gradient(180deg, #0d9488 0%, #0f766e 100%)",
@@ -1308,15 +1386,15 @@ function PlanoDevResetTestPanel({ onExecuteIbkr, onExecuteEurCash, executeBusy }
                 padding: "10px 14px",
                 fontFamily: "inherit",
                 width: "100%",
-                opacity: executeBusy ? 0.75 : 1,
+                opacity: executeBusyFirst ? 0.75 : executeLocked && !executeBusyFirst ? 0.65 : 1,
                 boxShadow: "0 2px 12px rgba(0,0,0,0.35)",
               }}
             >
-              {executeBusy ? "A enviar ordens…" : "Atalho: 1.º lote (acções / TBILL USD / FX)"}
+              {executeBusyFirst ? "A enviar ordens…" : "Atalho: 1.º lote (acções / TBILL USD / FX)"}
             </button>
             <button
               type="button"
-              disabled={executeBusy}
+              disabled={executeLocked}
               onClick={() => {
                 if (typeof onExecuteEurCash === "function") {
                   onExecuteEurCash();
@@ -1327,7 +1405,7 @@ function PlanoDevResetTestPanel({ onExecuteIbkr, onExecuteEurCash, executeBusy }
                 }
               }}
               style={{
-                cursor: executeBusy ? "wait" : "pointer",
+                cursor: executeBusySecond ? "wait" : executeLocked ? "not-allowed" : "pointer",
                 borderRadius: 10,
                 border: "2px solid rgba(167, 243, 208, 0.65)",
                 background: "linear-gradient(180deg, rgba(6, 78, 59, 0.95) 0%, rgba(6, 95, 70, 0.98) 100%)",
@@ -1337,12 +1415,42 @@ function PlanoDevResetTestPanel({ onExecuteIbkr, onExecuteEurCash, executeBusy }
                 padding: "10px 14px",
                 fontFamily: "inherit",
                 width: "100%",
-                opacity: executeBusy ? 0.75 : 1,
+                opacity: executeBusySecond ? 0.75 : executeLocked && !executeBusySecond ? 0.65 : 1,
                 boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
               }}
             >
-              {executeBusy ? "A enviar ordens…" : `Atalho: 2.º lote (caixa EUR, ${eurMmIbTicker()})`}
+              {executeBusySecond ? "A enviar ordens…" : `Atalho: 2.º lote (caixa EUR, ${eurMmIbTicker()})`}
             </button>
+            {typeof onSellXeonOnly === "function" ? (
+              <button
+                type="button"
+                disabled={executeLocked || Boolean(sellXeonDisabled)}
+                onClick={onSellXeonOnly}
+                title={
+                  sellXeonDisabled
+                    ? "Não há linha de VENDA para o ticker MM EUR do plano."
+                    : `Enviar só uma ordem de venda em ${eurMmIbTicker()} (quantidade agregada das linhas SELL).`
+                }
+                style={{
+                  cursor: executeBusyThird ? "wait" : executeLocked || sellXeonDisabled ? "not-allowed" : "pointer",
+                  borderRadius: 10,
+                  border: "2px solid rgba(251, 113, 133, 0.55)",
+                  background: "linear-gradient(180deg, rgba(136, 19, 55, 0.92) 0%, rgba(76, 5, 25, 0.98) 100%)",
+                  color: "#ffe4e6",
+                  fontWeight: 800,
+                  fontSize: 13,
+                  padding: "10px 14px",
+                  fontFamily: "inherit",
+                  width: "100%",
+                  opacity: executeBusyThird ? 0.75 : executeLocked && !executeBusyThird ? 0.65 : sellXeonDisabled ? 0.45 : 1,
+                  boxShadow: "0 2px 12px rgba(0,0,0,0.35)",
+                }}
+              >
+                {executeBusyThird
+                  ? "A enviar ordens…"
+                  : `Atalho: só VENDER ${eurMmIbTicker()} (1 ordem)`}
+              </button>
+            ) : null}
           </div>
           <div
             style={{
@@ -1355,8 +1463,14 @@ function PlanoDevResetTestPanel({ onExecuteIbkr, onExecuteEurCash, executeBusy }
           >
             {typeof onExecuteEurCash === "function" ? (
               <>
-                <strong>2 atalhos</strong> = mesmo que o separador <strong>Execução</strong> (1.º: acções/T-Bill/FX; 2.º:
-                UCITS {eurMmIbTicker()}). Paper: IB Gateway/TWS + backend.
+                <strong>{typeof onSellXeonOnly === "function" ? "3 atalhos" : "2 atalhos"}</strong> = mesmo que o
+                separador <strong>Execução</strong> (1.º: acções/T-Bill/FX; 2.º: UCITS {eurMmIbTicker()}
+                {typeof onSellXeonOnly === "function" ? (
+                  <>
+                    ; 3.º: <strong>só vendas</strong> {eurMmIbTicker()}
+                  </>
+                ) : null}
+                ). Paper: IB Gateway/TWS + backend.
               </>
             ) : (
               <>
@@ -1475,6 +1589,10 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
   const [fxHedgePrefsClient, setFxHedgePrefsClient] = useState<ReturnType<typeof readFxHedgePrefs> | null>(null);
   const [monthlyPdfBusy, setMonthlyPdfBusy] = useState(false);
   const [planoDevResetUi, setPlanoDevResetUi] = useState(false);
+  /** Qual atalho da caixa amarela disparou o envio — para não marcar os 3 botões «a enviar» ao mesmo tempo. */
+  const [planoDevShortcut, setPlanoDevShortcut] = useState<
+    null | "batch1" | "batch2" | "xeon_sell"
+  >(null);
 
   type PlanPageTab = "resumo" | "alteracoes" | "execucao" | "documentos";
   const [planTab, setPlanTab] = useState<PlanPageTab>("resumo");
@@ -1492,6 +1610,12 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
   useEffect(() => {
     if (hedgePrefsImplyCoordinatedFx()) setCoordinateFxWithEquity(true);
   }, []);
+
+  useEffect(() => {
+    if (postApprovalStage !== "executing") {
+      setPlanoDevShortcut(null);
+    }
+  }, [postApprovalStage]);
 
   useEffect(() => {
     try {
@@ -2085,6 +2209,18 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
       "Conta IBKR paper (teste): cancelar TODAS as ordens ainda não concluídas (submetidas / em fila / parciais) que a IB mostrar como abertas. Não fecha posições já executadas — use «Zerar posições» para isso.\n\nContinuar?"
     );
     if (!ok) return;
+    /** Preferir `execFills` (estado commitado); o ref só como fallback num frame entre setState e layout. */
+    const fillsAtClickSource = execFills.length > 0 ? execFills : execFillsRef.current;
+    const fillsAtClick = [...fillsAtClickSource];
+    const localGridHasAwaiting =
+      fillsAtClick.some((f) => fillLooksAwaitingBroker(f)) ||
+      fillsAtClick.some((f) => execFillLooksOpenInGrid(f)) ||
+      fillsAtClick.some(
+        (f) =>
+          remainingOrderQty(f) > 0 &&
+          !ibkrStatusIsTerminalCancelled(f.status ?? "") &&
+          !String(f.status || "").toLowerCase().includes("inactive"),
+      );
     setCancelOpenBusy(true);
     setCancelOpenMessage(null);
     let cancelActivityRecorded = false;
@@ -2097,7 +2233,19 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
         cache: "no-store",
       });
       const raw = await res.text();
-      let data: { status?: string; error?: string; cancellations?: unknown[] };
+      let data: {
+        status?: string;
+        error?: string;
+        cancellations?: unknown[];
+        global_cancel_sent?: boolean;
+        inventory_unavailable?: boolean;
+        hint?: string;
+        ib_api_target?: string;
+        ib_port_hint?: string;
+        per_order_cancel_attempts?: number;
+        backend_cancel_build?: string;
+        global_cancel_client_ids?: number[];
+      };
       try {
         data = JSON.parse(raw) as typeof data;
       } catch {
@@ -2113,16 +2261,61 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
       const rows = (Array.isArray(data.cancellations) ? data.cancellations : []) as CancelOpenRow[];
       recordCancelOpenOrdersPaperResponse(rows);
       cancelActivityRecorded = true;
-      setCancelOpenMessage(formatCancelOpenOrdersUserMessage(rows));
+      {
+        const globalCancelSentNoRows =
+          data.global_cancel_sent === true ||
+          data.inventory_unavailable === true ||
+          (typeof data.hint === "string" && data.hint.trim().length > 0) ||
+          (typeof data.backend_cancel_build === "string" && data.backend_cancel_build.trim().length > 0);
+        const base = formatCancelOpenOrdersUserMessage(rows, {
+          localGridHasAwaiting,
+          inventoryUnavailable: data.inventory_unavailable === true,
+          globalCancelSentNoRows,
+          hint: typeof data.hint === "string" ? data.hint : undefined,
+          cancelSucceeded: true,
+        });
+        const nPer =
+          typeof data.per_order_cancel_attempts === "number" && data.per_order_cancel_attempts > 0
+            ? ` Tentativas cancel individual: ${data.per_order_cancel_attempts}.`
+            : "";
+        const sock =
+          typeof data.ib_api_target === "string" && data.ib_api_target
+            ? ` Ligação API do backend: ${data.ib_api_target} — ajuste TWS_PORT/IB_GATEWAY_PORT no .env (TWS paper clássica: 7497, Gateway: 4002) para coincidir com a app onde vê as ordens, reinicie o uvicorn.`
+            : "";
+        const build =
+          typeof data.backend_cancel_build === "string" && data.backend_cancel_build
+            ? ` Build cancel backend: ${data.backend_cancel_build}.`
+            : "";
+        const mc =
+          Array.isArray(data.global_cancel_client_ids) && data.global_cancel_client_ids.length > 0
+            ? ` reqGlobalCancel também em clientIds: ${data.global_cancel_client_ids.join(", ")}.`
+            : "";
+        /** Prefixo fixo: se não aparecer após clicar no laranja, o browser está a servir JS antigo em cache. */
+        setCancelOpenMessage(
+          (`[Cancel DECIDE · UI 2026-04] ` + base + nPer + sock + build + mc).trim(),
+        );
+      }
       let mergedFills: ReportExecFillRow[] = [];
       setExecFills((prev) => {
         mergedFills = applyPaperCancelRowsToExecFills(prev, rows);
         return mergedFills;
       });
       setExecSummary(mergedFills.length ? buildExecSummaryFromFills(mergedFills) : null);
+      /** Pós-merge remoto, o inventário de cancel ainda pode não bater sinal-a-sinal com a grelha
+       *  (p.ex. flatten): alinhar de seguida com a IB, como o botão «Sincronizar com IBKR». */
+      if (mergedFills.length > 0) {
+        try {
+          const { fills: synced } = await postSyncPaperExecLinesBrowser(mergedFills);
+          setExecFills(synced);
+          setExecSummary(buildExecSummaryFromFills(synced));
+          recordExecutionSnapshotFromSyncedFills(synced);
+        } catch {
+          /* Grelha fica só com o merge; o utilizador pode carregar em «Sincronizar» */
+        }
+      }
       setExecutionMessage((prev) =>
         mergedFills.length
-          ? [prev, "Tabela de execução sincronizada com o cancelamento na corretora."]
+          ? [prev, "Cancelamento: merge local; actualização a partir da IB (quando a ligação responde)."]
               .filter(Boolean)
               .join(" ")
           : prev
@@ -2581,6 +2774,16 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
     [proposedTradesEurMm],
   );
 
+  /** Linhas SELL do plano que, depois de resolver proxy → IB, são só o ticker MM EUR (ex. XEON). */
+  const xeonSellOnlyExecutableCount = useMemo(() => {
+    const sym = eurMmIbTicker().toUpperCase();
+    return proposedTradesEurMm.filter((t) => {
+      if (t.side !== "SELL" || t.absQty <= 0) return false;
+      if (String(t.ticker || "").toUpperCase() === "EURUSD") return false;
+      return resolveIbkrSendTicker(String(t.ticker || "")).toUpperCase() === sym;
+    }).length;
+  }, [proposedTradesEurMm]);
+
   const handleDownloadMonthlyRecommendationPdf = useCallback(async () => {
     if (typeof window === "undefined") return;
     setMonthlyPdfBusy(true);
@@ -2761,6 +2964,7 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
     ) {
       return;
     }
+    setPlanoDevShortcut("batch1");
     setPlanTab("execucao");
     void executeOrdersNow(undefined, { batch: "equities_fx" });
   };
@@ -2780,8 +2984,38 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
     ) {
       return;
     }
+    setPlanoDevShortcut("batch2");
     setPlanTab("execucao");
     void executeOrdersNow(undefined, { batch: "eur_mm" });
+  };
+
+  const runSellXeonOnlyFromUi = () => {
+    if (postApprovalStage === "executing") return;
+    const sym = eurMmIbTicker().toUpperCase();
+    const sells = proposedTradesEurMm.filter((t) => {
+      if (t.side !== "SELL" || t.absQty <= 0) return false;
+      if (String(t.ticker || "").toUpperCase() === "EURUSD") return false;
+      return resolveIbkrSendTicker(String(t.ticker || "")).toUpperCase() === sym;
+    });
+    if (sells.length === 0) {
+      window.alert(
+        `Neste plano não há linha de VENDA só para ${sym} (liquidez UCITS EUR) — nada a enviar com este atalho.`,
+      );
+      return;
+    }
+    const qty = sells.reduce((a, t) => a + Math.floor(t.absQty), 0);
+    const tickerForSend = String(sells[0].ticker || "").trim();
+    if (
+      !window.confirm(
+        `Enviar apenas UMA ordem de VENDA de ${qty} unidades (símbolo no plano: ${tickerForSend}; na IB: ${sym}). Ignora compras e o resto do 2.º lote.\n\nConta paper IBKR.`,
+      )
+    ) {
+      return;
+    }
+    setPlanoDevShortcut("xeon_sell");
+    setPlanTab("execucao");
+    lastExecuteBatchRef.current = "eur_mm";
+    void executeOrdersNow([{ ticker: tickerForSend, side: "SELL", qty }], { batch: "eur_mm" });
   };
 
   return (
@@ -3004,7 +3238,12 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
                 <PlanoDevResetTestPanel
                   onExecuteIbkr={runExecuteOrdersFromUi}
                   onExecuteEurCash={runExecuteEurMmFromUi}
-                  executeBusy={postApprovalStage === "executing"}
+                  onSellXeonOnly={runSellXeonOnlyFromUi}
+                  executeLocked={postApprovalStage === "executing"}
+                  executeBusyFirst={postApprovalStage === "executing" && planoDevShortcut === "batch1"}
+                  executeBusySecond={postApprovalStage === "executing" && planoDevShortcut === "batch2"}
+                  executeBusyThird={postApprovalStage === "executing" && planoDevShortcut === "xeon_sell"}
+                  sellXeonDisabled={xeonSellOnlyExecutableCount < 1}
                 />
               ) : null}
             </div>
@@ -3838,6 +4077,13 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
                       )}
                     </button>
                   </div>
+                  <p style={{ margin: "10px 0 0 0", fontSize: 11, color: "#a8a29e", lineHeight: 1.45, maxWidth: 720 }}>
+                    O backend liga a IB a um <strong style={{ color: "#d6d3d1" }}>host:porta</strong> lido de{" "}
+                    <code style={{ color: "#e5e5e5" }}>TWS_PORT</code> / <code style={{ color: "#e5e5e5" }}>IB_GATEWAY_PORT</code>{" "}
+                    (TWS paper clássica: 7497; IB Gateway: 4002). Se a cancelação não afecta as ordens mostradas na
+                    TWS, o porto provavelmente não bate: edite o <code style={{ color: "#e5e5e5" }}>backend/.env</code>, reinicie
+                    o uvicorn.
+                  </p>
                   {flattenMessage ? (
                     <p style={{ margin: "10px 0 0 0", fontSize: 12, color: "#fecaca", lineHeight: 1.45 }}>
                       {flattenMessage}
@@ -5002,10 +5248,10 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
                         </table>
                       </div>
                       <p style={{ margin: 0, padding: "8px 14px 12px", color: "#71717a", fontSize: 11, lineHeight: 1.45 }}>
-                        Preços: mercado EUA em USD; UCITS / ETF em EUR quando aplicável. Esta lista reflecte o último envio a
-                        partir do DECIDE; <strong style={{ color: "#a1a1aa" }}>«Cancelar ordens não executadas (paper)»</strong>{" "}
-                        actualiza estados aqui com a resposta da IB. Cancelamentos ou conclusões feitos{" "}
-                        <strong>só</strong> na TWS não actualizam a tabela — use «Limpar tabela» abaixo se quiser repor a vista.
+                        Preços: mercado EUA em USD; UCITS / ETF em EUR quando aplicável. Após{" "}
+                        <strong style={{ color: "#a1a1aa" }}>«Cancelar ordens não executadas (paper)»</strong>, a grelha tenta
+                        alinhar de seguida com a IB (como «Sincronizar com IBKR»). Cancelamentos feitos{" "}
+                        <strong>só</strong> na TWS/IB — se a tabela não reflectir, carregue em «Sincronizar».
                       </p>
                       <p style={{ margin: 0, padding: "0 14px 12px", color: "#71717a", fontSize: 11, lineHeight: 1.45 }}>
                         <strong style={{ color: "#a1a1aa" }}>TWS — «Transmitir» vs «Cancelar»:</strong>{" "}
