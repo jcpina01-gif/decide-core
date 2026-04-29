@@ -22,7 +22,7 @@ export const MODEL_ROBUSTNESS_DISCLAIMER =
 
 export const DECIDE_CAGR_INCLUDES_MARKET_COSTS_PT =
 
-  "A rentabilidade histórica apresentada já inclui custos de mercado estimados (comissões, impacto de execução e conversão cambial), mas não impostos nem comissões do serviço DECIDE.";
+  "Rentabilidade líquida de custos estimados de transação e slippage. Não inclui impostos nem comissões da plataforma.";
 
 
 

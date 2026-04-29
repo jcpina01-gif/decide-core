@@ -222,11 +222,14 @@ function withIframeRetryParam(raw: string, retryNonce: number): string {
 
 function KpiEmbedIframe({
   tab,
+  portfolioHistoryMode = false,
   src,
   iframeRef,
   onReady,
 }: {
   tab: string;
+  /** Histórico embebido: sem dicas técnicas (portas, npm) durante o carregamento — vista demo. */
+  portfolioHistoryMode?: boolean;
   src: string;
   iframeRef: RefObject<HTMLIFrameElement | null>;
   onReady?: () => void;
@@ -290,9 +293,15 @@ function KpiEmbedIframe({
           </p>
           {slowHint ? (
             <p className="decide-app-kpi-iframe-loading-hint">
-              Se o ecrã ficar vazio, confirme que o <strong>Flask KPI</strong> está a correr em{" "}
-              <code>127.0.0.1:5000</code> (ex. <code>npm run kpi</code> na pasta <code>backend</code>). Em dev o Next
-              encaminha <code>/kpi-flask</code> para esse serviço.
+              {portfolioHistoryMode ? (
+                <>A carregar o histórico de decisões — pode demorar um momento na primeira vez.</>
+              ) : (
+                <>
+                  Se o ecrã ficar vazio, confirme que o <strong>Flask KPI</strong> está a correr em{" "}
+                  <code>127.0.0.1:5000</code> (ex. <code>npm run kpi</code> na pasta <code>backend</code>). Em dev o Next
+                  encaminha <code>/kpi-flask</code> para esse serviço.
+                </>
+              )}
             </p>
           ) : null}
         </div>
@@ -316,9 +325,18 @@ function KpiEmbedIframe({
           }}
         >
           <p style={{ margin: 0, maxWidth: 400, fontSize: 14, lineHeight: 1.55, color: "#fecaca" }}>
-            O simulador não terminou de carregar a tempo. Em dev confirme <code style={{ color: "#e2e8f0" }}>npm run kpi</code>{" "}
-            (Flask em <code style={{ color: "#e2e8f0" }}>127.0.0.1:5000</code>) e que o Next encaminha{" "}
-            <code style={{ color: "#e2e8f0" }}>/kpi-flask</code> para aí.
+            {portfolioHistoryMode ? (
+              <>
+                O histórico não terminou de carregar a tempo. Tente recarregar o painel ou volte mais tarde.
+              </>
+            ) : (
+              <>
+                O simulador não terminou de carregar a tempo. Em dev confirme{" "}
+                <code style={{ color: "#e2e8f0" }}>npm run kpi</code> (Flask em{" "}
+                <code style={{ color: "#e2e8f0" }}>127.0.0.1:5000</code>) e que o Next encaminha{" "}
+                <code style={{ color: "#e2e8f0" }}>/kpi-flask</code> para aí.
+              </>
+            )}
           </p>
           <button
             type="button"
@@ -454,9 +472,13 @@ export default function ClientKpiEmbedWorkspace({
 
   const feesEmbedActive =
     Boolean(kpiIframeSrc) && (tab === "fees_intro" || tab === "fees");
+  const portfolioHistoryEmbed =
+    tab === "portfolio_history" ||
+    (Boolean(kpiIframeSrc) && String(kpiIframeSrc).includes("embed_tab=portfolio_history"));
   const embedPanelClass = [
     "decide-app-embed-panel",
     feesEmbedActive ? "decide-app-embed-panel--fees-embed" : "",
+    portfolioHistoryEmbed ? "decide-app-embed-panel--portfolio-history" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -480,7 +502,10 @@ export default function ClientKpiEmbedWorkspace({
         <DecideRecommendedPlanCta riskProfile={riskProfile} />
       ) : null}
 
-      {!onDashboardRobustnessPanel && FLASK_KPI_EMBED_TABS.has(tab) && kpiIframeSrc ? (
+      {!onDashboardRobustnessPanel &&
+      FLASK_KPI_EMBED_TABS.has(tab) &&
+      kpiIframeSrc &&
+      !portfolioHistoryEmbed ? (
         <KpiFlaskConnectivityBanner bump={kpiConnectivityBump} />
       ) : null}
 
@@ -507,7 +532,13 @@ export default function ClientKpiEmbedWorkspace({
         ) : tab === "help_assistant" ? (
           <DecideHelpAssistantPanel />
         ) : kpiIframeSrc ? (
-          <KpiEmbedIframe tab={tab} src={kpiIframeSrc} iframeRef={kpiIframeRef} onReady={onKpiIframeReady} />
+          <KpiEmbedIframe
+            tab={tab}
+            portfolioHistoryMode={portfolioHistoryEmbed}
+            src={kpiIframeSrc}
+            iframeRef={kpiIframeRef}
+            onReady={onKpiIframeReady}
+          />
         ) : (
           <div className="decide-app-embed-panel-inner decide-app-embed-fallback">
             <div className="decide-app-panel-title">Simulador (KPI) não configurado</div>
@@ -523,7 +554,10 @@ export default function ClientKpiEmbedWorkspace({
       </div>
       )}
 
-      {!onDashboardRobustnessPanel && FLASK_KPI_EMBED_TABS.has(tab) && kpiIframeSrc ? (
+      {!onDashboardRobustnessPanel &&
+      FLASK_KPI_EMBED_TABS.has(tab) &&
+      kpiIframeSrc &&
+      !portfolioHistoryEmbed ? (
         <p className="decide-app-flask-hint">
           <strong>Not Found</strong> no iframe? Confirme <code>NEXT_PUBLIC_KPI_EMBED_BASE</code> como raiz do Flask (sem
           <code>/api</code>) e redeploy.

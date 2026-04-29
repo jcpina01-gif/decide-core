@@ -2899,7 +2899,7 @@ HTML_TEMPLATE = """
                 <div class="label" id="simModelResultLabel">Modelo DECIDE (valor ilustrativo final)</div>
                 <div class="sim-big-value sim-embed-model-total" id="simEndModel">—</div>
                 <div class="sim-embed-bench-inline" id="simMarginHeroEmbed" style="display:none; margin-top:12px;">
-                  <span class="label">Modelo CAP15 com margem (ilustrativo, mesmo período)</span>
+                  <span class="label">{{ cap15_human_margin_label_pt }} · mesmo período</span>
                   <div class="sim-big-value sim-big-value-margin sim-embed-bench-value" id="simEndMargin">—</div>
                 </div>
                 <div class="sim-embed-bench-inline">
@@ -2983,7 +2983,7 @@ HTML_TEMPLATE = """
               <div class="sim-big-value" id="simEndModel">—</div>
             </div>
             <div class="sim-hero-card sim-hero-margin" id="simMarginHeroFull" style="display:none;">
-              <div class="label">Modelo CAP15 com margem (ilustrativo, mesmo período)</div>
+              <div class="label">{{ cap15_human_margin_label_pt }} · mesmo período</div>
               <div class="sim-big-value sim-big-value-margin" id="simEndMargin">—</div>
             </div>
             <div class="sim-hero-card sim-hero-bench">
@@ -3133,7 +3133,7 @@ HTML_TEMPLATE = """
           <span class="hedge-muted"> Os cartões em baixo são <strong style="color:#e2e8f0;">sem</strong> este ajuste FX; aqui vê o efeito ilustrativo no CAGR.</span>
         </div>
         <div class="kpi-embed-hedge-numbers">
-          <span>Modelo CAP15 — <strong style="color:#a7f3d0;">CAGR com hedge ilustrativo</strong>:</span>
+          <span>{{ cap15_human_label_pt }} — <strong style="color:#a7f3d0;">CAGR com hedge ilustrativo</strong>:</span>
           <span class="hedge-cagr-big">{{ (hedge_kpis_embed.cap15_max100.cagr * 100) | round(2) }}%</span>
           <span class="hedge-muted">· sem hedge (valor do cartão): {{ (model_kpis.cagr * 100) | round(2) }}%</span>
         </div>
@@ -3142,13 +3142,16 @@ HTML_TEMPLATE = """
       {% endif %}
       <div class="grid{% if compare_cap100_kpis %} grid-has-plafonada{% endif %}">
         {% if client_embed and cap15_only %}
-        <p class="kpi-embed-diag" style="grid-column:1/-1;font-size:0.68rem;color:#94a3b8;margin:0 0 6px 0;line-height:1.35;">
-          Decide KPI <code style="color:#cbd5e1;">{{ kpi_diag_build }}</code>
-          · repo <code style="color:#cbd5e1;">{{ kpi_diag_repo }}</code>
-          · bench <code style="color:#cbd5e1;">{{ kpi_diag_bench_file }}</code> ({{ kpi_diag_bench_rows }} linhas)
-          · raw <code style="color:#cbd5e1;">{{ kpi_diag_raw_file }}</code> ({{ kpi_diag_raw_rows }} linhas).
-          Se o build não tiver sido actualizado (ex. ainda «v18») ou vires bench ~0%, o Flask na porta 5000 é antigo ou outro repo — termina esse processo e corre <code style="color:#cbd5e1;">npm run kpi</code> na raiz do <code style="color:#cbd5e1;">decide-core</code> onde está este <code style="color:#cbd5e1;">kpi_server.py</code>; opcional <code style="color:#cbd5e1;">DECIDE_KPI_REPO_ROOT</code> se tens vários checkouts.
-        </p>
+        <details class="kpi-embed-tech-details" style="grid-column:1/-1;margin:0 0 10px 0;border-radius:10px;border:1px solid rgba(63,63,70,0.85);background:rgba(24,24,27,0.65);padding:8px 12px;">
+          <summary style="cursor:pointer;font-size:0.78rem;color:#cbd5e1;font-weight:750;list-style:none;">▸ Detalhes técnicos (build, caminhos, ficheiros)</summary>
+          <p class="kpi-embed-diag" style="font-size:0.68rem;color:#94a3b8;margin:10px 0 0;line-height:1.35;">
+            Decide KPI <code style="color:#cbd5e1;">{{ kpi_diag_build }}</code>
+            · repo <code style="color:#cbd5e1;">{{ kpi_diag_repo }}</code>
+            · bench <code style="color:#cbd5e1;">{{ kpi_diag_bench_file }}</code> ({{ kpi_diag_bench_rows }} linhas)
+            · raw <code style="color:#cbd5e1;">{{ kpi_diag_raw_file }}</code> ({{ kpi_diag_raw_rows }} linhas).
+            Se o build não tiver sido actualizado (ex. ainda «v18») ou vires bench ~0%, o Flask na porta 5000 é antigo ou outro repo — termina esse processo e corre <code style="color:#cbd5e1;">npm run kpi</code> na raiz do <code style="color:#cbd5e1;">decide-core</code> onde está este <code style="color:#cbd5e1;">kpi_server.py</code>; opcional <code style="color:#cbd5e1;">DECIDE_KPI_REPO_ROOT</code> se tens vários checkouts.
+          </p>
+        </details>
         {% endif %}
         <div class="card {{ 'col-3' if compare_cap100_kpis else 'col-4' }} kpi-advanced-only kpi-card-raw-model">
           <div class="label">Modelo RAW / motor (não investível)</div>
@@ -3167,13 +3170,13 @@ HTML_TEMPLATE = """
           </details>
         </div>
         <div class="card {{ 'col-3' if compare_cap100_kpis else 'col-4' }} kpi-main-compare">
-          <div class="label">{% if cap15_only %}Modelo CAP15{% if client_embed %}<span class="kpi-card-profile-badge"> · {{ profile_label_pt }}</span>{% endif %}{% else %}Modelo (estratégia apresentada){% endif %}</div>
+          <div class="label">{% if cap15_only %}{{ cap15_human_label_pt }}{% else %}Modelo (estratégia apresentada){% endif %}</div>
           {% if cap15_only %}
           <div class="kpi-cap15-micro-hint" style="font-size:0.74rem;font-weight:750;letter-spacing:0.045em;text-transform:uppercase;margin-top:6px;line-height:1.4;">Versão otimizada para implementação real</div>
           {% endif %}
           <div class="value positive">{{ (model_kpis.cagr * 100) | round(2) }}% <span class="muted" style="font-size:0.75rem;">CAGR</span></div>
           {% if cap15_only %}
-          <div class="kpi-cap15-costs-hint" style="font-size:0.84rem;margin-top:9px;line-height:1.45;font-weight:650;">Após custos de mercado estimados e execução realista (backtest)</div>
+          <div class="kpi-cap15-costs-hint" style="font-size:0.84rem;margin-top:9px;line-height:1.45;font-weight:650;">Rentabilidade líquida de custos estimados de transação e slippage. Não inclui impostos nem comissões da plataforma.</div>
           {% endif %}
           <div class="kpi-cagr-hint kpi-simple-only" style="font-size:0.7rem;margin-top:6px;line-height:1.35;">Ganho médio anual composto no histórico ilustrativo — não garante resultados futuros.</div>
           <div class="kpi-line kpi-advanced-only">Vol {{ (model_kpis.volatility * 100) | round(2) }}%</div>
@@ -3187,9 +3190,9 @@ HTML_TEMPLATE = """
             <summary>O que é isto? · <span style="font-weight:700;color:#99f6e4;">Saber mais</span></summary>
             <div class="kpi-card-details-body">
               {% if current_profile == 'moderado' %}
-              Histórico ilustrativo do <strong>Modelo CAP15</strong>. O freeze smooth usa <strong>momentum multi-horizonte prudente</strong> (<code>v2_prudent</code>) no motor V5. No perfil <strong>moderado</strong>, a <strong>volatilidade</strong> do cartão reflecte a série investível com alvo <strong>≈1×</strong> a vol do benchmark no motor (perna overlay) e o <strong>alinhamento no painel CAP15</strong> à mesma referência. No conservador e no dinâmico, o cartão investível usa ≈0,75× e ≈1,25× da vol do referencial. Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Os números incorporam <strong>custos de mercado estimados</strong> no backtest (comissão, slippage, FX sobre turnover) e pressupostos de <strong>execução realista</strong>; não incluem comissões DECIDE nem impostos. Informação indicativa — não é aconselhamento.
+              Histórico ilustrativo de <strong>{{ cap15_human_label_pt }}</strong> — identificação interna do motor <code>CAP15</code>. O freeze smooth usa <strong>momentum multi-horizonte prudente</strong> (<code>v2_prudent</code>) no motor V5. No perfil <strong>moderado</strong>, a <strong>volatilidade</strong> do cartão reflecte a série investível com alvo <strong>≈1×</strong> a vol do benchmark no motor (perna overlay) e o <strong>alinhamento no painel</strong> à mesma referência. No conservador e no dinâmico, o cartão investível usa ≈0,75× e ≈1,25× da vol do referencial. Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Rentabilidade líquida de custos estimados de transação e slippage no backtest; não inclui impostos nem comissões da plataforma. Informação indicativa — não é aconselhamento.
               {% else %}
-              Histórico ilustrativo do <strong>Modelo CAP15</strong> com <strong>volatilidade alinhada ao perfil</strong> relativamente ao benchmark (≈ <strong>0,75×</strong> no conservador, ≈ <strong>1,25×</strong> no dinâmico), conforme o selector do topo. Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Os números incorporam <strong>custos de mercado estimados</strong> no backtest (comissão, slippage, FX sobre turnover) e pressupostos de <strong>execução realista</strong>; não incluem comissões DECIDE nem impostos. Informação indicativa — não é aconselhamento.
+              Histórico ilustrativo de <strong>{{ cap15_human_label_pt }}</strong> — identificação interna <code>CAP15</code> — com <strong>volatilidade alinhada ao perfil</strong> relativamente ao benchmark (≈ <strong>0,75×</strong> no conservador, ≈ <strong>1,25×</strong> no dinâmico), conforme o selector do topo. Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Rentabilidade líquida de custos estimados de transação e slippage no backtest; não inclui impostos nem comissões da plataforma. Informação indicativa — não é aconselhamento.
               {% endif %}
             </div>
           </details>
@@ -3210,13 +3213,13 @@ HTML_TEMPLATE = """
         </div>
         {% if compare_cap100_kpis %}
         <div class="card col-3 kpi-main-compare">
-          <div class="label">{% if compare_cap100_is_margin %}Modelo CAP15 com margem{% else %}Modelo CAP15{% endif %}{% if client_embed %}<span class="kpi-card-profile-badge"> · {{ profile_label_pt }}</span>{% endif %}</div>
+          <div class="label">{% if compare_cap100_is_margin %}{{ cap15_human_margin_label_pt }}{% else %}{{ cap15_human_label_pt }}{% endif %}</div>
           {% if compare_cap100_is_margin and cap15_only %}
           <div class="kpi-cap15-micro-hint" style="font-size:0.74rem;font-weight:750;letter-spacing:0.045em;text-transform:uppercase;margin-top:6px;line-height:1.4;">Versão otimizada para implementação real</div>
           {% endif %}
           <div class="value positive">{{ (compare_cap100_kpis.cagr * 100) | round(2) }}% <span class="muted" style="font-size:0.75rem;">CAGR</span></div>
           {% if compare_cap100_is_margin and cap15_only %}
-          <div class="kpi-cap15-costs-hint" style="font-size:0.84rem;margin-top:9px;line-height:1.45;font-weight:650;">Após custos de mercado estimados e execução realista (backtest)</div>
+          <div class="kpi-cap15-costs-hint" style="font-size:0.84rem;margin-top:9px;line-height:1.45;font-weight:650;">Rentabilidade líquida de custos estimados de transação e slippage. Não inclui impostos nem comissões da plataforma.</div>
           {% endif %}
           <div class="kpi-cagr-hint kpi-simple-only" style="font-size:0.7rem;margin-top:6px;line-height:1.35;">Ganho médio anual composto no histórico ilustrativo — não garante resultados futuros.</div>
           <div class="kpi-line kpi-advanced-only">Vol {{ (compare_cap100_kpis.volatility * 100) | round(2) }}%</div>
@@ -3233,7 +3236,7 @@ HTML_TEMPLATE = """
               {% else %}
               Exposição a risco limitada a <strong>100%</strong> do NAV (sem alavancagem além do capital).
               {% if current_profile == 'moderado' %}
-              A <strong>volatilidade</strong> é a <strong>realizada no backtest</strong> do Modelo CAP15 investível; no motor, o moderado aplica na perna overlay alvo <strong>≈1×</strong> a vol do benchmark; neste painel CAP15, o cartão reflecte também o <strong>alinhamento a ≈1×</strong> vs benchmark (como nos outros perfis, com multiplicador diferente).
+              A <strong>volatilidade</strong> é a <strong>realizada no backtest</strong> da série investível (<code>CAP15</code>); no motor, o moderado aplica na perna overlay alvo <strong>≈1×</strong> a vol do benchmark; o cartão reflecte também o <strong>alinhamento a ≈1×</strong> vs benchmark (como nos outros perfis, com multiplicador diferente).
               {% elif current_profile == 'conservador' %}
               A volatilidade foi ajustada para ≈ <strong>0,75×</strong> a vol do benchmark (perfil conservador).
               {% else %}
@@ -3260,6 +3263,9 @@ HTML_TEMPLATE = """
         {% endif %}
         <div class="card {{ 'col-3' if compare_cap100_kpis else 'col-4' }} kpi-main-compare{% if client_embed %} kpi-card-benchmark-ref{% endif %}">
           <div class="label">{% if client_embed %}Mercado (benchmark){% else %}Benchmark{% endif %}</div>
+          {% if client_embed %}
+          <div class="muted" style="font-size:0.72rem;margin-top:4px;line-height:1.45;font-weight:600;">Benchmark: 60% EUA / 25% Europa / 10% Japão / 5% Canadá</div>
+          {% endif %}
           <div class="value positive">{{ (bench_kpis.cagr * 100) | round(2) }}% <span class="muted" style="font-size:0.75rem;">CAGR</span></div>
           <div class="kpi-cagr-hint{% if kpi_simple %} kpi-simple-only{% endif %}" style="font-size:0.7rem;margin-top:6px;line-height:1.35;">Referência passiva para comparar o histórico ilustrativo da estratégia.</div>
           <div class="kpi-line kpi-advanced-only">Vol {{ (bench_kpis.volatility * 100) | round(2) }}%</div>
@@ -3300,13 +3306,13 @@ HTML_TEMPLATE = """
       <div class="kpi-simple-summary">
         {% if client_embed and cap15_only %}
         <strong style="color:#e5e7eb;">Resumo:</strong> o cartão <strong style="color:#5eead4;">«Recomendado para o seu perfil»</strong> alinha o horizonte ao seu nível de risco.
-        Na vista avançada, o <strong style="color:#e5e7eb;">modelo teórico</strong> é só referência técnica (não investível). O <strong style="color:#e5e7eb;">Modelo CAP15</strong> é a versão otimizada para implementação real: <strong>custos de mercado estimados e execução realista</strong> no backtest, exposição ≤100% NV; no <strong>moderado</strong> o motor aplica na perna overlay alvo <strong>≈1×</strong> vol do referencial e o painel alinha o cartão a <strong>≈1×</strong> vs benchmark; conservador/dinâmico têm alvo 0,75× / 1,25× no cartão investível.
+        Na vista avançada, o <strong style="color:#e5e7eb;">modelo teórico</strong> é só referência técnica (não investível). O cartão principal mostra <strong style="color:#e5e7eb;">{{ cap15_human_label_pt }}</strong> — versão otimizada para implementação real no backtest, exposição ≤100% NV; no <strong>moderado</strong> o motor aplica na perna overlay alvo <strong>≈1×</strong> vol do referencial e o painel alinha o cartão a <strong>≈1×</strong> vs benchmark; conservador/dinâmico têm alvo 0,75× / 1,25× no cartão investível. Identificador interno do motor: <code style="color:#a1a1aa;font-size:0.82rem;">CAP15</code>.
         Informação indicativa — não é aconselhamento nem promessa de resultados futuros.
         {% elif cap15_only %}
-        Vista avançada: <strong style="color:#e5e7eb;">modelo teórico</strong> (não investível) vs <strong style="color:#e5e7eb;">Modelo CAP15</strong> com custos de mercado estimados e execução realista no backtest. Perfil no topo; no <strong>moderado</strong> a vol do cartão reflecte motor (overlay ≈1×) e <strong>alinhamento no painel</strong> a ≈1× vs benchmark; em conservador/dinâmico, vol <strong>alvo vs benchmark</strong> (0,75× / 1,25×). O benchmark mantém a sua vol de mercado.
+        Vista avançada: <strong style="color:#e5e7eb;">modelo teórico</strong> (não investível) vs <strong style="color:#e5e7eb;">{{ cap15_human_label_pt }}</strong> com custos de mercado estimados e execução realista no backtest. Perfil no topo; no <strong>moderado</strong> a vol do cartão reflecte motor (overlay ≈1×) e <strong>alinhamento no painel</strong> a ≈1× vs benchmark; em conservador/dinâmico, vol <strong>alvo vs benchmark</strong> (0,75× / 1,25×). O benchmark mantém a sua vol de mercado.
         {% else %}
         Comparação em horizonte longo com <strong style="color:#e5e7eb;">volatilidade alinhada ao benchmark</strong> (0,75× / 1× / 1,25× conforme o perfil).
-        <strong style="color:#e5e7eb;">CAGR</strong> e <strong style="color:#e5e7eb;">queda máxima</strong> lado a lado com o benchmark{% if compare_cap100_kpis %} e com o <strong style="color:#e5e7eb;">modelo CAP15</strong>{% endif %}.
+        <strong style="color:#e5e7eb;">CAGR</strong> e <strong style="color:#e5e7eb;">queda máxima</strong> lado a lado com o benchmark{% if compare_cap100_kpis %} e com <strong style="color:#e5e7eb;">{{ cap15_human_label_pt }}</strong>{% endif %}.
         {% endif %}
         Para simular capital ao longo do tempo (com o seu perfil), abra <strong style="color:#5eead4;">Simulador</strong>.
         Para curvas completas e drawdowns, abra <strong style="color:#5eead4;">Gráficos</strong>.
@@ -3405,6 +3411,7 @@ HTML_TEMPLATE = """
         <div class="card chart-card">
           <div class="label">Exposição actual por país + T-Bills</div>
           <div class="muted">A equity é repartida por país e escalada pela exposição actual; T-Bills aparece como fatia separada.</div>
+          <div class="muted" style="margin-top:6px;font-size:0.78rem;line-height:1.45;">Exposição limitada por regras internas de diversificação.</div>
           <div class="pie-holder">
             <canvas id="countryTbillPie"></canvas>
           </div>
@@ -3866,11 +3873,11 @@ HTML_TEMPLATE = """
           <button type="button" class="kpi-chart-fs-exit" aria-label="Diminuir gráfico">Diminuir</button>
           {% if client_embed %}
           <div class="label kpi-chart-title-simple">Retorno por ano (estratégia vs mercado)</div>
-          <div class="label kpi-chart-title-advanced">Retorno por ano civil — modelo CAP15 vs benchmark (%)</div>
+          <div class="label kpi-chart-title-advanced">Retorno por ano civil — {{ cap15_human_label_pt }} vs benchmark (%)</div>
           <div class="muted kpi-chart-title-advanced" style="font-size:0.75rem; margin-bottom:0.35rem;">Primeiro ao último dia útil de cada ano na série; para um ano civil equivale ao retorno total desse ano.</div>
           <div class="muted kpi-chart-title-simple" style="font-size:0.75rem; margin-bottom:0.35rem;">Comparação anual entre a estratégia, a versão com limite de exposição e o mercado de referência.</div>
           {% else %}
-          <div class="label">Retorno por ano civil — modelo CAP15 vs benchmark (%)</div>
+          <div class="label">Retorno por ano civil — {{ cap15_human_label_pt }} vs benchmark (%)</div>
           <div class="muted" style="font-size:0.75rem; margin-bottom:0.35rem;">Primeiro ao último dia útil de cada ano na série; para um ano civil equivale ao retorno total desse ano.</div>
           {% endif %}
           <canvas id="yearlyReturnChart" height="160"></canvas>
@@ -4268,24 +4275,8 @@ HTML_TEMPLATE = """
       </table>
     </div>
 
-    <!-- ABA 4: histórico de decisões da carteira (embed Next) -->
+    <!-- ABA 4: histórico de decisões da carteira (embed Next) — sem faixa técnica em demo; equipa: FRONTEND_URL / npm run dev documentados no README. -->
     <div id="tab-portfolio-history" class="tab-content{% if tab_default == 'portfolio_history' %} active{% endif %}">
-      <div
-        class="muted"
-        style="font-size: 0.78rem; line-height: 1.5; margin-bottom: 10px; padding: 8px 10px; border-radius: 8px; background: rgba(55, 48, 30, 0.55); border: 1px solid rgba(170, 140, 60, 0.45); color: #d4d4d8"
-      >
-        <strong>Base do iframe (Next):</strong>
-        <code style="color: #f4f4f5; white-space: nowrap;">{{ frontend_url }}</code>
-        <span style="color: #a1a1aa"
-          >— O histórico com <strong>4 colunas</strong> (nomes novos, reforços, saídas totais, reduções de peso) está no
-          repositório local. Se ainda vês <em>só duas</em> caixas (texto &laquo;novos vs. m&ecirc;s passado&raquo;), o
-          <code style="color: #e5e7eb">FRONTEND_URL</code> ainda aponta para o site p&uacute;blico. Para testar: arranca
-          <code style="color: #e5e7eb">npm run dev</code> em <code style="color: #e5e7eb">frontend/</code> (porta 4701) e
-          coloca <code style="color: #e5e7eb">FRONTEND_URL=http://127.0.0.1:4701</code> no ambiente do
-          <code style="color: #e5e7eb">kpi_server</code> (ou vazio para o default 127.0.0.1:4701), reinicia o Flask, Ctrl+F5 no painel. Em
-          produ&ccedil;&atilde;o, faz deploy do frontend.
-        </span>
-      </div>
       {# Sem loading="lazy": o separador começa com display:none — em vários browsers o iframe nunca entra no viewport e fica cinza vazio. #}
       <iframe
         src="{{ frontend_url }}/embed/recommendations-history?v=flow-4col-1"
@@ -4776,17 +4767,20 @@ HTML_TEMPLATE = """
         .map((x, idx) => pieColorForCountry(x.country) || pieFallbackColors[idx % pieFallbackColors.length])
         .concat(["#71717a"]);
 
+      const cap15LabelPt = {{ cap15_human_label_pt|tojson }};
+      const cap15MarginLabelPt = {{ cap15_human_margin_label_pt|tojson }};
+
       const modelLineLabel = showMax100Compare
-        ? (compareCap100IsMargin ? 'Modelo CAP15' : 'Overlay legado (interno)')
-        : (cap15OnlyPage ? 'Modelo CAP15' : 'Modelo');
+        ? (compareCap100IsMargin ? cap15MarginLabelPt : 'Overlay legado (interno)')
+        : (cap15OnlyPage ? cap15LabelPt : 'Modelo');
 
       /** Estado inicial do simulador = dados da página (perfil do URL no topo). Pode mudar só no simulador via API. */
       const simModelEquityPage = (showMax100Compare && Array.isArray(max100Equity) && max100Equity.length === modelEquity.length && !compareCap100IsMargin)
         ? max100Equity
         : modelEquity;
       const simModelLineLabelPage = (showMax100Compare && Array.isArray(max100Equity) && max100Equity.length === modelEquity.length && !compareCap100IsMargin)
-        ? 'Modelo CAP15'
-        : (cap15OnlyPage ? 'Modelo CAP15' : 'Modelo DECIDE');
+        ? cap15LabelPt
+        : (cap15OnlyPage ? cap15LabelPt : 'Modelo DECIDE');
 
       let simActiveDates = dates;
       let simActiveBench = benchEquity;
@@ -4799,7 +4793,7 @@ HTML_TEMPLATE = """
         max100Equity.length === dates.length
           ? max100Equity
           : null;
-      const simMarginLabelPage = 'Modelo CAP15 com margem (ilustrativo)';
+      const simMarginLabelPage = cap15MarginLabelPt;
       let simActiveMargin = simMarginEquityPage;
       let simActiveMarginLabel = simActiveMargin ? simMarginLabelPage : '';
 
@@ -4850,7 +4844,7 @@ HTML_TEMPLATE = """
       ];
       if (showMax100Compare && Array.isArray(max100Equity) && max100Equity.length === modelEquity.length) {
         eqDatasets.push({
-          label: compareCap100IsMargin ? 'Modelo CAP15 com margem' : 'Modelo CAP15',
+          label: compareCap100IsMargin ? cap15MarginLabelPt : cap15LabelPt,
           data: max100Equity,
           borderColor: compareCap100IsMargin ? '#fb923c' : '#fbbf24',
           borderDash: compareCap100IsMargin ? [5, 4] : undefined,
@@ -4929,7 +4923,7 @@ HTML_TEMPLATE = """
       ];
       if (showMax100Compare && Array.isArray(max100DD) && max100DD.length === modelDD.length) {
         ddDatasets.push({
-          label: compareCap100IsMargin ? 'Modelo CAP15 com margem' : 'Modelo CAP15',
+          label: compareCap100IsMargin ? cap15MarginLabelPt : cap15LabelPt,
           data: max100DD,
           borderColor: compareCap100IsMargin ? '#fb923c' : '#fbbf24',
           borderDash: compareCap100IsMargin ? [5, 4] : undefined,
@@ -5005,7 +4999,7 @@ HTML_TEMPLATE = """
         max100AlphaVals.length === alphaVals.length
       ) {
         alphaDatasets.push({
-          label: compareCap100IsMargin ? 'Rolling 1Y alpha (com margem)' : 'Rolling 1Y alpha (Modelo CAP15)',
+          label: compareCap100IsMargin ? 'Rolling 1Y alpha (com margem)' : ('Rolling 1Y alpha · ' + cap15LabelPt),
           data: max100AlphaVals,
           borderColor: '#f472b6',
           borderWidth: 1,
@@ -5071,7 +5065,7 @@ HTML_TEMPLATE = """
         if (showMax100Compare && hasVal(yM100)) {
           if (hasVal(yCap)) {
             yearlyBarDatasets.push({
-              label: compareCap100IsMargin ? 'Modelo CAP15 com margem' : 'Overlay legado (interno)',
+              label: compareCap100IsMargin ? cap15MarginLabelPt : 'Overlay legado (interno)',
               data: yCap,
               backgroundColor: 'rgba(74, 222, 128, 0.72)',
               borderColor: '#4ade80',
@@ -5079,7 +5073,7 @@ HTML_TEMPLATE = """
             });
           }
           yearlyBarDatasets.push({
-            label: compareCap100IsMargin ? 'Modelo CAP15 (≤100% NAV)' : 'Modelo CAP15',
+            label: compareCap100IsMargin ? (cap15LabelPt + ' (≤100% NAV)') : cap15LabelPt,
             data: yM100,
             backgroundColor: 'rgba(251, 191, 36, 0.72)',
             borderColor: '#fbbf24',
@@ -5087,7 +5081,7 @@ HTML_TEMPLATE = """
           });
         } else if (hasVal(yCap)) {
           yearlyBarDatasets.push({
-            label: 'Modelo CAP15',
+            label: cap15LabelPt,
             data: yCap,
             backgroundColor: 'rgba(74, 222, 128, 0.72)',
             borderColor: '#4ade80',
@@ -5550,8 +5544,8 @@ HTML_TEMPLATE = """
           equityChartInst.data.datasets[1].label = simple ? 'Mercado (referência)' : 'Benchmark';
           if (equityChartInst.data.datasets[2]) {
             equityChartInst.data.datasets[2].label = simple
-              ? (compareCap100IsMargin ? 'Modelo CAP15 com margem' : 'Com exposição limitada (100%)')
-              : (compareCap100IsMargin ? 'Modelo CAP15 com margem' : 'Modelo CAP15');
+              ? (compareCap100IsMargin ? cap15MarginLabelPt : 'Com exposição limitada (100%)')
+              : (compareCap100IsMargin ? cap15MarginLabelPt : cap15LabelPt);
           }
           equityChartInst.update('none');
         }
@@ -5560,8 +5554,8 @@ HTML_TEMPLATE = """
           ddChartInst.data.datasets[1].label = simple ? 'Mercado (referência)' : 'Benchmark';
           if (ddChartInst.data.datasets[2]) {
             ddChartInst.data.datasets[2].label = simple
-              ? (compareCap100IsMargin ? 'Modelo CAP15 com margem' : 'Com exposição limitada (100%)')
-              : (compareCap100IsMargin ? 'Modelo CAP15 com margem' : 'Modelo CAP15');
+              ? (compareCap100IsMargin ? cap15MarginLabelPt : 'Com exposição limitada (100%)')
+              : (compareCap100IsMargin ? cap15MarginLabelPt : cap15LabelPt);
           }
           ddChartInst.update('none');
         }
@@ -5573,7 +5567,7 @@ HTML_TEMPLATE = """
               : (compareCap100IsMargin ? 'Rolling 1Y alpha (≤100% NAV)' : 'Rolling 1Y alpha (CAP 15%)');
             aDs[1].label = simple
               ? (compareCap100IsMargin ? 'Vantagem vs mercado (margem)' : 'Vantagem vs mercado (exposição limitada)')
-              : (compareCap100IsMargin ? 'Rolling 1Y alpha (com margem)' : 'Rolling 1Y alpha (Modelo CAP15)');
+              : (compareCap100IsMargin ? 'Rolling 1Y alpha (com margem)' : ('Rolling 1Y alpha · ' + cap15LabelPt));
           } else {
             aDs[0].label = simple ? 'Vantagem vs mercado (12 meses)' : 'Rolling 1Y alpha';
           }
@@ -5582,11 +5576,11 @@ HTML_TEMPLATE = """
         if (yearlyChartInst && yearlyChartInst.data && yearlyChartInst.data.datasets) {
           var yDs = yearlyChartInst.data.datasets;
           if (showMax100Compare && yDs.length >= 2 && compareCap100IsMargin) {
-            if (yDs[0]) yDs[0].label = simple ? 'Modelo CAP15 com margem' : 'Modelo CAP15 com margem';
-            if (yDs[1]) yDs[1].label = simple ? 'Plafonado (≤100%)' : 'Modelo CAP15 (≤100% NAV)';
+            if (yDs[0]) yDs[0].label = simple ? cap15MarginLabelPt : cap15MarginLabelPt;
+            if (yDs[1]) yDs[1].label = simple ? 'Plafonado (≤100%)' : (cap15LabelPt + ' (≤100% NAV)');
           } else {
             if (yDs[0]) yDs[0].label = simple ? 'Estratégia (CAP 15%)' : 'CAP 15%';
-            if (yDs[1]) yDs[1].label = simple ? 'Com exposição limitada' : 'Modelo CAP15';
+            if (yDs[1]) yDs[1].label = simple ? 'Com exposição limitada' : cap15LabelPt;
           }
           if (yDs[2]) yDs[2].label = simple ? 'Mercado (referência)' : 'Benchmark';
           yearlyChartInst.update('none');
@@ -5598,7 +5592,7 @@ HTML_TEMPLATE = """
           var dsSim = simulatorChart.data.datasets;
           if (dsSim[0]) dsSim[0].label = simple ? 'Estratégia DECIDE' : simActiveModelLabel;
           if (dsSim.length >= 3 && simActiveMargin) {
-            if (dsSim[1]) dsSim[1].label = simple ? 'Modelo CAP15 com margem' : simActiveMarginLabel;
+            if (dsSim[1]) dsSim[1].label = simple ? cap15MarginLabelPt : simActiveMarginLabel;
             if (dsSim[2]) dsSim[2].label = benchSimLbl;
           } else if (dsSim[1]) {
             dsSim[1].label = benchSimLbl;
@@ -5612,7 +5606,7 @@ HTML_TEMPLATE = """
           var dsDd = simulatorDdChart.data.datasets;
           if (dsDd[0]) dsDd[0].label = simple ? 'Estratégia DECIDE' : simActiveModelLabel;
           if (dsDd.length >= 3 && simActiveMargin) {
-            if (dsDd[1]) dsDd[1].label = simple ? 'Modelo CAP15 com margem' : simActiveMarginLabel;
+            if (dsDd[1]) dsDd[1].label = simple ? cap15MarginLabelPt : simActiveMarginLabel;
             if (dsDd[2]) dsDd[2].label = benchDdLbl;
           } else if (dsDd[1]) {
             dsDd[1].label = benchDdLbl;
@@ -5674,7 +5668,7 @@ HTML_TEMPLATE = """
           simActiveModelLabel = j.sim_model_label || 'Modelo DECIDE';
           if (j.has_sim_margin && Array.isArray(j.sim_margin_equity) && j.sim_margin_equity.length === j.dates.length) {
             simActiveMargin = j.sim_margin_equity;
-            simActiveMarginLabel = String(j.sim_margin_label || 'Modelo CAP15 com margem (ilustrativo)').trim();
+            simActiveMarginLabel = String(j.sim_margin_label || cap15MarginLabelPt).trim();
           } else {
             simActiveMargin = null;
             simActiveMarginLabel = '';
@@ -6014,7 +6008,7 @@ HTML_TEMPLATE = """
           ];
           if (marginVals && marginVals.length === modelVal.length) {
             eqDatasetsSim.push({
-              label: simActiveMarginLabel || 'Modelo CAP15 com margem',
+              label: simActiveMarginLabel || cap15MarginLabelPt,
               data: marginVals,
               borderColor: '#fb923c',
               tension: 0.05,
@@ -6085,7 +6079,7 @@ HTML_TEMPLATE = """
             ];
             if (marginVals && marginVals.length === modelVal.length) {
               ddDatasetsSim.push({
-                label: simActiveMarginLabel || 'Modelo CAP15 com margem',
+                label: simActiveMarginLabel || cap15MarginLabelPt,
                 data: equityCurveToDrawdownFractions(marginVals),
                 borderColor: '#fb923c',
                 borderWidth: 1,
@@ -9882,6 +9876,8 @@ def index():
             }
 
     profile_label_pt = PROFILE_LABEL_PT_SHORT.get(profile_key, profile_key)
+    cap15_human_label_pt = f"Modelo {profile_label_pt} — limite máximo de 15% por posição"
+    cap15_human_margin_label_pt = f"{cap15_human_label_pt} · variante com margem (ilustrativo)"
 
     kpi_diag_build = KPI_SERVER_BUILD_TAG
     kpi_diag_repo = str(REPO_ROOT.resolve())
@@ -9938,6 +9934,8 @@ def index():
         ),
         current_profile=profile_key,
         profile_label_pt=profile_label_pt,
+        cap15_human_label_pt=cap15_human_label_pt,
+        cap15_human_margin_label_pt=cap15_human_margin_label_pt,
         profile_source_note=profile_source_note,
         frontend_url=resolve_frontend_url_for_embed(request),
         risk_info=risk_info,

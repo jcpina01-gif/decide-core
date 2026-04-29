@@ -1452,6 +1452,14 @@ a.decide-app-recommended-plan-cta:hover {
   --kpi-embed-visible-h: min(1400px, calc(100vh - 160px));
 }
 
+/**
+ * Histórico de decisões: iframe Flask com iframe Next interno (~3200px). Altura maior reduz scroll
+ * dentro do cartão em relação ao scroll da página (demo mais limpa).
+ */
+.decide-app-embed-panel.decide-app-embed-panel--portfolio-history {
+  --kpi-embed-visible-h: min(3800px, calc(100vh - 120px));
+}
+
 .decide-app-kpi-iframe-scale-wrap {
   width: 100%;
   height: var(--kpi-embed-visible-h);

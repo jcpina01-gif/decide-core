@@ -54,7 +54,13 @@ export default async function handler(
      * Hero = CAGR do **CAP15 plafonado** (mesma lógica que o cartão no iframe): freeze + série tipo embed,
      * depois Flask; só depois landing / plano de aprovação.
      */
-    const recommendedModelLabel = "Modelo CAP15";
+    const profilePt =
+      profile === "conservador"
+        ? "Conservador"
+        : profile === "dinamico"
+          ? "Dinâmico"
+          : "Moderado";
+    const recommendedModelLabel = `Modelo ${profilePt} — limite máximo de 15% por posição`;
     const recommendedCagrPct =
       readPlafonadoM100CagrDisplayPercent(projectRoot, profile) ??
       (await fetchPlafonadoCagrPctFromKpiServer(profile)) ??

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import React, { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/router";
 import { formatPtDate } from "../lib/clientPortfolioSchedule";
 import { DECIDE_APP_FONT_FAMILY } from "../lib/decideClientTheme";
 import { collapseHistMonthsToLatestPerCalendarMonth } from "../lib/recommendationsHistoryMonthCollapse";
@@ -59,9 +60,12 @@ type HistMonth = {
 };
 
 function formatCompanyLine(r: FlowRow): string {
+  const label = displayTickerClient(r.ticker);
   const c = (r.company || "").trim();
-  if (c && c !== r.ticker) return `${r.ticker} — ${c}`;
-  return r.ticker;
+  const rawT = (r.ticker || "").trim();
+  if (c && c !== rawT && !isCashSleeveTicker(r.ticker)) return `${label} — ${c}`;
+  if (c && c !== rawT && isCashSleeveTicker(r.ticker)) return `${label} (${c})`;
+  return label;
 }
 
 function isNovoNomeEntrada(e: FlowRow): boolean {
@@ -79,7 +83,43 @@ function isReduçãoPesoSaida(e: FlowRow): boolean {
 
 function isCashSleeveTicker(ticker: string): boolean {
   const t = ticker.trim().toUpperCase();
-  return t === "TBILL_PROXY" || t === "BIL" || t === "SHV";
+  return t === "TBILL_PROXY" || t === "BIL" || t === "SHV" || t === "EUR_MM_PROXY";
+}
+
+/** Rótulo para demo — símbolos internos do modelo ficam em «Detalhes técnicos». */
+function displayTickerClient(ticker: string): string {
+  const u = (ticker || "").trim().toUpperCase();
+  if (u === "TBILL_PROXY") return "Liquidez / T-Bills";
+  if (u === "EUR_MM_PROXY") return "Liquidez / MM EUR";
+  return (ticker || "").trim();
+}
+
+function histRowTickerCell(r: HistRow): ReactNode {
+  const label = displayTickerClient(r.ticker);
+  if (isCashSleeveTicker(r.ticker)) {
+    return <span style={{ fontWeight: 800, color: "#d4d4d8" }}>{label}</span>;
+  }
+  const href = yahooFinanceQuoteHref(r.ticker);
+  if (!href) {
+    return <span style={{ fontWeight: 800, color: "#d4d4d8" }}>{label}</span>;
+  }
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ color: "#d4d4d8", textDecoration: "none", fontWeight: 800 }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLAnchorElement).style.textDecoration = "underline";
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLAnchorElement).style.textDecoration = "none";
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {label}
+    </a>
+  );
 }
 
 /** Só a caixa de **entradas**: títulos com |peso| abaixo disto (exc. liquidez) ficam fora. Saídas listam-se todas. */
@@ -87,7 +127,7 @@ const ENTRY_SIDE_LIST_MIN_ABS_PCT = 1;
 /** Mínimo |Δ| p.p. para reforço/redução; alinhado com `OFFICIAL_HISTORY_REBALANCE_FLOW_MIN_ABS_PP` no build do histórico. */
 const REBALANCE_REWEIGHT_MIN_PP = 0.5;
 /** Altera ao mudar a UI do histórico: se o ecrã não mostrar isto, o browser está a outro build/host. */
-const HISTORY_UI_BUILD = "4col-Δ0p5-2026-04-25";
+const HISTORY_UI_BUILD = "demo-polish-2026-04-24";
 
 function flowLiEntradaNovo(r: FlowRow, moDate: string): ReactNode {
   const w = r.weightPct;
@@ -320,11 +360,20 @@ function isLocalNextHost(host: string | null): boolean {
 }
 
 export default function RecommendationsHistoryPanel() {
+  const router = useRouter();
+  /** Em produção o bloco técnico fica oculto (demo). Forçar: `?history_debug=1` na URL do embed. */
+  const allowHistoryTechnicalUi =
+    router.query.history_debug === "1" || process.env.NODE_ENV !== "production";
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [data, setData] = useState<HistResponse | null>(null);
   const [filter, setFilter] = useState("");
+  const [technicalDetailsOpen, setTechnicalDetailsOpen] = useState(false);
   const [clientHost, setClientHost] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!allowHistoryTechnicalUi) setTechnicalDetailsOpen(false);
+  }, [allowHistoryTechnicalUi]);
 
   useEffect(() => {
     setClientHost(typeof window !== "undefined" ? window.location.host : null);
@@ -424,54 +473,19 @@ export default function RecommendationsHistoryPanel() {
         padding: "12px 14px 16px",
       }}
     >
-      {clientHost && !isLocalNextHost(clientHost) ? (
-        <div
-          style={{
-            fontSize: 13,
-            lineHeight: 1.5,
-            color: "#fef3c7",
-            background: "rgba(120, 53, 15, 0.45)",
-            border: "1px solid rgba(245, 158, 11, 0.55)",
-            borderRadius: 10,
-            padding: "10px 12px",
-            marginBottom: 12,
-          }}
-        >
-          <strong>Host actual:</strong> {clientHost} — a vista antiga (duas caixas) costuma vir de um{" "}
-          <strong>deploy ainda sem as últimas alterações</strong> do repositório. O código com{" "}
-          <strong>4 colunas e reforço/redução (Δ ≥ 0,5 p.p.)</strong> corre em{" "}
-          <code style={{ color: "#fbbf24" }}>http://127.0.0.1:4701</code> com <code style={{ color: "#fbbf24" }}>npm run dev</code>{" "}
-          no <code style={{ color: "#fbbf24" }}>frontend/</code> e, no painel Flask,{" "}
-          <code style={{ color: "#fbbf24" }}>FRONTEND_URL=http://127.0.0.1:4701</code>.
-        </div>
-      ) : clientHost && isLocalNextHost(clientHost) ? (
-        <div style={{ fontSize: 12, color: "#22c55e", marginBottom: 8 }}>Next local · {clientHost} · 4 colunas ativas</div>
-      ) : null}
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 18, fontWeight: 900, color: "#f4f4f5" }}>Histórico de decisões da carteira</div>
-        <div
-          style={{ fontSize: 11, color: "#3f3f46", fontFamily: "ui-monospace, Consolas, monospace", marginTop: 4 }}
-          title="Se não vires esta linha, o painel ainda aponta para outro build ou cache antigo (Ctrl+F5 no iframe)."
-        >
-          {HISTORY_UI_BUILD} · Novos e reforços (entradas) + saídas e reduções (4 colunas)
-        </div>
-        <div style={{ fontSize: 14, color: "#a1a1aa", marginTop: 6, lineHeight: 1.5, maxWidth: 560 }}>
-          Evolução mensal da composição da sua carteira ao longo do tempo.
-        </div>
-        <div style={{ fontSize: 13, color: "#71717a", marginTop: 8, lineHeight: 1.45, maxWidth: 560 }}>
-          A carteira é ajustada periodicamente para refletir as melhores oportunidades identificadas pelo modelo.{" "}
-          <span style={{ color: "#52525b" }}>
-            Por mês civil mostra-se só a data mais tardia desse mês no CSV (ex.: 27 fev em vez de 4 fev). Só entram
-            meses até ao mês civil actual (UTC); meses futuros não são listados.
-          </span>
-        </div>
+        <p style={{ fontSize: 14, color: "#a1a1aa", marginTop: 8, marginBottom: 12, lineHeight: 1.5, maxWidth: 560 }}>
+          Evolução mensal da composição — entradas, saídas e pesos alvo do modelo.
+        </p>
         <input
           type="search"
           placeholder="Filtrar por data, empresa ou ticker…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           style={{
-            marginTop: 10,
+            display: "block",
+            marginBottom: 12,
             width: "100%",
             maxWidth: 420,
             boxSizing: "border-box",
@@ -483,6 +497,61 @@ export default function RecommendationsHistoryPanel() {
             fontSize: 15,
           }}
         />
+        {allowHistoryTechnicalUi ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setTechnicalDetailsOpen((o) => !o)}
+              aria-expanded={technicalDetailsOpen}
+              style={{
+                background: "transparent",
+                border: "1px solid rgba(82, 82, 91, 0.85)",
+                borderRadius: 10,
+                padding: "8px 14px",
+                color: "#a1a1aa",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              {technicalDetailsOpen ? "▼ Ocultar detalhes técnicos" : "▶ Detalhes técnicos"}
+            </button>
+            {technicalDetailsOpen ? (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(63, 63, 70, 0.75)",
+                  background: "rgba(24, 24, 27, 0.85)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "#52525b",
+                    fontFamily: "ui-monospace, Consolas, monospace",
+                    marginBottom: 10,
+                  }}
+                >
+                  {HISTORY_UI_BUILD}
+                </div>
+                <p style={{ fontSize: 12, color: "#71717a", margin: 0, lineHeight: 1.45 }}>
+                  Por mês civil usa-se a data mais tardia desse mês no ficheiro de pesos; só entram meses até ao mês actual
+                  (UTC). Símbolos internos (ex. <code style={{ color: "#71717a" }}>TBILL_PROXY</code>) aparecem aqui; na
+                  vista principal mostramos «Liquidez / T-Bills».
+                </p>
+                {process.env.NODE_ENV === "development" && clientHost ? (
+                  <p style={{ fontSize: 11, color: "#52525b", margin: "10px 0 0" }}>
+                    Dev: host <code style={{ color: "#71717a" }}>{clientHost}</code>
+                    {isLocalNextHost(clientHost) ? " · Next local" : ""}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </>
+        ) : null}
       </div>
 
       <div
@@ -503,10 +572,6 @@ export default function RecommendationsHistoryPanel() {
             const hasFlow = mo.entries !== undefined && mo.exits !== undefined;
             const entAll = mo.entries ?? [];
             const exAll = mo.exits ?? [];
-            const nEntNovoNome = entAll.filter(isNovoNomeEntrada).length;
-            const nEntReforco = entAll.filter(isReforcoEntrada).length;
-            const nExSaiuAlvo = exAll.filter(isSaidaTudoDoAlvo).length;
-            const nExReduPeso = exAll.filter(isReduçãoPesoSaida).length;
             const { shown: ent, omitted: entOmitted } = filterEntradasMin1UsingMonthTable(entAll, mo);
             const ex = exAll;
             const chrono = mo.chronologicalIndex;
@@ -550,42 +615,17 @@ export default function RecommendationsHistoryPanel() {
                       </>
                     ) : null}
                   </div>
-                  <div style={{ fontSize: 14, color: "#71717a", fontWeight: 600, marginTop: 6 }}>
-                    Carteira total: {(sumW * 100).toFixed(1)}% · {mo.rows.length} posições
+                  <div style={{ fontSize: 13, color: "#71717a", fontWeight: 600, marginTop: 8 }}>
+                    Alvo no mês: {(sumW * 100).toFixed(1)}% · {mo.rows.length} linhas
                     {hasFlow ? (
                       <span style={{ color: "#71717a" }}>
                         {" "}
-                        · Diff: {entAll.length} em entradas ({nEntNovoNome} nome{nEntNovoNome === 1 ? "" : "s"} novos
-                        {nEntReforco > 0
-                          ? `, ${nEntReforco} reforço${nEntReforco === 1 ? "" : "s"} de peso`
-                          : ""}
-                        ) — {exAll.length} em saídas
-                        {nExSaiuAlvo + nExReduPeso > 0
-                          ? ` (${nExSaiuAlvo} saída${nExSaiuAlvo === 1 ? "" : "s"} do alvo${
-                              nExReduPeso > 0
-                                ? `, ${nExReduPeso} redução${nExReduPeso === 1 ? "" : "ões"} de peso (continua no alvo)`
-                                : ""
-                            })`
-                          : ""}
-                        {mo.prevRebalanceYmdForDiff
-                          ? ` (vs. mês de ${mo.prevRebalanceYmdForDiff})`
-                          : " (vs. mês anterior no CSV)"}
-                        {typeof mo.diffOverlapEquityTickerCount === "number" ? (
-                          <>
-                            {" "}
-                            · {mo.diffOverlapEquityTickerCount} título
-                            {mo.diffOverlapEquityTickerCount === 1 ? "" : "s"} de risco
-                            {mo.prevRebalanceYmdForDiff ? ` já em ${mo.prevRebalanceYmdForDiff}` : " no mês anterior"}{" "}
-                            (sem alteração de nome, só ajuste de %)
-                          </>
-                        ) : null}
-                        {" · "}
-                        tabela: {mo.rows.length} posições
+                        · {entAll.length} movimento{entAll.length === 1 ? "" : "s"} em entradas · {exAll.length} em saídas
                       </span>
                     ) : null}
                   </div>
                 </summary>
-                <div style={{ padding: "0 8px 12px 8px", overflowX: "auto" }}>
+                <div style={{ padding: "0 8px 12px 8px" }}>
                   {mo.priorThreeMonthReturns && mo.priorThreeMonthReturns.length > 0 ? (
                     <PriorThreeMonthChart bars={mo.priorThreeMonthReturns} />
                   ) : chartTooEarly ? (
@@ -604,35 +644,34 @@ export default function RecommendationsHistoryPanel() {
 
                   {hasFlow ? (
                     <>
-                      <p
-                        style={{
-                          fontSize: 12,
-                          color: "#71717a",
-                          lineHeight: 1.5,
-                          margin: "8px 0 10px 0",
-                          maxWidth: 720,
-                        }}
-                      >
-                        <strong style={{ color: "#a1a1aa" }}>O que entra nestas listas (não é a tabela inteira):</strong>{" "}
-                        <strong>Entradas</strong> = nomes <strong>novos</strong> (inexistentes no ficheiro do mês
-                        anterior) e <strong>reforços</strong> (aumento ≥{REBALANCE_REWEIGHT_MIN_PP} p.p. no alvo, mesmo
-                        ticker mês a mês). <strong>Saídas</strong> = títulos que <strong>deixam o alvo</strong> e{" "}
-                        <strong>reduções de peso</strong> (≥{REBALANCE_REWEIGHT_MIN_PP} p.p.) em títulos que
-                        se mantêm no alvo. Se
-                        contares 16
-                        títulos com {">"}1% nesse alvo, a maior parte
-                        {typeof mo.diffOverlapEquityTickerCount === "number" ? (
-                          <span>
-                            {" "}
-                            ({mo.diffOverlapEquityTickerCount} títulos de risco já constavam no ficheiro anterior){" "}
-                          </span>
-                        ) : null}
-                        : a maior parte são <strong>posições de continuação</strong> (sem nome novo, sem
-                        ajuste ≥{REBALANCE_REWEIGHT_MIN_PP} p.p.). A grelha abaixo tem {mo.rows.length} posições. Os
-                        alvos a listar (≥{ENTRY_SIDE_LIST_MIN_ABS_PCT}%) vêm alinhados à grelha; ajuste de peso
-                        mexe-se (≥{REBALANCE_REWEIGHT_MIN_PP} p.p.) ainda com alvo abaixo de{" "}
-                        {ENTRY_SIDE_LIST_MIN_ABS_PCT}%. Liquidez (TBILL/BIL/SHV) segue a regra reservada acima.
-                      </p>
+                      <details style={{ margin: "8px 0 10px", maxWidth: 720 }}>
+                        <summary
+                          style={{
+                            fontSize: 12,
+                            color: "#71717a",
+                            cursor: "pointer",
+                            fontWeight: 700,
+                          }}
+                        >
+                          Como lemos entradas e saídas (equipa)
+                        </summary>
+                        <p
+                          style={{
+                            fontSize: 12,
+                            color: "#71717a",
+                            lineHeight: 1.5,
+                            margin: "10px 0 0",
+                          }}
+                        >
+                          <strong>Entradas</strong> = nomes novos ou reforços (Δ ≥ {REBALANCE_REWEIGHT_MIN_PP} p.p.).{" "}
+                          <strong>Saídas</strong> = saída do alvo ou reduções (≥ {REBALANCE_REWEIGHT_MIN_PP} p.p.) com o
+                          nome a manter-se. Listas ≥ {ENTRY_SIDE_LIST_MIN_ABS_PCT}% alinhadas à grelha; continuações sem
+                          diff não aparecem aqui.
+                          {typeof mo.diffOverlapEquityTickerCount === "number" ? (
+                            <> Continuações de risco no mês anterior: {mo.diffOverlapEquityTickerCount}.</>
+                          ) : null}
+                        </p>
+                      </details>
                     {(() => {
                       const entNovoFilt = ent.filter((e) => e.kind !== "increase");
                       const entRefFilt = ent.filter((e) => e.kind === "increase");
@@ -694,8 +733,8 @@ export default function RecommendationsHistoryPanel() {
                       <div
                         style={{
                           borderRadius: 10,
-                          border: "1px solid rgba(52, 211, 153, 0.35)",
-                          background: "rgba(20, 83, 45, 0.18)",
+                          border: "1px solid rgba(74, 222, 128, 0.22)",
+                          background: "rgba(34, 197, 94, 0.08)",
                           padding: "8px 10px",
                         }}
                       >
@@ -737,8 +776,9 @@ export default function RecommendationsHistoryPanel() {
                       <div
                         style={{
                           borderRadius: 10,
-                          border: "1px solid rgba(248, 113, 113, 0.3)",
-                          background: "rgba(88, 28, 28, 0.22)",
+                          border: "1px solid rgba(82,82,91,0.85)",
+                          borderLeft: "3px solid rgba(220, 90, 90, 0.42)",
+                          background: "rgba(24,24,27,0.65)",
                           padding: "8px 10px",
                         }}
                       >
@@ -767,9 +807,11 @@ export default function RecommendationsHistoryPanel() {
                     </div>
                   )}
 
+                  <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginTop: 12 }}>
                   <table
                     style={{
                       width: "100%",
+                      minWidth: 560,
                       borderCollapse: "collapse",
                       fontSize: 14,
                       color: "#e4e4e7",
@@ -799,23 +841,7 @@ export default function RecommendationsHistoryPanel() {
                           }}
                         >
                           <td style={{ padding: "7px 10px", color: "#71717a" }}>{r.rank ?? i + 1}</td>
-                          <td style={{ padding: "7px 10px", fontWeight: 800 }}>
-                            <a
-                              href={yahooFinanceQuoteHref(r.ticker) ?? "#"}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{ color: "#d4d4d8", textDecoration: "none" }}
-                              onMouseEnter={(e) => {
-                                (e.currentTarget as HTMLAnchorElement).style.textDecoration = "underline";
-                              }}
-                              onMouseLeave={(e) => {
-                                (e.currentTarget as HTMLAnchorElement).style.textDecoration = "none";
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {r.ticker}
-                            </a>
-                          </td>
+                          <td style={{ padding: "7px 10px" }}>{histRowTickerCell(r)}</td>
                           <td style={{ padding: "7px 10px", color: "#a1a1aa", maxWidth: 260 }} title={r.company || r.ticker}>
                             {r.company?.trim() ? r.company.trim() : "—"}
                           </td>
@@ -828,6 +854,7 @@ export default function RecommendationsHistoryPanel() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               </details>
             );

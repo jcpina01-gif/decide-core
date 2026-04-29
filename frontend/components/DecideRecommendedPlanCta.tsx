@@ -114,14 +114,16 @@ export default function DecideRecommendedPlanCta({
     return () => router.events?.off("routeChangeError", onErr);
   }, [router]);
 
-  const modelLabel = data?.recommendedModelLabel ?? "Modelo CAP15";
+  const profileLabel = riskProfileLabelPt(riskProfile);
+  const modelLabel =
+    data?.recommendedModelLabel ??
+    `Modelo ${profileLabel} — limite máximo de 15% por posição`;
   const cagrPct = data?.recommendedCagrPct;
   const showCagr = typeof cagrPct === "number" && Number.isFinite(cagrPct);
   const yearRange =
     typeof data?.historyYearRangeLabel === "string" && data.historyYearRangeLabel.trim().length > 0
       ? data.historyYearRangeLabel.trim()
       : null;
-  const profileLabel = riskProfileLabelPt(riskProfile);
   const riskHint = riskVolatilityHintPt(riskProfile);
   const strategyLine = recommendedPlanStrategyLinePt(riskProfile);
 
