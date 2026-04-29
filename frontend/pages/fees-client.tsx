@@ -8,7 +8,6 @@ import { onThousandsFieldRowPointerDownCapture } from "../lib/thousandsFieldRowF
 import { DECIDE_APP_FONT_FAMILY } from "../lib/decideClientTheme";
 import { buildSimulatorSeries } from "../lib/decideSimulator";
 import { computeKpisFromSeries } from "../lib/computeKpisFromSeries";
-import { DECIDE_PREMIUM_MONTHLY_FEE_EUR } from "../lib/decidePremiumFeeEur";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -277,11 +276,16 @@ function KPIBox({
 }
 
 type FeesClientPageProps = {
-  /** Valor servido via SSR (`getServerSideProps`) para não depender só do chunk JS em cache. */
-  premiumMonthlyFeeEur: number;
+  /** Valor servido via SSR (`getServerSideProps`). Opcional: fallback 25 se `pageProps` vier vazio. */
+  premiumMonthlyFeeEur?: number;
 };
 
-export default function FeesClientPage({ premiumMonthlyFeeEur }: FeesClientPageProps) {
+/** Manter igual a `DECIDE_PREMIUM_MONTHLY_FEE_EUR` / API pública — literal para SSR fiável. */
+const PREMIUM_MONTHLY_FEE_SSR = 25;
+
+export default function FeesClientPage({
+  premiumMonthlyFeeEur = PREMIUM_MONTHLY_FEE_SSR,
+}: FeesClientPageProps) {
   const router = useRouter();
   const embed = router.isReady && router.query.embed === "1";
   /** No dashboard: `fees_tab=intro` = texto; `fees_tab=sim` ou ausente = simulador. */
@@ -1317,12 +1321,12 @@ export default function FeesClientPage({ premiumMonthlyFeeEur }: FeesClientPageP
   );
 }
 
-/** HTML dinâmico; valor Premium nos `props` — serializado em `__NEXT_DATA__`, fiável após deploy. */
+/** HTML dinâmico; `props` com literal 25 — visível em `__NEXT_DATA__` sem depender do import minificado. */
 export const getServerSideProps: GetServerSideProps<FeesClientPageProps> = async ({ res }) => {
   res.setHeader("Cache-Control", "private, no-store, must-revalidate");
   return {
     props: {
-      premiumMonthlyFeeEur: DECIDE_PREMIUM_MONTHLY_FEE_EUR,
+      premiumMonthlyFeeEur: PREMIUM_MONTHLY_FEE_SSR,
     },
   };
 };
