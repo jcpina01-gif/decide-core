@@ -1,6 +1,7 @@
 /**
  * Reset local (localStorage / sessionStorage) para testes no Plano — **não** apaga dados no servidor.
- * O painel no Plano fica **visível por defeito** (dev, preview e produção). Para ocultar: `NEXT_PUBLIC_DECIDE_PLANO_DEV_RESET=0`.
+ * Painel de teste no Plano: **visível por defeito em `npm run dev`**. Em **produção** fica **oculto** por defeito;
+ * equipa liga com `NEXT_PUBLIC_DECIDE_PLANO_DEV_RESET=1` ou `?decideDevReset=1` na URL.
  */
 
 import { ORDER_ACTIVITY_CHANGED_EVENT } from "./clientOrderActivityLog";
@@ -24,23 +25,33 @@ const EXTRA_LS_KEYS = [
   "decide_client_order_activity_v1",
 ] as const;
 
-/**
- * Visibilidade do painel (build-time): **ligado por defeito**; só `NEXT_PUBLIC_DECIDE_PLANO_DEV_RESET=0` desliga.
- */
-export function isDecidePlanoDevResetEnabled(): boolean {
-  const v = (process.env.NEXT_PUBLIC_DECIDE_PLANO_DEV_RESET || "").trim().toLowerCase();
-  if (v === "0" || v === "false" || v === "off" || v === "no") return false;
-  return true;
+function envDevResetExplicitlyOff(v: string): boolean {
+  return v === "0" || v === "false" || v === "off" || v === "no";
+}
+
+function envDevResetExplicitlyOn(v: string): boolean {
+  return v === "1" || v === "true" || v === "on" || v === "yes";
 }
 
 /**
- * Visibilidade no browser após o mount: alinhada a `isDecidePlanoDevResetEnabled` (mesma env).
- * Opcional: `?decideDevReset=1` não é necessário com o novo defeito, mas mantém-se como documentação de atalho.
+ * Visibilidade do painel (build-time): development → ligado por defeito; production → desligado salvo env/query.
+ */
+export function isDecidePlanoDevResetEnabled(): boolean {
+  const v = (process.env.NEXT_PUBLIC_DECIDE_PLANO_DEV_RESET || "").trim().toLowerCase();
+  if (envDevResetExplicitlyOff(v)) return false;
+  if (envDevResetExplicitlyOn(v)) return true;
+  return process.env.NODE_ENV !== "production";
+}
+
+/**
+ * Visibilidade no browser após o mount: mesma regra que `isDecidePlanoDevResetEnabled`, mas aceita
+ * `?decideDevReset=1` / `?planoDevReset=1` em produção sem alterar env.
  */
 export function isDecidePlanoDevResetVisibleInBrowser(): boolean {
   if (typeof window === "undefined") return false;
   const v = (process.env.NEXT_PUBLIC_DECIDE_PLANO_DEV_RESET || "").trim().toLowerCase();
-  if (v === "0" || v === "false" || v === "off" || v === "no") return false;
+  if (envDevResetExplicitlyOff(v)) return false;
+  if (envDevResetExplicitlyOn(v)) return true;
   try {
     const q = new URLSearchParams(window.location.search);
     const flag = q.get("decideDevReset") || q.get("planoDevReset");
@@ -48,7 +59,7 @@ export function isDecidePlanoDevResetVisibleInBrowser(): boolean {
   } catch {
     /* ignore */
   }
-  return true;
+  return process.env.NODE_ENV !== "production";
 }
 
 /**

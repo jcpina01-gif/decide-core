@@ -20,6 +20,15 @@ export function clientEurMmIbTicker(): string {
   return eurMmIbTicker();
 }
 
+/**
+ * Quando verdadeiro (`NEXT_PUBLIC_DECIDE_CASH_SLEEVE_EUR_MM_ONLY`), o sleeve «TBILL_PROXY» do modelo **não** é enviado
+ * como ETF USD (SHV/BIL) — trata-se como liquidez **UCITS EUR** (env `EUR_MM_IB_TICKER`, ex. XEON), no 2.º lote.
+ */
+export function cashSleeveExecutionEurMmOnly(): boolean {
+  const v = (process.env.NEXT_PUBLIC_DECIDE_CASH_SLEEVE_EUR_MM_ONLY || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
 /** ETF USD opcional (quando configurado); o relatório pode usar sobretudo MM EUR. */
 export function clientUsTbillProxyIbTicker(): string | null {
   const v = (

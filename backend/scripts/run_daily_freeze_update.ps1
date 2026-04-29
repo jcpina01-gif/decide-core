@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 # (Doc: logs/freeze_daily_update.log; Passo 2.5: DECIDE_SYNC_LANDING=0 desactiva copia p/ landing)
 param(
     [string] $RepoRoot = "",

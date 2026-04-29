@@ -193,6 +193,25 @@ function clientUiBuildLabelFromEnv(): string {
   return `dev (${venv})`;
 }
 
+/**
+ * ETF USD para executar «TBILL_PROXY» na IBKR (SHV, BIL, …).
+ * Não usar `eurMmIbTicker()` aqui — esse é o UCITS MM em EUR (XEON/CSH2), sleeve distinto.
+ */
+function tbillUsdProxyIbTickerFromEnv(): string {
+  const v = (
+    process.env.NEXT_PUBLIC_TBILL_PROXY_IB_TICKER ||
+    process.env.TBILL_PROXY_IB_TICKER ||
+    "SHV"
+  )
+    .trim()
+    .toUpperCase();
+  const raw = v || "SHV";
+  const eurMm = eurMmIbTicker();
+  /** Env mal configurado: o proxy USD (SHV/BIL) não pode ser o mesmo ticker que o UCITS EUR (XEON, …). */
+  if (eurMm && raw === eurMm) return "SHV";
+  return raw;
+}
+
 /** Evita página 500 no `/client/report` se algum passo do SSR lançar — o cliente vê `backendError` na UI. */
 function buildSsrFailureReportData(backendError: string): ReportData {
   const eurMmSym = eurMmIbTicker();
@@ -216,6 +235,7 @@ function buildSsrFailureReportData(backendError: string): ReportData {
     benchmarkVolatilityPct: 0,
     maxDrawdownPct: 0,
     benchmarkMaxDrawdownPct: 0,
+    betaVsBenchmark: null,
     displayHorizonLabel: "—",
     displayCagrModelSubLabel: "—",
     displayCagrBenchmarkSubLabel: "—",
@@ -243,7 +263,7 @@ function buildSsrFailureReportData(backendError: string): ReportData {
     estimatedAnnualManagementFeeEur: 0,
     estimatedMonthlyManagementFeeEur: DECIDE_PREMIUM_MONTHLY_FEE_EUR,
     estimatedPerformanceFeeEur: 0,
-    tbillProxyIbTicker: eurMmSym,
+    tbillProxyIbTicker: tbillUsdProxyIbTickerFromEnv(),
     planWeightsProvenance: {
       mode: "model_positions_fallback",
       officialHistoryMonthsLoaded: 0,
@@ -676,6 +696,30 @@ function sharpeFromDailyReturns(rets: number[]): number {
   const sd = Math.sqrt(s2 / (rets.length - 1));
   if (sd <= 0) return 0;
   return (mean / sd) * Math.sqrt(252);
+}
+
+/** Beta OLS dos retornos diários do modelo vs benchmark (mesmo horizonte que vol / Sharpe). */
+function betaVsBenchmarkFromDailyReturns(retsModel: number[], retsBench: number[]): number | null {
+  const n = Math.min(retsModel.length, retsBench.length);
+  if (n < 30) return null;
+  let sumB = 0;
+  let sumM = 0;
+  for (let i = 0; i < n; i += 1) {
+    sumB += retsBench[i];
+    sumM += retsModel[i];
+  }
+  const meanB = sumB / n;
+  const meanM = sumM / n;
+  let cov = 0;
+  let varB = 0;
+  for (let i = 0; i < n; i += 1) {
+    const db = retsBench[i] - meanB;
+    const dm = retsModel[i] - meanM;
+    cov += dm * db;
+    varB += db * db;
+  }
+  if (varB <= 1e-24) return null;
+  return cov / varB;
 }
 
 function maxDrawdownFraction(equity: number[]): number {
@@ -2516,6 +2560,9 @@ async function getClientReportServerSidePropsImpl(
   const benchmarkVolatilityPct = capPctDisplay(
     annualizedVolFromDailyReturns(retsB)
   );
+  const betaVsBenchmarkRaw = betaVsBenchmarkFromDailyReturns(retsO, retsB);
+  const betaVsBenchmark =
+    betaVsBenchmarkRaw != null && Number.isFinite(betaVsBenchmarkRaw) ? betaVsBenchmarkRaw : null;
   let maxDrawdownPct = capPctDisplay(maxDrawdownFraction(ovrW) * 100);
   const benchmarkMaxDrawdownPct = capPctDisplay(
     maxDrawdownFraction(benchW) * 100
@@ -2681,6 +2728,7 @@ async function getClientReportServerSidePropsImpl(
     benchmarkSharpe,
     volatilityPct,
     benchmarkVolatilityPct,
+    betaVsBenchmark,
     maxDrawdownPct,
     benchmarkMaxDrawdownPct,
     displayHorizonLabel,
@@ -2703,7 +2751,7 @@ async function getClientReportServerSidePropsImpl(
     estimatedAnnualManagementFeeEur,
     estimatedMonthlyManagementFeeEur,
     estimatedPerformanceFeeEur,
-    tbillProxyIbTicker: eurMmSym,
+    tbillProxyIbTicker: tbillUsdProxyIbTickerFromEnv(),
     ...(initialIbkrStructure ? { initialIbkrStructure } : {}),
     ...(planTargetRebalanceDate ? { planTargetRebalanceDate } : {}),
     planWeightsProvenance,
