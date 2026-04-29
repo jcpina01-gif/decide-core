@@ -578,12 +578,16 @@ export default function ApprovePage({
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
     syncFeeSegmentFromNavEur(navEurForFees);
-    if (syncHedgeOnboardingDoneFromPrefs()) {
-      try {
-        window.dispatchEvent(new Event(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT));
-      } catch {
-        // ignore
-      }
+    syncHedgeOnboardingDoneFromPrefs();
+    /**
+     * O segmento fee A/B muda com o NAV — `isFxHedgeOnboardingApplicable` pode passar a exigir hedge depois
+     * do pagamento. Sem este evento, a barra de passos fica com ✓ no Hedge (memo antigo) enquanto esta página
+     * já bloqueia a aprovação.
+     */
+    try {
+      window.dispatchEvent(new Event(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT));
+    } catch {
+      // ignore
     }
   }, [navEurForFees]);
 
