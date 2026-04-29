@@ -11,7 +11,11 @@ import { buildPersonaReferenceIdFromSession } from "../../lib/personaReference";
 import { extractDisplayNameFromPersonaRecord } from "../../lib/personaDisplayName";
 import { isClientLoggedIn } from "../../lib/clientAuth";
 import { isFxHedgeOnboardingApplicable } from "../../lib/clientSegment";
-import { isFxHedgeGateOk, syncHedgeOnboardingDoneFromPrefs } from "../../lib/fxHedgePrefs";
+import {
+  isFxHedgeGateOk,
+  shouldSkipHedgeGateRedirect,
+  syncHedgeOnboardingDoneFromPrefs,
+} from "../../lib/fxHedgePrefs";
 import { personaRecordAllowsIbkrPrep } from "../../lib/personaKycGate";
 import { ONBOARDING_STEP_6_LABEL } from "../../lib/onboardingStep6Label";
 
@@ -504,6 +508,27 @@ export default function IbkrPrepPage() {
     if (personaHttpStatus == null) return false;
     return personaHttpStatus === 404 || personaHttpStatus === 503;
   }, [serverKycOk, kycDone, stripeCheckoutDoneLs, personaHttpStatus]);
+
+  /**
+   * Identidade ok mas hedge obrigatório em falta → passo 5 (alinha Persona / `getNextOnboardingHref`).
+   */
+  useEffect(() => {
+    if (!router.isReady) return;
+    if (typeof window === "undefined") return;
+    if (personaGatePending) return;
+    if (!kycDone || !identityServerSatisfied) return;
+    if (!isFxHedgeOnboardingApplicable()) return;
+    if (isFxHedgeGateOk()) return;
+    if (shouldSkipHedgeGateRedirect()) return;
+    void router.replace("/client/fx-hedge-onboarding");
+  }, [
+    router.isReady,
+    router,
+    personaGatePending,
+    kycDone,
+    identityServerSatisfied,
+    hedgeGateOk,
+  ]);
 
   const canPrepare = mifidSatisfied && kycDone && identityServerSatisfied && hedgeGateOk;
   /** Só mostramos o atalho para aprovação depois de «Preparar» (evita saltar o passo). */

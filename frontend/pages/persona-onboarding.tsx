@@ -18,6 +18,7 @@ import {
   ONBOARDING_PRIMARY_CTA_MAX_WIDTH_PX,
   ONBOARDING_SHELL_MAX_WIDTH_PX,
 } from "../lib/decideClientTheme";
+import { getNextOnboardingHref } from "../lib/onboardingProgress";
 
 function bumpOnboardingFlowBarFromLocalStorage() {
   try {
@@ -301,6 +302,25 @@ export default function PersonaOnboardingPage({
   const [persistInFlight, setPersistInFlight] = useState(false);
   const [manualBypassInFlight, setManualBypassInFlight] = useState(false);
 
+  /** Alinha com `onboardingProgress`: Hedge cambial antes de «Plano e pagamento» quando o segmento exige. */
+  const [postIdentityHref, setPostIdentityHref] = useState("/client/ibkr-prep");
+  useEffect(() => {
+    function syncPostIdentityHref() {
+      try {
+        setPostIdentityHref(getNextOnboardingHref());
+      } catch {
+        setPostIdentityHref("/client/ibkr-prep");
+      }
+    }
+    syncPostIdentityHref();
+    window.addEventListener(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT, syncPostIdentityHref);
+    window.addEventListener("storage", syncPostIdentityHref);
+    return () => {
+      window.removeEventListener(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT, syncPostIdentityHref);
+      window.removeEventListener("storage", syncPostIdentityHref);
+    };
+  }, []);
+
   const personaClientRef = useRef<any>(null);
   const lastPersonaCompleteRef = useRef<LastPersonaComplete | null>(null);
 
@@ -548,7 +568,7 @@ export default function PersonaOnboardingPage({
     });
 
     try {
-      window.location.href = "/client/ibkr-prep";
+      window.location.href = getNextOnboardingHref();
     } catch {
       // ignore
     }
@@ -985,7 +1005,7 @@ export default function PersonaOnboardingPage({
 
   const confirmKycButton = canContinueToIbkr ? (
     <a
-      href="/client/ibkr-prep"
+      href={postIdentityHref}
       onClick={() => {
         try {
           const nm = effectiveFullName.trim();
@@ -1523,7 +1543,7 @@ export default function PersonaOnboardingPage({
             {manualFallbackActive ? (
               <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10, alignItems: "center", width: "100%" }}>
                 <a
-                  href="/client/ibkr-prep"
+                  href={postIdentityHref}
                   style={{
                     display: "block",
                     marginLeft: "auto",
