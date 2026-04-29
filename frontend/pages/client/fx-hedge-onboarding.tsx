@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useEffect, useMemo, useState } from "react";
 import OnboardingFlowBar, { ONBOARDING_LOCALSTORAGE_CHANGED_EVENT } from "../../components/OnboardingFlowBar";
-import { isClientLoggedIn } from "../../lib/clientAuth";
+import { buildClientLoginUrl, isClientLoggedIn } from "../../lib/clientAuth";
 import { isFxHedgeOnboardingApplicable } from "../../lib/clientSegment";
 import DecideClientShell from "../../components/DecideClientShell";
 import {
@@ -41,7 +41,7 @@ export default function FxHedgeOnboardingPage() {
   useEffect(() => {
     if (!mounted) return;
     if (!isClientLoggedIn()) {
-      window.location.href = "/client/login";
+      window.location.href = buildClientLoginUrl("/client/fx-hedge-onboarding");
       return;
     }
     if (!isFxHedgeOnboardingApplicable()) {

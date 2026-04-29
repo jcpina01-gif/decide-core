@@ -1303,7 +1303,7 @@ type PlanoDevResetTestPanelProps = {
   executeBusyFirst?: boolean;
   executeBusySecond?: boolean;
   executeBusyThird?: boolean;
-  /** Sem linha SELL UCITS EUR no plano — desactiva o atalho só-venda. */
+  /** Sem posição MM EUR na carteira sincronizada nem linha SELL no plano — desactiva o atalho só-venda. */
   sellXeonDisabled?: boolean;
 };
 
@@ -1428,8 +1428,8 @@ function PlanoDevResetTestPanel({
                 onClick={onSellXeonOnly}
                 title={
                   sellXeonDisabled
-                    ? "Não há linha de VENDA para o ticker MM EUR do plano."
-                    : `Enviar só uma ordem de venda em ${eurMmIbTicker()} (quantidade agregada das linhas SELL).`
+                    ? `Sem posição ${eurMmIbTicker()} na carteira IBKR actualizada nem linha de VENDA no plano.`
+                    : `Vender ${eurMmIbTicker()} na IBKR: prioridade à quantidade da carteira sincronizada; se não houver, usa vendas do plano.`
                 }
                 style={{
                   cursor: executeBusyThird ? "wait" : executeLocked || sellXeonDisabled ? "not-allowed" : "pointer",
@@ -1766,6 +1766,31 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
     }
     return src;
   }, [liveActualPositions, reportData.actualPositions, liveIbkrStructure]);
+
+  /**
+   * UCITS MM EUR na carteira IBKR (XEON, CSH2, …) — não usar só `eurMmIbTicker()` (default env pode ser CSH2 enquanto a conta tem XEON).
+   * `ibkrSymbol` = 1.º token do símbolo na IB para o envio (ex. «XEON IB» → XEON).
+   */
+  const liveEurMmShortcutState = useMemo(() => {
+    let qty = 0;
+    let ibkrSymbol: string | null = null;
+    for (const p of portfolioTablePositions) {
+      const raw = String(p.ticker || "").trim();
+      const base =
+        raw
+          .toUpperCase()
+          .split(/\s+/)[0]
+          ?.replace(/\s+/g, "") ?? "";
+      if (!base || !isEurMmUcitsPlanTicker(base)) continue;
+      const q = Math.floor(Math.abs(safeNumber(p.qty, 0)));
+      if (q <= 0) continue;
+      qty += q;
+      if (!ibkrSymbol) {
+        ibkrSymbol = (raw.split(/\s+/)[0]?.trim() ?? base).toUpperCase();
+      }
+    }
+    return { qty, ibkrSymbol };
+  }, [portfolioTablePositions]);
 
   /** Peso face à soma dos títulos (exclui caixa do denominador) — leitura mais próxima dos pesos do plano à direita. */
   const portfolioDisplayRows = useMemo(() => {
@@ -2784,6 +2809,12 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
     }).length;
   }, [proposedTradesEurMm]);
 
+  /** Atalho activo com posição real na IBKR **ou** linha SELL no plano. */
+  const xeonSellShortcutDisabled = useMemo(
+    () => xeonSellOnlyExecutableCount < 1 && liveEurMmShortcutState.qty < 1,
+    [xeonSellOnlyExecutableCount, liveEurMmShortcutState.qty],
+  );
+
   const handleDownloadMonthlyRecommendationPdf = useCallback(async () => {
     if (typeof window === "undefined") return;
     setMonthlyPdfBusy(true);
@@ -2992,22 +3023,42 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
   const runSellXeonOnlyFromUi = () => {
     if (postApprovalStage === "executing") return;
     const sym = eurMmIbTicker().toUpperCase();
-    const sells = proposedTradesEurMm.filter((t) => {
-      if (t.side !== "SELL" || t.absQty <= 0) return false;
-      if (String(t.ticker || "").toUpperCase() === "EURUSD") return false;
-      return resolveIbkrSendTicker(String(t.ticker || "")).toUpperCase() === sym;
-    });
-    if (sells.length === 0) {
+
+    let qty = 0;
+    let tickerForSend = "EUR_MM_PROXY";
+    let detail = "";
+
+    if (liveEurMmShortcutState.qty > 0) {
+      qty = liveEurMmShortcutState.qty;
+      const symIb = liveEurMmShortcutState.ibkrSymbol ?? sym;
+      detail = `Quantidade da carteira IBKR sincronizada (${qty} ${symIb}), independente do plano de rebalanceamento.`;
+    } else {
+      const sells = proposedTradesEurMm.filter((t) => {
+        if (t.side !== "SELL" || t.absQty <= 0) return false;
+        if (String(t.ticker || "").toUpperCase() === "EURUSD") return false;
+        return resolveIbkrSendTicker(String(t.ticker || "")).toUpperCase() === sym;
+      });
+      qty = sells.reduce((a, t) => a + Math.floor(t.absQty), 0);
+      if (sells.length > 0) {
+        tickerForSend = String(sells[0].ticker || "").trim() || "EUR_MM_PROXY";
+        detail = `Agregado das linhas de VENDA do plano (${qty} un.).`;
+      }
+    }
+
+    if (qty < 1) {
       window.alert(
-        `Neste plano não há linha de VENDA só para ${sym} (liquidez UCITS EUR) — nada a enviar com este atalho.`,
+        `Não há posição ${sym} na carteira IBKR (use «Ver carteira actualizada» no bloco de execução) nem linha de VENDA para ${sym} no plano.`,
       );
       return;
     }
-    const qty = sells.reduce((a, t) => a + Math.floor(t.absQty), 0);
-    const tickerForSend = String(sells[0].ticker || "").trim();
+
+    const symConfirm =
+      liveEurMmShortcutState.qty > 0 && liveEurMmShortcutState.ibkrSymbol
+        ? liveEurMmShortcutState.ibkrSymbol
+        : sym;
     if (
       !window.confirm(
-        `Enviar apenas UMA ordem de VENDA de ${qty} unidades (símbolo no plano: ${tickerForSend}; na IB: ${sym}). Ignora compras e o resto do 2.º lote.\n\nConta paper IBKR.`,
+        `Enviar apenas UMA ordem de VENDA de ${qty} unidades (${symConfirm} na corretora).\n\n${detail}\n\nIgnora compras e o resto do 2.º lote.\n\nConta paper IBKR.`,
       )
     ) {
       return;
@@ -3015,7 +3066,12 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
     setPlanoDevShortcut("xeon_sell");
     setPlanTab("execucao");
     lastExecuteBatchRef.current = "eur_mm";
-    void executeOrdersNow([{ ticker: tickerForSend, side: "SELL", qty }], { batch: "eur_mm" });
+    /** Com posição real: usar o símbolo IBKR da linha (ex. XEON), não só EUR_MM_PROXY → env pode ser CSH2 por defeito. */
+    const tickerOverride =
+      liveEurMmShortcutState.qty > 0 && liveEurMmShortcutState.ibkrSymbol
+        ? liveEurMmShortcutState.ibkrSymbol
+        : tickerForSend;
+    void executeOrdersNow([{ ticker: tickerOverride, side: "SELL", qty }], { batch: "eur_mm" });
   };
 
   return (
@@ -3243,7 +3299,7 @@ export default function ClientReportPage({ reportData: reportDataIn }: PageProps
                   executeBusyFirst={postApprovalStage === "executing" && planoDevShortcut === "batch1"}
                   executeBusySecond={postApprovalStage === "executing" && planoDevShortcut === "batch2"}
                   executeBusyThird={postApprovalStage === "executing" && planoDevShortcut === "xeon_sell"}
-                  sellXeonDisabled={xeonSellOnlyExecutableCount < 1}
+                  sellXeonDisabled={xeonSellShortcutDisabled}
                 />
               ) : null}
             </div>

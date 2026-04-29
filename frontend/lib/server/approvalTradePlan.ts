@@ -560,8 +560,8 @@ type ActualPosition = {
 
 export type LoadApprovalAlignedProposedTradesOptions = {
   /**
-   * NAV em EUR só aplicado quando o smoke IBKR (`tmp_diag`) não traz património —
-   * ex. Vercel sem ficheiros locais; alinha quantidades ao montante do onboarding.
+   * Montante indicado no onboarding (EUR). Quando definido e positivo, define o NAV de referência do plano
+   * e escala proporcionalmente os valores das posições do smoke IBKR para esse montante (quando existe smoke).
    */
   navOverrideEur?: number;
   /**
@@ -710,15 +710,23 @@ export async function loadApprovalAlignedProposedTrades(
       (att0o?.netLiquidation as Record<string, unknown> | undefined)?.value,
     0,
   );
-  let navFinal = navFromSmoke;
   const overrideNav =
     options?.navOverrideEur != null ? safeNumber(options.navOverrideEur, 0) : 0;
-  if (navFromSmoke <= 0 && overrideNav > 0) {
+
+  /** Preferir sempre o montante do onboarding quando enviado — é a referência de investimento do cliente. */
+  let navFinal = 0;
+  if (overrideNav > 0) {
     navFinal = overrideNav;
-  } else if (navFinal <= 0) {
+  } else if (navFromSmoke > 0) {
+    navFinal = navFromSmoke;
+  } else {
     const envNav = safeNumber(process.env.DECIDE_APPROVAL_FALLBACK_NAV_EUR, 0);
     if (envNav > 0) navFinal = envNav;
   }
+
+  /** Escalar valores das posições smoke para o montante do onboarding (mantém pesos relativos). */
+  const onboardingPositionScale =
+    overrideNav > 0 && navFromSmoke > 0 ? overrideNav / navFromSmoke : 1;
 
   const tradePlanByTicker = new Map<string, Record<string, string>>();
   for (const row of tradePlanRows) {
@@ -738,7 +746,8 @@ export async function loadApprovalAlignedProposedTrades(
     const qty = safeNumber(pp.position ?? pp.qty, 0);
     const tradePlanRow = tradePlanByTicker.get(ticker);
     const marketPrice = safeNumber((tradePlanRow as Record<string, string> | undefined)?.market_price, 0);
-    const value = qty * marketPrice;
+    const rawValue = qty * marketPrice;
+    const value = rawValue * onboardingPositionScale;
     const weightPct = navFinal > 0 ? (value / navFinal) * 100 : 0;
     const closePrice = getClosePrice(ticker);
     return {
@@ -1138,7 +1147,10 @@ export async function loadApprovalAlignedProposedTrades(
     tradePlanRows.length > 0
       ? "Mesma visão que «Alterações propostas» no plano: CSV IBKR + carteira recomendada + posições em conta."
       : "Sem CSV IBKR: lista a partir da diferença entre conta e recomendado (como no plano).";
-  if (navFromSmoke <= 0 && navFinal > 0) {
+  if (overrideNav > 0 && navFromSmoke > 0) {
+    coverageNote +=
+      " NAV do plano = montante do onboarding; posições da conta paper escalonadas proporcionalmente ao património smoke.";
+  } else if (navFromSmoke <= 0 && navFinal > 0) {
     coverageNote += " NAV de referência sem ficheiro smoke IBKR no servidor.";
     if (overrideNav > 0) {
       coverageNote += " Usado o montante indicado no onboarding (pedido à API).";

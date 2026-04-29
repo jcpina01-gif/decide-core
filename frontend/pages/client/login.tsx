@@ -5,6 +5,7 @@ import {
   getCurrentSessionUser,
   isClientLoggedIn,
   loginClientUser,
+  readLoginNextDestinationFromWindow,
 } from "../../lib/clientAuth";
 import { getNextOnboardingHref, isOnboardingFlowComplete } from "../../lib/onboardingProgress";
 import DecideClientShell from "../../components/DecideClientShell";
@@ -22,6 +23,9 @@ export default function ClientLoginPage() {
     onboardingComplete: false,
   });
 
+  /** Alinhado ao SSR de `getNextOnboardingHref` — actualizado no cliente com `?next=` e LS. */
+  const [postLoginHref, setPostLoginHref] = useState("/client-montante");
+
   useEffect(() => {
     const loggedIn = isClientLoggedIn();
     setSessionState({
@@ -29,6 +33,7 @@ export default function ClientLoginPage() {
       user: getCurrentSessionUser(),
       onboardingComplete: loggedIn ? isOnboardingFlowComplete() : false,
     });
+    setPostLoginHref(readLoginNextDestinationFromWindow() ?? getNextOnboardingHref());
   }, []);
 
   const { loggedIn, user: currentUser, onboardingComplete } = sessionState;
@@ -44,7 +49,7 @@ export default function ClientLoginPage() {
       setError(res.error || "Falha ao fazer login.");
       return;
     }
-    window.location.href = getNextOnboardingHref();
+    window.location.href = readLoginNextDestinationFromWindow() ?? getNextOnboardingHref();
   }
 
   return (
@@ -63,7 +68,7 @@ export default function ClientLoginPage() {
         stickyBottomBar={
           loggedIn && !onboardingComplete ? (
             <a
-              href={getNextOnboardingHref()}
+              href={postLoginHref}
               style={{
                 display: "block",
                 width: "100%",

@@ -256,7 +256,7 @@ export default function ApprovePage({
   /** Navegação para o relatório após aprovar — feedback até o Next carregar a página seguinte. */
   const [approveBusy, setApproveBusy] = useState(false);
 
-  /** Sem smoke IBKR no servidor (ex. Vercel): plano alinhado ao montante em `ONBOARDING_MONTANTE_KEY`. */
+  /** Plano via `/api/client/approval-plan` com `referenceNavEur` = montante do onboarding (prevalece sobre o SSR). */
   const [clientRefPlan, setClientRefPlan] = useState<{
     navEur: number;
     trades: ProposedTrade[];
@@ -498,9 +498,6 @@ export default function ApprovePage({
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const serverOk = navEur > 0 && trades.length > 0;
-    if (serverOk) return;
-
     let montante = 0;
     try {
       const raw = window.localStorage.getItem(ONBOARDING_MONTANTE_KEY);
@@ -573,7 +570,9 @@ export default function ApprovePage({
     return () => {
       cancelled = true;
     };
-  }, [navEur, trades.length]);
+    // Montante do onboarding lido uma vez ao montar — define o NAV do plano em conjunto com o smoke IBKR no servidor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;

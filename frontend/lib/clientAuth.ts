@@ -34,6 +34,41 @@ function notifyClientSessionChanged(): void {
   }
 }
 
+/** Query string: destino same-origin após login (só paths internos validados). */
+export const CLIENT_LOGIN_NEXT_QUERY_PARAM = "next";
+
+export function resolveSafeInternalLoginNextParam(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const t = (() => {
+    try {
+      return decodeURIComponent(String(raw).trim());
+    } catch {
+      return String(raw).trim();
+    }
+  })();
+  if (!t.startsWith("/")) return null;
+  if (t.startsWith("//")) return null;
+  if (t.includes("://")) return null;
+  return t;
+}
+
+export function readLoginNextDestinationFromWindow(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const v = new URLSearchParams(window.location.search).get(CLIENT_LOGIN_NEXT_QUERY_PARAM);
+    return resolveSafeInternalLoginNextParam(v);
+  } catch {
+    return null;
+  }
+}
+
+/** URL da página de login com redireccionamento pós-login opcional (evita perder o contexto do funil). */
+export function buildClientLoginUrl(returnPath?: string): string {
+  const safe = returnPath ? resolveSafeInternalLoginNextParam(returnPath) : null;
+  if (!safe) return "/client/login";
+  return `/client/login?${CLIENT_LOGIN_NEXT_QUERY_PARAM}=${encodeURIComponent(safe)}`;
+}
+
 /** Normaliza telemóvel para E.164 (mínimo para Twilio). Aceita +351… ou 9XXXXXXXX em PT. */
 export function normalizeClientPhone(raw: string): { ok: true; e164: string } | { ok: false; error: string } {
   let s = (raw || "").trim().replace(/\s+/g, "");
