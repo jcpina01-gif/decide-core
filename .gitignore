@@ -95,6 +95,7 @@ next-cache/
 !/backend/scripts/run_v5_sharpe_levers_battery.py
 !/backend/scripts/run_v5_cost_buffer_battery.py
 !/backend/scripts/run_v5_sharpe_hypothesis_audit.py
+!/backend/scripts/rebuild_weights_by_rebalance.py
 # Preços para o motor (run-model). CSV podem ser grandes — Git LFS se necessário.
 !/backend/data/
 /backend/data/*
@@ -133,6 +134,7 @@ next-cache/
 !/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y_moderado.csv
 !/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y_conservador.csv
 !/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y_dinamico.csv
+!/freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/weights_by_rebalance.csv
 
 .vercel
 .env*.local
