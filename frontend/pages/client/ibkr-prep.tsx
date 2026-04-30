@@ -555,8 +555,10 @@ export default function IbkrPrepPage() {
   const privateMin = SEGMENT_MIN_INVESTMENT_EUR.private;
   const privateEligibleByAmount = investAmountEur >= privateMin;
   const isPrivateSelectedIneligible = clientSegment === "private" && !privateEligibleByAmount;
-  const activeSegment: ClientSegment =
-    clientSegment === "private" && privateEligibleByAmount ? "private" : "premium";
+  // Regra operacional: a partir do patamar Private, mostramos sempre fluxo Private
+  // para evitar mistura de meios de cobrança (Stripe vs fee sobre NAV/performance).
+  const activeSegment: ClientSegment = privateEligibleByAmount ? "private" : "premium";
+  const premiumSelectedButAutoPrivate = clientSegment === "premium" && privateEligibleByAmount;
   const isPremiumFlow = activeSegment === "premium";
   const planLabel = activeSegment === "private" ? "Plano Private" : "Plano Essencial";
   const planPriceLine =
@@ -852,9 +854,9 @@ export default function IbkrPrepPage() {
                 Montante indicado: <span className="text-zinc-300">{formatMoney(investAmountEur, "EUR")}</span>
               </p>
             ) : null}
-            {clientSegment === "premium" && privateEligibleByAmount ? (
+            {premiumSelectedButAutoPrivate ? (
               <p className="mt-3 rounded-lg border border-teal-700/50 bg-teal-950/25 px-3 py-2 text-xs text-teal-100/90">
-                Com este montante, o plano Private também está disponível.
+                Com este montante, aplicamos o fluxo Private por defeito.
               </p>
             ) : null}
             {isPrivateSelectedIneligible ? (
