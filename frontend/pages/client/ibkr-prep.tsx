@@ -10,7 +10,12 @@ import OnboardingFlowBar, {
 import { buildPersonaReferenceIdFromSession } from "../../lib/personaReference";
 import { extractDisplayNameFromPersonaRecord } from "../../lib/personaDisplayName";
 import { isClientLoggedIn } from "../../lib/clientAuth";
-import { getClientSegment, isFxHedgeOnboardingApplicable, type ClientSegment } from "../../lib/clientSegment";
+import {
+  getClientSegment,
+  isFxHedgeOnboardingApplicable,
+  SEGMENT_MIN_INVESTMENT_EUR,
+  type ClientSegment,
+} from "../../lib/clientSegment";
 import {
   isFxHedgeGateOk,
   shouldSkipHedgeGateRedirect,
@@ -218,6 +223,7 @@ export default function IbkrPrepPage() {
   const [stripeFeedback, setStripeFeedback] = useState<null | "success" | "cancel" | "fail">(null);
   const [stripeCheckoutDoneLs, setStripeCheckoutDoneLs] = useState(false);
   const [clientSegment, setClientSegmentState] = useState<ClientSegment>("premium");
+  const [investAmountEur, setInvestAmountEur] = useState(0);
   const router = useRouter();
 
   const refreshOnboardingFlagsFromLs = useCallback(() => {
@@ -247,6 +253,13 @@ export default function IbkrPrepPage() {
       setClientSegmentState(getClientSegment());
     } catch {
       setClientSegmentState("premium");
+    }
+    try {
+      const raw = window.localStorage.getItem(ONBOARDING_MONTANTE_KEY);
+      const amount = raw != null ? safeNumber(Number(String(raw).replace(/\s/g, "").replace(",", ".")), 0) : 0;
+      setInvestAmountEur(amount > 0 ? amount : 0);
+    } catch {
+      setInvestAmountEur(0);
     }
     try {
       setMifidDone(window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.mifid) === "1");
@@ -539,9 +552,15 @@ export default function IbkrPrepPage() {
   const canPrepare = mifidSatisfied && kycDone && identityServerSatisfied && hedgeGateOk;
   /** Só mostramos o atalho para aprovação depois de «Preparar» (evita saltar o passo). */
   const canGoToApprove = canPrepare && ibkrPrepDone;
-  const planLabel = clientSegment === "private" ? "Plano Private" : "Plano Essencial";
+  const privateMin = SEGMENT_MIN_INVESTMENT_EUR.private;
+  const privateEligibleByAmount = investAmountEur >= privateMin;
+  const isPrivateSelectedIneligible = clientSegment === "private" && !privateEligibleByAmount;
+  const activeSegment: ClientSegment =
+    clientSegment === "private" && privateEligibleByAmount ? "private" : "premium";
+  const isPremiumFlow = activeSegment === "premium";
+  const planLabel = activeSegment === "private" ? "Plano Private" : "Plano Essencial";
   const planPriceLine =
-    clientSegment === "private" ? "0,60%/ano + performance fee (quando aplicável)" : "25 €/mês";
+    activeSegment === "private" ? "0,60%/ano + performance fee (quando aplicável)" : "25 €/mês";
 
   const stepStateLabel = useMemo(() => {
     if (!canPrepare) {
@@ -824,13 +843,29 @@ export default function IbkrPrepPage() {
           <section className="mb-6 rounded-xl border border-zinc-800/90 bg-zinc-950/50 p-5 sm:p-6">
             <h2 className="text-base font-semibold text-zinc-100">O que acontece agora?</h2>
             <ol className="mt-3 list-inside list-decimal space-y-1.5 text-sm leading-relaxed text-zinc-300">
-              <li>Ativa a subscrição DECIDE</li>
+              <li>{isPremiumFlow ? "Ativa a subscrição DECIDE" : "Confirma condições e método de cobrança Private"}</li>
               <li>Revê o plano personalizado</li>
               <li>Aprova ou rejeita a execução</li>
             </ol>
+            {investAmountEur > 0 ? (
+              <p className="mt-3 text-xs text-zinc-500">
+                Montante indicado: <span className="text-zinc-300">{formatMoney(investAmountEur, "EUR")}</span>
+              </p>
+            ) : null}
+            {clientSegment === "premium" && privateEligibleByAmount ? (
+              <p className="mt-3 rounded-lg border border-teal-700/50 bg-teal-950/25 px-3 py-2 text-xs text-teal-100/90">
+                Com este montante, o plano Private também está disponível.
+              </p>
+            ) : null}
+            {isPrivateSelectedIneligible ? (
+              <p className="mt-3 rounded-lg border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-100/90">
+                O plano Private requer um mínimo de {privateMin.toLocaleString("pt-PT")} €. Pode continuar com o
+                plano Essencial ou ajustar o montante.
+              </p>
+            ) : null}
           </section>
 
-          {STRIPE_UI_ENABLED ? (
+          {isPremiumFlow && STRIPE_UI_ENABLED ? (
             <section className="mb-6 rounded-xl border border-violet-500/25 bg-zinc-900/50 p-5 sm:p-6" aria-labelledby="ibkr-prep-stripe-h2">
               <h2 id="ibkr-prep-stripe-h2" className="text-base font-semibold text-zinc-100">
                 Pagamento da subscrição (Stripe)
@@ -870,6 +905,45 @@ export default function IbkrPrepPage() {
               <div className="mt-3 text-xs leading-relaxed text-zinc-500">
                 Pode cancelar a subscrição antes da próxima renovação. A recomendação só é enviada para execução após
                 aprovação explícita.
+              </div>
+            </section>
+          ) : null}
+
+          {activeSegment === "private" ? (
+            <section className="mb-6 rounded-xl border border-cyan-500/25 bg-zinc-900/50 p-5 sm:p-6">
+              <h2 className="text-base font-semibold text-zinc-100">Ativação Private</h2>
+              <div className="mt-2 rounded-lg border border-cyan-400/25 bg-cyan-950/20 px-3 py-2.5">
+                <p className="text-sm font-semibold text-zinc-100">
+                  {planLabel} — <span className="text-cyan-200">{planPriceLine}</span>
+                </p>
+                <p className="mt-1 text-sm leading-relaxed text-zinc-300">
+                  O investimento fica na sua conta Interactive Brokers. A comissão é tratada na etapa de condições
+                  Private (sem checkout Stripe como passo principal).
+                </p>
+              </div>
+              <ul className="mt-3 list-inside list-disc space-y-1 text-sm text-zinc-300">
+                <li>Comissão de gestão: 0,60%/ano</li>
+                <li>Performance fee: 15% (quando aplicável)</li>
+              </ul>
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                {canGoToApprove ? (
+                  <Link
+                    href="/client/approve"
+                    className="min-h-[44px] rounded-full border border-cyan-400/45 bg-cyan-800/45 px-6 py-2.5 text-sm font-bold text-cyan-50 transition hover:bg-cyan-700/50"
+                  >
+                    Rever condições e ativar Private
+                  </Link>
+                ) : (
+                  <span className="text-xs text-zinc-500">
+                    Conclua «Continuar para ativar o plano» acima para avançar para as condições Private.
+                  </span>
+                )}
+                <Link
+                  href="/client-montante"
+                  className="rounded-full border border-white/20 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:border-white/35 hover:text-white"
+                >
+                  Ajustar montante
+                </Link>
               </div>
             </section>
           ) : null}
