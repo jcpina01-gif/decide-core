@@ -137,14 +137,10 @@ export default function FiscalidadePanelBody() {
     >
       <div
         style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 20,
-          alignItems: "flex-start",
           width: "100%",
+          display: "block",
         }}
       >
-        <div style={{ flex: "1 1 480px", minWidth: 0 }}>
       <FiscalCard title="Aviso legal" variant="legal">
         <p style={{ margin: 0, color: "#fcd34d", fontSize: 12.5, lineHeight: 1.62 }}>
           A fiscalidade depende da residência fiscal do cliente, do tipo de instrumento (ETF UCITS, ações, CFD, etc.), da
@@ -294,7 +290,6 @@ export default function FiscalidadePanelBody() {
       </FiscalCard>
 
       <UkPracticalCard />
-        </div>
       </div>
     </div>
   );
