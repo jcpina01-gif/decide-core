@@ -52,6 +52,9 @@ jobs:
           mkdir -p frontend/data/landing/freeze-cap15
           cp -f freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/*.csv frontend/data/landing/freeze-cap15/
           cp -f freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/*.json frontend/data/landing/freeze-cap15/
+          # O endpoint /api/client/recommendations-history lê backend/data/weights_by_rebalance.csv.
+          # Mantemos este ficheiro alinhado com o freeze diário para o histórico não ficar parado.
+          cp -f freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/weights_by_rebalance.csv backend/data/weights_by_rebalance.csv
 
       - name: Rebuild weights + scores (engine v2 → backend/data)
         run: |
