@@ -54,7 +54,12 @@ jobs:
           cp -f freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/*.json frontend/data/landing/freeze-cap15/
 
       - name: Rebuild weights + scores (engine v2 → backend/data)
-        run: python backend/scripts/rebuild_weights_by_rebalance.py --mode v2
+        run: |
+          if [ -f backend/scripts/rebuild_weights_by_rebalance.py ]; then
+            python backend/scripts/rebuild_weights_by_rebalance.py --mode v2
+          else
+            echo "rebuild_weights_by_rebalance.py não versionado neste branch; a usar pesos já exportados no freeze."
+          fi
 
       - name: Commit and push if data changed
         run: |
