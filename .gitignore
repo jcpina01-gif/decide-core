@@ -49,6 +49,7 @@ next-cache/
 !/backend/app_main.py
 !/backend/app_shared.py
 !/backend/core.py
+!/backend/price_series_clean.py
 !/backend/engine_v2.py
 !/backend/engine_entrypoint.py
 !/backend/engine_research_v2_constrained.py
