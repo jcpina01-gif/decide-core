@@ -2,7 +2,10 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useEffect, useMemo, useState } from "react";
-import OnboardingFlowBar, { ONBOARDING_LOCALSTORAGE_CHANGED_EVENT } from "../../components/OnboardingFlowBar";
+import OnboardingFlowBar, {
+  ONBOARDING_LOCALSTORAGE_CHANGED_EVENT,
+  ONBOARDING_STORAGE_KEYS,
+} from "../../components/OnboardingFlowBar";
 import { buildClientLoginUrl, isClientLoggedIn } from "../../lib/clientAuth";
 import { isFxHedgeOnboardingApplicable } from "../../lib/clientSegment";
 import DecideClientShell from "../../components/DecideClientShell";
@@ -26,6 +29,19 @@ import {
 } from "../../lib/fxHedgePrefs";
 import { getNextOnboardingHref } from "../../lib/onboardingProgress";
 
+const STRIPE_ONBOARDING_OK_KEY = "decide_onboarding_stripe_checkout_v1";
+
+function canAccessHedgeStepWithoutLogin(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const kycDone = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.kyc) === "1";
+    const stripeDone = window.localStorage.getItem(STRIPE_ONBOARDING_OK_KEY) === "1";
+    return kycDone && stripeDone;
+  } catch {
+    return false;
+  }
+}
+
 export default function FxHedgeOnboardingPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -40,7 +56,9 @@ export default function FxHedgeOnboardingPage() {
 
   useEffect(() => {
     if (!mounted) return;
-    if (!isClientLoggedIn()) {
+    const loggedIn = isClientLoggedIn();
+    const allowNoLogin = canAccessHedgeStepWithoutLogin();
+    if (!loggedIn && !allowNoLogin) {
       window.location.href = buildClientLoginUrl("/client/fx-hedge-onboarding");
       return;
     }
@@ -91,7 +109,8 @@ export default function FxHedgeOnboardingPage() {
     } catch {
       // ignore
     }
-    void router.push(getNextOnboardingHref());
+    const nextHref = isClientLoggedIn() ? getNextOnboardingHref() : "/client/ibkr-prep";
+    void router.push(nextHref);
   }
 
   if (!mounted) {
@@ -112,7 +131,7 @@ export default function FxHedgeOnboardingPage() {
     );
   }
 
-  if (!isClientLoggedIn() || !isFxHedgeOnboardingApplicable()) {
+  if ((!isClientLoggedIn() && !canAccessHedgeStepWithoutLogin()) || !isFxHedgeOnboardingApplicable()) {
     return null;
   }
 
