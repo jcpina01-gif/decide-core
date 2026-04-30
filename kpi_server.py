@@ -1166,12 +1166,12 @@ HTML_TEMPLATE = """
       body.decide-kpi-embed #tab-horizons .horizon-embed-charts-row{
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        gap: 10px 12px;
+        gap: 8px 10px;
         align-items: stretch;
       }
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity,
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd{
-        min-height: 240px;
+        min-height: 148px;
         display: flex;
         flex-direction: column;
         min-width: 0;
@@ -1188,39 +1188,48 @@ HTML_TEMPLATE = """
       }
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd canvas{
         flex: 1 1 auto;
-        min-height: 200px;
+        min-height: 132px;
       }
-      @media (max-width: 900px) {
+      @media (max-width: 760px) {
         body.decide-kpi-embed #tab-horizons .horizon-embed-charts-row{
           grid-template-columns: 1fr;
         }
       }
       body.decide-kpi-embed #tab-horizons .horizon-embed-stats-grid{
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 10px;
-        margin-bottom: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 10px;
+        margin-bottom: 8px;
         align-items: stretch;
+      }
+      body.decide-kpi-embed #tab-horizons .horizon-embed-stat-box--model,
+      body.decide-kpi-embed #tab-horizons .horizon-embed-stat-box--bench{
+        padding: 10px 12px;
+        border-radius: 12px;
+      }
+      body.decide-kpi-embed #tab-horizons .horizon-embed-stat-box--model .label,
+      body.decide-kpi-embed #tab-horizons .horizon-embed-stat-box--bench .label{
+        font-size: 0.74rem !important;
       }
       body.decide-kpi-embed #tab-horizons .horizon-embed-metric{
         display: flex;
         justify-content: space-between;
         gap: 8px;
-        font-size: 0.82rem;
-        margin-top: 6px;
-        line-height: 1.35;
+        font-size: 0.75rem;
+        margin-top: 3px;
+        line-height: 1.25;
       }
       body.decide-kpi-embed #tab-horizons .horizon-embed-metric-k{
         color: #94a3b8;
         font-weight: 600;
       }
       body.decide-kpi-embed #tab-horizons .horizon-diff-line--inst{
-        font-size: 0.88rem;
-        line-height: 1.45;
+        font-size: 0.82rem;
+        line-height: 1.35;
         color: #cbd5e1;
-        margin-bottom: 4px;
+        margin: 2px 0 4px;
       }
-      @media (max-width: 900px) {
+      @media (max-width: 760px) {
         body.decide-kpi-embed #tab-horizons .horizon-embed-stats-grid{
           grid-template-columns: 1fr;
         }
@@ -3658,10 +3667,6 @@ HTML_TEMPLATE = """
               <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">CAGR</span><span class="num value">{% if hr.bench_cagr_pct is not none %}{{ hr.bench_cagr_pct | round(2) }}%/ano{% else %}—{% endif %}</span></div>
               <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Max drawdown</span><span class="num value negative">{% if hr.bench_max_dd_pct is not none %}{{ hr.bench_max_dd_pct | round(2) }}%{% else %}—{% endif %}</span></div>
             </div>
-            <div class="stat-box">
-              <div class="label">Dias úteis</div>
-              <div class="num">{{ hr.n_days }}</div>
-            </div>
           </div>
           {% if diff_pp >= 0 %}
           <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou acima do mercado de referência.</div>
@@ -3669,7 +3674,7 @@ HTML_TEMPLATE = """
           <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou abaixo do mercado de referência.</div>
           {% endif %}
           <div class="muted" style="font-size:0.75rem;margin-bottom:8px;">Diferença de retorno acumulado (modelo − referência): {% if diff_pp >= 0 %}+{% endif %}{{ diff_pp | round(1) }} p.p.</div>
-          <div class="muted" style="font-size:0.75rem; margin-bottom:8px;">{{ hr.date_start }} → {{ hr.date_end }}</div>
+          <div class="muted" style="font-size:0.74rem; margin-bottom:6px;">{{ hr.date_start }} → {{ hr.date_end }} · {{ hr.n_days }} dias úteis</div>
           <div class="horizon-embed-charts-row">
             <div class="pie-holder horizon-pie-holder--equity">
               <canvas id="horizonChartYtd"></canvas>
@@ -3707,10 +3712,6 @@ HTML_TEMPLATE = """
               <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">CAGR</span><span class="num value">{% if hr.bench_cagr_pct is not none %}{{ hr.bench_cagr_pct | round(2) }}%/ano{% else %}—{% endif %}</span></div>
               <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Max drawdown</span><span class="num value negative">{% if hr.bench_max_dd_pct is not none %}{{ hr.bench_max_dd_pct | round(2) }}%{% else %}—{% endif %}</span></div>
             </div>
-            <div class="stat-box">
-              <div class="label">Dias úteis</div>
-              <div class="num">{{ hr.n_days }}</div>
-            </div>
           </div>
           {% if diff_pp >= 0 %}
           <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou acima do mercado de referência.</div>
@@ -3718,7 +3719,7 @@ HTML_TEMPLATE = """
           <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou abaixo do mercado de referência.</div>
           {% endif %}
           <div class="muted" style="font-size:0.75rem;margin-bottom:8px;">Diferença de retorno acumulado (modelo − referência): {% if diff_pp >= 0 %}+{% endif %}{{ diff_pp | round(1) }} p.p.</div>
-          <div class="muted" style="font-size:0.75rem; margin-bottom:8px;">{{ hr.date_start }} → {{ hr.date_end }}</div>
+          <div class="muted" style="font-size:0.74rem; margin-bottom:6px;">{{ hr.date_start }} → {{ hr.date_end }} · {{ hr.n_days }} dias úteis</div>
           <div class="horizon-embed-charts-row">
             <div class="pie-holder horizon-pie-holder--equity">
               <canvas id="horizonChart1y"></canvas>
@@ -3756,10 +3757,6 @@ HTML_TEMPLATE = """
               <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">CAGR</span><span class="num value">{% if hr.bench_cagr_pct is not none %}{{ hr.bench_cagr_pct | round(2) }}%/ano{% else %}—{% endif %}</span></div>
               <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Max drawdown</span><span class="num value negative">{% if hr.bench_max_dd_pct is not none %}{{ hr.bench_max_dd_pct | round(2) }}%{% else %}—{% endif %}</span></div>
             </div>
-            <div class="stat-box">
-              <div class="label">Dias úteis</div>
-              <div class="num">{{ hr.n_days }}</div>
-            </div>
           </div>
           {% if diff_pp >= 0 %}
           <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou acima do mercado de referência.</div>
@@ -3767,7 +3764,7 @@ HTML_TEMPLATE = """
           <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou abaixo do mercado de referência.</div>
           {% endif %}
           <div class="muted" style="font-size:0.75rem;margin-bottom:8px;">Diferença de retorno acumulado (modelo − referência): {% if diff_pp >= 0 %}+{% endif %}{{ diff_pp | round(1) }} p.p.</div>
-          <div class="muted" style="font-size:0.75rem; margin-bottom:8px;">{{ hr.date_start }} → {{ hr.date_end }}</div>
+          <div class="muted" style="font-size:0.74rem; margin-bottom:6px;">{{ hr.date_start }} → {{ hr.date_end }} · {{ hr.n_days }} dias úteis</div>
           <div class="horizon-embed-charts-row">
             <div class="pie-holder horizon-pie-holder--equity">
               <canvas id="horizonChart5y"></canvas>
@@ -3805,10 +3802,6 @@ HTML_TEMPLATE = """
               <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">CAGR</span><span class="num value">{% if hr.bench_cagr_pct is not none %}{{ hr.bench_cagr_pct | round(2) }}%/ano{% else %}—{% endif %}</span></div>
               <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Max drawdown</span><span class="num value negative">{% if hr.bench_max_dd_pct is not none %}{{ hr.bench_max_dd_pct | round(2) }}%{% else %}—{% endif %}</span></div>
             </div>
-            <div class="stat-box">
-              <div class="label">Dias úteis</div>
-              <div class="num">{{ hr.n_days }}</div>
-            </div>
           </div>
           {% if diff_pp >= 0 %}
           <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou acima do mercado de referência.</div>
@@ -3816,7 +3809,7 @@ HTML_TEMPLATE = """
           <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou abaixo do mercado de referência.</div>
           {% endif %}
           <div class="muted" style="font-size:0.75rem;margin-bottom:8px;">Diferença de retorno acumulado (modelo − referência): {% if diff_pp >= 0 %}+{% endif %}{{ diff_pp | round(1) }} p.p.</div>
-          <div class="muted" style="font-size:0.75rem; margin-bottom:8px;">{{ hr.date_start }} → {{ hr.date_end }}</div>
+          <div class="muted" style="font-size:0.74rem; margin-bottom:6px;">{{ hr.date_start }} → {{ hr.date_end }} · {{ hr.n_days }} dias úteis</div>
           <div class="horizon-embed-charts-row">
             <div class="pie-holder horizon-pie-holder--equity">
               <canvas id="horizonChart10y"></canvas>
