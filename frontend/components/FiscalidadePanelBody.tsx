@@ -200,8 +200,6 @@ export default function FiscalidadePanelBody() {
         </P>
       </FiscalCard>
 
-      <UkPracticalCard />
-
       <FiscalCard title="Exemplos por país">
         <p style={{ margin: "0 0 12px 0", fontSize: 12, color: dim, maxWidth: "100%" }}>
           Texto geral; não substitui análise individual.
@@ -252,6 +250,8 @@ export default function FiscalidadePanelBody() {
           </CountryMiniCard>
         </div>
       </FiscalCard>
+
+      <UkPracticalCard />
 
       <FiscalCard title="Checklist anual (cliente)">
         <ol
