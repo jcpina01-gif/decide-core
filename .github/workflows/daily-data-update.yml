@@ -65,7 +65,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add backend/data freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs_from_clone frontend/data/landing/freeze-cap15
+          git add backend/data freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs frontend/data/landing/freeze-cap15
           if git diff --cached --quiet; then
             echo "Nada a gravar (CSV já actualizados)."
             exit 0
