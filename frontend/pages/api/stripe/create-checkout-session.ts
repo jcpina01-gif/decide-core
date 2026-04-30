@@ -4,6 +4,22 @@ import { stripeCheckoutPublicBaseUrl } from "../../../lib/server/stripeAppBaseUr
 
 type Body = { priceId?: string; modeOverride?: string };
 
+function parseCheckoutPaymentMethodTypes(): Stripe.Checkout.SessionCreateParams.PaymentMethodType[] {
+  const raw = (process.env.STRIPE_ONBOARDING_PAYMENT_METHOD_TYPES || "").trim();
+  if (!raw) return ["card"];
+
+  const allowed = new Set<Stripe.Checkout.SessionCreateParams.PaymentMethodType>([
+    "card",
+    "sepa_debit",
+  ]);
+  const parsed = raw
+    .split(",")
+    .map((v) => v.trim())
+    .filter((v): v is Stripe.Checkout.SessionCreateParams.PaymentMethodType => allowed.has(v as any));
+
+  return parsed.length > 0 ? parsed : ["card"];
+}
+
 /**
  * Cria um Stripe Checkout no final do onboarding (passo 6).
  * Env: `STRIPE_SECRET_KEY`, `STRIPE_ONBOARDING_PRICE_ID`; opcional `STRIPE_ONBOARDING_CHECKOUT_MODE` = `subscription` | `payment`.
@@ -39,11 +55,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     modeRaw === "payment" ? "payment" : "subscription";
 
   const stripe = new Stripe(key, { apiVersion: "2024-11-20.acacia" });
+  const paymentMethodTypes = parseCheckoutPaymentMethodTypes();
 
   try {
     const session = await stripe.checkout.sessions.create({
       mode,
       line_items: [{ price: priceId, quantity: 1 }],
+      payment_method_types: paymentMethodTypes,
       success_url: `${site}/client/ibkr-prep?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${site}/client/ibkr-prep?checkout=cancelled`,
     });
