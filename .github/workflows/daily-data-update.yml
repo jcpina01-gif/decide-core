@@ -56,14 +56,6 @@ jobs:
           # Mantemos este ficheiro alinhado com o freeze diário para o histórico não ficar parado.
           cp -f freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/weights_by_rebalance.csv backend/data/weights_by_rebalance.csv
 
-      - name: Rebuild weights + scores (engine v2 → backend/data)
-        run: |
-          if [ -f backend/scripts/rebuild_weights_by_rebalance.py ]; then
-            python backend/scripts/rebuild_weights_by_rebalance.py --mode v2
-          else
-            echo "rebuild_weights_by_rebalance.py não versionado neste branch; a usar pesos já exportados no freeze."
-          fi
-
       - name: Commit and push if data changed
         run: |
           git config user.name "github-actions[bot]"
