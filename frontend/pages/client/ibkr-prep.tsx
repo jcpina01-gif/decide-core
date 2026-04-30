@@ -10,7 +10,7 @@ import OnboardingFlowBar, {
 import { buildPersonaReferenceIdFromSession } from "../../lib/personaReference";
 import { extractDisplayNameFromPersonaRecord } from "../../lib/personaDisplayName";
 import { isClientLoggedIn } from "../../lib/clientAuth";
-import { isFxHedgeOnboardingApplicable } from "../../lib/clientSegment";
+import { getClientSegment, isFxHedgeOnboardingApplicable, type ClientSegment } from "../../lib/clientSegment";
 import {
   isFxHedgeGateOk,
   shouldSkipHedgeGateRedirect,
@@ -217,6 +217,7 @@ export default function IbkrPrepPage() {
   const [stripeRedirecting, setStripeRedirecting] = useState(false);
   const [stripeFeedback, setStripeFeedback] = useState<null | "success" | "cancel" | "fail">(null);
   const [stripeCheckoutDoneLs, setStripeCheckoutDoneLs] = useState(false);
+  const [clientSegment, setClientSegmentState] = useState<ClientSegment>("premium");
   const router = useRouter();
 
   const refreshOnboardingFlagsFromLs = useCallback(() => {
@@ -241,6 +242,11 @@ export default function IbkrPrepPage() {
       setHedgeGateOk(isFxHedgeGateOk());
     } catch {
       setHedgeGateOk(false);
+    }
+    try {
+      setClientSegmentState(getClientSegment());
+    } catch {
+      setClientSegmentState("premium");
     }
     try {
       setMifidDone(window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.mifid) === "1");
@@ -533,6 +539,9 @@ export default function IbkrPrepPage() {
   const canPrepare = mifidSatisfied && kycDone && identityServerSatisfied && hedgeGateOk;
   /** Só mostramos o atalho para aprovação depois de «Preparar» (evita saltar o passo). */
   const canGoToApprove = canPrepare && ibkrPrepDone;
+  const planLabel = clientSegment === "private" ? "Plano Private" : "Plano Essencial";
+  const planPriceLine =
+    clientSegment === "private" ? "0,60%/ano + performance fee (quando aplicável)" : "25 €/mês";
 
   const stepStateLabel = useMemo(() => {
     if (!canPrepare) {
@@ -736,13 +745,10 @@ export default function IbkrPrepPage() {
           <header className="mb-5 border-b border-zinc-800 pb-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{ONBOARDING_STEP_6_LABEL}</p>
             <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">
-              Finalizar conta e ativar plano
+              Ative o seu plano DECIDE
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-              Interactive Brokers — organizamos a conta; no fim deste passo pode activar a subscrição (comissões) via
-              Stripe. A seguir, <strong className="text-zinc-300">rever e aprovar</strong> o plano. Nada é executado sem
-              a sua decisão. O depósito de investimento continua a ser feito perante a IBKR, à parte deste pagamento
-              à DECIDE.
+              Depois da ativação, poderá rever a recomendação personalizada. Nada será investido sem a sua aprovação.
             </p>
           </header>
 
@@ -807,7 +813,7 @@ export default function IbkrPrepPage() {
 
               {!canPrepare ? (
                 <p className="mt-4 text-center text-xs text-zinc-600">
-                  O botão «Avançar para preparar conta» aparece aqui quando o passo estiver desbloqueado.
+                  O botão «Continuar para ativar o plano» aparece aqui quando o passo estiver desbloqueado.
                 </p>
               ) : !ibkrPrepDone ? (
                 <p className="mt-4 text-center text-xs text-zinc-600">Depois de avançar, poderá rever e aprovar o plano.</p>
@@ -815,15 +821,31 @@ export default function IbkrPrepPage() {
             </div>
           </section>
 
+          <section className="mb-6 rounded-xl border border-zinc-800/90 bg-zinc-950/50 p-5 sm:p-6">
+            <h2 className="text-base font-semibold text-zinc-100">O que acontece agora?</h2>
+            <ol className="mt-3 list-inside list-decimal space-y-1.5 text-sm leading-relaxed text-zinc-300">
+              <li>Ativa a subscrição DECIDE</li>
+              <li>Revê o plano personalizado</li>
+              <li>Aprova ou rejeita a execução</li>
+            </ol>
+          </section>
+
           {STRIPE_UI_ENABLED ? (
             <section className="mb-6 rounded-xl border border-violet-500/25 bg-zinc-900/50 p-5 sm:p-6" aria-labelledby="ibkr-prep-stripe-h2">
               <h2 id="ibkr-prep-stripe-h2" className="text-base font-semibold text-zinc-100">
                 Pagamento da subscrição (Stripe)
               </h2>
-              <p className="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-400">
-                No fim do registo, active o pagamento seguro de comissões (subscrição Premium) com cartão. Isto é
-                independente do <strong className="text-zinc-300">depósito de investimento</strong> na Interactive
-                Brokers — o dinheiro alocado ao plano continua a ser transferido para a corretora como já documentámos.
+              <div className="mt-2 rounded-lg border border-violet-400/25 bg-violet-950/25 px-3 py-2.5">
+                <p className="text-sm font-semibold text-zinc-100">
+                  {planLabel} — <span className="text-violet-200">{planPriceLine}</span>
+                </p>
+                <p className="mt-1 text-sm leading-relaxed text-zinc-300">
+                  A subscrição DECIDE é paga por cartão. O capital de investimento continua na sua conta Interactive
+                  Brokers.
+                </p>
+              </div>
+              <p className="mt-3 max-w-3xl text-sm leading-relaxed text-zinc-400">
+                O investimento só avança após aprovação explícita da recomendação.
               </p>
               {stripeCheckoutDoneLs ? (
                 <p className="mt-3 text-sm font-medium text-emerald-400" role="status">
@@ -841,40 +863,66 @@ export default function IbkrPrepPage() {
                       : "min-h-[44px] cursor-wait rounded-full border border-violet-500/20 bg-violet-900/30 px-6 text-sm font-bold text-violet-200/80"
                   }
                 >
-                  {stripeRedirecting ? "A abrir o Stripe…" : "Pagar com cartão (Stripe)"}
+                  {stripeRedirecting ? "A abrir o Stripe…" : "Pagar subscrição e ativar plano"}
                 </button>
+                <span className="text-xs text-zinc-500">Pagamento seguro por Stripe.</span>
+              </div>
+              <div className="mt-3 text-xs leading-relaxed text-zinc-500">
+                Pode cancelar a subscrição antes da próxima renovação. A recomendação só é enviada para execução após
+                aprovação explícita.
               </div>
             </section>
           ) : null}
 
-          {/* 3 — Dados IBKR (detalhe técnico; contraste baixo) */}
+          {/* 3 — Conta IBKR: resumo visível + detalhes colapsáveis */}
           <section className="mb-6 rounded-xl border border-zinc-800/50 bg-zinc-950/50 p-4 sm:p-5">
-            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-600">Dados da conta (IBKR)</h2>
-            <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-zinc-600">
-              Leitura em tempo real na conta paper via TWS — servidor DECIDE. TWS ligado; backend (
-              <code className="rounded bg-zinc-800 px-1 text-[11px]">uvicorn</code>) acessível.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-              <button
-                type="button"
-                data-testid="ibkr-refresh-values"
-                aria-label="Atualizar leitura dos valores via TWS na Interactive Brokers"
-                onClick={() => void refreshIbkrSnapshot()}
-                disabled={ibkrLive.loading}
-                style={ibkrRefreshButtonStyle(ibkrLive.loading)}
-              >
-                {ibkrLive.loading ? "A atualizar…" : "Atualizar leitura (TWS)"}
-              </button>
-              <span className="max-w-md text-xs font-medium leading-relaxed text-zinc-500">
-                Atualiza património e caixa reportados pelo TWS.
-              </span>
-            </div>
-            {ibkrLive.error ? (
-              <p className="mt-3 rounded-lg border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-100/90">
-                {ibkrLive.error}
+            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-600">Conta IBKR ligada</h2>
+            <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+              <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 px-3 py-2.5">
+                <dt className="text-[11px] text-zinc-600">Estado</dt>
+                <dd className="mt-0.5 text-sm font-medium text-zinc-300">{connectionLabel}</dd>
+              </div>
+              <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 px-3 py-2.5">
+                <dt className="text-[11px] text-zinc-600">Património lido</dt>
+                <dd className="mt-0.5 text-sm font-medium text-zinc-300">
+                  {ibkrLive.loading ? "…" : ibkrLive.ok ? formatMoney(ibkrLive.nav, ibkrLive.navCcy) : "—"}
+                </dd>
+              </div>
+              <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 px-3 py-2.5">
+                <dt className="text-[11px] text-zinc-600">Liquidez disponível</dt>
+                <dd className="mt-0.5 text-sm font-medium text-zinc-300">
+                  {ibkrLive.loading ? "…" : ibkrLive.ok ? formatMoney(ibkrLive.cash, ibkrLive.cashCcy) : "—"}
+                </dd>
+              </div>
+            </dl>
+
+            <details className="mt-3 rounded-lg border border-zinc-800/60 bg-zinc-950/40 p-3">
+              <summary className="cursor-pointer text-sm font-medium text-zinc-200">Ver detalhes da conta</summary>
+              <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-zinc-600">
+                Leitura em tempo real na conta paper via TWS — servidor DECIDE. TWS ligado; backend (
+                <code className="rounded bg-zinc-800 px-1 text-[11px]">uvicorn</code>) acessível.
               </p>
-            ) : null}
-            <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <button
+                  type="button"
+                  data-testid="ibkr-refresh-values"
+                  aria-label="Atualizar leitura dos valores via TWS na Interactive Brokers"
+                  onClick={() => void refreshIbkrSnapshot()}
+                  disabled={ibkrLive.loading}
+                  style={ibkrRefreshButtonStyle(ibkrLive.loading)}
+                >
+                  {ibkrLive.loading ? "A atualizar…" : "Atualizar leitura (TWS)"}
+                </button>
+                <span className="max-w-md text-xs font-medium leading-relaxed text-zinc-500">
+                  Atualiza património e caixa reportados pelo TWS.
+                </span>
+              </div>
+              {ibkrLive.error ? (
+                <p className="mt-3 rounded-lg border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-100/90">
+                  {ibkrLive.error}
+                </p>
+              ) : null}
+              <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
               <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 px-3 py-2.5">
                 <dt className="text-[11px] text-zinc-600">Estado da ligação</dt>
                 <dd className="mt-0.5 text-sm font-medium text-zinc-300">{connectionLabel}</dd>
@@ -915,7 +963,8 @@ export default function IbkrPrepPage() {
                   <span className="text-zinc-400">{formatPtDateTime(ibkrLive.updatedAt)}</span>
                 </dd>
               </div>
-            </dl>
+              </dl>
+            </details>
           </section>
 
           {/* Identidade — resumo curto, após dados técnicos */}
