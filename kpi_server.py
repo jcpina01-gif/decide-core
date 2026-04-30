@@ -1169,9 +1169,12 @@ HTML_TEMPLATE = """
         gap: 8px 10px;
         align-items: stretch;
       }
+      body.decide-kpi-embed #tab-horizons .horizon-embed-panel.chart-card{
+        padding: 12px 12px 10px;
+      }
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity,
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd{
-        min-height: 148px;
+        min-height: 136px;
         display: flex;
         flex-direction: column;
         min-width: 0;
@@ -1188,11 +1191,25 @@ HTML_TEMPLATE = """
       }
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd canvas{
         flex: 1 1 auto;
-        min-height: 132px;
+        min-height: 126px;
+      }
+      body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity canvas,
+      body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd canvas{
+        height: 142px !important;
+        min-height: 142px !important;
+        max-height: 142px !important;
+        padding: 8px !important;
+        border-radius: 12px !important;
       }
       @media (max-width: 760px) {
         body.decide-kpi-embed #tab-horizons .horizon-embed-charts-row{
           grid-template-columns: 1fr;
+        }
+        body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity canvas,
+        body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd canvas{
+          height: 136px !important;
+          min-height: 136px !important;
+          max-height: 136px !important;
         }
       }
       body.decide-kpi-embed #tab-horizons .horizon-embed-stats-grid{
@@ -1210,6 +1227,7 @@ HTML_TEMPLATE = """
       body.decide-kpi-embed #tab-horizons .horizon-embed-stat-box--model .label,
       body.decide-kpi-embed #tab-horizons .horizon-embed-stat-box--bench .label{
         font-size: 0.74rem !important;
+        margin-bottom: 2px;
       }
       body.decide-kpi-embed #tab-horizons .horizon-embed-metric{
         display: flex;
@@ -1218,6 +1236,10 @@ HTML_TEMPLATE = """
         font-size: 0.75rem;
         margin-top: 3px;
         line-height: 1.25;
+      }
+      body.decide-kpi-embed #tab-horizons .horizon-embed-metric .num{
+        font-size: 0.9rem !important;
+        margin-top: 0 !important;
       }
       body.decide-kpi-embed #tab-horizons .horizon-embed-metric-k{
         color: #94a3b8;
@@ -1228,6 +1250,11 @@ HTML_TEMPLATE = """
         line-height: 1.35;
         color: #cbd5e1;
         margin: 2px 0 4px;
+      }
+      body.decide-kpi-embed #tab-horizons .horizon-diff-line{
+        margin: 4px 0 6px;
+        padding: 6px 8px;
+        font-size: 0.76rem;
       }
       @media (max-width: 760px) {
         body.decide-kpi-embed #tab-horizons .horizon-embed-stats-grid{
