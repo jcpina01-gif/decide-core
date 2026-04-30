@@ -36,6 +36,9 @@ next-cache/
 !/README.md
 !/frontend/
 !/docs/
+!/.github/
+!/.github/workflows/
+!/.github/workflows/*.yml
 /docs/*
 !/docs/MODELO_SMOOTH_HIPOTESES_STRESS_REGIMES.md
 # API FastAPI / Cloud Run: versionar o mínimo para `main:app` + Docker (`COPY backend/`).

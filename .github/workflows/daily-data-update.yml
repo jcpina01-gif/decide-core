@@ -1,0 +1,69 @@
+# Actualização diária na nuvem (GitHub Actions): corre mesmo com o portátil desligado.
+# Grátis: repositório público = minutos ilimitados; privado = quota mensal (ver conta GitHub).
+#
+# Horário: cron em UTC. 22h em Lisboa no INVERNO (WET = UTC+0) = 22:00 UTC.
+# No VERÃO (WEST = UTC+1), 22h Lisboa = 21:00 UTC → altera para "0 21 * * *" ou usa dois crons.
+name: Daily data (prices + freeze + weights)
+
+on:
+  schedule:
+    # Duas execuções para cobrir hora local de Lisboa todo o ano (WEST/WET).
+    # A concorrência evita corridas; se uma execução já estiver ativa, a outra é cancelada.
+    - cron: "0 21 * * *"
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-data-update
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Python deps
+        run: pip install -r backend/requirements.txt
+
+      - name: Update prices (Yahoo / yfinance)
+        working-directory: backend
+        run: python scripts/update_prices_close_yfinance.py
+
+      - name: Regenerate smooth freeze outputs
+        working-directory: backend
+        env:
+          # Em CI, se o motor V5 não estiver disponível, usa fallback v2 para não falhar atualizações diárias.
+          DECIDE_FREEZE_FALLBACK_ENGINE_V2: "1"
+        run: python scripts/regenerate_smooth_freeze_outputs.py
+
+      - name: Sync freeze outputs to frontend landing data
+        run: |
+          mkdir -p frontend/data/landing/freeze-cap15
+          cp -f freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/*.csv frontend/data/landing/freeze-cap15/
+          cp -f freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/*.json frontend/data/landing/freeze-cap15/
+
+      - name: Rebuild weights + scores (engine v2 → backend/data)
+        run: python backend/scripts/rebuild_weights_by_rebalance.py --mode v2
+
+      - name: Commit and push if data changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/data freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs_from_clone frontend/data/landing/freeze-cap15
+          if git diff --cached --quiet; then
+            echo "Nada a gravar (CSV já actualizados)."
+            exit 0
+          fi
+          git commit -m "chore(data): preços + freeze + pesos diários $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
