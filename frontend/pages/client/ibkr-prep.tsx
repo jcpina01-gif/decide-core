@@ -664,7 +664,7 @@ export default function IbkrPrepPage() {
         <title>DECIDE — {ONBOARDING_STEP_6_LABEL}</title>
       </Head>
       <main className="min-h-screen bg-zinc-950 text-zinc-50">
-        <div className="mx-auto max-w-5xl px-6 py-8">
+        <div className="mx-auto max-w-6xl px-6 py-8">
           <OnboardingFlowBar currentStepId="approve" authStepHref="/client/login" compact />
 
           {stripeFeedback === "success" ? (
@@ -736,7 +736,7 @@ export default function IbkrPrepPage() {
           <header className="mb-5 border-b border-zinc-800 pb-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{ONBOARDING_STEP_6_LABEL}</p>
             <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">
-              Preparar a sua conta e subscrição
+              Finalizar conta e ativar plano
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
               Interactive Brokers — organizamos a conta; no fim deste passo pode activar a subscrição (comissões) via
@@ -758,7 +758,7 @@ export default function IbkrPrepPage() {
             <div className="mt-6 border-t border-zinc-800/80 pt-5">
               {canPrepare && !preparing ? (
                 <p className="mb-4 text-center text-sm font-semibold text-zinc-200">
-                  Avançar agora desbloqueia a preparação e o plano personalizado.
+                  Depois de avançar, poderá rever e aprovar o plano personalizado.
                 </p>
               ) : !canPrepare ? (
                 <p className="mb-4 text-center text-sm text-zinc-500">
@@ -778,7 +778,7 @@ export default function IbkrPrepPage() {
                         : "cursor-wait border border-teal-500/20 bg-teal-900/90 text-teal-50"
                     }`}
                   >
-                    {preparing ? "A redirecionar…" : "Avançar para preparar conta"}
+                    {preparing ? "A redirecionar…" : "Continuar para ativar o plano"}
                   </button>
                 ) : null}
 
@@ -814,6 +814,38 @@ export default function IbkrPrepPage() {
               ) : null}
             </div>
           </section>
+
+          {STRIPE_UI_ENABLED ? (
+            <section className="mb-6 rounded-xl border border-violet-500/25 bg-zinc-900/50 p-5 sm:p-6" aria-labelledby="ibkr-prep-stripe-h2">
+              <h2 id="ibkr-prep-stripe-h2" className="text-base font-semibold text-zinc-100">
+                Pagamento da subscrição (Stripe)
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-400">
+                No fim do registo, active o pagamento seguro de comissões (subscrição Premium) com cartão. Isto é
+                independente do <strong className="text-zinc-300">depósito de investimento</strong> na Interactive
+                Brokers — o dinheiro alocado ao plano continua a ser transferido para a corretora como já documentámos.
+              </p>
+              {stripeCheckoutDoneLs ? (
+                <p className="mt-3 text-sm font-medium text-emerald-400" role="status">
+                  Último checkout Stripe validado neste dispositivo.
+                </p>
+              ) : null}
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void startStripeCheckout()}
+                  disabled={stripeRedirecting}
+                  className={
+                    !stripeRedirecting
+                      ? "min-h-[44px] rounded-full border border-violet-400/45 bg-violet-800/50 px-6 text-sm font-bold text-violet-50 shadow-md shadow-violet-950/30 transition hover:bg-violet-700/50"
+                      : "min-h-[44px] cursor-wait rounded-full border border-violet-500/20 bg-violet-900/30 px-6 text-sm font-bold text-violet-200/80"
+                  }
+                >
+                  {stripeRedirecting ? "A abrir o Stripe…" : "Pagar com cartão (Stripe)"}
+                </button>
+              </div>
+            </section>
+          ) : null}
 
           {/* 3 — Dados IBKR (detalhe técnico; contraste baixo) */}
           <section className="mb-6 rounded-xl border border-zinc-800/50 bg-zinc-950/50 p-4 sm:p-5">
@@ -908,37 +940,6 @@ export default function IbkrPrepPage() {
             </section>
           ) : null}
 
-          {STRIPE_UI_ENABLED ? (
-            <section className="mb-8 rounded-xl border border-violet-500/25 bg-zinc-900/50 p-5 sm:p-6" aria-labelledby="ibkr-prep-stripe-h2">
-              <h2 id="ibkr-prep-stripe-h2" className="text-base font-semibold text-zinc-100">
-                Pagamento da subscrição (Stripe)
-              </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-                No fim do registo, active o pagamento seguro de comissões (subscrição Premium) com cartão. Isto é
-                independente do <strong className="text-zinc-300">depósito de investimento</strong> na Interactive
-                Brokers — o dinheiro alocado ao plano continua a ser transferido para a corretora como já documentámos.
-              </p>
-              {stripeCheckoutDoneLs ? (
-                <p className="mt-3 text-sm font-medium text-emerald-400" role="status">
-                  Último checkout Stripe validado neste dispositivo.
-                </p>
-              ) : null}
-              <div className="mt-5 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => void startStripeCheckout()}
-                  disabled={stripeRedirecting}
-                  className={
-                    !stripeRedirecting
-                      ? "min-h-[44px] rounded-full border border-violet-400/45 bg-violet-800/50 px-6 text-sm font-bold text-violet-50 shadow-md shadow-violet-950/30 transition hover:bg-violet-700/50"
-                      : "min-h-[44px] cursor-wait rounded-full border border-violet-500/20 bg-violet-900/30 px-6 text-sm font-bold text-violet-200/80"
-                  }
-                >
-                  {stripeRedirecting ? "A abrir o Stripe…" : "Pagar com cartão (Stripe)"}
-                </button>
-              </div>
-            </section>
-          ) : null}
         </div>
       </main>
     </>
