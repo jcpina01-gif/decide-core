@@ -200,6 +200,8 @@ export default function FiscalidadePanelBody() {
         </P>
       </FiscalCard>
 
+      <UkPracticalCard />
+
       <FiscalCard title="Exemplos por país">
         <p style={{ margin: "0 0 12px 0", fontSize: 12, color: dim, maxWidth: "100%" }}>
           Texto geral; não substitui análise individual.
@@ -288,8 +290,6 @@ export default function FiscalidadePanelBody() {
           suporte</strong> (sem aconselhamento fiscal).
         </P>
       </FiscalCard>
-
-      <UkPracticalCard />
       </div>
     </div>
   );
