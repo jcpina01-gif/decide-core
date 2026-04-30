@@ -1602,6 +1602,17 @@ a.decide-app-recommended-plan-cta:hover {
   flex: none !important;
 }
 
+/* Fallback para bundles antigos com wrapper inline em flex + sticky lateral. */
+.decide-app-embed-panel-inner--prose [style*="display: flex"][style*="flex-wrap"] {
+  flex-direction: column !important;
+  align-items: stretch !important;
+}
+
+.decide-app-embed-panel-inner--prose [style*="position: sticky"] {
+  position: static !important;
+  top: auto !important;
+}
+
 .decide-app-muted-label {
   font-size: 10px;
   font-weight: 700;
