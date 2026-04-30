@@ -155,6 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
+    "-horizons-retornos-dd-v30"
 )
 
 
@@ -1156,6 +1157,74 @@ HTML_TEMPLATE = """
         background: linear-gradient(165deg, rgba(63, 63, 70, 0.65) 0%, rgba(39, 39, 42, 0.92) 100%);
         box-shadow: 0 2px 12px rgba(0, 0, 0, 0.28);
       }
+      body.decide-kpi-embed #tab-horizons .horizon-bench-composition{
+        margin: -0.25rem 0 1rem;
+        font-size: 0.78rem;
+        line-height: 1.45;
+        color: #94a3b8;
+      }
+      body.decide-kpi-embed #tab-horizons .horizon-embed-charts-row{
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 10px 12px;
+        align-items: stretch;
+      }
+      body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity,
+      body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd{
+        min-height: 240px;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      body.decide-kpi-embed #tab-horizons .horizon-dd-chart-label{
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #94a3b8;
+        margin: 0 0 6px;
+        letter-spacing: 0.02em;
+      }
+      body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd .horizon-dd-chart-label{
+        flex-shrink: 0;
+      }
+      body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd canvas{
+        flex: 1 1 auto;
+        min-height: 200px;
+      }
+      @media (max-width: 900px) {
+        body.decide-kpi-embed #tab-horizons .horizon-embed-charts-row{
+          grid-template-columns: 1fr;
+        }
+      }
+      body.decide-kpi-embed #tab-horizons .horizon-embed-stats-grid{
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+        align-items: stretch;
+      }
+      body.decide-kpi-embed #tab-horizons .horizon-embed-metric{
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 0.82rem;
+        margin-top: 6px;
+        line-height: 1.35;
+      }
+      body.decide-kpi-embed #tab-horizons .horizon-embed-metric-k{
+        color: #94a3b8;
+        font-weight: 600;
+      }
+      body.decide-kpi-embed #tab-horizons .horizon-diff-line--inst{
+        font-size: 0.88rem;
+        line-height: 1.45;
+        color: #cbd5e1;
+        margin-bottom: 4px;
+      }
+      @media (max-width: 900px) {
+        body.decide-kpi-embed #tab-horizons .horizon-embed-stats-grid{
+          grid-template-columns: 1fr;
+        }
+      }
       .horizon-embed-tab .horizon-embed-pill{
         font-size: 0.62rem;
         font-weight: 900;
@@ -1249,6 +1318,56 @@ HTML_TEMPLATE = """
         margin: 0;
         font-size: 0.72rem;
         line-height: 1.4;
+      }
+      body.decide-kpi-embed #tab-charts .kpi-charts-embed-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px 12px;
+        margin: 0 0 14px;
+      }
+      body.decide-kpi-embed #tab-charts .kpi-charts-embed-summary-card {
+        border-radius: 12px;
+        border: 1px solid rgba(63, 63, 70, 0.55);
+        background: rgba(24, 24, 27, 0.55);
+        padding: 12px 14px;
+        min-width: 0;
+      }
+      body.decide-kpi-embed #tab-charts .kpi-charts-embed-summary-label {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        color: #94a3b8;
+        margin-bottom: 6px;
+      }
+      body.decide-kpi-embed #tab-charts .kpi-charts-embed-summary-value {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #f1f5f9;
+        letter-spacing: -0.02em;
+      }
+      body.decide-kpi-embed #tab-charts .kpi-charts-embed-summary-value--dd {
+        color: #fca5a5;
+      }
+      body.decide-kpi-embed #tab-charts .kpi-dd-margin-toggle-wrap {
+        margin: 0 0 8px;
+      }
+      body.decide-kpi-embed #tab-charts .kpi-dd-margin-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.78rem;
+        color: #cbd5e1;
+        cursor: pointer;
+        user-select: none;
+      }
+      body.decide-kpi-embed #tab-charts .kpi-dd-margin-toggle input {
+        accent-color: #2dd4bf;
+      }
+      @media (max-width: 720px) {
+        body.decide-kpi-embed #tab-charts .kpi-charts-embed-summary {
+          grid-template-columns: 1fr;
+        }
       }
       body.decide-kpi-embed #tab-simulator .kpi-charts-proof-block{
         margin: 0 0 4px;
@@ -2825,6 +2944,7 @@ HTML_TEMPLATE = """
            `window.location.pathname` (`kpiPublicApiPath`) como fallback. #}
         data-cap15-only="{% if cap15_only %}1{% else %}0{% endif %}"
         data-client-embed="{% if client_embed %}1{% else %}0{% endif %}"
+        data-charts-embed-narrative="{% if charts_embed_context %}1{% else %}0{% endif %}"
         data-model-key="{{ current_model }}"
         data-embed-profile="{{ current_profile }}"
         data-register-base="{{ frontend_url }}/client/register"
@@ -3511,6 +3631,7 @@ HTML_TEMPLATE = """
       <div class="horizon-intro-one-line horizon-intro-embed" role="note" style="margin: 0 0 1rem; font-size: 0.82rem; line-height: 1.5; color: #94a3b8;">
         <span class="horizon-intro-inner horizon-intro-embed-inner">Retorno total ilustrativo no período; curvas normalizadas ao mesmo ponto de partida. <strong style="color:#cbd5e1;">Escala ajustada para comparação justa ao longo do tempo</strong> (modelo e mercado no mesmo gráfico).{% if close_as_of_date %} · Último fecho de preços: <strong style="color:#cbd5e1;">{{ close_as_of_date }}</strong>{% endif %} · Série até <strong style="color:#cbd5e1;">{{ model_dates|last }}</strong>.</span>
       </div>
+      <p class="horizon-bench-composition">Mercado de referência: 60% EUA / 25% Europa / 10% Japão / 5% Canadá</p>
       <div class="horizon-embed-tabbar" role="tablist" aria-label="Horizonte temporal">
         <button type="button" class="horizon-embed-tab" role="tab" data-h="ytd" aria-selected="false">YTD</button>
         <button type="button" class="horizon-embed-tab" role="tab" data-h="y1" aria-selected="false">1 ano</button>
@@ -3523,24 +3644,40 @@ HTML_TEMPLATE = """
           {% set hr = horizon_returns.ytd %}
           {% if hr.ok %}
           {% set diff_pp = hr.model_ret_pct - hr.bench_ret_pct %}
-          <div class="stats-grid" style="margin-bottom: 12px;">
-            <div class="stat-box">
-              <div class="label">{{ model_display_label }}</div>
-              <div class="num value {% if hr.model_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.model_ret_pct | round(2) }}%</div>
+          <div class="horizon-embed-stats-grid">
+            <div class="stat-box horizon-embed-stat-box--model">
+              <div class="label">DECIDE {{ profile_label_pt }}</div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Retorno total</span><span class="num value {% if hr.model_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.model_ret_pct | round(2) }}%</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">CAGR</span><span class="num value">{% if hr.model_cagr_pct is not none %}{{ hr.model_cagr_pct | round(2) }}%/ano{% else %}—{% endif %}</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Max drawdown</span><span class="num value negative">{% if hr.model_max_dd_pct is not none %}{{ hr.model_max_dd_pct | round(2) }}%{% else %}—{% endif %}</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Sharpe</span><span class="num">{% if hr.model_sharpe is not none %}{{ hr.model_sharpe | round(2) }}{% else %}—{% endif %}</span></div>
             </div>
-            <div class="stat-box">
-              <div class="label">Benchmark</div>
-              <div class="num value {% if hr.bench_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.bench_ret_pct | round(2) }}%</div>
+            <div class="stat-box horizon-embed-stat-box--bench">
+              <div class="label">Mercado de referência</div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Retorno total</span><span class="num value {% if hr.bench_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.bench_ret_pct | round(2) }}%</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">CAGR</span><span class="num value">{% if hr.bench_cagr_pct is not none %}{{ hr.bench_cagr_pct | round(2) }}%/ano{% else %}—{% endif %}</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Max drawdown</span><span class="num value negative">{% if hr.bench_max_dd_pct is not none %}{{ hr.bench_max_dd_pct | round(2) }}%{% else %}—{% endif %}</span></div>
             </div>
             <div class="stat-box">
               <div class="label">Dias úteis</div>
               <div class="num">{{ hr.n_days }}</div>
             </div>
           </div>
-          <div class="horizon-diff-line">Superação vs mercado no período: <strong class="value {% if diff_pp >= 0 %}positive{% else %}negative{% endif %}">{% if diff_pp >= 0 %}+{% endif %}{{ diff_pp | round(1) }} pontos percentuais</strong> <span class="muted">(modelo − benchmark)</span></div>
+          {% if diff_pp >= 0 %}
+          <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou acima do mercado de referência.</div>
+          {% else %}
+          <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou abaixo do mercado de referência.</div>
+          {% endif %}
+          <div class="muted" style="font-size:0.75rem;margin-bottom:8px;">Diferença de retorno acumulado (modelo − referência): {% if diff_pp >= 0 %}+{% endif %}{{ diff_pp | round(1) }} p.p.</div>
           <div class="muted" style="font-size:0.75rem; margin-bottom:8px;">{{ hr.date_start }} → {{ hr.date_end }}</div>
-          <div class="pie-holder" style="min-height: 260px;">
-            <canvas id="horizonChartYtd"></canvas>
+          <div class="horizon-embed-charts-row">
+            <div class="pie-holder horizon-pie-holder--equity">
+              <canvas id="horizonChartYtd"></canvas>
+            </div>
+            <div class="pie-holder horizon-pie-holder--dd">
+              <div class="horizon-dd-chart-label">Drawdown no período</div>
+              <canvas id="horizonDdChartYtd"></canvas>
+            </div>
           </div>
           {% else %}
           <p class="muted" style="margin:0;">
@@ -3556,24 +3693,40 @@ HTML_TEMPLATE = """
           {% set hr = horizon_returns.y1 %}
           {% if hr.ok %}
           {% set diff_pp = hr.model_ret_pct - hr.bench_ret_pct %}
-          <div class="stats-grid" style="margin-bottom: 12px;">
-            <div class="stat-box">
-              <div class="label">{{ model_display_label }}</div>
-              <div class="num value {% if hr.model_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.model_ret_pct | round(2) }}%</div>
+          <div class="horizon-embed-stats-grid">
+            <div class="stat-box horizon-embed-stat-box--model">
+              <div class="label">DECIDE {{ profile_label_pt }}</div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Retorno total</span><span class="num value {% if hr.model_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.model_ret_pct | round(2) }}%</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">CAGR</span><span class="num value">{% if hr.model_cagr_pct is not none %}{{ hr.model_cagr_pct | round(2) }}%/ano{% else %}—{% endif %}</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Max drawdown</span><span class="num value negative">{% if hr.model_max_dd_pct is not none %}{{ hr.model_max_dd_pct | round(2) }}%{% else %}—{% endif %}</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Sharpe</span><span class="num">{% if hr.model_sharpe is not none %}{{ hr.model_sharpe | round(2) }}{% else %}—{% endif %}</span></div>
             </div>
-            <div class="stat-box">
-              <div class="label">Benchmark</div>
-              <div class="num value {% if hr.bench_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.bench_ret_pct | round(2) }}%</div>
+            <div class="stat-box horizon-embed-stat-box--bench">
+              <div class="label">Mercado de referência</div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Retorno total</span><span class="num value {% if hr.bench_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.bench_ret_pct | round(2) }}%</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">CAGR</span><span class="num value">{% if hr.bench_cagr_pct is not none %}{{ hr.bench_cagr_pct | round(2) }}%/ano{% else %}—{% endif %}</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Max drawdown</span><span class="num value negative">{% if hr.bench_max_dd_pct is not none %}{{ hr.bench_max_dd_pct | round(2) }}%{% else %}—{% endif %}</span></div>
             </div>
             <div class="stat-box">
               <div class="label">Dias úteis</div>
               <div class="num">{{ hr.n_days }}</div>
             </div>
           </div>
-          <div class="horizon-diff-line">Superação vs mercado no período: <strong class="value {% if diff_pp >= 0 %}positive{% else %}negative{% endif %}">{% if diff_pp >= 0 %}+{% endif %}{{ diff_pp | round(1) }} pontos percentuais</strong> <span class="muted">(modelo − benchmark)</span></div>
+          {% if diff_pp >= 0 %}
+          <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou acima do mercado de referência.</div>
+          {% else %}
+          <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou abaixo do mercado de referência.</div>
+          {% endif %}
+          <div class="muted" style="font-size:0.75rem;margin-bottom:8px;">Diferença de retorno acumulado (modelo − referência): {% if diff_pp >= 0 %}+{% endif %}{{ diff_pp | round(1) }} p.p.</div>
           <div class="muted" style="font-size:0.75rem; margin-bottom:8px;">{{ hr.date_start }} → {{ hr.date_end }}</div>
-          <div class="pie-holder" style="min-height: 260px;">
-            <canvas id="horizonChart1y"></canvas>
+          <div class="horizon-embed-charts-row">
+            <div class="pie-holder horizon-pie-holder--equity">
+              <canvas id="horizonChart1y"></canvas>
+            </div>
+            <div class="pie-holder horizon-pie-holder--dd">
+              <div class="horizon-dd-chart-label">Drawdown no período</div>
+              <canvas id="horizonDdChart1y"></canvas>
+            </div>
           </div>
           {% else %}
           <p class="muted" style="margin:0;">
@@ -3589,24 +3742,40 @@ HTML_TEMPLATE = """
           {% set hr = horizon_returns.y5 %}
           {% if hr.ok %}
           {% set diff_pp = hr.model_ret_pct - hr.bench_ret_pct %}
-          <div class="stats-grid" style="margin-bottom: 12px;">
-            <div class="stat-box">
-              <div class="label">{{ model_display_label }}</div>
-              <div class="num value {% if hr.model_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.model_ret_pct | round(2) }}%</div>
+          <div class="horizon-embed-stats-grid">
+            <div class="stat-box horizon-embed-stat-box--model">
+              <div class="label">DECIDE {{ profile_label_pt }}</div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Retorno total</span><span class="num value {% if hr.model_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.model_ret_pct | round(2) }}%</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">CAGR</span><span class="num value">{% if hr.model_cagr_pct is not none %}{{ hr.model_cagr_pct | round(2) }}%/ano{% else %}—{% endif %}</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Max drawdown</span><span class="num value negative">{% if hr.model_max_dd_pct is not none %}{{ hr.model_max_dd_pct | round(2) }}%{% else %}—{% endif %}</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Sharpe</span><span class="num">{% if hr.model_sharpe is not none %}{{ hr.model_sharpe | round(2) }}{% else %}—{% endif %}</span></div>
             </div>
-            <div class="stat-box">
-              <div class="label">Benchmark</div>
-              <div class="num value {% if hr.bench_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.bench_ret_pct | round(2) }}%</div>
+            <div class="stat-box horizon-embed-stat-box--bench">
+              <div class="label">Mercado de referência</div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Retorno total</span><span class="num value {% if hr.bench_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.bench_ret_pct | round(2) }}%</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">CAGR</span><span class="num value">{% if hr.bench_cagr_pct is not none %}{{ hr.bench_cagr_pct | round(2) }}%/ano{% else %}—{% endif %}</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Max drawdown</span><span class="num value negative">{% if hr.bench_max_dd_pct is not none %}{{ hr.bench_max_dd_pct | round(2) }}%{% else %}—{% endif %}</span></div>
             </div>
             <div class="stat-box">
               <div class="label">Dias úteis</div>
               <div class="num">{{ hr.n_days }}</div>
             </div>
           </div>
-          <div class="horizon-diff-line">Superação vs mercado no período: <strong class="value {% if diff_pp >= 0 %}positive{% else %}negative{% endif %}">{% if diff_pp >= 0 %}+{% endif %}{{ diff_pp | round(1) }} pontos percentuais</strong> <span class="muted">(modelo − benchmark)</span></div>
+          {% if diff_pp >= 0 %}
+          <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou acima do mercado de referência.</div>
+          {% else %}
+          <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou abaixo do mercado de referência.</div>
+          {% endif %}
+          <div class="muted" style="font-size:0.75rem;margin-bottom:8px;">Diferença de retorno acumulado (modelo − referência): {% if diff_pp >= 0 %}+{% endif %}{{ diff_pp | round(1) }} p.p.</div>
           <div class="muted" style="font-size:0.75rem; margin-bottom:8px;">{{ hr.date_start }} → {{ hr.date_end }}</div>
-          <div class="pie-holder" style="min-height: 260px;">
-            <canvas id="horizonChart5y"></canvas>
+          <div class="horizon-embed-charts-row">
+            <div class="pie-holder horizon-pie-holder--equity">
+              <canvas id="horizonChart5y"></canvas>
+            </div>
+            <div class="pie-holder horizon-pie-holder--dd">
+              <div class="horizon-dd-chart-label">Drawdown no período</div>
+              <canvas id="horizonDdChart5y"></canvas>
+            </div>
           </div>
           {% else %}
           <p class="muted" style="margin:0;">
@@ -3622,24 +3791,40 @@ HTML_TEMPLATE = """
           {% set hr = horizon_returns.y10 %}
           {% if hr.ok %}
           {% set diff_pp = hr.model_ret_pct - hr.bench_ret_pct %}
-          <div class="stats-grid" style="margin-bottom: 12px;">
-            <div class="stat-box">
-              <div class="label">{{ model_display_label }}</div>
-              <div class="num value {% if hr.model_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.model_ret_pct | round(2) }}%</div>
+          <div class="horizon-embed-stats-grid">
+            <div class="stat-box horizon-embed-stat-box--model">
+              <div class="label">DECIDE {{ profile_label_pt }}</div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Retorno total</span><span class="num value {% if hr.model_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.model_ret_pct | round(2) }}%</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">CAGR</span><span class="num value">{% if hr.model_cagr_pct is not none %}{{ hr.model_cagr_pct | round(2) }}%/ano{% else %}—{% endif %}</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Max drawdown</span><span class="num value negative">{% if hr.model_max_dd_pct is not none %}{{ hr.model_max_dd_pct | round(2) }}%{% else %}—{% endif %}</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Sharpe</span><span class="num">{% if hr.model_sharpe is not none %}{{ hr.model_sharpe | round(2) }}{% else %}—{% endif %}</span></div>
             </div>
-            <div class="stat-box">
-              <div class="label">Benchmark</div>
-              <div class="num value {% if hr.bench_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.bench_ret_pct | round(2) }}%</div>
+            <div class="stat-box horizon-embed-stat-box--bench">
+              <div class="label">Mercado de referência</div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Retorno total</span><span class="num value {% if hr.bench_ret_pct >= 0 %}positive{% else %}negative{% endif %}">{{ hr.bench_ret_pct | round(2) }}%</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">CAGR</span><span class="num value">{% if hr.bench_cagr_pct is not none %}{{ hr.bench_cagr_pct | round(2) }}%/ano{% else %}—{% endif %}</span></div>
+              <div class="horizon-embed-metric"><span class="horizon-embed-metric-k">Max drawdown</span><span class="num value negative">{% if hr.bench_max_dd_pct is not none %}{{ hr.bench_max_dd_pct | round(2) }}%{% else %}—{% endif %}</span></div>
             </div>
             <div class="stat-box">
               <div class="label">Dias úteis</div>
               <div class="num">{{ hr.n_days }}</div>
             </div>
           </div>
-          <div class="horizon-diff-line">Superação vs mercado no período: <strong class="value {% if diff_pp >= 0 %}positive{% else %}negative{% endif %}">{% if diff_pp >= 0 %}+{% endif %}{{ diff_pp | round(1) }} pontos percentuais</strong> <span class="muted">(modelo − benchmark)</span></div>
+          {% if diff_pp >= 0 %}
+          <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou acima do mercado de referência.</div>
+          {% else %}
+          <div class="horizon-diff-line horizon-diff-line--inst">Neste período, o modelo ficou abaixo do mercado de referência.</div>
+          {% endif %}
+          <div class="muted" style="font-size:0.75rem;margin-bottom:8px;">Diferença de retorno acumulado (modelo − referência): {% if diff_pp >= 0 %}+{% endif %}{{ diff_pp | round(1) }} p.p.</div>
           <div class="muted" style="font-size:0.75rem; margin-bottom:8px;">{{ hr.date_start }} → {{ hr.date_end }}</div>
-          <div class="pie-holder" style="min-height: 260px;">
-            <canvas id="horizonChart10y"></canvas>
+          <div class="horizon-embed-charts-row">
+            <div class="pie-holder horizon-pie-holder--equity">
+              <canvas id="horizonChart10y"></canvas>
+            </div>
+            <div class="pie-holder horizon-pie-holder--dd">
+              <div class="horizon-dd-chart-label">Drawdown no período</div>
+              <canvas id="horizonDdChart10y"></canvas>
+            </div>
           </div>
           {% else %}
           <p class="muted" style="margin:0;">
@@ -3815,6 +4000,20 @@ HTML_TEMPLATE = """
       <div class="kpi-charts-inner{% if client_embed %} kpi-charts-inner--embed{% if charts_embed_context %} kpi-charts-inner--embed-narrative{% endif %}{% endif %}" style="{% if not client_embed %}display:flex; flex-direction:column; gap:1.5rem; margin-top:0.5rem;{% endif %}">
         {# Longo prazo (equity + DD): sempre no embed; antes estavam só no {% else %} e sumiam com charts_embed_context. #}
         {% if client_embed and charts_embed_context %}
+        <div class="kpi-charts-embed-summary" role="region" aria-label="Indicadores do modelo (ilustrativos)">
+          <div class="kpi-charts-embed-summary-card">
+            <div class="kpi-charts-embed-summary-label">CAGR modelo</div>
+            <div class="kpi-charts-embed-summary-value">{{ (model_kpis.cagr * 100) | round(2) }}%</div>
+          </div>
+          <div class="kpi-charts-embed-summary-card">
+            <div class="kpi-charts-embed-summary-label">Sharpe</div>
+            <div class="kpi-charts-embed-summary-value">{{ model_kpis.sharpe | round(2) }}</div>
+          </div>
+          <div class="kpi-charts-embed-summary-card">
+            <div class="kpi-charts-embed-summary-label">Max drawdown</div>
+            <div class="kpi-charts-embed-summary-value kpi-charts-embed-summary-value--dd">{{ (model_kpis.max_drawdown * 100) | round(2) }}%</div>
+          </div>
+        </div>
         <div class="kpi-charts-primary-row">
         {% endif %}
         <div class="kpi-chart-panel kpi-chart-panel--zoomable" title="Clique para ver em ecrã inteiro">
@@ -3840,6 +4039,14 @@ HTML_TEMPLATE = """
           <div class="label kpi-chart-title-advanced">Drawdowns (modelo vs benchmark)</div>
           {% else %}
           <div class="label">Drawdowns (modelo vs benchmark)</div>
+          {% endif %}
+          {% if client_embed and charts_embed_context and compare_cap100_is_margin %}
+          <div class="kpi-dd-margin-toggle-wrap">
+            <label class="kpi-dd-margin-toggle">
+              <input type="checkbox" id="kpiDdShowMargin" autocomplete="off" />
+              <span>Mostrar linha «com margem» <span style="color:#64748b;font-weight:600;">(ilustrativo)</span></span>
+            </label>
+          </div>
           {% endif %}
           {% if client_embed %}
           <div class="kpi-chart-canvas-slot kpi-chart-canvas-slot--embed-primary">
@@ -4801,6 +5008,11 @@ HTML_TEMPLATE = """
       const chartStatic = { animation: false };
       const KPI_CHARTS_EMBED = {{ 'true' if client_embed else 'false' }};
       const chartEmbedLayout = KPI_CHARTS_EMBED ? { responsive: true, maintainAspectRatio: false } : {};
+      const profileLabelPtShort = {{ profile_label_pt|tojson }};
+      const chartsEmbedNarrative = (function () {
+        var ctx = document.getElementById('simApiContext');
+        return !!(ctx && ctx.dataset.chartsEmbedNarrative === '1');
+      })();
 
       (function registerKpiChartPlotBg() {
         if (typeof Chart === 'undefined' || !Chart.register) return;
@@ -4922,7 +5134,7 @@ HTML_TEMPLATE = """
         },
       ];
       if (showMax100Compare && Array.isArray(max100DD) && max100DD.length === modelDD.length) {
-        ddDatasets.push({
+        var ddThird = {
           label: compareCap100IsMargin ? cap15MarginLabelPt : cap15LabelPt,
           data: max100DD,
           borderColor: compareCap100IsMargin ? '#fb923c' : '#fbbf24',
@@ -4930,7 +5142,9 @@ HTML_TEMPLATE = """
           borderWidth: 1,
           tension: 0.05,
           pointRadius: 0,
-        });
+        };
+        if (chartsEmbedNarrative && compareCap100IsMargin) ddThird.hidden = true;
+        ddDatasets.push(ddThird);
       }
       // Drawdowns
       const ddCanvas = document.getElementById('ddChart');
@@ -4980,6 +5194,17 @@ HTML_TEMPLATE = """
         }
       });
       }
+
+      (function wireDdMarginToggle() {
+        var cb = document.getElementById('kpiDdShowMargin');
+        if (!cb || !ddChartInst || !ddChartInst.data.datasets[2] || !compareCap100IsMargin) return;
+        cb.addEventListener('change', function () {
+          var ds = ddChartInst.data.datasets[2];
+          if (!ds) return;
+          ds.hidden = !cb.checked;
+          ddChartInst.update('none');
+        });
+      })();
 
       const alphaDatasets = [
         {
@@ -5230,7 +5455,8 @@ HTML_TEMPLATE = """
 
       // Retornos YTD / 1Y / 5Y / 10Y vs benchmark (escala log); eixo X: meses (YTD/1Y), anos (5Y/10Y)
       const HORIZON_RET = {{ horizon_returns|tojson }};
-      const horizonModelLabel = {{ model_display_label|tojson }};
+      const horizonModelLabel = {{ ('DECIDE ' ~ profile_label_pt if client_embed else model_display_label)|tojson }};
+      const horizonBenchLabel = {{ ('Mercado de referência' if client_embed else 'Benchmark')|tojson }};
       (function initHorizonReturnCharts() {
         if (typeof Chart === 'undefined') return;
         /** Só reduz pontos acima disto (≈10Y); 5Y ~1260 mantém-se completo. */
@@ -5251,13 +5477,39 @@ HTML_TEMPLATE = """
           var q = Math.floor((m - 1) / 3) + 1;
           return 'T' + q + ' ' + y;
         }
+        /** Drawdown a partir da série normalizada a 1 no início da janela (fallback se payload não trouxer model_dd). */
+        function horizonDdFromNorm(normArr) {
+          if (!normArr || !normArr.length) return [];
+          var peak = null;
+          return normArr.map(function (v) {
+            var x = Number(v);
+            if (!isFinite(x) || x <= 0) return null;
+            if (peak === null || x > peak) peak = x;
+            return x / peak - 1;
+          });
+        }
         /** Série muito longa (ex. 10Y ≈2520 pts): category + demasiados ticks pode deixar o canvas vazio; reduzimos só para o canvas. */
         function horizonDownsampleForChart(h) {
+          var nFull = h && h.dates ? h.dates.length : 0;
+          var mdFull =
+            h && h.model_dd && h.bench_dd && h.model_dd.length === nFull && h.bench_dd.length === nFull
+              ? h.model_dd
+              : null;
+          var bdFull =
+            h && h.model_dd && h.bench_dd && h.model_dd.length === nFull && h.bench_dd.length === nFull
+              ? h.bench_dd
+              : null;
+          if (!mdFull || !bdFull) {
+            mdFull = horizonDdFromNorm(h && h.model_norm ? h.model_norm : []);
+            bdFull = horizonDdFromNorm(h && h.bench_norm ? h.bench_norm : []);
+          }
           if (!h || !h.dates || h.dates.length < HORIZON_DOWNSAMPLE_MIN_LEN) {
             return {
               labels: h.dates,
               model: h.model_norm,
               bench: h.bench_norm,
+              modelDd: mdFull,
+              benchDd: bdFull,
             };
           }
           var n = h.dates.length;
@@ -5265,18 +5517,24 @@ HTML_TEMPLATE = """
           var labels = [];
           var model = [];
           var bench = [];
+          var modelDd = [];
+          var benchDd = [];
           for (var i = 0; i < n; i += step) {
             labels.push(h.dates[i]);
             model.push(h.model_norm[i]);
             bench.push(h.bench_norm[i]);
+            modelDd.push(mdFull[i]);
+            benchDd.push(bdFull[i]);
           }
           var last = n - 1;
           if (labels[labels.length - 1] !== h.dates[last]) {
             labels.push(h.dates[last]);
             model.push(h.model_norm[last]);
             bench.push(h.bench_norm[last]);
+            modelDd.push(mdFull[last]);
+            benchDd.push(bdFull[last]);
           }
-          return { labels: labels, model: model, bench: bench };
+          return { labels: labels, model: model, bench: bench, modelDd: modelDd, benchDd: benchDd };
         }
         function horizonSanitizeLogSeries(arr) {
           return arr.map(function (v) {
@@ -5315,7 +5573,7 @@ HTML_TEMPLATE = """
                   spanGaps: true,
                 },
                 {
-                  label: 'Benchmark',
+                  label: horizonBenchLabel,
                   data: horizonSanitizeLogSeries(ds.bench),
                   borderColor: '#2dd4bf',
                   tension: 0.05,
@@ -5389,11 +5647,142 @@ HTML_TEMPLATE = """
                       const pct = y == null || !Number.isFinite(y) ? '—' : ((y - 1) * 100).toFixed(2) + '% vs início';
                       return ctx.dataset.label + ': ' + pct;
                     },
+                    afterBody: KPI_CHARTS_EMBED
+                      ? function (items) {
+                          if (!items || !items.length) return '';
+                          var ix = items[0].datasetIndex;
+                          if (ix === 0) {
+                            return ['', 'CAP15: limite máximo de 15% por posição (identificação interna).'];
+                          }
+                          return '';
+                        }
+                      : undefined,
                   },
                 },
               },
             },
           });
+          if (KPI_CHARTS_EMBED) {
+            var horizonDdCanvasIds = { ytd: 'horizonDdChartYtd', y1: 'horizonDdChart1y', y5: 'horizonDdChart5y', y10: 'horizonDdChart10y' };
+            var ddCanvas = document.getElementById(horizonDdCanvasIds[entry.key]);
+            if (ddCanvas) {
+              var ddModel = ds.modelDd || horizonDdFromNorm(ds.model);
+              var ddBench = ds.benchDd || horizonDdFromNorm(ds.bench);
+              function horizonDdYMin(a, b) {
+                var lo = 0;
+                function scan(arr) {
+                  (arr || []).forEach(function (v) {
+                    var x = Number(v);
+                    if (isFinite(x) && x < lo) lo = x;
+                  });
+                }
+                scan(a);
+                scan(b);
+                if (!isFinite(lo) || lo >= 0) lo = -0.05;
+                return lo * 1.08;
+              }
+              var yMinDd = horizonDdYMin(ddModel, ddBench);
+              var ddCtx = ddCanvas.getContext('2d');
+              new Chart(ddCtx, {
+                type: 'line',
+                data: {
+                  labels: hd,
+                  datasets: [
+                    {
+                      label: horizonModelLabel,
+                      data: ddModel,
+                      borderColor: '#4ade80',
+                      borderWidth: 1,
+                      tension: 0.05,
+                      pointRadius: 0,
+                      spanGaps: true,
+                    },
+                    {
+                      label: horizonBenchLabel,
+                      data: ddBench,
+                      borderColor: '#2dd4bf',
+                      borderWidth: 1,
+                      tension: 0.05,
+                      pointRadius: 0,
+                      spanGaps: true,
+                    },
+                  ],
+                },
+                options: {
+                  ...chartStatic,
+                  ...chartEmbedLayout,
+                  interaction: { mode: 'index', intersect: false },
+                  scales: {
+                    y: {
+                      min: yMinDd,
+                      max: 0,
+                      ticks: {
+                        color: '#9ca3af',
+                        callback: function (v) {
+                          return (Number(v) * 100).toFixed(0) + '%';
+                        },
+                      },
+                      grid: { color: 'rgba(148, 163, 184, 0.15)' },
+                    },
+                    x: {
+                      ticks: {
+                        display: true,
+                        callback: function (value) {
+                          const idx = typeof value === 'number' ? value : parseInt(value, 10);
+                          const d = hd[idx];
+                          if (!d) return '';
+                          const prev = hd[idx - 1];
+                          if (!prev) {
+                            if (tickMode === 'year') return d.slice(0, 4);
+                            if (tickMode === 'month') return horizonMonthLabel(d);
+                            if (tickMode === 'quarter') return horizonQuarterLabel(d);
+                            return d.slice(0, 4);
+                          }
+                          if (tickMode === 'year') {
+                            return d.slice(0, 4) !== prev.slice(0, 4) ? d.slice(0, 4) : '';
+                          }
+                          if (tickMode === 'month') {
+                            return d.slice(0, 7) !== prev.slice(0, 7) ? horizonMonthLabel(d) : '';
+                          }
+                          if (tickMode === 'quarter') {
+                            var cy = d.slice(0, 4);
+                            var cm = parseInt(d.slice(5, 7), 10);
+                            var py = prev.slice(0, 4);
+                            var pm = parseInt(prev.slice(5, 7), 10);
+                            var cq = Math.floor((cm - 1) / 3);
+                            var pq = Math.floor((pm - 1) / 3);
+                            return cy !== py || cq !== pq ? horizonQuarterLabel(d) : '';
+                          }
+                          return '';
+                        },
+                        color: '#9ca3af',
+                        maxRotation: 0,
+                        autoSkip: longX,
+                        maxTicksLimit: longX ? 18 : undefined,
+                      },
+                      grid: { display: false },
+                    },
+                  },
+                  plugins: {
+                    legend: { labels: { color: '#e5e7eb' } },
+                    tooltip: {
+                      callbacks: {
+                        title: function (items) {
+                          var i = items && items[0] && items[0].dataIndex;
+                          return (i != null && hd[i]) ? hd[i] : '';
+                        },
+                        label: function (ctx) {
+                          var y = ctx.parsed.y;
+                          var pct = y == null || !Number.isFinite(y) ? '—' : (Number(y) * 100).toFixed(2) + '%';
+                          return ctx.dataset.label + ': ' + pct;
+                        },
+                      },
+                    },
+                  },
+                },
+              });
+            }
+          }
         });
       })();
 
@@ -5410,7 +5799,10 @@ HTML_TEMPLATE = """
             b.setAttribute('aria-selected', on ? 'true' : 'false');
           });
           requestAnimationFrame(function () {
-            ['horizonChartYtd', 'horizonChart1y', 'horizonChart5y', 'horizonChart10y'].forEach(function (id) {
+            [
+              'horizonChartYtd', 'horizonChart1y', 'horizonChart5y', 'horizonChart10y',
+              'horizonDdChartYtd', 'horizonDdChart1y', 'horizonDdChart5y', 'horizonDdChart10y',
+            ].forEach(function (id) {
               var c = document.getElementById(id);
               if (!c || typeof Chart === 'undefined' || !Chart.getChart) return;
               var ch = Chart.getChart(c);
@@ -5539,22 +5931,26 @@ HTML_TEMPLATE = """
 
       function applyKpiViewChartLabels() {
         var simple = document.body.classList.contains('decide-kpi-simple');
+        var simpleDecide = 'DECIDE ' + profileLabelPtShort;
+        var simpleMargin = 'DECIDE ' + profileLabelPtShort + ' com margem';
+        var simpleBench = 'Mercado de referência';
+        var simplePlaf = 'DECIDE ' + profileLabelPtShort + ' (≤100% NAV)';
         if (equityChartInst && equityChartInst.data && equityChartInst.data.datasets) {
-          equityChartInst.data.datasets[0].label = simple ? 'Estratégia DECIDE' : modelLineLabel;
-          equityChartInst.data.datasets[1].label = simple ? 'Mercado (referência)' : 'Benchmark';
+          equityChartInst.data.datasets[0].label = simple ? simpleDecide : modelLineLabel;
+          equityChartInst.data.datasets[1].label = simple ? simpleBench : 'Benchmark';
           if (equityChartInst.data.datasets[2]) {
             equityChartInst.data.datasets[2].label = simple
-              ? (compareCap100IsMargin ? cap15MarginLabelPt : 'Com exposição limitada (100%)')
+              ? (compareCap100IsMargin ? simpleMargin : simplePlaf)
               : (compareCap100IsMargin ? cap15MarginLabelPt : cap15LabelPt);
           }
           equityChartInst.update('none');
         }
         if (ddChartInst && ddChartInst.data && ddChartInst.data.datasets) {
-          ddChartInst.data.datasets[0].label = simple ? 'Estratégia DECIDE' : modelLineLabel;
-          ddChartInst.data.datasets[1].label = simple ? 'Mercado (referência)' : 'Benchmark';
+          ddChartInst.data.datasets[0].label = simple ? simpleDecide : modelLineLabel;
+          ddChartInst.data.datasets[1].label = simple ? simpleBench : 'Benchmark';
           if (ddChartInst.data.datasets[2]) {
             ddChartInst.data.datasets[2].label = simple
-              ? (compareCap100IsMargin ? cap15MarginLabelPt : 'Com exposição limitada (100%)')
+              ? (compareCap100IsMargin ? simpleMargin : simplePlaf)
               : (compareCap100IsMargin ? cap15MarginLabelPt : cap15LabelPt);
           }
           ddChartInst.update('none');
@@ -6799,6 +7195,13 @@ def build_horizon_returns_payload(
     n = len(m)
     last_i = n - 1
 
+    def _finite_or_none(x: float) -> float | None:
+        try:
+            xf = float(x)
+        except (TypeError, ValueError):
+            return None
+        return xf if np.isfinite(xf) else None
+
     def pack_window(start_i: int, end_i: int) -> dict:
         if start_i < 0 or end_i <= start_i or end_i >= n:
             return {"ok": False, "reason": "invalid_window"}
@@ -6811,21 +7214,49 @@ def build_horizon_returns_payload(
         if np.any(ms <= 0) or np.any(bs <= 0):
             return {"ok": False, "reason": "non_positive_equity"}
         m0, b0 = float(ms[0]), float(bs[0])
-        m_ret = float(ms[-1] / m0 - 1.0)
-        b_ret = float(bs[-1] / b0 - 1.0)
+        m_last, b_last = float(ms[-1]), float(bs[-1])
+        m_ret = float(m_last / m0 - 1.0)
+        b_ret = float(b_last / b0 - 1.0)
         m_norm = (ms / m0).tolist()
         b_norm = (bs / b0).tolist()
         d_labels = [str(pd.Timestamp(dt.iloc[i]).strftime("%Y-%m-%d")) for i in range(start_i, end_i + 1)]
+        n_days_win = len(ms)
+        years_win = n_days_win / float(TRADING_DAYS_PER_YEAR)
+        model_cagr_pct: float | None = None
+        bench_cagr_pct: float | None = None
+        if years_win > 1e-9 and m0 > 0 and b0 > 0:
+            model_cagr_pct = _finite_or_none(((m_last / m0) ** (1.0 / years_win) - 1.0) * 100.0)
+            bench_cagr_pct = _finite_or_none(((b_last / b0) ** (1.0 / years_win) - 1.0) * 100.0)
+        running_m = np.maximum.accumulate(ms)
+        dd_m = ms / running_m - 1.0
+        running_b = np.maximum.accumulate(bs)
+        dd_b = bs / running_b - 1.0
+        model_dd_list = [float(x) for x in dd_m]
+        bench_dd_list = [float(x) for x in dd_b]
+        model_max_dd_pct = float(np.min(dd_m)) * 100.0
+        bench_max_dd_pct = float(np.min(dd_b)) * 100.0
+        r_series = pd.Series(ms, dtype=float).pct_change().dropna()
+        model_sharpe_raw = (
+            compute_sharpe_ratio(r_series) if len(r_series) >= 2 else float("nan")
+        )
+        model_sharpe = _finite_or_none(model_sharpe_raw)
         return {
             "ok": True,
             "model_ret_pct": m_ret * 100.0,
             "bench_ret_pct": b_ret * 100.0,
+            "model_cagr_pct": model_cagr_pct,
+            "bench_cagr_pct": bench_cagr_pct,
+            "model_max_dd_pct": model_max_dd_pct,
+            "bench_max_dd_pct": bench_max_dd_pct,
+            "model_sharpe": model_sharpe,
             "date_start": d_labels[0],
             "date_end": d_labels[-1],
-            "n_days": len(ms),
+            "n_days": n_days_win,
             "dates": d_labels,
             "model_norm": m_norm,
             "bench_norm": b_norm,
+            "model_dd": model_dd_list,
+            "bench_dd": bench_dd_list,
         }
 
     empty = {"ok": False, "reason": "insufficient_data"}
@@ -6877,17 +7308,17 @@ def horizons_embed_story_dict(horizon_returns: dict) -> dict:
     any_beat = any(beats)
     if all_beat:
         line = (
-            "Resumo simples: neste histórico ilustrativo, o modelo superou o mercado de referência "
+            "Resumo simples: neste histórico ilustrativo, o modelo ficou acima do mercado de referência "
             "em todos os horizontes mostrados (retorno acumulado no período)."
         )
     elif not any_beat:
         line = (
-            "Resumo simples: neste recorte, o mercado de referência foi mais forte em alguns horizontes — "
-            "veja o detalhe por período."
+            "Resumo simples: neste recorte, o mercado de referência ficou acima do modelo em todos os "
+            "horizontes mostrados — veja o detalhe por período."
         )
     else:
         line = (
-            "Resumo simples: o modelo superou o mercado em parte dos horizontes; use os separadores "
+            "Resumo simples: o modelo ficou acima do mercado em parte dos horizontes; use os separadores "
             "para comparar cada período."
         )
     return {"line": line, "all_beat": all_beat}
