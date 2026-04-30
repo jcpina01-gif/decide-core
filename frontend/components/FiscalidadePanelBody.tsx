@@ -292,18 +292,8 @@ export default function FiscalidadePanelBody() {
           suporte</strong> (sem aconselhamento fiscal).
         </P>
       </FiscalCard>
-        </div>
 
-        <div
-          style={{
-            flex: "0 1 340px",
-            minWidth: "min(100%, 260px)",
-            position: "sticky",
-            top: 0,
-            alignSelf: "flex-start",
-          }}
-        >
-          <UkPracticalCard />
+      <UkPracticalCard />
         </div>
       </div>
     </div>
