@@ -17,7 +17,7 @@ export const SEGMENT_MIN_INVESTMENT_EUR: Record<ClientSegment, number> = {
 export function formatSegmentTitleLabel(seg: ClientSegment): string {
   const n = SEGMENT_MIN_INVESTMENT_EUR[seg];
   const fmt = `${n.toLocaleString("pt-PT")} €`;
-  const name = seg === "premium" ? "Premium" : "Private";
+  const name = seg === "premium" ? "Essencial" : "Private";
   return `${name} — mín. ${fmt}`;
 }
 

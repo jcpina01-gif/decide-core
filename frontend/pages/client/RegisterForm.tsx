@@ -130,6 +130,7 @@ function PasswordField({
   onInputKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
 }) {
   const [show, setShow] = useState(false);
+  const iconStroke = show ? "#38bdf8" : "#cbd5e1";
   return (
     <div style={{ marginBottom: 6 }}>
       <div style={{ color: "#a1a1aa", fontSize: 14, marginBottom: 5 }}>{label}</div>
@@ -147,20 +148,45 @@ function PasswordField({
         <button
           type="button"
           onClick={() => setShow((s) => !s)}
+          aria-label={show ? "Ocultar palavra-passe" : "Mostrar palavra-passe"}
+          title={show ? "Ocultar palavra-passe" : "Mostrar palavra-passe"}
           style={{
             flexShrink: 0,
             background: "#27272a",
             color: "#e2e8f0",
             border: "1px solid rgba(63,63,70,0.85)",
             borderRadius: 12,
-            padding: "0 14px",
-            fontSize: 12,
-            fontWeight: 800,
+            width: 44,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
             cursor: "pointer",
-            whiteSpace: "nowrap",
           }}
         >
-          {show ? "Ocultar" : "Ver"}
+          {show ? (
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6Z"
+                stroke={iconStroke}
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="12" cy="12" r="3.2" stroke={iconStroke} strokeWidth="1.8" />
+            </svg>
+          ) : (
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6Z"
+                stroke={iconStroke}
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="12" cy="12" r="3.2" stroke={iconStroke} strokeWidth="1.8" />
+              <path d="M4 4L20 20" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          )}
         </button>
       </div>
     </div>
@@ -345,8 +371,8 @@ const registerFieldsColumn: React.CSSProperties = {
 
 const registerPwTwoCol: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))",
-  gap: "12px 18px",
+  gridTemplateColumns: "minmax(0, 1fr)",
+  gap: "8px",
   alignItems: "start",
 };
 
@@ -1730,9 +1756,8 @@ export default function ClientRegisterPage() {
                           lineHeight: 1.5,
                         }}
                       >
-                        No homebanking, no descritivo / referência da transferência para a Interactive Brokers, deve utilizar{" "}
-                        <strong style={{ color: "#fef3c7" }}>exactamente</strong> este utilizador (o mesmo utilizado para iniciar sessão na DECIDE).
-                        Por defeito sugerimos a partir do email — confirme ou altere antes de continuar.
+                        Use este identificador no descritivo da transferência para a Interactive Brokers. Deve coincidir com o{" "}
+                        <strong style={{ color: "#fef3c7" }}>login DECIDE</strong> para podermos associar corretamente o pagamento.
                       </div>
                       <div style={{ color: "#cbd5e1", fontSize: 14, marginBottom: 5, fontWeight: 600 }}>
                         Utilizador (login) <span style={{ color: "#fca5a5" }}>*</span>
@@ -1851,7 +1876,7 @@ export default function ClientRegisterPage() {
                             ✔ Para patrimónios mais elevados
                           </div>
                           <div style={{ fontSize: 12, color: "#a1a1aa", marginTop: 6, lineHeight: 1.45 }}>
-                            Hedge e otimização nos KPIs; fee sobre NAV + performance (50% / 100%) no onboarding.
+                            Inclui opção de hedge cambial e análise avançada de custos/risco.
                           </div>
                         </div>
                       </label>
@@ -2019,8 +2044,7 @@ export default function ClientRegisterPage() {
                         boxSizing: "border-box",
                       }}
                     >
-                      Baseado em dados reais de mercado.{" "}
-                      <span style={{ color: "#a1a1aa", fontWeight: 700 }}>Não constitui aconselhamento financeiro.</span>
+                      As recomendações dependem do perfil do investidor e requerem aprovação explícita antes de qualquer execução.
                     </div>
                   </div>
                   </div>
