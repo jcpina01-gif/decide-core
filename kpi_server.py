@@ -1174,7 +1174,8 @@ HTML_TEMPLATE = """
       }
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity,
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd{
-        min-height: 136px;
+        min-height: clamp(260px, 42vh, 460px);
+        height: clamp(260px, 42vh, 460px);
         display: flex;
         flex-direction: column;
         min-width: 0;
@@ -1191,13 +1192,13 @@ HTML_TEMPLATE = """
       }
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd canvas{
         flex: 1 1 auto;
-        min-height: 126px;
+        min-height: 0;
       }
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity canvas,
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd canvas{
-        height: 188px !important;
-        min-height: 188px !important;
-        max-height: 188px !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        max-height: none !important;
         padding: 8px !important;
         border-radius: 12px !important;
       }
@@ -1205,11 +1206,16 @@ HTML_TEMPLATE = """
         body.decide-kpi-embed #tab-horizons .horizon-embed-charts-row{
           grid-template-columns: 1fr;
         }
+        body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity,
+        body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd{
+          min-height: clamp(220px, 35vh, 360px);
+          height: clamp(220px, 35vh, 360px);
+        }
         body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity canvas,
         body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd canvas{
-          height: 168px !important;
-          min-height: 168px !important;
-          max-height: 168px !important;
+          height: 100% !important;
+          min-height: 0 !important;
+          max-height: none !important;
         }
       }
       body.decide-kpi-embed #tab-horizons .horizon-embed-stats-grid{
