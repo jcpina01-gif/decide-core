@@ -1168,14 +1168,15 @@ HTML_TEMPLATE = """
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         gap: 8px 10px;
         align-items: stretch;
+        height: clamp(360px, 62vh, 760px);
       }
       body.decide-kpi-embed #tab-horizons .horizon-embed-panel.chart-card{
         padding: 12px 12px 10px;
       }
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity,
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd{
-        min-height: clamp(260px, 42vh, 460px);
-        height: clamp(260px, 42vh, 460px);
+        min-height: 0;
+        height: 100%;
         display: flex;
         flex-direction: column;
         min-width: 0;
@@ -1205,11 +1206,12 @@ HTML_TEMPLATE = """
       @media (max-width: 760px) {
         body.decide-kpi-embed #tab-horizons .horizon-embed-charts-row{
           grid-template-columns: 1fr;
+          height: clamp(520px, 86vh, 980px);
         }
         body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity,
         body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd{
-          min-height: clamp(220px, 35vh, 360px);
-          height: clamp(220px, 35vh, 360px);
+          min-height: 0;
+          height: 100%;
         }
         body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity canvas,
         body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd canvas{
