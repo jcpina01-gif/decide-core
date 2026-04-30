@@ -45,7 +45,7 @@ jobs:
         env:
           # Em CI, se o motor V5 não estiver disponível, usa fallback v2 para não falhar atualizações diárias.
           DECIDE_FREEZE_FALLBACK_ENGINE_V2: "1"
-        run: python scripts/regenerate_smooth_freeze_outputs.py
+        run: python scripts/regenerate_smooth_freeze_outputs.py --transaction-cost-bps 3 --slippage-bps 3 --fx-conversion-bps 0
 
       - name: Sync freeze outputs to frontend landing data
         run: |
