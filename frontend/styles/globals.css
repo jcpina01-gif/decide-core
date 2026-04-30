@@ -1587,6 +1587,21 @@ a.decide-app-recommended-plan-cta:hover {
   color: #b4b4bc;
 }
 
+/* Fiscalidade: forçar coluna única (evita card UK em coluna lateral). */
+.decide-app-embed-panel-inner--prose > div:first-child {
+  display: block !important;
+}
+
+.decide-app-embed-panel-inner--prose > div:first-child > div {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  position: static !important;
+  top: auto !important;
+  align-self: auto !important;
+  flex: none !important;
+}
+
 .decide-app-muted-label {
   font-size: 10px;
   font-weight: 700;
