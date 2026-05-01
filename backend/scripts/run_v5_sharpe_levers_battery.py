@@ -1,18 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Bateria: alavancas tipicas para Sharpe / cauda / turnover (V5, perfil moderado, CAP15).
-
-Mede amostra completa + janelas moveis 36m/60m/120m (Sharpe anualizado por janela, passo 21)
-e cauda (p1 retorno diario, CVaR 1%), TE e IR vs benchmark diario.
-
-Requisito: DECIDE_V5_ENGINE_ROOT ou DECIDE_CORE22_CLONE ao lado do decide-core.
-
-Uso (desde decide-core/backend)::
-
-    python scripts/run_v5_sharpe_levers_battery.py
-    python scripts/run_v5_sharpe_levers_battery.py --json-out tmp_sharpe_battery.json
-"""
+"""Focused battery for trial feature flags in engine_research_v5."""
 
 from __future__ import annotations
 
@@ -21,6 +9,7 @@ import json
 import math
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +33,7 @@ def _resolve_v5_backend() -> Path:
     cand = _REPO.parent / "DECIDE_CORE22_CLONE" / "backend"
     if (cand / "engine_research_v5.py").is_file():
         return cand.resolve()
-    raise FileNotFoundError("Define DECIDE_V5_ENGINE_ROOT com engine_research_v5.py")
+    raise FileNotFoundError("Define DECIDE_V5_ENGINE_ROOT with engine_research_v5.py")
 
 
 def _pctiles(xs: list[float], qs: tuple[int, ...] = (10, 50, 90)) -> dict[str, float]:
@@ -88,7 +77,112 @@ def _rolling_sharpe_panel(r: pd.Series, window_td: int, step: int) -> dict[str, 
     return _pctiles(vals)
 
 
-def _metrics_from_run(r: dict[str, Any], *, step: int) -> dict[str, Any]:
+def _window_kpis(eq: pd.Series) -> dict[str, float]:
+    eq = eq.dropna().astype(float)
+    if len(eq) < 30:
+        return {"cagr": float("nan"), "sharpe": float("nan"), "max_drawdown": float("nan")}
+    rets = eq.pct_change().dropna()
+    years = max((eq.index[-1] - eq.index[0]).days / 365.25, 1e-9)
+    cagr = float((eq.iloc[-1] / eq.iloc[0]) ** (1.0 / years) - 1.0) if eq.iloc[0] > 0 else float("nan")
+    sharpe = _segment_sharpe(rets.to_numpy(dtype=float))
+    mdd = _max_dd(eq.to_numpy(dtype=float))
+    return {"cagr": cagr, "sharpe": sharpe, "max_drawdown": mdd}
+
+
+def _stress_periods(ov: pd.Series) -> dict[str, dict[str, float]]:
+    windows = {
+        "stress_2008": ("2008-01-01", "2009-03-31"),
+        "stress_2020": ("2020-02-01", "2020-12-31"),
+        "stress_2022": ("2022-01-01", "2022-12-31"),
+    }
+    out: dict[str, dict[str, float]] = {}
+    for key, (a, b) in windows.items():
+        seg = ov.loc[(ov.index >= pd.Timestamp(a)) & (ov.index <= pd.Timestamp(b))]
+        out[key] = _window_kpis(seg)
+    return out
+
+
+def _load_cluster_map(cluster_map_path: Path) -> dict[str, str]:
+    if not cluster_map_path.is_file():
+        return {}
+    try:
+        payload = json.loads(cluster_map_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    out: dict[str, str] = {}
+    if isinstance(payload, dict):
+        raw = payload.get("ticker_to_cluster", payload)
+        if isinstance(raw, dict):
+            for k, v in raw.items():
+                tk = str(k).strip().upper()
+                cv = str(v).strip()
+                if tk and cv:
+                    out[tk] = cv
+    return out
+
+
+def _history_exposure_from_weights_csv(weights_csv: Path, cluster_map_path: Path) -> dict[str, Any]:
+    if not weights_csv.is_file():
+        return {"error": "missing_weights_csv", "path": str(weights_csv)}
+    df = pd.read_csv(weights_csv)
+    needed = {"rebalance_date", "ticker", "final_weight", "country", "sector"}
+    if not needed.issubset(set(df.columns)):
+        return {"error": "unexpected_columns", "columns": list(df.columns)}
+    t2c = _load_cluster_map(cluster_map_path)
+
+    df = df.copy()
+    df["rebalance_date"] = pd.to_datetime(df["rebalance_date"], errors="coerce")
+    df = df.dropna(subset=["rebalance_date"])
+    df["ticker"] = df["ticker"].astype(str).str.strip().str.upper()
+    df["final_weight"] = pd.to_numeric(df["final_weight"], errors="coerce").fillna(0.0)
+    df["country"] = df["country"].fillna("UNKNOWN").astype(str)
+    df["sector"] = df["sector"].fillna("Other").astype(str)
+    df["cluster"] = [t2c.get(t, s) for t, s in zip(df["ticker"].tolist(), df["sector"].tolist())]
+    df = df[df["final_weight"] > 0]
+    if df.empty:
+        return {"error": "no_positive_weights"}
+
+    def summarize(dim: str) -> dict[str, Any]:
+        g = (
+            df.groupby(["rebalance_date", dim], dropna=False)["final_weight"]
+            .sum()
+            .reset_index()
+        )
+        g[dim] = g[dim].fillna("UNKNOWN").astype(str)
+        pvt = g.pivot(index="rebalance_date", columns=dim, values="final_weight").fillna(0.0)
+        stats: list[dict[str, Any]] = []
+        for col in pvt.columns:
+            ser = pvt[col].astype(float)
+            stats.append(
+                {
+                    "key": str(col),
+                    "mean": float(ser.mean()),
+                    "p90": float(ser.quantile(0.9)),
+                    "max": float(ser.max()),
+                    "latest": float(ser.iloc[-1]),
+                }
+            )
+        stats.sort(key=lambda x: x["mean"], reverse=True)
+        return {
+            "top_by_mean": stats[:12],
+            "top_by_latest": sorted(stats, key=lambda x: x["latest"], reverse=True)[:12],
+        }
+
+    return {
+        "n_rebalances": int(df["rebalance_date"].nunique()),
+        "country": summarize("country"),
+        "sector": summarize("sector"),
+        "cluster": summarize("cluster"),
+    }
+
+
+def _metrics_from_run(
+    r: dict[str, Any],
+    *,
+    step: int,
+    weights_csv: Path,
+    cluster_map_path: Path,
+) -> dict[str, Any]:
     s = r.get("summary") or {}
     idx = pd.to_datetime(r["dates"], errors="coerce")
     ov = pd.to_numeric(pd.Series(r["equity_overlayed"], index=idx), errors="coerce").dropna()
@@ -102,18 +196,10 @@ def _metrics_from_run(r: dict[str, Any], *, step: int) -> dict[str, Any]:
     cx = r_m.index.intersection(r_b.index)
     r_m = r_m.loc[cx]
     r_b = r_b.loc[cx]
-    excess = (r_m - r_b).dropna()
-    te = float(excess.std(ddof=0) * math.sqrt(TRADING_DAYS)) if len(excess) > 30 else float("nan")
-    ir = (
-        float(excess.mean() / excess.std(ddof=0) * math.sqrt(TRADING_DAYS))
-        if excess.std(ddof=0) > 1e-12
-        else float("nan")
-    )
     arr = r_m.to_numpy(dtype=float)
     arr = arr[np.isfinite(arr)]
     p1 = float(np.percentile(arr, 1)) if arr.size > 50 else float("nan")
-    thr = np.percentile(arr, 1) if arr.size > 50 else float("nan")
-    tail = arr[arr <= thr] if arr.size > 0 else arr[:0]
+    tail = arr[arr <= p1] if arr.size > 0 else arr[:0]
     cvar1 = float(np.mean(tail)) if tail.size > 0 else float("nan")
 
     months_td = {36: 756, 60: 1260, 120: 2520}
@@ -121,28 +207,30 @@ def _metrics_from_run(r: dict[str, Any], *, step: int) -> dict[str, Any]:
     for mo, w in months_td.items():
         roll_sh[str(mo)] = _rolling_sharpe_panel(r_m, w, step)
 
+    exposure_history = _history_exposure_from_weights_csv(weights_csv, cluster_map_path)
+
     return {
         "overlayed_cagr": float(s.get("overlayed_cagr") or 0.0),
         "overlayed_sharpe": float(s.get("overlayed_sharpe") or 0.0),
-        "benchmark_cagr": float(s.get("benchmark_cagr") or 0.0),
         "max_drawdown": _max_dd(ov.to_numpy(dtype=float)),
         "avg_turnover": float(s.get("avg_turnover") or 0.0),
         "n_rebalance_executed": int(s.get("n_rebalance_executed") or 0),
-        "tracking_error_ann": te,
-        "information_ratio": ir,
         "worst_day_p1": p1,
         "cvar_daily_1pct": cvar1,
         "rolling_sharpe": roll_sh,
+        "stress_periods": _stress_periods(ov),
+        "exposure_history": exposure_history,
+        "pct_days_crash_overlay_active": float(s.get("pct_days_crash_overlay_active") or 0.0),
+        "crash_overlay_entry_edges": int(s.get("crash_overlay_entry_edges") or 0),
+        "sector_cluster_caps_diagnostics": s.get("sector_cluster_caps_diagnostics") or {},
     }
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--prices", type=str, default="", help="CSV precos")
-    ap.add_argument("--profile", type=str, default="moderado")
-    ap.add_argument("--cap-per-ticker", type=float, default=0.15)
-    ap.add_argument("--step", type=int, default=21)
-    ap.add_argument("--json-out", type=str, default="")
+    ap.add_argument("--prices", type=str, default="", help="prices CSV path")
+    ap.add_argument("--step", type=int, default=21, help="rolling step (trading days)")
+    ap.add_argument("--json-out", type=str, default="", help="output JSON path")
     args = ap.parse_args()
 
     v5b = _resolve_v5_backend()
@@ -152,14 +240,21 @@ def main() -> int:
 
     prices_path = Path(args.prices).resolve() if str(args.prices).strip() else _BACKEND / "data" / "prices_close.csv"
     if not prices_path.is_file():
-        print("ERRO: falta CSV", prices_path, file=sys.stderr)
+        print("ERROR: missing prices CSV", prices_path, file=sys.stderr)
         return 2
+
+    cluster_map_path = (_BACKEND / "data" / "sector_cluster_map.json").resolve()
 
     base: dict[str, Any] = {
         "prices_path": str(prices_path),
-        "profile": str(args.profile),
-        "cap_per_ticker": float(args.cap_per_ticker),
+        "profile": "moderado",
+        "cap_per_ticker": 0.15,
+        "top_q": 20,
         "max_effective_exposure": 1.0,
+        "transaction_cost_bps": 3.0,
+        "slippage_bps": 3.0,
+        "fx_conversion_bps": 0.0,
+        "momentum_mode": "v2_prudent",
         "bear_low_vol_overlay_enabled": True,
         "bear_low_vol_hysteresis": True,
         "bear_low_vol_tiered": False,
@@ -172,123 +267,156 @@ def main() -> int:
         "bear_low_vol_exposure_mult": 0.85,
     }
 
-    def go(name: str, kw: dict[str, Any]) -> tuple[str, dict[str, Any], dict[str, Any]]:
-        merged = {**base, **kw}
-        rr = run_research_v1(**merged)
-        m = _metrics_from_run(rr, step=int(args.step))
-        return name, merged, m
-
-    isolated: list[tuple[str, dict[str, Any]]] = [
-        ("baseline", {}),
-        ("vol_target_63", {"vol_target_window": 63}),
-        ("vol_target_252", {"vol_target_window": 252}),
-        ("vol_scale_floor_cap_065_110", {"vol_scale_floor": 0.65, "vol_scale_cap": 1.10}),
-        ("vol_scale_floor_cap_080_130", {"vol_scale_floor": 0.80, "vol_scale_cap": 1.30}),
-        ("benchmark_ma_150", {"benchmark_ma_window": 150}),
-        ("benchmark_ma_252", {"benchmark_ma_window": 252}),
-        ("monthly_turnover_thr_015", {"monthly_rebalance_turnover_threshold": 0.15}),
-        ("monthly_turnover_thr_030", {"monthly_rebalance_turnover_threshold": 0.30}),
+    crash_base: dict[str, Any] = {
+        "crash_overlay_2of3_enabled": True,
+        "crash_breadth_threshold": 0.40,
+        "crash_dd_window": 60,
+        "crash_dd_threshold": -0.08,
+        "crash_exposure_2_signals": 0.70,
+        "crash_exposure_3_signals": 0.55,
+        "crash_exit_consecutive_days": 10,
+    }
+    scenarios: list[tuple[str, dict[str, Any]]] = [
+        ("official_trial_now", {}),
+        ("crash_overlay_2of3_real", crash_base),
         (
-            "selection_buffer_asymmetric",
-            {"selection_buffer_asymmetric": True, "rank_in_entry": 12, "rank_maintain": 20},
-        ),
-        ("rebalance_min_abs_dw_0003", {"rebalance_min_abs_weight_delta": 0.003}),
-        ("momentum_v2_smooth", {"momentum_mode": "v2_smooth"}),
-        ("momentum_v2_prudent", {"momentum_mode": "v2_prudent"}),
-        ("top_q_15", {"top_q": 15}),
-        ("top_q_30", {"top_q": 30}),
-        ("vol_spike_on", {"vol_spike_enabled": True}),
-    ]
-
-    combos: list[tuple[str, dict[str, Any]]] = [
-        (
-            "combo_vol126_cap065110_thr030_smooth",
+            "crash_strong",
             {
-                "vol_target_window": 126,
-                "vol_scale_floor": 0.65,
-                "vol_scale_cap": 1.10,
-                "monthly_rebalance_turnover_threshold": 0.30,
-                "momentum_mode": "v2_smooth",
+                "crash_overlay_2of3_enabled": True,
+                "crash_breadth_threshold": 0.40,
+                "crash_dd_window": 60,
+                "crash_dd_threshold": -0.08,
+                "crash_exposure_2_signals": 0.65,
+                "crash_exposure_3_signals": 0.50,
+                "crash_exit_consecutive_days": 15,
             },
         ),
         (
-            "combo_vol126_cap065110_asym_thr028",
+            "crash_base_exit15",
             {
-                "vol_target_window": 126,
-                "vol_scale_floor": 0.65,
-                "vol_scale_cap": 1.10,
-                "selection_buffer_asymmetric": True,
-                "rank_in_entry": 12,
-                "rank_maintain": 20,
-                "monthly_rebalance_turnover_threshold": 0.28,
+                "crash_overlay_2of3_enabled": True,
+                "crash_breadth_threshold": 0.40,
+                "crash_dd_window": 60,
+                "crash_dd_threshold": -0.08,
+                "crash_exposure_2_signals": 0.70,
+                "crash_exposure_3_signals": 0.55,
+                "crash_exit_consecutive_days": 15,
             },
         ),
         (
-            "combo_vol252_ma252_cap065110_thr030",
+            "crash_mid",
             {
-                "vol_target_window": 252,
-                "benchmark_ma_window": 252,
-                "vol_scale_floor": 0.65,
-                "vol_scale_cap": 1.10,
-                "monthly_rebalance_turnover_threshold": 0.30,
+                "crash_overlay_2of3_enabled": True,
+                "crash_breadth_threshold": 0.40,
+                "crash_dd_window": 60,
+                "crash_dd_threshold": -0.08,
+                "crash_exposure_2_signals": 0.68,
+                "crash_exposure_3_signals": 0.525,
+                "crash_exit_consecutive_days": 12,
             },
         ),
         (
-            "combo_vol126_cap065110_top30_thr030",
+            "crash_mid_sensitive",
             {
-                "vol_target_window": 126,
-                "vol_scale_floor": 0.65,
-                "vol_scale_cap": 1.10,
-                "top_q": 30,
-                "monthly_rebalance_turnover_threshold": 0.30,
+                "crash_overlay_2of3_enabled": True,
+                "crash_breadth_threshold": 0.425,
+                "crash_dd_window": 60,
+                "crash_dd_threshold": -0.07,
+                "crash_exposure_2_signals": 0.70,
+                "crash_exposure_3_signals": 0.55,
+                "crash_exit_consecutive_days": 12,
             },
         ),
         (
-            "combo_vol126_prudent_asym_microdw",
+            "crash_strong_exit10",
             {
-                "vol_target_window": 126,
-                "momentum_mode": "v2_prudent",
-                "selection_buffer_asymmetric": True,
-                "rank_in_entry": 11,
-                "rank_maintain": 19,
-                "rebalance_min_abs_weight_delta": 0.003,
-                "monthly_rebalance_turnover_threshold": 0.28,
-            },
-        ),
-        (
-            "combo_defensive_full",
-            {
-                "vol_target_window": 126,
-                "vol_scale_floor": 0.65,
-                "vol_scale_cap": 1.10,
-                "benchmark_ma_window": 252,
-                "monthly_rebalance_turnover_threshold": 0.30,
-                "momentum_mode": "v2_smooth",
-                "selection_buffer_asymmetric": True,
-                "rank_in_entry": 12,
-                "rank_maintain": 20,
-                "rebalance_min_abs_weight_delta": 0.003,
+                "crash_overlay_2of3_enabled": True,
+                "crash_breadth_threshold": 0.40,
+                "crash_dd_window": 60,
+                "crash_dd_threshold": -0.08,
+                "crash_exposure_2_signals": 0.65,
+                "crash_exposure_3_signals": 0.50,
+                "crash_exit_consecutive_days": 10,
             },
         ),
     ]
 
-    rows_out: list[dict[str, Any]] = []
-    for label, kw in isolated + combos:
-        name, merged, m = go(label, kw)
-        row = {
-            "name": name,
-            "params": {k: merged[k] for k in sorted(kw.keys())} if kw else {},
-            **m,
-        }
-        rows_out.append(row)
+    rows: list[dict[str, Any]] = []
+    with tempfile.TemporaryDirectory(prefix="v5_trial_battery_") as tmp:
+        tmp_dir = Path(tmp)
+        for name, override in scenarios:
+            run_kw = {**base, **override}
+            weights_csv = tmp_dir / f"{name}_weights.csv"
+            run_kw["emit_weights_csv"] = str(weights_csv)
+            rr = run_research_v1(**run_kw)
+            metrics = _metrics_from_run(
+                rr,
+                step=int(args.step),
+                weights_csv=weights_csv,
+                cluster_map_path=cluster_map_path,
+            )
+            rows.append(
+                {
+                    "name": name,
+                    "params": {k: run_kw[k] for k in sorted(override.keys())},
+                    **metrics,
+                }
+            )
+
+    official = next((x for x in rows if x["name"] == "official_trial_now"), None)
+    crit = {
+        "cagr_gt": 0.228,
+        "sharpe_gt": 1.155,
+        "mdd_better_than_official": float(official["max_drawdown"]) if official else float("nan"),
+        "cvar_better_than_official": float(official["cvar_daily_1pct"]) if official else float("nan"),
+        "turnover_max_deterioration": 0.0030,
+    }
+    evaluated: list[dict[str, Any]] = []
+    if official is not None:
+        off_turn = float(official.get("avg_turnover") or 0.0)
+        off_mdd = float(official.get("max_drawdown") or 0.0)
+        off_cvar = float(official.get("cvar_daily_1pct") or 0.0)
+        for row in rows:
+            if row["name"] == "official_trial_now":
+                continue
+            accepted = (
+                float(row["overlayed_cagr"]) > crit["cagr_gt"]
+                and float(row["overlayed_sharpe"]) > crit["sharpe_gt"]
+                and float(row["max_drawdown"]) > off_mdd
+                and float(row["cvar_daily_1pct"]) > off_cvar
+                and float(row["avg_turnover"]) <= (off_turn + float(crit["turnover_max_deterioration"]))
+            )
+            evaluated.append(
+                {
+                    "name": row["name"],
+                    "accepted": bool(accepted),
+                    "checks": {
+                        "cagr_gt_threshold": bool(float(row["overlayed_cagr"]) > crit["cagr_gt"]),
+                        "sharpe_gt_threshold": bool(float(row["overlayed_sharpe"]) > crit["sharpe_gt"]),
+                        "mdd_better_than_official": bool(float(row["max_drawdown"]) > off_mdd),
+                        "cvar_better_than_official": bool(float(row["cvar_daily_1pct"]) > off_cvar),
+                        "turnover_not_materially_worse": bool(
+                            float(row["avg_turnover"]) <= (off_turn + float(crit["turnover_max_deterioration"]))
+                        ),
+                    },
+                }
+            )
 
     payload: dict[str, Any] = {
         "v5_engine_root": str(v5b),
         "prices_path": str(prices_path),
-        "profile": args.profile,
+        "base_profile": "moderado",
         "step_days": int(args.step),
-        "isolated": [x for x in rows_out if x["name"] in [t[0] for t in isolated]],
-        "combinations": [x for x in rows_out if x["name"] in [t[0] for t in combos]],
+        "decision_note": (
+            "Crash overlay 2-of-3 was tested across multiple calibrations. "
+            "It improved Sharpe/CVaR marginally but did not produce robust Max DD improvement. "
+            "Keep as lab reference and do not replace the main candidate."
+        ),
+        "main_candidate": "official_trial_now",
+        "lab_references": ["crash_overlay_2of3_real", "crash_strong_exit10"],
+        "acceptance_criteria": crit,
+        "acceptance_evaluation": evaluated,
+        "scenarios": rows,
     }
 
     txt = json.dumps(payload, ensure_ascii=False, indent=2)
@@ -296,51 +424,26 @@ def main() -> int:
         outp = Path(args.json_out).resolve()
         outp.parent.mkdir(parents=True, exist_ok=True)
         outp.write_text(txt, encoding="utf-8")
+        print(f"JSON -> {outp}")
 
-    def sort_key(row: dict[str, Any]) -> float:
-        v = row.get("overlayed_sharpe")
-        return float(v) if v == v else -999.0
-
-    iso_sorted = sorted(payload["isolated"], key=sort_key, reverse=True)
-    comb_sorted = sorted(payload["combinations"], key=sort_key, reverse=True)
-
-    print("=== ISOLATED (sorted by full-sample Sharpe) ===")
-    for row in iso_sorted:
-        rs = row["rolling_sharpe"]
+    print("=== Crash Overlay Calibration Battery ===")
+    for row in rows:
         print(
-            f"{row['name']:<38} Sh={row['overlayed_sharpe']:.4f} "
-            f"CAGR={row['overlayed_cagr']*100:.2f}% MDD={row['max_drawdown']*100:.2f}% "
-            f"TE={row['tracking_error_ann']*100:.2f}% IR={row['information_ratio']:.3f} "
-            f"p1={row['worst_day_p1']*100:.3f}% n_reb={row['n_rebalance_executed']}"
+            f"{row['name']:<38} "
+            f"CAGR={row['overlayed_cagr']*100:.2f}% "
+            f"Sh={row['overlayed_sharpe']:.4f} "
+            f"MDD={row['max_drawdown']*100:.2f}% "
+            f"p1={row['worst_day_p1']*100:.3f}% "
+            f"CVaR1%={row['cvar_daily_1pct']*100:.3f}% "
+            f"turn={row['avg_turnover']:.4f} "
+            f"crash%={row['pct_days_crash_overlay_active']:.2f} "
+            f"crash_entries={row['crash_overlay_entry_edges']}"
         )
-        print(
-            f"   rolling Sharpe p10/p50/p90: "
-            f"36m {rs['36']['p10']:.3f}/{rs['36']['p50']:.3f}/{rs['36']['p90']:.3f} | "
-            f"60m {rs['60']['p10']:.3f}/{rs['60']['p50']:.3f}/{rs['60']['p90']:.3f} | "
-            f"120m {rs['120']['p10']:.3f}/{rs['120']['p50']:.3f}/{rs['120']['p90']:.3f}"
-        )
-
-    print()
-    print("=== COMBINATIONS (sorted by full-sample Sharpe) ===")
-    for row in comb_sorted:
-        rs = row["rolling_sharpe"]
-        print(
-            f"{row['name']:<42} Sh={row['overlayed_sharpe']:.4f} "
-            f"CAGR={row['overlayed_cagr']*100:.2f}% MDD={row['max_drawdown']*100:.2f}% "
-            f"TE={row['tracking_error_ann']*100:.2f}% IR={row['information_ratio']:.3f} "
-            f"p1={row['worst_day_p1']*100:.3f}% n_reb={row['n_rebalance_executed']}"
-        )
-        print(
-            f"   rolling Sharpe p10/p50/p90: "
-            f"36m {rs['36']['p10']:.3f}/{rs['36']['p50']:.3f}/{rs['36']['p90']:.3f} | "
-            f"60m {rs['60']['p10']:.3f}/{rs['60']['p50']:.3f}/{rs['60']['p90']:.3f} | "
-            f"120m {rs['120']['p10']:.3f}/{rs['120']['p50']:.3f}/{rs['120']['p90']:.3f}"
-        )
-
-    print()
-    print("Best isolated:", iso_sorted[0]["name"], "Sharpe", round(iso_sorted[0]["overlayed_sharpe"], 4))
-    print("Best combo:", comb_sorted[0]["name"], "Sharpe", round(comb_sorted[0]["overlayed_sharpe"], 4))
-    print("Baseline Sharpe:", round(next(x["overlayed_sharpe"] for x in rows_out if x["name"] == "baseline"), 4))
+    if evaluated:
+        print("")
+        print("=== Acceptance Check vs official_trial_now ===")
+        for e in evaluated:
+            print(f"{e['name']:<30} {'PASS' if e['accepted'] else 'FAIL'}")
     return 0
 
 

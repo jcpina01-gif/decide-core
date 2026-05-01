@@ -1,0 +1,26 @@
+{
+  "ticker_to_cluster": {
+    "AAPL": "BigTech Platform",
+    "MSFT": "BigTech Platform",
+    "GOOGL": "BigTech Platform",
+    "AMZN": "BigTech Platform",
+    "META": "BigTech Platform",
+    "NVDA": "AI Semis",
+    "AMD": "AI Semis",
+    "ASML": "AI Semis",
+    "AVGO": "AI Semis",
+    "LRCX": "AI Semis",
+    "JPM": "US Banks",
+    "BAC": "US Banks",
+    "WFC": "US Banks",
+    "GS": "US Banks",
+    "MS": "US Banks",
+    "XOM": "Energy Majors",
+    "CVX": "Energy Majors",
+    "BP": "Energy Majors",
+    "SHEL": "Energy Majors",
+    "NVO": "European Pharma",
+    "NVS": "European Pharma",
+    "ROG": "European Pharma"
+  }
+}

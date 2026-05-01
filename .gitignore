@@ -49,6 +49,7 @@ next-cache/
 !/backend/engine_v2.py
 !/backend/engine_entrypoint.py
 !/backend/engine_research_v2_constrained.py
+!/backend/engine_research_v5.py
 !/backend/ib_socket_env.py
 !/backend/ib_insync_thread_loop.py
 !/backend/ibkr_paper_checks.py
@@ -101,6 +102,8 @@ next-cache/
 !/backend/data/weights_by_rebalance_full.csv
 !/backend/data/weights_by_rebalance_normalized_long.csv
 !/backend/data/fx_EURUSD_daily.csv
+!/backend/data/moderado_trial_risk_control_battery.json
+!/backend/data/sector_cluster_map.json
 /backend/data/backups/
 # KPI Flask (iframe do client-dashboard) — ficheiro na raiz; dados em freeze/ (deploy separado ou disco)
 !/kpi_server.py
