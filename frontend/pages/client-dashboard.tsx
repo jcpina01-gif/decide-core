@@ -1381,6 +1381,23 @@ export default function ClientDashboardPage() {
                         "Atualizar recomendação"
                       )}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => void router.push("/client/model-lab")}
+                      title="Abrir laboratório interno de cenários do motor"
+                      style={{
+                        background: "rgba(39,39,42,0.82)",
+                        color: "#e2e8f0",
+                        border: "1px solid rgba(148,163,184,0.35)",
+                        borderRadius: 12,
+                        padding: "8px 14px",
+                        fontSize: 13,
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Model Lab
+                    </button>
                   </>
                 }
                 toolbarFooter={
