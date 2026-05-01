@@ -1,15 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Focused battery for `moderado_trial_risk_control` validation.
-
-Scenarios exported side by side:
-- baseline_3p3
-- baseline_5p5
-- vol_spike_3p3
-- concentration_control_3p3
-- moderado_trial_risk_control
-"""
+"""Focused battery for trial feature flags in engine_research_v5."""
 
 from __future__ import annotations
 
@@ -111,35 +102,42 @@ def _stress_periods(ov: pd.Series) -> dict[str, dict[str, float]]:
     return out
 
 
-def _exposure_snapshot_from_holdings(holdings: list[dict[str, Any]]) -> dict[str, Any]:
-    if not holdings:
-        return {"country": {}, "sector": {}}
-    by_country: dict[str, float] = {}
-    by_sector: dict[str, float] = {}
-    for row in holdings:
-        w = float(row.get("weight") or 0.0)
-        c = str(row.get("region") or row.get("country") or "UNKNOWN").strip().upper() or "UNKNOWN"
-        s = str(row.get("sector") or "UNKNOWN").strip() or "UNKNOWN"
-        by_country[c] = by_country.get(c, 0.0) + w
-        by_sector[s] = by_sector.get(s, 0.0) + w
-    return {
-        "country": dict(sorted(by_country.items(), key=lambda kv: kv[1], reverse=True)),
-        "sector": dict(sorted(by_sector.items(), key=lambda kv: kv[1], reverse=True)),
-    }
+def _load_cluster_map(cluster_map_path: Path) -> dict[str, str]:
+    if not cluster_map_path.is_file():
+        return {}
+    try:
+        payload = json.loads(cluster_map_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    out: dict[str, str] = {}
+    if isinstance(payload, dict):
+        raw = payload.get("ticker_to_cluster", payload)
+        if isinstance(raw, dict):
+            for k, v in raw.items():
+                tk = str(k).strip().upper()
+                cv = str(v).strip()
+                if tk and cv:
+                    out[tk] = cv
+    return out
 
 
-def _history_exposure_from_weights_csv(weights_csv: Path) -> dict[str, Any]:
+def _history_exposure_from_weights_csv(weights_csv: Path, cluster_map_path: Path) -> dict[str, Any]:
     if not weights_csv.is_file():
         return {"error": "missing_weights_csv", "path": str(weights_csv)}
     df = pd.read_csv(weights_csv)
-    needed = {"rebalance_date", "final_weight", "country", "sector"}
+    needed = {"rebalance_date", "ticker", "final_weight", "country", "sector"}
     if not needed.issubset(set(df.columns)):
         return {"error": "unexpected_columns", "columns": list(df.columns)}
+    t2c = _load_cluster_map(cluster_map_path)
 
     df = df.copy()
     df["rebalance_date"] = pd.to_datetime(df["rebalance_date"], errors="coerce")
     df = df.dropna(subset=["rebalance_date"])
+    df["ticker"] = df["ticker"].astype(str).str.strip().str.upper()
     df["final_weight"] = pd.to_numeric(df["final_weight"], errors="coerce").fillna(0.0)
+    df["country"] = df["country"].fillna("UNKNOWN").astype(str)
+    df["sector"] = df["sector"].fillna("Other").astype(str)
+    df["cluster"] = [t2c.get(t, s) for t, s in zip(df["ticker"].tolist(), df["sector"].tolist())]
     df = df[df["final_weight"] > 0]
     if df.empty:
         return {"error": "no_positive_weights"}
@@ -166,18 +164,25 @@ def _history_exposure_from_weights_csv(weights_csv: Path) -> dict[str, Any]:
             )
         stats.sort(key=lambda x: x["mean"], reverse=True)
         return {
-            "top_by_mean": stats[:10],
-            "top_by_latest": sorted(stats, key=lambda x: x["latest"], reverse=True)[:10],
+            "top_by_mean": stats[:12],
+            "top_by_latest": sorted(stats, key=lambda x: x["latest"], reverse=True)[:12],
         }
 
     return {
         "n_rebalances": int(df["rebalance_date"].nunique()),
         "country": summarize("country"),
         "sector": summarize("sector"),
+        "cluster": summarize("cluster"),
     }
 
 
-def _metrics_from_run(r: dict[str, Any], *, step: int, weights_csv: Path) -> dict[str, Any]:
+def _metrics_from_run(
+    r: dict[str, Any],
+    *,
+    step: int,
+    weights_csv: Path,
+    cluster_map_path: Path,
+) -> dict[str, Any]:
     s = r.get("summary") or {}
     idx = pd.to_datetime(r["dates"], errors="coerce")
     ov = pd.to_numeric(pd.Series(r["equity_overlayed"], index=idx), errors="coerce").dropna()
@@ -202,12 +207,7 @@ def _metrics_from_run(r: dict[str, Any], *, step: int, weights_csv: Path) -> dic
     for mo, w in months_td.items():
         roll_sh[str(mo)] = _rolling_sharpe_panel(r_m, w, step)
 
-    latest_holdings = r.get("latest_holdings_detailed") or []
-    exposure_snapshot = _exposure_snapshot_from_holdings(latest_holdings if isinstance(latest_holdings, list) else [])
-    exposure_history = _history_exposure_from_weights_csv(weights_csv)
-    model_vol_ann = float(r_m.std(ddof=0) * math.sqrt(TRADING_DAYS)) if len(r_m) > 30 else float("nan")
-    bench_vol_ann = float(r_b.std(ddof=0) * math.sqrt(TRADING_DAYS)) if len(r_b) > 30 else float("nan")
-    vol_ratio = model_vol_ann / bench_vol_ann if bench_vol_ann > 1e-12 else float("nan")
+    exposure_history = _history_exposure_from_weights_csv(weights_csv, cluster_map_path)
 
     return {
         "overlayed_cagr": float(s.get("overlayed_cagr") or 0.0),
@@ -217,21 +217,20 @@ def _metrics_from_run(r: dict[str, Any], *, step: int, weights_csv: Path) -> dic
         "n_rebalance_executed": int(s.get("n_rebalance_executed") or 0),
         "worst_day_p1": p1,
         "cvar_daily_1pct": cvar1,
-        "model_vol_ann": model_vol_ann,
-        "benchmark_vol_ann": bench_vol_ann,
-        "vol_ratio_vs_benchmark": vol_ratio,
         "rolling_sharpe": roll_sh,
         "stress_periods": _stress_periods(ov),
-        "exposure_snapshot": exposure_snapshot,
         "exposure_history": exposure_history,
+        "pct_days_crash_overlay_active": float(s.get("pct_days_crash_overlay_active") or 0.0),
+        "crash_overlay_entry_edges": int(s.get("crash_overlay_entry_edges") or 0),
+        "sector_cluster_caps_diagnostics": s.get("sector_cluster_caps_diagnostics") or {},
     }
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--prices", type=str, default="", help="prices CSV path")
-    ap.add_argument("--step", type=int, default=21, help="rolling step in trading days")
-    ap.add_argument("--json-out", type=str, default="", help="optional output JSON path")
+    ap.add_argument("--step", type=int, default=21, help="rolling step (trading days)")
+    ap.add_argument("--json-out", type=str, default="", help="output JSON path")
     args = ap.parse_args()
 
     v5b = _resolve_v5_backend()
@@ -243,6 +242,8 @@ def main() -> int:
     if not prices_path.is_file():
         print("ERROR: missing prices CSV", prices_path, file=sys.stderr)
         return 2
+
+    cluster_map_path = (_BACKEND / "data" / "sector_cluster_map.json").resolve()
 
     base: dict[str, Any] = {
         "prices_path": str(prices_path),
@@ -266,55 +267,138 @@ def main() -> int:
         "bear_low_vol_exposure_mult": 0.85,
     }
 
+    crash_base: dict[str, Any] = {
+        "crash_overlay_2of3_enabled": True,
+        "crash_breadth_threshold": 0.40,
+        "crash_dd_window": 60,
+        "crash_dd_threshold": -0.08,
+        "crash_exposure_2_signals": 0.70,
+        "crash_exposure_3_signals": 0.55,
+        "crash_exit_consecutive_days": 10,
+    }
     scenarios: list[tuple[str, dict[str, Any]]] = [
-        ("baseline_3p3", {}),
-        ("baseline_5p5", {"transaction_cost_bps": 5.0, "slippage_bps": 5.0}),
-        ("vol_spike_3p3", {"vol_spike_enabled": True}),
+        ("official_trial_now", {}),
+        ("crash_overlay_2of3_real", crash_base),
         (
-            "concentration_control_3p3",
+            "crash_strong",
             {
-                "cap_per_ticker": 0.12,
-                "top_q": 25,
-                "selection_buffer_asymmetric": True,
-                "rank_in_entry": 15,
-                "rank_maintain": 25,
+                "crash_overlay_2of3_enabled": True,
+                "crash_breadth_threshold": 0.40,
+                "crash_dd_window": 60,
+                "crash_dd_threshold": -0.08,
+                "crash_exposure_2_signals": 0.65,
+                "crash_exposure_3_signals": 0.50,
+                "crash_exit_consecutive_days": 15,
             },
         ),
         (
-            "moderado_trial_risk_control",
+            "crash_base_exit15",
             {
-                # Vol do trial próxima da do benchmark (regra de moderado com cap explícito no scaling).
-                "vol_target_window": 63,
-                "vol_scale_cap": 1.00,
-                "cap_per_ticker": 0.12,
-                "top_q": 25,
-                "selection_buffer_asymmetric": True,
-                "rank_in_entry": 15,
-                "rank_maintain": 25,
-                "bear_low_vol_hysteresis_entry_quantile": 0.35,
-                "bear_low_vol_hysteresis_exit_quantile": 0.60,
-                "bear_low_vol_exposure_mult": 0.70,
-                "vol_spike_enabled": True,
-                "benchmark_ma_window": 252,
+                "crash_overlay_2of3_enabled": True,
+                "crash_breadth_threshold": 0.40,
+                "crash_dd_window": 60,
+                "crash_dd_threshold": -0.08,
+                "crash_exposure_2_signals": 0.70,
+                "crash_exposure_3_signals": 0.55,
+                "crash_exit_consecutive_days": 15,
+            },
+        ),
+        (
+            "crash_mid",
+            {
+                "crash_overlay_2of3_enabled": True,
+                "crash_breadth_threshold": 0.40,
+                "crash_dd_window": 60,
+                "crash_dd_threshold": -0.08,
+                "crash_exposure_2_signals": 0.68,
+                "crash_exposure_3_signals": 0.525,
+                "crash_exit_consecutive_days": 12,
+            },
+        ),
+        (
+            "crash_mid_sensitive",
+            {
+                "crash_overlay_2of3_enabled": True,
+                "crash_breadth_threshold": 0.425,
+                "crash_dd_window": 60,
+                "crash_dd_threshold": -0.07,
+                "crash_exposure_2_signals": 0.70,
+                "crash_exposure_3_signals": 0.55,
+                "crash_exit_consecutive_days": 12,
+            },
+        ),
+        (
+            "crash_strong_exit10",
+            {
+                "crash_overlay_2of3_enabled": True,
+                "crash_breadth_threshold": 0.40,
+                "crash_dd_window": 60,
+                "crash_dd_threshold": -0.08,
+                "crash_exposure_2_signals": 0.65,
+                "crash_exposure_3_signals": 0.50,
+                "crash_exit_consecutive_days": 10,
             },
         ),
     ]
 
     rows: list[dict[str, Any]] = []
-    with tempfile.TemporaryDirectory(prefix="moderado_trial_battery_") as tmp:
+    with tempfile.TemporaryDirectory(prefix="v5_trial_battery_") as tmp:
         tmp_dir = Path(tmp)
         for name, override in scenarios:
             run_kw = {**base, **override}
             weights_csv = tmp_dir / f"{name}_weights.csv"
             run_kw["emit_weights_csv"] = str(weights_csv)
             rr = run_research_v1(**run_kw)
-            metrics = _metrics_from_run(rr, step=int(args.step), weights_csv=weights_csv)
+            metrics = _metrics_from_run(
+                rr,
+                step=int(args.step),
+                weights_csv=weights_csv,
+                cluster_map_path=cluster_map_path,
+            )
             rows.append(
                 {
                     "name": name,
-                    "trial_profile_name": "moderado_trial_risk_control" if name == "moderado_trial_risk_control" else None,
                     "params": {k: run_kw[k] for k in sorted(override.keys())},
                     **metrics,
+                }
+            )
+
+    official = next((x for x in rows if x["name"] == "official_trial_now"), None)
+    crit = {
+        "cagr_gt": 0.228,
+        "sharpe_gt": 1.155,
+        "mdd_better_than_official": float(official["max_drawdown"]) if official else float("nan"),
+        "cvar_better_than_official": float(official["cvar_daily_1pct"]) if official else float("nan"),
+        "turnover_max_deterioration": 0.0030,
+    }
+    evaluated: list[dict[str, Any]] = []
+    if official is not None:
+        off_turn = float(official.get("avg_turnover") or 0.0)
+        off_mdd = float(official.get("max_drawdown") or 0.0)
+        off_cvar = float(official.get("cvar_daily_1pct") or 0.0)
+        for row in rows:
+            if row["name"] == "official_trial_now":
+                continue
+            accepted = (
+                float(row["overlayed_cagr"]) > crit["cagr_gt"]
+                and float(row["overlayed_sharpe"]) > crit["sharpe_gt"]
+                and float(row["max_drawdown"]) > off_mdd
+                and float(row["cvar_daily_1pct"]) > off_cvar
+                and float(row["avg_turnover"]) <= (off_turn + float(crit["turnover_max_deterioration"]))
+            )
+            evaluated.append(
+                {
+                    "name": row["name"],
+                    "accepted": bool(accepted),
+                    "checks": {
+                        "cagr_gt_threshold": bool(float(row["overlayed_cagr"]) > crit["cagr_gt"]),
+                        "sharpe_gt_threshold": bool(float(row["overlayed_sharpe"]) > crit["sharpe_gt"]),
+                        "mdd_better_than_official": bool(float(row["max_drawdown"]) > off_mdd),
+                        "cvar_better_than_official": bool(float(row["cvar_daily_1pct"]) > off_cvar),
+                        "turnover_not_materially_worse": bool(
+                            float(row["avg_turnover"]) <= (off_turn + float(crit["turnover_max_deterioration"]))
+                        ),
+                    },
                 }
             )
 
@@ -323,6 +407,15 @@ def main() -> int:
         "prices_path": str(prices_path),
         "base_profile": "moderado",
         "step_days": int(args.step),
+        "decision_note": (
+            "Crash overlay 2-of-3 was tested across multiple calibrations. "
+            "It improved Sharpe/CVaR marginally but did not produce robust Max DD improvement. "
+            "Keep as lab reference and do not replace the main candidate."
+        ),
+        "main_candidate": "official_trial_now",
+        "lab_references": ["crash_overlay_2of3_real", "crash_strong_exit10"],
+        "acceptance_criteria": crit,
+        "acceptance_evaluation": evaluated,
         "scenarios": rows,
     }
 
@@ -333,17 +426,24 @@ def main() -> int:
         outp.write_text(txt, encoding="utf-8")
         print(f"JSON -> {outp}")
 
-    print("=== Moderado Trial Risk Control Battery ===")
+    print("=== Crash Overlay Calibration Battery ===")
     for row in rows:
         print(
-            f"{row['name']:<30} "
+            f"{row['name']:<38} "
             f"CAGR={row['overlayed_cagr']*100:.2f}% "
-            f"Sharpe={row['overlayed_sharpe']:.4f} "
+            f"Sh={row['overlayed_sharpe']:.4f} "
             f"MDD={row['max_drawdown']*100:.2f}% "
             f"p1={row['worst_day_p1']*100:.3f}% "
             f"CVaR1%={row['cvar_daily_1pct']*100:.3f}% "
-            f"turn={row['avg_turnover']:.4f}"
+            f"turn={row['avg_turnover']:.4f} "
+            f"crash%={row['pct_days_crash_overlay_active']:.2f} "
+            f"crash_entries={row['crash_overlay_entry_edges']}"
         )
+    if evaluated:
+        print("")
+        print("=== Acceptance Check vs official_trial_now ===")
+        for e in evaluated:
+            print(f"{e['name']:<30} {'PASS' if e['accepted'] else 'FAIL'}")
     return 0
 
 
