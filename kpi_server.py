@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30"
+    "-horizons-retornos-dd-v30-official-raw-v32"
 )
 
 
@@ -406,12 +406,12 @@ def apply_model_equity_profile_policy(
     strict_cap15_vol_targets: bool = False,
 ) -> pd.Series:
     """
-    - **Moderado:** no CAP15 com `strict_cap15_vol_targets`, alinha a vol realizada a ≈ **1×** a do benchmark
-      (`scale_model_equity_to_profile_vol`, mult 1,0). Noutros modelos v5, por defeito mantém a série do CSV.
+    - **Moderado:** mantém a série crua do CSV (sem reescala adicional no KPI), para paridade com
+      o KPI oficial do artefacto versionado / Model Lab.
     - **Conservador / dinâmico:** alvo ≈ 0,75× / 1,25× vol do benchmark quando a reescala está activa.
 
-    Com `strict_cap15_vol_targets=True` (CAP15 plafonado, série m100 alinhada, com margem): todos os perfis
-    aplicam o alvo via `scale_model_equity_to_profile_vol` (ignora `used_profile_file` e opt-out de embed).
+    Com `strict_cap15_vol_targets=True` (CAP15 plafonado, série m100 alinhada, com margem):
+    conservador/dinâmico aplicam alvo via `scale_model_equity_to_profile_vol`; moderado fica em série crua.
     Se a vol natural da série for superior ao alvo (ex. 1,25× bench no dinâmico), a reescala baixa vol e CAGR.
 
     Com `strict_cap15_vol_targets=False` (outros modelos v5): comportamento legado — `used_profile_file` isenta;
@@ -419,6 +419,8 @@ def apply_model_equity_profile_policy(
     """
     pk = normalize_risk_profile_key(profile_key)
     if strict_cap15_vol_targets:
+        if pk == "moderado":
+            return model_eq.astype(float)
         return scale_model_equity_to_profile_vol(
             model_eq, bench_eq, pk, has_profile_file=False
         )
@@ -10078,8 +10080,7 @@ def index():
     if cap15_only:
         profile_source_note = (
             "Modelo CAP15: exposição a risco limitada ao capital (≤100% NV), sem alavancagem além do NAV. "
-            "Moderado: série investível (CSV) com alvo ≈1× vol do benchmark no motor na perna overlay; "
-            "no painel CAP15, alinhamento adicional a ≈1× vs benchmark nos cartões (mesma função que outros perfis, mult 1,0). "
+            "Moderado: série investível (CSV) usada de forma crua nos cartões KPI (sem reescala adicional). "
             "Conservador/dinâmico: alvo ≈ 0,75× / 1,25× da vol do benchmark nos cartões."
         )
         if force_synthetic_profile_vol:
