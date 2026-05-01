@@ -278,6 +278,23 @@ def main() -> int:
     }
     scenarios: list[tuple[str, dict[str, Any]]] = [
         ("official_trial_now", {}),
+        (
+            "moderado_trial_risk_control",
+            {
+                "cap_per_ticker": 0.12,
+                "top_q": 25,
+                "selection_buffer_asymmetric": True,
+                "rank_in_entry": 15,
+                "rank_maintain": 25,
+                "vol_target_window": 63,
+                "vol_scale_cap": 1.00,
+                "bear_low_vol_hysteresis_entry_quantile": 0.35,
+                "bear_low_vol_hysteresis_exit_quantile": 0.60,
+                "bear_low_vol_exposure_mult": 0.70,
+                "vol_spike_enabled": True,
+                "benchmark_ma_window": 252,
+            },
+        ),
         ("crash_overlay_2of3_real", crash_base),
         (
             "crash_strong",
@@ -412,8 +429,8 @@ def main() -> int:
             "It improved Sharpe/CVaR marginally but did not produce robust Max DD improvement. "
             "Keep as lab reference and do not replace the main candidate."
         ),
-        "main_candidate": "official_trial_now",
-        "lab_references": ["crash_overlay_2of3_real", "crash_strong_exit10"],
+        "main_candidate": "moderado_trial_risk_control",
+        "lab_references": ["official_trial_now", "crash_overlay_2of3_real", "crash_strong_exit10"],
         "acceptance_criteria": crit,
         "acceptance_evaluation": evaluated,
         "scenarios": rows,
