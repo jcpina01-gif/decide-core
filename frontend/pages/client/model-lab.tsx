@@ -12,6 +12,7 @@ type ScenarioRow = {
   worst_day_p1?: number;
   cvar_daily_1pct?: number;
   avg_turnover?: number;
+  vol_ratio_vs_benchmark?: number;
 };
 
 type ModelLabPayload = {
@@ -156,6 +157,7 @@ export default function ModelLabPage() {
                     <div>p1 diário: <strong>{pct(row.worst_day_p1)}</strong></div>
                     <div>CVaR1%: <strong>{pct(row.cvar_daily_1pct)}</strong></div>
                     <div>Turnover: <strong>{num(row.avg_turnover, 4)}</strong></div>
+                    <div>Vol/Bench: <strong>{num(row.vol_ratio_vs_benchmark, 3)}x</strong></div>
                   </div>
                   {row.name === "moderado_trial_risk_control" ? (
                     <div

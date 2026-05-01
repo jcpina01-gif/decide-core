@@ -185,7 +185,12 @@ def _metrics_from_run(r: dict[str, Any], *, step: int, weights_csv: Path) -> dic
     be = be.dropna()
     common = ov.index.intersection(be.index)
     ov = ov.loc[common].astype(float)
+    be = be.loc[common].astype(float)
     r_m = ov.pct_change().dropna()
+    r_b = be.pct_change().reindex(r_m.index).dropna()
+    cx = r_m.index.intersection(r_b.index)
+    r_m = r_m.loc[cx]
+    r_b = r_b.loc[cx]
     arr = r_m.to_numpy(dtype=float)
     arr = arr[np.isfinite(arr)]
     p1 = float(np.percentile(arr, 1)) if arr.size > 50 else float("nan")
@@ -200,6 +205,9 @@ def _metrics_from_run(r: dict[str, Any], *, step: int, weights_csv: Path) -> dic
     latest_holdings = r.get("latest_holdings_detailed") or []
     exposure_snapshot = _exposure_snapshot_from_holdings(latest_holdings if isinstance(latest_holdings, list) else [])
     exposure_history = _history_exposure_from_weights_csv(weights_csv)
+    model_vol_ann = float(r_m.std(ddof=0) * math.sqrt(TRADING_DAYS)) if len(r_m) > 30 else float("nan")
+    bench_vol_ann = float(r_b.std(ddof=0) * math.sqrt(TRADING_DAYS)) if len(r_b) > 30 else float("nan")
+    vol_ratio = model_vol_ann / bench_vol_ann if bench_vol_ann > 1e-12 else float("nan")
 
     return {
         "overlayed_cagr": float(s.get("overlayed_cagr") or 0.0),
@@ -209,6 +217,9 @@ def _metrics_from_run(r: dict[str, Any], *, step: int, weights_csv: Path) -> dic
         "n_rebalance_executed": int(s.get("n_rebalance_executed") or 0),
         "worst_day_p1": p1,
         "cvar_daily_1pct": cvar1,
+        "model_vol_ann": model_vol_ann,
+        "benchmark_vol_ann": bench_vol_ann,
+        "vol_ratio_vs_benchmark": vol_ratio,
         "rolling_sharpe": roll_sh,
         "stress_periods": _stress_periods(ov),
         "exposure_snapshot": exposure_snapshot,
@@ -272,8 +283,9 @@ def main() -> int:
         (
             "moderado_trial_risk_control",
             {
-                # Regra de vol do moderado (alvo overlay vs benchmark) aplicada explicitamente no trial.
-                "vol_target_window": 126,
+                # Vol do trial próxima da do benchmark (regra de moderado com cap explícito no scaling).
+                "vol_target_window": 63,
+                "vol_scale_cap": 1.00,
                 "cap_per_ticker": 0.12,
                 "top_q": 25,
                 "selection_buffer_asymmetric": True,
