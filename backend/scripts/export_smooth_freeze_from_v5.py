@@ -203,6 +203,24 @@ def main() -> int:
             kwargs["bear_low_vol_bench_vol_window"] = 63
             kwargs["bear_low_vol_exposure_mult"] = 0.85
         if pk == "moderado":
+            # Candidato atual por melhor Sharpe ajustado ao risco (trial antigo),
+            # promovido para a corrida oficial do perfil moderado no freeze.
+            kwargs.update(
+                {
+                    "cap_per_ticker": 0.12,
+                    "top_q": 25,
+                    "selection_buffer_asymmetric": True,
+                    "rank_in_entry": 15,
+                    "rank_maintain": 25,
+                    "vol_target_window": 63,
+                    "vol_scale_cap": 1.00,
+                    "bear_low_vol_hysteresis_entry_quantile": 0.35,
+                    "bear_low_vol_hysteresis_exit_quantile": 0.60,
+                    "bear_low_vol_exposure_mult": 0.70,
+                    "vol_spike_enabled": True,
+                    "benchmark_ma_window": 252,
+                }
+            )
             kwargs["emit_weights_csv"] = str(data_weights)
             kwargs["emit_cash_sleeve_daily_csv"] = str(data_cash)
             kwargs["emit_v5_kpis_json"] = str(v5_json)
