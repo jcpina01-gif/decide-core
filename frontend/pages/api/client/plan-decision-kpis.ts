@@ -5,12 +5,16 @@ import {
 } from "../../../lib/server/fetchPlafonadoCagrFromKpiServer";
 import { loadApprovalAlignedProposedTrades } from "../../../lib/server/approvalTradePlan";
 import { resolveDecideProjectRoot } from "../../../lib/server/decideProjectRoot";
-import { computePlanActivity } from "../../../lib/planDecisionKpiMath";
+import {
+  computePlanActivity,
+  overlayedCagrToDisplayPercent,
+} from "../../../lib/planDecisionKpiMath";
 import {
   readPlafonadoM100CagrDisplayPercent,
   readPlanRecommendedCagrDisplayPercent,
 } from "../../../lib/server/readPlafonadoFreezeCagr";
 import { readHeroKpiFreezeContext } from "../../../lib/server/readHeroKpiFreezeContext";
+import { readOfficialModelBatteryKpis } from "../../../lib/server/readOfficialModelBattery";
 
 type OkBody = {
   ok: true;
@@ -24,6 +28,11 @@ type OkBody = {
   totalAbsFlowEur: number;
   recommendedModelLabel: string;
   recommendedCagrPct: number | null;
+  recommendedSharpe: number | null;
+  recommendedMaxDdPct: number | null;
+  officialScenarioName: string | null;
+  officialKpiNote: string | null;
+  adjustedEmbedLikeCagrPct: number | null;
   /** Intervalo de datas da série do benchmark no freeze (KPIs / histórico). */
   historyPeriodLabel: string | null;
   /** Anos inicial–final (ex. `2006–2026`) para contexto curto no dashboard. */
@@ -60,12 +69,20 @@ export default async function handler(
         : profile === "dinamico"
           ? "Dinâmico"
           : "Moderado";
-    const recommendedModelLabel = `Modelo ${profilePt} — limite máximo de 15% por posição`;
-    const recommendedCagrPct =
+    const battery = readOfficialModelBatteryKpis(projectRoot);
+    const recommendedModelLabel = `Modelo ${profilePt} — KPI oficial do artefacto versionado`;
+    const adjustedEmbedLikeCagrPct =
       readPlafonadoM100CagrDisplayPercent(projectRoot, profile) ??
       (await fetchPlafonadoCagrPctFromKpiServer(profile)) ??
       readPlanRecommendedCagrDisplayPercent(projectRoot, profile) ??
       cagrFromModel;
+    const recommendedCagrPct =
+      battery?.cagrFraction != null
+        ? overlayedCagrToDisplayPercent(battery.cagrFraction)
+        : adjustedEmbedLikeCagrPct;
+    const recommendedSharpe = battery?.sharpe ?? null;
+    const recommendedMaxDdPct =
+      battery?.maxDrawdownFraction != null ? battery.maxDrawdownFraction * 100.0 : null;
     const { historyPeriodLabel, historyYearRangeLabel, benchmarkCagrPct } =
       readHeroKpiFreezeContext(projectRoot);
     res.status(200).json({
@@ -74,6 +91,13 @@ export default async function handler(
       ...m,
       recommendedModelLabel,
       recommendedCagrPct,
+      recommendedSharpe,
+      recommendedMaxDdPct,
+      officialScenarioName: battery?.scenarioName ?? null,
+      officialKpiNote:
+        battery?.decisionNote ??
+        "KPIs oficiais calculados a partir do último artefacto de bateria versionado. Variantes ajustadas podem diferir.",
+      adjustedEmbedLikeCagrPct,
       historyPeriodLabel,
       historyYearRangeLabel,
       benchmarkCagrPct,

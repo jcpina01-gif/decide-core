@@ -11,6 +11,12 @@ type PlanKpisOk = {
   ok: true;
   recommendedModelLabel?: string;
   recommendedCagrPct?: number | null;
+  recommendedSharpe?: number | null;
+  recommendedMaxDdPct?: number | null;
+  officialScenarioName?: string | null;
+  officialKpiNote?: string | null;
+  adjustedEmbedLikeCagrPct?: number | null;
+  historyPeriodLabel?: string | null;
   historyYearRangeLabel?: string | null;
   activityPct?: number;
 };
@@ -119,13 +125,30 @@ export default function DecideRecommendedPlanCta({
     data?.recommendedModelLabel ??
     `Modelo ${profileLabel} — limite máximo de 15% por posição`;
   const cagrPct = data?.recommendedCagrPct;
+  const sharpe = data?.recommendedSharpe;
+  const maxDdPct = data?.recommendedMaxDdPct;
+  const adjustedEmbedLikeCagrPct = data?.adjustedEmbedLikeCagrPct;
   const showCagr = typeof cagrPct === "number" && Number.isFinite(cagrPct);
+  const showSharpe = typeof sharpe === "number" && Number.isFinite(sharpe);
+  const showMaxDd = typeof maxDdPct === "number" && Number.isFinite(maxDdPct);
   const yearRange =
     typeof data?.historyYearRangeLabel === "string" && data.historyYearRangeLabel.trim().length > 0
       ? data.historyYearRangeLabel.trim()
       : null;
+  const periodLabel =
+    typeof data?.historyPeriodLabel === "string" && data.historyPeriodLabel.trim().length > 0
+      ? data.historyPeriodLabel.trim()
+      : null;
   const riskHint = riskVolatilityHintPt(riskProfile);
   const strategyLine = recommendedPlanStrategyLinePt(riskProfile);
+  const officialScenario =
+    typeof data?.officialScenarioName === "string" && data.officialScenarioName.trim().length > 0
+      ? data.officialScenarioName.trim()
+      : null;
+  const officialNote =
+    typeof data?.officialKpiNote === "string" && data.officialKpiNote.trim().length > 0
+      ? data.officialKpiNote.trim()
+      : "KPIs oficiais calculados a partir do último artefacto de bateria versionado. Variantes ajustadas podem diferir.";
 
   return (
     <section className="decide-app-recommended-plan" aria-labelledby="decide-plan-title">
@@ -142,6 +165,7 @@ export default function DecideRecommendedPlanCta({
                 </h2>
                 <p className="decide-app-recommended-plan-model-strategy">{strategyLine}</p>
                 <p className="decide-app-recommended-plan-cagr-costs-notice">{DECIDE_CAGR_INCLUDES_MARKET_COSTS_PT}</p>
+                <p className="decide-app-recommended-plan-adjust-note">{officialNote}</p>
               </div>
               <div className="decide-app-recommended-plan-decision-metric-col">
                 <div className="decide-app-recommended-plan-metric" aria-live="polite">
@@ -160,9 +184,26 @@ export default function DecideRecommendedPlanCta({
                       <p className="decide-app-recommended-plan-cagr-value-line">
                         <span className="decide-app-recommended-plan-cagr-value">{fmtPctPt(cagrPct)}%</span>
                       </p>
+                      <p className="decide-app-recommended-plan-context">
+                        Sharpe oficial: {showSharpe ? Number(sharpe).toFixed(3) : "—"} · Max DD oficial:{" "}
+                        {showMaxDd ? `${fmtPctPt(maxDdPct)}%` : "—"}
+                      </p>
                       {yearRange ? (
                         <p className="decide-app-recommended-plan-context">
                           Baseado em histórico do {modelLabel} ({yearRange})
+                        </p>
+                      ) : null}
+                      {periodLabel ? (
+                        <p className="decide-app-recommended-plan-context">Dataset: {periodLabel}</p>
+                      ) : null}
+                      {officialScenario ? (
+                        <p className="decide-app-recommended-plan-context">Cenário oficial: {officialScenario}</p>
+                      ) : null}
+                      {typeof adjustedEmbedLikeCagrPct === "number" &&
+                      Number.isFinite(adjustedEmbedLikeCagrPct) ? (
+                        <p className="decide-app-recommended-plan-context">
+                          KPI ajustado para apresentação - não é o KPI oficial do modelo:{" "}
+                          {fmtPctPt(adjustedEmbedLikeCagrPct)}%
                         </p>
                       ) : null}
                       <p className="decide-app-recommended-plan-risk-hint">{riskHint}</p>
