@@ -96,6 +96,8 @@ next-cache/
 !/backend/scripts/run_v5_cost_buffer_battery.py
 !/backend/scripts/run_v5_sharpe_hypothesis_audit.py
 !/backend/scripts/rebuild_weights_by_rebalance.py
+!/backend/scripts/update_prices_close.py
+!/backend/scripts/prices_tws.py
 # Preços para o motor (run-model). CSV podem ser grandes — Git LFS se necessário.
 !/backend/data/
 /backend/data/*
