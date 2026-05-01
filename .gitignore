@@ -106,6 +106,7 @@ next-cache/
 !/backend/data/weights_by_rebalance_full.csv
 !/backend/data/weights_by_rebalance_normalized_long.csv
 !/backend/data/fx_EURUSD_daily.csv
+!/backend/data/moderado_trial_risk_control_battery.json
 /backend/data/backups/
 # KPI Flask (iframe do client-dashboard) — ficheiro na raiz; dados em freeze/ (deploy separado ou disco)
 !/kpi_server.py
