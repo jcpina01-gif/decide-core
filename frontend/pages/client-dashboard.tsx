@@ -1,5 +1,4 @@
 import Head from "next/head";
-import Link from "next/link";
 import ClientPendingTextLink from "../components/ClientPendingTextLink";
 import { useRouter } from "next/router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1382,24 +1381,23 @@ export default function ClientDashboardPage() {
                         "Atualizar recomendação"
                       )}
                     </button>
-                    {loggedIn ? (
-                      <Link
-                        href="/client/model-lab"
-                        style={{
-                          background: "rgba(17,24,39,0.85)",
-                          color: "#e5e7eb",
-                          border: "1px solid rgba(148,163,184,0.35)",
-                          borderRadius: 12,
-                          padding: "8px 12px",
-                          fontSize: 12,
-                          fontWeight: 800,
-                          textDecoration: "none",
-                        }}
-                        title="Laboratório interno para comparar oficial vs trial"
-                      >
-                        Model Lab
-                      </Link>
-                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void router.push("/client/model-lab")}
+                      title="Abrir laboratório interno de cenários do motor"
+                      style={{
+                        background: "rgba(39,39,42,0.82)",
+                        color: "#e2e8f0",
+                        border: "1px solid rgba(148,163,184,0.35)",
+                        borderRadius: 12,
+                        padding: "8px 14px",
+                        fontSize: 13,
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Model Lab
+                    </button>
                   </>
                 }
                 toolbarFooter={

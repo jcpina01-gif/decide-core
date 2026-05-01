@@ -1,188 +1,149 @@
 import Head from "next/head";
 import Link from "next/link";
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { isClientLoggedIn } from "../../lib/clientAuth";
 
 type ScenarioRow = {
   name: string;
-  trial_profile_name?: string | null;
-  params?: Record<string, unknown>;
-  overlayed_cagr?: number;
-  overlayed_sharpe?: number;
-  max_drawdown?: number;
-  worst_day_p1?: number;
-  cvar_daily_1pct?: number;
-  avg_turnover?: number;
-  vol_ratio_vs_benchmark?: number;
+  overlayed_cagr: number;
+  overlayed_sharpe: number;
+  max_drawdown: number;
+  worst_day_p1: number;
+  cvar_daily_1pct: number;
+  avg_turnover: number;
+  pct_days_crash_overlay_active?: number;
+  crash_overlay_entry_edges?: number;
 };
 
-type ModelLabPayload = {
+type AcceptanceRow = {
+  name: string;
+  accepted: boolean;
+  checks?: Record<string, boolean>;
+};
+
+type BatteryPayload = {
+  decision_note?: string;
+  main_candidate?: string;
+  lab_references?: string[];
   scenarios?: ScenarioRow[];
+  acceptance_evaluation?: AcceptanceRow[];
 };
 
-function pct(v: unknown, digits = 2): string {
-  if (typeof v !== "number" || !isFinite(v)) return "—";
-  return `${(v * 100).toFixed(digits)}%`;
-}
-
-function num(v: unknown, digits = 3): string {
-  if (typeof v !== "number" || !isFinite(v)) return "—";
-  return v.toFixed(digits);
-}
-
-function titleFromKey(key: string): string {
-  if (key === "baseline_3p3") return "Baseline 3+3";
-  if (key === "baseline_5p5") return "Baseline 5+5";
-  if (key === "moderado_trial_risk_control") return "Trial Risk Control";
-  if (key === "vol_spike_3p3") return "Vol Spike 3+3";
-  if (key === "concentration_control_3p3") return "Concentration Control 3+3";
-  return key;
-}
-
-function fmtParam(v: unknown): string {
-  if (typeof v === "number" && isFinite(v)) return String(v);
-  if (typeof v === "boolean") return v ? "true" : "false";
-  if (v === null || v === undefined) return "—";
-  return String(v);
-}
+const pct = (v?: number) =>
+  typeof v === "number" && Number.isFinite(v) ? `${(v * 100).toFixed(2)}%` : "—";
+const num = (v?: number, d = 3) =>
+  typeof v === "number" && Number.isFinite(v) ? v.toFixed(d) : "—";
 
 export default function ModelLabPage() {
+  const [loggedIn, setLoggedIn] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
-  const [rows, setRows] = useState<ScenarioRow[]>([]);
+  const [data, setData] = useState<BatteryPayload | null>(null);
+
+  useEffect(() => {
+    setLoggedIn(isClientLoggedIn());
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const run = async () => {
       setLoading(true);
       setErr("");
       try {
-        const r = await fetch("/api/client/model-lab-battery");
+        const r = await fetch("/api/client/model-lab-battery", { cache: "no-store" });
         const j = await r.json();
-        if (!r.ok || !j?.ok) {
-          throw new Error(j?.error || `HTTP ${r.status}`);
-        }
-        const payload = (j.payload || {}) as ModelLabPayload;
-        const list = Array.isArray(payload.scenarios) ? payload.scenarios : [];
-        if (!cancelled) setRows(list);
-      } catch (e: any) {
         if (!cancelled) {
-          setErr(String(e?.message || e || "Falha a carregar artefacto"));
-          setRows([]);
+          if (!j?.ok) setErr(j?.error || "Erro ao carregar bateria.");
+          setData((j?.payload || null) as BatteryPayload | null);
         }
+      } catch (e: any) {
+        if (!cancelled) setErr(e?.message || "Erro de rede.");
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
+    };
+    void run();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const highlighted = useMemo(() => {
-    const order = [
-      "baseline_3p3",
-      "baseline_5p5",
-      "vol_spike_3p3",
-      "concentration_control_3p3",
-      "moderado_trial_risk_control",
-    ];
-    const map = new Map(rows.map((r) => [r.name, r] as const));
-    return order.map((k) => map.get(k)).filter(Boolean) as ScenarioRow[];
-  }, [rows]);
+  const scenarios = useMemo(() => data?.scenarios || [], [data]);
+  const checks = useMemo(() => data?.acceptance_evaluation || [], [data]);
+
+  if (!loggedIn) {
+    return (
+      <main style={{ maxWidth: 880, margin: "24px auto", padding: 16 }}>
+        <Head>
+          <title>Model Lab</title>
+        </Head>
+        <h1 style={{ marginBottom: 8 }}>Model Lab</h1>
+        <p>Esta página é interna e requer sessão iniciada.</p>
+        <Link href="/client-dashboard">Voltar ao dashboard</Link>
+      </main>
+    );
+  }
 
   return (
-    <>
+    <main style={{ maxWidth: 1100, margin: "18px auto", padding: 16 }}>
       <Head>
-        <title>Model Lab | DECIDE</title>
+        <title>Model Lab</title>
       </Head>
-      <main
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <h1 style={{ margin: 0 }}>Model Lab</h1>
+        <Link href="/client-dashboard">Voltar ao dashboard</Link>
+      </div>
+
+      {loading ? <p style={{ marginTop: 12 }}>A carregar resultados…</p> : null}
+      {err ? <p style={{ marginTop: 12, color: "#fecaca" }}>Erro: {err}</p> : null}
+
+      {data?.decision_note ? (
+        <div style={{ marginTop: 12, padding: 10, border: "1px solid #475569", borderRadius: 10 }}>
+          <strong>Nota:</strong> {data.decision_note}
+        </div>
+      ) : null}
+      <div style={{ marginTop: 8, color: "#94a3b8", fontSize: 13 }}>
+        Candidato principal: <strong>{data?.main_candidate || "—"}</strong>
+        {" · "}Referências lab: <strong>{(data?.lab_references || []).join(", ") || "—"}</strong>
+      </div>
+
+      <div
         style={{
-          minHeight: "100vh",
-          background: "radial-gradient(circle at top, #0f172a 0%, #020617 45%, #020617 100%)",
-          color: "#e5e7eb",
-          padding: "24px 18px 40px",
+          marginTop: 14,
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+          gap: 10,
         }}
       >
-        <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-            <div>
-              <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900 }}>Model Lab</h1>
-              <p style={{ marginTop: 8, color: "#9ca3af", fontSize: 13 }}>
-                Comparação interna do perfil oficial vs trial (`moderado_trial_risk_control`).
-              </p>
-            </div>
-            <Link
-              href="/client-dashboard"
-              style={{
-                border: "1px solid rgba(148,163,184,0.35)",
-                borderRadius: 10,
-                padding: "8px 12px",
-                color: "#e5e7eb",
-                textDecoration: "none",
-                fontWeight: 700,
-                fontSize: 13,
-              }}
-            >
-              Voltar ao dashboard
-            </Link>
-          </div>
+        {scenarios.map((r) => (
+          <section
+            key={r.name}
+            style={{ border: "1px solid #334155", borderRadius: 10, padding: 10, background: "rgba(15,23,42,0.35)" }}
+          >
+            <div style={{ fontWeight: 800, marginBottom: 8 }}>{r.name}</div>
+            <div>CAGR: <strong>{pct(r.overlayed_cagr)}</strong></div>
+            <div>Sharpe: <strong>{num(r.overlayed_sharpe, 4)}</strong></div>
+            <div>Max DD: <strong>{pct(r.max_drawdown)}</strong></div>
+            <div>p1 diário: <strong>{pct(r.worst_day_p1)}</strong></div>
+            <div>CVaR1%: <strong>{pct(r.cvar_daily_1pct)}</strong></div>
+            <div>Turnover: <strong>{num(r.avg_turnover, 4)}</strong></div>
+            <div>% dias crash ativo: <strong>{num(r.pct_days_crash_overlay_active, 2)}%</strong></div>
+            <div>Entradas crash: <strong>{r.crash_overlay_entry_edges ?? "—"}</strong></div>
+          </section>
+        ))}
+      </div>
 
-          {loading ? <p style={{ color: "#94a3b8" }}>A carregar artefacto…</p> : null}
-          {err ? <p style={{ color: "#fca5a5" }}>Erro: {err}</p> : null}
-
-          {!loading && !err ? (
-            <div
-              style={{
-                marginTop: 14,
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
-                gap: 12,
-              }}
-            >
-              {highlighted.map((row) => (
-                <section
-                  key={row.name}
-                  style={{
-                    border: "1px solid rgba(148,163,184,0.3)",
-                    borderRadius: 12,
-                    background: "rgba(15,23,42,0.55)",
-                    padding: 12,
-                  }}
-                >
-                  <div style={{ fontSize: 13, color: "#93c5fd", fontWeight: 800 }}>{titleFromKey(row.name)}</div>
-                  <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.6 }}>
-                    <div>CAGR: <strong>{pct(row.overlayed_cagr)}</strong></div>
-                    <div>Sharpe: <strong>{num(row.overlayed_sharpe, 3)}</strong></div>
-                    <div>Max DD: <strong>{pct(row.max_drawdown)}</strong></div>
-                    <div>p1 diário: <strong>{pct(row.worst_day_p1)}</strong></div>
-                    <div>CVaR1%: <strong>{pct(row.cvar_daily_1pct)}</strong></div>
-                    <div>Turnover: <strong>{num(row.avg_turnover, 4)}</strong></div>
-                    <div>Vol/Bench: <strong>{num(row.vol_ratio_vs_benchmark, 3)}x</strong></div>
-                  </div>
-                  {row.name === "moderado_trial_risk_control" ? (
-                    <div
-                      style={{
-                        marginTop: 10,
-                        paddingTop: 8,
-                        borderTop: "1px solid rgba(148,163,184,0.25)",
-                        fontSize: 12,
-                        lineHeight: 1.5,
-                        color: "#cbd5e1",
-                      }}
-                    >
-                      <div><strong>Regra de vol (moderado):</strong> vol_target_window={fmtParam(row.params?.vol_target_window)}</div>
-                      <div><strong>Overlay defensivo:</strong> vol_spike={fmtParam(row.params?.vol_spike_enabled)}, benchmark_ma={fmtParam(row.params?.benchmark_ma_window)}, exposure_mult={fmtParam(row.params?.bear_low_vol_exposure_mult)}</div>
-                      <div><strong>Concentração:</strong> cap={fmtParam(row.params?.cap_per_ticker)}, top_q={fmtParam(row.params?.top_q)}, asym={fmtParam(row.params?.selection_buffer_asymmetric)}</div>
-                      <div><strong>Custos base:</strong> 3+3 bps (baseline); stress no cenário baseline_5p5</div>
-                    </div>
-                  ) : null}
-                </section>
-              ))}
+      {checks.length ? (
+        <div style={{ marginTop: 16 }}>
+          <h2 style={{ fontSize: 18, marginBottom: 8 }}>Acceptance check</h2>
+          {checks.map((c) => (
+            <div key={c.name} style={{ marginBottom: 6 }}>
+              <strong>{c.name}</strong>:{" "}
+              <span style={{ color: c.accepted ? "#86efac" : "#fca5a5" }}>{c.accepted ? "PASS" : "FAIL"}</span>
             </div>
-          ) : null}
+          ))}
         </div>
-      </main>
-    </>
+      ) : null}
+    </main>
   );
 }
-
