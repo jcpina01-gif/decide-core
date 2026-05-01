@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-freeze-restore-v31-official-v24-r1"
+    "-horizons-retornos-dd-v30"
 )
 
 
@@ -440,12 +440,25 @@ def apply_model_equity_profile_policy(
 
 def kpi_equity_vs_benchmark_rail_enabled() -> bool:
     """
-    *Rail* de sanidade (múltiplo máximo vs benchmark + crescimento diário coerente). Por defeito **ligado**
-    para o gráfico log não ficar ilegível com CSV corrupto. Para curvas **exactamente** iguais ao freeze
-    (sem *clip*), define ``DECIDE_KPI_EQUITY_RAIL=0`` (ou ``false`` / ``off`` / ``no``) no Gunicorn / ambiente.
+    *Rail* de sanidade (múltiplo máximo vs benchmark + crescimento diário coerente). Por defeito **desligado**
+    para manter paridade com os KPIs oficiais do artefacto versionado (Dashboard = Model Lab).
+    Para activar explicitamente em troubleshooting visual define ``DECIDE_KPI_EQUITY_RAIL=1``.
     """
-    v = str(os.environ.get("DECIDE_KPI_EQUITY_RAIL", "1")).strip().lower()
+    v = str(os.environ.get("DECIDE_KPI_EQUITY_RAIL", "0")).strip().lower()
     return v not in ("0", "false", "off", "no")
+
+
+def kpi_cap15_bench_prefix_backfill_enabled() -> bool:
+    """
+    Backfill do prefixo flat CAP15 com benchmark. Por defeito **desligado** para evitar
+    pós-processamento no KPI principal. Activar explicitamente com ``DECIDE_KPI_CAP15_BENCH_BACKFILL=1``.
+    Mantém compatibilidade com o sinalizador legado ``DECIDE_KPI_DISABLE_CAP15_BENCH_BACKFILL``.
+    """
+    legacy_disable = os.environ.get("DECIDE_KPI_DISABLE_CAP15_BENCH_BACKFILL", "").strip().lower()
+    if legacy_disable in {"1", "true", "yes", "on"}:
+        return False
+    v = str(os.environ.get("DECIDE_KPI_CAP15_BENCH_BACKFILL", "0")).strip().lower()
+    return v in ("1", "true", "yes", "on")
 
 
 def cap_equity_vs_benchmark_rail(bench_eq: pd.Series, model_eq: pd.Series) -> pd.Series:
@@ -1168,15 +1181,14 @@ HTML_TEMPLATE = """
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         gap: 8px 10px;
         align-items: stretch;
-        height: clamp(360px, 62vh, 760px);
       }
       body.decide-kpi-embed #tab-horizons .horizon-embed-panel.chart-card{
         padding: 12px 12px 10px;
       }
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity,
       body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd{
-        min-height: 0;
-        height: 100%;
+        min-height: clamp(260px, 42vh, 460px);
+        height: clamp(260px, 42vh, 460px);
         display: flex;
         flex-direction: column;
         min-width: 0;
@@ -1206,12 +1218,11 @@ HTML_TEMPLATE = """
       @media (max-width: 760px) {
         body.decide-kpi-embed #tab-horizons .horizon-embed-charts-row{
           grid-template-columns: 1fr;
-          height: clamp(520px, 86vh, 980px);
         }
         body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity,
         body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd{
-          min-height: 0;
-          height: 100%;
+          min-height: clamp(220px, 35vh, 360px);
+          height: clamp(220px, 35vh, 360px);
         }
         body.decide-kpi-embed #tab-horizons .horizon-pie-holder--equity canvas,
         body.decide-kpi-embed #tab-horizons .horizon-pie-holder--dd canvas{
@@ -7039,14 +7050,10 @@ def _backfill_cap15_flat_model_prefix_with_benchmark(
     até ao dia anterior ao primeiro movimento da série do modelo, substitui por uma réplica do
     benchmark ancorada no NAV do modelo nesse primeiro dia de Abril — o índice «mexe» com os preços.
 
-    Desligar: ``DECIDE_KPI_DISABLE_CAP15_BENCH_BACKFILL=1`` (ou ``true``). Data vazia / ``off`` / ``0``
-    em ``DECIDE_KPI_BACKFILL_PREFIX_START`` desactiva o preenchimento.
+    Por defeito fica desligado; activar com ``DECIDE_KPI_CAP15_BENCH_BACKFILL=1``.
+    O legado ``DECIDE_KPI_DISABLE_CAP15_BENCH_BACKFILL=1`` também força desligar.
     """
-    if os.environ.get("DECIDE_KPI_DISABLE_CAP15_BENCH_BACKFILL", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }:
+    if not kpi_cap15_bench_prefix_backfill_enabled():
         return model_eq
     start_raw = (os.environ.get("DECIDE_KPI_BACKFILL_PREFIX_START") or "2006-04-01").strip()
     if not start_raw or start_raw.lower() in ("0", "false", "off", "none"):
@@ -9733,7 +9740,7 @@ def api_health():
     _health_payload: dict = {"ok": True, "app": "DecideAI KPI Flask", "build": KPI_SERVER_BUILD_TAG}
     _health_payload["kpi_repo_root"] = str(REPO_ROOT)
     _health_payload["equity_vs_benchmark_rail"] = kpi_equity_vs_benchmark_rail_enabled()
-    _health_payload["cap15_bench_prefix_backfill"] = True
+    _health_payload["cap15_bench_prefix_backfill"] = kpi_cap15_bench_prefix_backfill_enabled()
     try:
         _vk = _PLAFONADO_CAP15_OUTPUTS / "v5_kpis.json"
         if _vk.is_file():
