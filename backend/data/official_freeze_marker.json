@@ -1,0 +1,14 @@
+{
+  "official_freeze_id": "DECIDE_MODERADO_V2_4_OFFICIAL",
+  "official_profile": "moderado",
+  "official_profile_note": "moderado_trial_risk_control promoted to official",
+  "official_moderado_profile_id": "moderado_v24_trial_risk_control_official",
+  "freeze_path": "freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs",
+  "source_prices": "backend/data/prices_close.csv",
+  "data_end": "2026-04-30",
+  "transaction_cost_bps": 3.0,
+  "slippage_bps": 3.0,
+  "overlayed_cagr": 0.23941710250319992,
+  "overlayed_sharpe": 1.1634127645767625,
+  "generated_at_utc": "2026-05-01T01:44:25Z"
+}

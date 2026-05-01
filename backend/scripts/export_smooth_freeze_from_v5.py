@@ -59,6 +59,7 @@ BACKEND_DIR = REPO_ROOT / "backend"
 FREEZE_OUT = REPO_ROOT / "freeze" / "DECIDE_MODEL_V5_V2_3_SMOOTH" / "model_outputs"
 FREEZE_CLONE = FREEZE_OUT.parent / "model_outputs_from_clone"
 DEFAULT_PRICES = BACKEND_DIR / "data" / "prices_close.csv"
+OFFICIAL_MODERADO_PROFILE_ID = "moderado_v24_trial_risk_control_official"
 
 
 def _resolve_engine_backend() -> Path:
@@ -203,6 +204,23 @@ def main() -> int:
             kwargs["bear_low_vol_bench_vol_window"] = 63
             kwargs["bear_low_vol_exposure_mult"] = 0.85
         if pk == "moderado":
+            # Perfil oficial Moderado (V2.4): trial risk-control promovido a baseline de produção.
+            kwargs.update(
+                {
+                    "vol_target_window": 63,
+                    "vol_scale_cap": 1.0,
+                    "cap_per_ticker": 0.12,
+                    "top_q": 25,
+                    "selection_buffer_asymmetric": True,
+                    "rank_in_entry": 15,
+                    "rank_maintain": 25,
+                    "bear_low_vol_hysteresis_entry_quantile": 0.35,
+                    "bear_low_vol_hysteresis_exit_quantile": 0.60,
+                    "bear_low_vol_exposure_mult": 0.70,
+                    "vol_spike_enabled": True,
+                    "benchmark_ma_window": 252,
+                }
+            )
             kwargs["emit_weights_csv"] = str(data_weights)
             kwargs["emit_cash_sleeve_daily_csv"] = str(data_cash)
             kwargs["emit_v5_kpis_json"] = str(v5_json)
@@ -246,6 +264,7 @@ def main() -> int:
         meta["prices_input"] = str(prices_path.resolve())
         meta["smooth_export_momentum_mode"] = str(args.momentum_mode).strip().lower()
         meta["smooth_export_overlay_vol_moderado"] = True
+        meta["official_moderado_profile_id"] = OFFICIAL_MODERADO_PROFILE_ID
         tcb, sb, fxb = float(args.transaction_cost_bps), float(args.slippage_bps), float(args.fx_conversion_bps)
         meta["export_transaction_cost_bps"] = tcb
         meta["export_slippage_bps"] = sb
