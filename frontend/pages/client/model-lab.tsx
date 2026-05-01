@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState } from "react";
 type ScenarioRow = {
   name: string;
   trial_profile_name?: string | null;
+  params?: Record<string, unknown>;
   overlayed_cagr?: number;
   overlayed_sharpe?: number;
   max_drawdown?: number;
@@ -34,6 +35,13 @@ function titleFromKey(key: string): string {
   if (key === "vol_spike_3p3") return "Vol Spike 3+3";
   if (key === "concentration_control_3p3") return "Concentration Control 3+3";
   return key;
+}
+
+function fmtParam(v: unknown): string {
+  if (typeof v === "number" && isFinite(v)) return String(v);
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (v === null || v === undefined) return "—";
+  return String(v);
 }
 
 export default function ModelLabPage() {
@@ -149,6 +157,23 @@ export default function ModelLabPage() {
                     <div>CVaR1%: <strong>{pct(row.cvar_daily_1pct)}</strong></div>
                     <div>Turnover: <strong>{num(row.avg_turnover, 4)}</strong></div>
                   </div>
+                  {row.name === "moderado_trial_risk_control" ? (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        paddingTop: 8,
+                        borderTop: "1px solid rgba(148,163,184,0.25)",
+                        fontSize: 12,
+                        lineHeight: 1.5,
+                        color: "#cbd5e1",
+                      }}
+                    >
+                      <div><strong>Regra de vol (moderado):</strong> vol_target_window={fmtParam(row.params?.vol_target_window)}</div>
+                      <div><strong>Overlay defensivo:</strong> vol_spike={fmtParam(row.params?.vol_spike_enabled)}, benchmark_ma={fmtParam(row.params?.benchmark_ma_window)}, exposure_mult={fmtParam(row.params?.bear_low_vol_exposure_mult)}</div>
+                      <div><strong>Concentração:</strong> cap={fmtParam(row.params?.cap_per_ticker)}, top_q={fmtParam(row.params?.top_q)}, asym={fmtParam(row.params?.selection_buffer_asymmetric)}</div>
+                      <div><strong>Custos base:</strong> 3+3 bps (baseline); stress no cenário baseline_5p5</div>
+                    </div>
+                  ) : null}
                 </section>
               ))}
             </div>
