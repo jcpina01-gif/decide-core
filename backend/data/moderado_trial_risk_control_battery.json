@@ -1124,7 +1124,8 @@
         "rank_maintain": 25,
         "selection_buffer_asymmetric": true,
         "top_q": 25,
-        "vol_spike_enabled": true
+        "vol_spike_enabled": true,
+        "vol_target_window": 126
       },
       "overlayed_cagr": 0.24038367881278466,
       "overlayed_sharpe": 1.1429572095793477,

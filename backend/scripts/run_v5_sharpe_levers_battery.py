@@ -272,6 +272,8 @@ def main() -> int:
         (
             "moderado_trial_risk_control",
             {
+                # Regra de vol do moderado (alvo overlay vs benchmark) aplicada explicitamente no trial.
+                "vol_target_window": 126,
                 "cap_per_ticker": 0.12,
                 "top_q": 25,
                 "selection_buffer_asymmetric": True,
