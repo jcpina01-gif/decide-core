@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-official-raw-v33"
+    "-horizons-retornos-dd-v30-calc-source-v34"
 )
 
 
@@ -406,12 +406,12 @@ def apply_model_equity_profile_policy(
     strict_cap15_vol_targets: bool = False,
 ) -> pd.Series:
     """
-    - **Moderado:** mantém a série crua do CSV (sem reescala adicional no KPI), para paridade com
-      o KPI oficial do artefacto versionado / Model Lab.
+    - **Moderado:** no CAP15 com `strict_cap15_vol_targets`, alinha a vol realizada a ≈ **1×** a do benchmark
+      (`scale_model_equity_to_profile_vol`, mult 1,0). Noutros modelos v5, por defeito mantém a série do CSV.
     - **Conservador / dinâmico:** alvo ≈ 0,75× / 1,25× vol do benchmark quando a reescala está activa.
 
-    Com `strict_cap15_vol_targets=True` (CAP15 plafonado, série m100 alinhada, com margem):
-    conservador/dinâmico aplicam alvo via `scale_model_equity_to_profile_vol`; moderado fica em série crua.
+    Com `strict_cap15_vol_targets=True` (CAP15 plafonado, série m100 alinhada, com margem): todos os perfis
+    aplicam o alvo via `scale_model_equity_to_profile_vol` (ignora `used_profile_file` e opt-out de embed).
     Se a vol natural da série for superior ao alvo (ex. 1,25× bench no dinâmico), a reescala baixa vol e CAGR.
 
     Com `strict_cap15_vol_targets=False` (outros modelos v5): comportamento legado — `used_profile_file` isenta;
@@ -419,8 +419,6 @@ def apply_model_equity_profile_policy(
     """
     pk = normalize_risk_profile_key(profile_key)
     if strict_cap15_vol_targets:
-        if pk == "moderado":
-            return model_eq.astype(float)
         return scale_model_equity_to_profile_vol(
             model_eq, bench_eq, pk, has_profile_file=False
         )
@@ -521,50 +519,6 @@ def load_run_model_snapshot(profile_key: str) -> dict | None:
             return payload
     return None
 
-
-def load_official_battery_main_candidate_kpis() -> dict[str, float] | None:
-    """
-    Fonte oficial única para KPI do moderado no dashboard/Lab:
-    `backend/data/moderado_trial_risk_control_battery.json` (main_candidate).
-    """
-    p = REPO_ROOT / "backend" / "data" / "moderado_trial_risk_control_battery.json"
-    if not p.is_file():
-        return None
-    try:
-        payload = json.loads(p.read_text(encoding="utf-8-sig"))
-    except Exception:
-        return None
-    if not isinstance(payload, dict):
-        return None
-    scenarios = payload.get("scenarios")
-    if not isinstance(scenarios, list) or not scenarios:
-        return None
-    main_candidate = str(payload.get("main_candidate") or "").strip()
-    chosen = None
-    for row in scenarios:
-        if not isinstance(row, dict):
-            continue
-        if str(row.get("name") or "").strip() == main_candidate and main_candidate:
-            chosen = row
-            break
-    if chosen is None:
-        for row in scenarios:
-            if isinstance(row, dict) and str(row.get("name") or "").strip() == "official_trial_now":
-                chosen = row
-                break
-    if chosen is None:
-        chosen = next((r for r in scenarios if isinstance(r, dict)), None)
-    if not isinstance(chosen, dict):
-        return None
-    try:
-        cagr = float(chosen.get("overlayed_cagr"))
-        sharpe = float(chosen.get("overlayed_sharpe"))
-        max_dd = float(chosen.get("max_drawdown"))
-    except (TypeError, ValueError):
-        return None
-    if not (np.isfinite(cagr) and np.isfinite(sharpe) and np.isfinite(max_dd)):
-        return None
-    return {"cagr": cagr, "sharpe": sharpe, "max_drawdown": max_dd}
 
 HTML_TEMPLATE = """
 <!doctype html>
@@ -10125,7 +10079,8 @@ def index():
     if cap15_only:
         profile_source_note = (
             "Modelo CAP15: exposição a risco limitada ao capital (≤100% NV), sem alavancagem além do NAV. "
-            "Moderado: série investível (CSV) usada de forma crua nos cartões KPI (sem reescala adicional). "
+            "Moderado: série investível (CSV) com alvo ≈1× vol do benchmark no motor na perna overlay; "
+            "no painel CAP15, alinhamento adicional a ≈1× vs benchmark nos cartões (mesma função que outros perfis, mult 1,0). "
             "Conservador/dinâmico: alvo ≈ 0,75× / 1,25× da vol do benchmark nos cartões."
         )
         if force_synthetic_profile_vol:
@@ -10164,20 +10119,6 @@ def index():
         )()
     model_kpis, model_drawdowns = compute_kpis(model_eq)
     bench_kpis, bench_drawdowns = compute_kpis(bench_eq)
-    if client_embed and cap15_only and normalize_risk_profile_key(profile_key) == "moderado":
-        official_kpis = load_official_battery_main_candidate_kpis()
-        if official_kpis is not None:
-            model_kpis = type(
-                "KPIs",
-                (),
-                {
-                    "cagr": float(official_kpis["cagr"]),
-                    "volatility": float(model_kpis.volatility),
-                    "sharpe": float(official_kpis["sharpe"]),
-                    "max_drawdown": float(official_kpis["max_drawdown"]),
-                    "total_return": float(model_kpis.total_return),
-                },
-            )()
 
     monthly = compute_monthly_stats(model_eq, bench_eq, dates)
 
