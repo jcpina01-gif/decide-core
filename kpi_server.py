@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v34"
+    "-horizons-retornos-dd-v30-calc-source-v35"
 )
 
 
@@ -180,6 +180,67 @@ def _freeze_search_roots() -> tuple[Path, ...]:
     return tuple(out)
 
 
+def _read_v5_meta(outputs_dir: Path) -> dict | None:
+    p = outputs_dir / "v5_kpis.json"
+    if not p.is_file():
+        return None
+    try:
+        payload = json.loads(p.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _meta_data_end(meta: dict | None) -> date:
+    if not isinstance(meta, dict):
+        return date.min
+    raw = str(meta.get("data_end") or "").strip()[:10]
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except Exception:
+        return date.min
+
+
+def _resolve_plafonado_cap15_outputs_dir() -> Path:
+    """
+    Escolhe a fonte CAP15 para KPI do iframe.
+
+    Prioridade:
+    1) artefacto com `curve_engine=engine_research_v5` (fonte calculada pelo motor oficial);
+    2) desempate por `data_end` mais recente.
+
+    Isto evita cair em `engine_v2_regenerate` quando algum job legacy reescreve
+    `freeze/.../model_outputs`, mantendo cálculo por séries (não por valores injectados).
+    """
+    candidates: list[Path] = []
+    seen: set[str] = set()
+    for root in _freeze_search_roots():
+        for cand in (
+            root / "freeze" / "DECIDE_MODEL_V5_V2_3_SMOOTH" / "model_outputs",
+            root / "frontend" / "data" / "landing" / "freeze-cap15",
+        ):
+            if not (cand / "model_equity_final_20y.csv").is_file():
+                continue
+            try:
+                key = str(cand.resolve())
+            except OSError:
+                key = str(cand)
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(cand)
+    if not candidates:
+        return REPO_ROOT / "freeze" / "DECIDE_MODEL_V5_V2_3_SMOOTH" / "model_outputs"
+    scored: list[tuple[tuple[int, date], Path]] = []
+    for c in candidates:
+        meta = _read_v5_meta(c)
+        eng = str((meta or {}).get("curve_engine") or "").strip().lower()
+        is_research_v5 = 1 if eng == "engine_research_v5" else 0
+        scored.append(((is_research_v5, _meta_data_end(meta)), c))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return scored[0][1]
+
+
 def _fallback_benchmark_equity_csv_list() -> list[Path]:
     paths: list[Path] = []
     for root in _freeze_search_roots():
@@ -196,7 +257,7 @@ def _fallback_benchmark_equity_csv_list() -> list[Path]:
 # «Com margem» (mesmo motor + custos, sem teto 100%): `model_equity_final_20y[_perfil]_margin.csv` (`export_smooth_freeze_from_v5.py`).
 # Teórico cru: `model_equity_theoretical_20y.csv`.
 # Benchmark: se `model_outputs/benchmark_equity_final_20y.csv` for um stub curto, usar `model_outputs_from_clone/` (mesmo calendário que o modelo).
-_PLAFONADO_CAP15_OUTPUTS = REPO_ROOT / "freeze" / "DECIDE_MODEL_V5_V2_3_SMOOTH" / "model_outputs"
+_PLAFONADO_CAP15_OUTPUTS = _resolve_plafonado_cap15_outputs_dir()
 
 MODEL_PATHS = {
     "v5": REPO_ROOT / "freeze" / "DECIDE_MODEL_V5" / "model_outputs",
