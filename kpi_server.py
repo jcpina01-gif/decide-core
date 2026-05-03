@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v39-moderado-vol-bench-all-cards"
+    "-horizons-retornos-dd-v30-calc-source-v40-raw-vol-native-margin-main-bench"
 )
 
 
@@ -10232,17 +10232,6 @@ def index():
     model_kpis, model_drawdowns = compute_kpis(model_eq)
     bench_kpis, bench_drawdowns = compute_kpis(bench_eq)
     if cap15_only and normalize_risk_profile_key(profile_key) == "moderado":
-        raw_kpis = type(
-            "KPIs",
-            (),
-            {
-                "cagr": float(raw_kpis.cagr),
-                "volatility": float(bench_kpis.volatility),
-                "sharpe": float(raw_kpis.sharpe),
-                "max_drawdown": float(raw_kpis.max_drawdown),
-                "total_return": float(raw_kpis.total_return),
-            },
-        )()
         official_battery = _read_official_moderado_battery_kpis()
         if official_battery is not None:
             model_kpis = type(
