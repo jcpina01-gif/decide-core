@@ -10239,7 +10239,8 @@ def index():
                 (),
                 {
                     "cagr": float(official_battery["cagr"]),
-                    "volatility": float(model_kpis.volatility),
+                    # Keep moderado KPI card aligned to benchmark risk framing (≈1x vol vs bench).
+                    "volatility": float(bench_kpis.volatility),
                     "sharpe": float(official_battery["sharpe"]),
                     "max_drawdown": float(official_battery["max_drawdown"]),
                     "total_return": float(model_kpis.total_return),
