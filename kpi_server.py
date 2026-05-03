@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v35"
+    "-horizons-retornos-dd-v30-calc-source-v36-moderado-no-strict-rescale"
 )
 
 
@@ -479,14 +479,16 @@ def apply_model_equity_profile_policy(
     no embed sem `force_synthetic_profile_vol` conservador/dinâmico ficam sem reescala.
     """
     pk = normalize_risk_profile_key(profile_key)
+    # Single official KPI definition: moderado should remain the raw model series (no post-rescale),
+    # including CAP15 paths where strict targets are used for other profiles.
+    if pk == "moderado":
+        return model_eq.astype(float)
     if strict_cap15_vol_targets:
         return scale_model_equity_to_profile_vol(
             model_eq, bench_eq, pk, has_profile_file=False
         )
 
     if used_profile_file:
-        return model_eq.astype(float)
-    if pk == "moderado":
         return model_eq.astype(float)
     if force_synthetic_profile_vol:
         return scale_model_equity_to_profile_vol(
