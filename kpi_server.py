@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v36-moderado-no-strict-rescale"
+    "-horizons-retornos-dd-v30-calc-source-v37-moderado-official-battery-kpis"
 )
 
 
@@ -189,6 +189,55 @@ def _read_v5_meta(outputs_dir: Path) -> dict | None:
     except Exception:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _read_official_moderado_battery_kpis() -> dict | None:
+    """
+    Single source of truth for official moderado KPIs in dashboard cards.
+    Reads the main candidate from backend/data/moderado_trial_risk_control_battery.json.
+    """
+    p = REPO_ROOT / "backend" / "data" / "moderado_trial_risk_control_battery.json"
+    if not p.is_file():
+        return None
+    try:
+        payload = json.loads(p.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    scenarios = payload.get("scenarios")
+    if not isinstance(scenarios, list) or not scenarios:
+        return None
+    main_name = str(payload.get("main_candidate") or "").strip()
+    chosen = None
+    if main_name:
+        for row in scenarios:
+            if isinstance(row, dict) and str(row.get("name") or "").strip() == main_name:
+                chosen = row
+                break
+    if chosen is None:
+        for row in scenarios:
+            if isinstance(row, dict) and str(row.get("name") or "").strip() == "moderado_trial_risk_control":
+                chosen = row
+                break
+    if chosen is None and isinstance(scenarios[0], dict):
+        chosen = scenarios[0]
+    if not isinstance(chosen, dict):
+        return None
+    try:
+        cagr = float(chosen.get("overlayed_cagr"))
+        sharpe = float(chosen.get("overlayed_sharpe"))
+        mdd = float(chosen.get("max_drawdown"))
+    except Exception:
+        return None
+    if not (np.isfinite(cagr) and np.isfinite(sharpe) and np.isfinite(mdd)):
+        return None
+    return {
+        "scenario_name": str(chosen.get("name") or "").strip() or main_name or "moderado_trial_risk_control",
+        "cagr": cagr,
+        "sharpe": sharpe,
+        "max_drawdown": mdd,
+    }
 
 
 def _meta_data_end(meta: dict | None) -> date:
@@ -10182,6 +10231,20 @@ def index():
         )()
     model_kpis, model_drawdowns = compute_kpis(model_eq)
     bench_kpis, bench_drawdowns = compute_kpis(bench_eq)
+    if cap15_only and normalize_risk_profile_key(profile_key) == "moderado":
+        official_battery = _read_official_moderado_battery_kpis()
+        if official_battery is not None:
+            model_kpis = type(
+                "KPIs",
+                (),
+                {
+                    "cagr": float(official_battery["cagr"]),
+                    "volatility": float(model_kpis.volatility),
+                    "sharpe": float(official_battery["sharpe"]),
+                    "max_drawdown": float(official_battery["max_drawdown"]),
+                    "total_return": float(model_kpis.total_return),
+                },
+            )()
 
     monthly = compute_monthly_stats(model_eq, bench_eq, dates)
 
