@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v64-cap15-real-investible-embed"
+    "-horizons-retornos-dd-v30-calc-source-v65-disable-embed-summary-override"
 )
 
 
@@ -10343,7 +10343,12 @@ def index():
         "true",
         "yes",
     }
-    if cap15_only and normalize_risk_profile_key(profile_key) == "moderado" and _use_summary_override:
+    if (
+        cap15_only
+        and normalize_risk_profile_key(profile_key) == "moderado"
+        and _use_summary_override
+        and not client_embed
+    ):
         preview_summary_kpis = _read_v7_candidate_summary_kpis(model_version_key)
         source = preview_summary_kpis if preview_summary_kpis is not None else _read_official_moderado_battery_kpis()
         if source is not None:
