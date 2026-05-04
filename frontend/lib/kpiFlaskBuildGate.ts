@@ -9,7 +9,7 @@ export const KPI_FLASK_BUILD_MIN_TOKEN = "margin-csv-and-kpi-loader";
  * Query `embed_src_rev` no URL do iframe — alterar quando mudares o `KPI_SERVER_BUILD_TAG` no Flask
  * e o browser mostrar HTML antigo (cache / SW). Manter em sintonia com o sufixo do build em produção.
  */
-export const KPI_IFRAME_SRC_REV = "v61-v8-bench-vol-display-main-margin";
+export const KPI_IFRAME_SRC_REV = "v62-v8-all-investible-with-vol-rule";
 
 /**
  * Query `fees_embed_rev` em `/fees-client?embed=1` (dashboard → Custos → Simulador).
