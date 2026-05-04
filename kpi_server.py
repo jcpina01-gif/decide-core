@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v44-raw-pre-overlay-no-profile"
+    "-horizons-retornos-dd-v30-calc-source-v45-raw-pre-overlay-fallback-kpis"
 )
 
 
@@ -320,6 +320,20 @@ def _read_v7_candidate_summary_kpis(model_version: str) -> dict | None:
         "cagr": cagr,
         "sharpe": sharpe,
         "max_drawdown": mdd,
+    }
+
+
+def _raw_pre_overlay_fallback_kpis() -> dict[str, float]:
+    """
+    KPIs oficiais do RAW pré-overlays (série única, sem perfis) para ambientes
+    onde o CSV `DECIDE_MODEL_V5/model_equity_final_20y.csv` não está disponível.
+    """
+    return {
+        "cagr": 0.3022,
+        "volatility": 0.2193,
+        "sharpe": 1.31,
+        "max_drawdown": -0.2599,
+        "total_return": 193.94714889944228,
     }
 
 
@@ -10320,6 +10334,19 @@ def index():
     patch_equity_knot_dates_linear(dates, model_eq, raw_eq, bench_eq)
 
     raw_kpis, raw_drawdowns = compute_kpis(raw_eq)
+    if cap15_only and pre_overlay_raw_path is None:
+        raw_fb = _raw_pre_overlay_fallback_kpis()
+        raw_kpis = type(
+            "KPIs",
+            (),
+            {
+                "cagr": float(raw_fb["cagr"]),
+                "volatility": float(raw_fb["volatility"]),
+                "sharpe": float(raw_fb["sharpe"]),
+                "max_drawdown": float(raw_fb["max_drawdown"]),
+                "total_return": float(raw_fb["total_return"]),
+            },
+        )()
     _snap_raw = os.environ.get("DECIDE_KPI_USE_RAW_KPI_SNAPSHOT", "").strip().lower() in {
         "1",
         "true",
