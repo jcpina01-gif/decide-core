@@ -108,24 +108,6 @@ export default function ClientDashboardPage() {
       ? (router.query.model_version as "v7_dynamic_light" | "v7_dynamic_medium")
       : "official_v6";
   const [planPageNavPending, setPlanPageNavPending] = useState(false);
-  const setModelVersion = useCallback(
-    (next: "official_v6" | "v7_dynamic_light" | "v7_dynamic_medium") => {
-      const q = { ...router.query } as Record<string, string>;
-      if (next === "official_v6") {
-        delete q.model_version;
-      } else {
-        q.model_version = next;
-      }
-      void router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true });
-      try {
-        window.dispatchEvent(new Event(DECIDE_DASHBOARD_KPI_REFRESH_EVENT));
-      } catch {
-        /* ignore */
-      }
-      setIframeRefresh(Date.now());
-    },
-    [router],
-  );
   const goToApprovePlan = useCallback(() => {
     setPlanPageNavPending(true);
     void router.push("/client/approve").catch(() => {
@@ -1421,46 +1403,6 @@ export default function ClientDashboardPage() {
                       }}
                     >
                       Model Lab
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelVersion("v7_dynamic_light")}
-                      title="Ativar preview do novo modelo V7 (light)"
-                      style={{
-                        background:
-                          modelVersion === "v7_dynamic_light"
-                            ? "rgba(30,58,138,0.72)"
-                            : "rgba(39,39,42,0.82)",
-                        color: "#e2e8f0",
-                        border: "1px solid rgba(96,165,250,0.45)",
-                        borderRadius: 12,
-                        padding: "8px 14px",
-                        fontSize: 13,
-                        fontWeight: 800,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Novo modelo (V7)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelVersion("official_v6")}
-                      title="Voltar à referência oficial V6"
-                      style={{
-                        background:
-                          modelVersion === "official_v6"
-                            ? "rgba(63,63,70,0.9)"
-                            : "rgba(39,39,42,0.82)",
-                        color: "#e2e8f0",
-                        border: "1px solid rgba(148,163,184,0.35)",
-                        borderRadius: 12,
-                        padding: "8px 14px",
-                        fontSize: 13,
-                        fontWeight: 800,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Referência (V6)
                     </button>
                   </>
                 }
