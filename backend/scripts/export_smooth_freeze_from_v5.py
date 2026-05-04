@@ -111,6 +111,12 @@ def _margin_series_from_result(r: dict[str, object]) -> list[float]:
     return [float(x) for x in r["equity_raw_volmatched"]]  # type: ignore[index]
 
 
+def _series_identical(a: list[float], b: list[float], *, atol: float = 1e-12) -> bool:
+    if len(a) != len(b) or len(a) == 0:
+        return False
+    return all(abs(float(x) - float(y)) <= float(atol) for x, y in zip(a, b))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Export smooth freeze CSVs via engine_research_v5 (sem engine_v2)")
     ap.add_argument(
@@ -153,6 +159,14 @@ def main() -> int:
         type=float,
         default=0.0,
         help="Fricção explícita: fx_conversion_bps (default: 0).",
+    )
+    ap.add_argument(
+        "--allow-identical-margin",
+        action="store_true",
+        help=(
+            "Permite export mesmo quando equity_overlay_margin coincide integralmente com "
+            "equity_overlayed (por omissão, isso gera erro para evitar freeze ambíguo)."
+        ),
     )
     args = ap.parse_args()
 
@@ -229,6 +243,23 @@ def main() -> int:
         dates = [str(x) for x in r["dates"]]  # type: ignore[index]
         ov = [float(x) for x in r["equity_overlayed"]]  # type: ignore[index]
         margin_nav = _margin_series_from_result(r)
+        if _series_identical(ov, margin_nav):
+            msg = (
+                f"[export_smooth_freeze_from_v5] ERRO: equity_overlay_margin == equity_overlayed "
+                f"para perfil={pk} em {len(ov)} pontos. "
+                "Isto normalmente indica ausência de série de margem distinta no motor "
+                "ou exposição efetiva nunca >100% no período."
+            )
+            if bool(getattr(args, "allow_identical_margin", False)):
+                print(msg + " --allow-identical-margin ativo, a continuar.", file=sys.stderr)
+            else:
+                print(msg, file=sys.stderr)
+                print(
+                    "[export_smooth_freeze_from_v5] Use --allow-identical-margin apenas se isto for "
+                    "intencional e documentado.",
+                    file=sys.stderr,
+                )
+                return 2
 
         _write_equity_csv(FREEZE_OUT / f"model_equity_final_20y_{pk}.csv", dates, ov)
         _write_equity_csv(
