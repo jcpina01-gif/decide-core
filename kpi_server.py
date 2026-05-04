@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v59-investible-dd-margin-card"
+    "-horizons-retornos-dd-v30-calc-source-v60-investible-kpis-main-margin"
 )
 
 
@@ -10340,18 +10340,18 @@ def index():
                     "total_return": float(model_kpis.total_return),
                 },
             )()
-    # CAP15 moderado: mostrar Max DD da curva investível original (pré-alinhamento de vol no painel).
-    # Mantém CAGR/Sharpe da curva actualmente exibida, mas evita amplificar DD por reescala visual.
+    # CAP15 moderado: mostrar KPIs da curva investível original (pré-alinhamento de vol no painel),
+    # para manter coerência com a validação do candidato (CAGR/Sharpe/Vol/DD/Total Return).
     if cap15_only and normalize_risk_profile_key(profile_key) == "moderado":
         model_kpis = type(
             "KPIs",
             (),
             {
-                "cagr": float(model_kpis.cagr),
-                "volatility": float(model_kpis.volatility),
-                "sharpe": float(model_kpis.sharpe),
+                "cagr": float(model_kpis_investible.cagr),
+                "volatility": float(model_kpis_investible.volatility),
+                "sharpe": float(model_kpis_investible.sharpe),
                 "max_drawdown": float(model_kpis_investible.max_drawdown),
-                "total_return": float(model_kpis.total_return),
+                "total_return": float(model_kpis_investible.total_return),
             },
         )()
     monthly = compute_monthly_stats(model_eq, bench_eq, dates)
@@ -10465,9 +10465,10 @@ def index():
             margin_series = _align_cap15_margin_to_model_nt0(margin_series, model_eq.astype(float))
             patch_equity_knot_dates_linear(dates, margin_series)
             try:
-                # KPI de referência para DD do cartão com margem: curva investível com margem sem alinhamento
-                # adicional de vol no painel (evita inflacionar DD apenas por reescala visual).
+                # KPI de referência para o cartão com margem: curva investível com margem sem alinhamento
+                # adicional de vol no painel (coerente com validação do candidato).
                 margin_investible_dd = None
+                margin_investible_kpis = None
                 try:
                     _, _, margin_eq_file, margin_dates_s = load_equity_curve(_margem_src, "model_equity")
                     s_raw_m = _reindex_margin_curve_to_model_calendar(
@@ -10480,9 +10481,11 @@ def index():
                         )
                         patch_equity_knot_dates_linear(dates, margin_series_investible)
                         margin_kpis_investible, _ = compute_kpis(margin_series_investible)
+                        margin_investible_kpis = margin_kpis_investible
                         margin_investible_dd = float(margin_kpis_investible.max_drawdown)
                 except Exception:
                     margin_investible_dd = None
+                    margin_investible_kpis = None
 
                 compare_cap100_kpis, margin_dd_s = compute_kpis(margin_series)
                 if normalize_risk_profile_key(profile_key) == "moderado":
@@ -10490,15 +10493,31 @@ def index():
                         "KPIs",
                         (),
                         {
-                            "cagr": float(compare_cap100_kpis.cagr),
-                            "volatility": float(bench_kpis.volatility),
-                            "sharpe": float(compare_cap100_kpis.sharpe),
+                            "cagr": float(
+                                margin_investible_kpis.cagr
+                                if margin_investible_kpis is not None
+                                else compare_cap100_kpis.cagr
+                            ),
+                            "volatility": float(
+                                margin_investible_kpis.volatility
+                                if margin_investible_kpis is not None
+                                else compare_cap100_kpis.volatility
+                            ),
+                            "sharpe": float(
+                                margin_investible_kpis.sharpe
+                                if margin_investible_kpis is not None
+                                else compare_cap100_kpis.sharpe
+                            ),
                             "max_drawdown": float(
                                 margin_investible_dd
                                 if margin_investible_dd is not None
                                 else compare_cap100_kpis.max_drawdown
                             ),
-                            "total_return": float(compare_cap100_kpis.total_return),
+                            "total_return": float(
+                                margin_investible_kpis.total_return
+                                if margin_investible_kpis is not None
+                                else compare_cap100_kpis.total_return
+                            ),
                         },
                     )()
                 compare_max100_equity = [float(x) for x in margin_series.values]
