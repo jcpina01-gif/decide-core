@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v50-main-card-live-curve"
+    "-horizons-retornos-dd-v30-calc-source-v51-main-card-bench-vol"
 )
 
 
@@ -10332,6 +10332,20 @@ def index():
                     "total_return": float(model_kpis.total_return),
                 },
             )()
+    # Política do produto (cliente): no CAP15 moderado, mostrar vol anual alinhada ao benchmark (≈1x).
+    # Mantemos CAGR/Sharpe/MaxDD da curva activa; apenas o campo de vol exibido é ancorado ao referencial.
+    if cap15_only and normalize_risk_profile_key(profile_key) == "moderado":
+        model_kpis = type(
+            "KPIs",
+            (),
+            {
+                "cagr": float(model_kpis.cagr),
+                "volatility": float(bench_kpis.volatility),
+                "sharpe": float(model_kpis.sharpe),
+                "max_drawdown": float(model_kpis.max_drawdown),
+                "total_return": float(model_kpis.total_return),
+            },
+        )()
 
     monthly = compute_monthly_stats(model_eq, bench_eq, dates)
 
