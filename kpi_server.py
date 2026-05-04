@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v67-cap15-embed-bench-vol-adjusted"
+    "-horizons-retornos-dd-v30-calc-source-v68-cap15-dd-from-investible-curve"
 )
 
 
@@ -10043,9 +10043,13 @@ def compute_client_embed_plafonado_kpis(profile_key: str) -> dict | None:
         n_cap = len(dt_m)
         if len(s_aligned) != n_cap or not bool(s_aligned.notna().all()):
             return None
-        m100_series = pd.Series([float(x) for x in s_aligned.values], dtype=float)
+        m100_series_investible = pd.Series([float(x) for x in s_aligned.values], dtype=float)
+        m100_series_investible = _backfill_cap15_flat_model_prefix_with_benchmark(
+            m100_series_investible, bench_eq, dates
+        )
+        m100_series_investible = cap_equity_vs_benchmark_rail(bench_eq, m100_series_investible)
         m100_series = apply_model_equity_profile_policy(
-            m100_series,
+            m100_series_investible.copy(),
             bench_eq,
             pk,
             used_profile_file=m100_used_profile_file,
@@ -10053,11 +10057,8 @@ def compute_client_embed_plafonado_kpis(profile_key: str) -> dict | None:
             force_synthetic_profile_vol=fs,
             strict_cap15_vol_targets=True,
         )
-        m100_series = _backfill_cap15_flat_model_prefix_with_benchmark(
-            m100_series, bench_eq, dates
-        )
-        m100_series = cap_equity_vs_benchmark_rail(bench_eq, m100_series)
         compare_cap100_kpis, _ = compute_kpis(m100_series)
+        compare_cap100_kpis_investible, _ = compute_kpis(m100_series_investible)
         cagr_pct = round(float(compare_cap100_kpis.cagr) * 100.0, 2)
         sharpe_raw = float(compare_cap100_kpis.sharpe)
         sharpe = (
@@ -10066,7 +10067,7 @@ def compute_client_embed_plafonado_kpis(profile_key: str) -> dict | None:
             else round(sharpe_raw, 2)
         )
         vol_annual_pct = round(float(compare_cap100_kpis.volatility) * 100.0, 2)
-        mdd_raw = float(compare_cap100_kpis.max_drawdown)
+        mdd_raw = float(compare_cap100_kpis_investible.max_drawdown)
         max_drawdown_pct = round(abs(mdd_raw) * 100.0, 2)
         return {
             "cagr_pct": cagr_pct,
@@ -10266,6 +10267,7 @@ def index():
     # RAW = motor pré-overlay (não investível): nunca aplicar perfil/rail/alinhamento ao benchmark.
     # O cartão RAW deve refletir a série teórica original do freeze.
 
+    model_eq_investible = model_eq.astype(float).copy()
     # CAP15 e restantes: ver `apply_model_equity_profile_policy`.
     model_eq = apply_model_equity_profile_policy(
         model_eq,
@@ -10277,6 +10279,10 @@ def index():
         strict_cap15_vol_targets=(model_key in CAP15_VOL_TARGET_MODEL_KEYS),
     )
     if model_key in ("v5_overlay_cap15", "v5_overlay_cap15_max100exp"):
+        model_eq_investible = _backfill_cap15_flat_model_prefix_with_benchmark(
+            model_eq_investible, bench_eq, dates
+        )
+        model_eq_investible = cap_equity_vs_benchmark_rail(bench_eq, model_eq_investible)
         model_eq = _backfill_cap15_flat_model_prefix_with_benchmark(model_eq, bench_eq, dates)
 
     model_eq = cap_equity_vs_benchmark_rail(bench_eq, model_eq)
@@ -10332,6 +10338,7 @@ def index():
             },
         )()
     model_kpis, model_drawdowns = compute_kpis(model_eq)
+    model_kpis_investible, _ = compute_kpis(model_eq_investible)
     bench_kpis, bench_drawdowns = compute_kpis(bench_eq)
     # Por defeito, o cartão principal usa SEMPRE os KPIs calculados da curva activa (single source of truth).
     # Compat legado: activar override por sumário externo apenas se explicitamente pedido por env.
@@ -10362,6 +10369,18 @@ def index():
                     "total_return": float(model_kpis.total_return),
                 },
             )()
+    if cap15_only and client_embed and normalize_risk_profile_key(profile_key) == "moderado":
+        model_kpis = type(
+            "KPIs",
+            (),
+            {
+                "cagr": float(model_kpis.cagr),
+                "volatility": float(model_kpis.volatility),
+                "sharpe": float(model_kpis.sharpe),
+                "max_drawdown": float(model_kpis_investible.max_drawdown),
+                "total_return": float(model_kpis.total_return),
+            },
+        )()
     monthly = compute_monthly_stats(model_eq, bench_eq, dates)
 
     holdings, zone_breakdown, sector_breakdown = load_holdings_and_breakdowns(base_path)
@@ -10474,6 +10493,39 @@ def index():
             patch_equity_knot_dates_linear(dates, margin_series)
             try:
                 compare_cap100_kpis, margin_dd_s = compute_kpis(margin_series)
+                compare_cap100_kpis_investible = compare_cap100_kpis
+                try:
+                    _, _, margin_eq_file_nat, margin_dates_nat = load_equity_curve(
+                        _margem_src, "model_equity"
+                    )
+                    margin_series_nat = _reindex_margin_curve_to_model_calendar(
+                        margin_eq_file_nat, margin_dates_nat, dates, model_eq_investible
+                    )
+                    if margin_series_nat is not None and len(margin_series_nat) == len(dates):
+                        margin_series_investible = pd.Series(
+                            [float(x) for x in margin_series_nat.values], dtype=float
+                        )
+                        margin_series_investible = _backfill_cap15_flat_model_prefix_with_benchmark(
+                            margin_series_investible, bench_eq, dates
+                        )
+                        margin_series_investible = cap_equity_vs_benchmark_rail(
+                            bench_eq, margin_series_investible
+                        )
+                        compare_cap100_kpis_investible, _ = compute_kpis(margin_series_investible)
+                except Exception:
+                    compare_cap100_kpis_investible = compare_cap100_kpis
+                if normalize_risk_profile_key(profile_key) == "moderado" and client_embed:
+                    compare_cap100_kpis = type(
+                        "KPIs",
+                        (),
+                        {
+                            "cagr": float(compare_cap100_kpis.cagr),
+                            "volatility": float(compare_cap100_kpis.volatility),
+                            "sharpe": float(compare_cap100_kpis.sharpe),
+                            "max_drawdown": float(compare_cap100_kpis_investible.max_drawdown),
+                            "total_return": float(compare_cap100_kpis.total_return),
+                        },
+                    )()
                 compare_max100_equity = [float(x) for x in margin_series.values]
                 compare_max100_drawdowns = [float(x) for x in margin_dd_s]
                 _, alpha_margin = compute_rolling_alpha(margin_series, bench_eq, dates)
