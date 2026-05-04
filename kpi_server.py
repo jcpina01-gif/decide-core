@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v47-margin-sharpe-3dp"
+    "-horizons-retornos-dd-v30-calc-source-v48-client-consistency-label"
 )
 
 
@@ -3532,7 +3532,7 @@ HTML_TEMPLATE = """
           <div class="value positive">{{ (raw_kpis.cagr * 100) | round(2) }}% <span class="muted" style="font-size:0.75rem;">CAGR</span></div>
           <div class="kpi-line kpi-advanced-only">Vol {{ (raw_kpis.volatility * 100) | round(2) }}%</div>
           <div class="kpi-line kpi-simple-only">Risco esperado (vol.) {{ (raw_kpis.volatility * 100) | round(2) }}%</div>
-          <div class="kpi-line kpi-advanced-only">Sharpe {{ raw_kpis.sharpe | round(2) }}</div>
+          <div class="kpi-line kpi-advanced-only">Consistência (rácio risco/retorno) {{ raw_kpis.sharpe | round(2) }}</div>
           <div class="kpi-line value negative kpi-advanced-only">Max DD {{ (raw_kpis.max_drawdown * 100) | round(2) }}%</div>
           <div class="kpi-line value negative kpi-simple-only">Queda máxima histórica {{ (raw_kpis.max_drawdown * 100) | round(2) }}%</div>
           <div class="kpi-advanced-only kpi-card-total-return">Total return {{ raw_kpis.total_return | round(2) }}x</div>
@@ -3555,7 +3555,7 @@ HTML_TEMPLATE = """
           <div class="kpi-cagr-hint kpi-simple-only" style="font-size:0.7rem;margin-top:6px;line-height:1.35;">Ganho médio anual composto no histórico ilustrativo — não garante resultados futuros.</div>
           <div class="kpi-line kpi-advanced-only">Vol {{ (model_kpis.volatility * 100) | round(2) }}%</div>
           <div class="kpi-line kpi-simple-only">Risco esperado (vol.) {{ (model_kpis.volatility * 100) | round(2) }}%</div>
-          <div class="kpi-line kpi-advanced-only">Sharpe {{ model_kpis.sharpe | round(2) }}</div>
+          <div class="kpi-line kpi-advanced-only">Consistência (rácio risco/retorno) {{ model_kpis.sharpe | round(2) }}</div>
           <div class="kpi-line value negative kpi-advanced-only">Max DD {{ (model_kpis.max_drawdown * 100) | round(2) }}%</div>
           <div class="kpi-line value negative kpi-simple-only">Queda máxima histórica {{ (model_kpis.max_drawdown * 100) | round(2) }}%</div>
           <div class="kpi-advanced-only kpi-card-total-return">Total return {{ model_kpis.total_return | round(2) }}x</div>
@@ -3577,7 +3577,7 @@ HTML_TEMPLATE = """
             <div class="value positive kpi-hedge-under-value">{{ (hedge_kpis_embed.cap15.cagr * 100) | round(2) }}% <span class="muted kpi-hedge-under-cagr">CAGR</span></div>
             <div class="kpi-hedge-under-metrics">
               <div class="kpi-line kpi-advanced-only kpi-hedge-under-line">Vol {{ (hedge_kpis_embed.cap15.volatility * 100) | round(2) }}%</div>
-              <div class="kpi-line kpi-advanced-only kpi-hedge-under-line">Sharpe {{ hedge_kpis_embed.cap15.sharpe | round(2) }}</div>
+              <div class="kpi-line kpi-advanced-only kpi-hedge-under-line">Consistência (rácio risco/retorno) {{ hedge_kpis_embed.cap15.sharpe | round(2) }}</div>
               <div class="kpi-line value negative kpi-hedge-under-line">Max DD {{ (hedge_kpis_embed.cap15.max_drawdown * 100) | round(2) }}%</div>
               <div class="kpi-advanced-only kpi-hedge-under-line kpi-card-total-return">Total return {{ hedge_kpis_embed.cap15.total_return | round(2) }}x</div>
             </div>
@@ -3598,7 +3598,7 @@ HTML_TEMPLATE = """
           <div class="kpi-cagr-hint kpi-simple-only" style="font-size:0.7rem;margin-top:6px;line-height:1.35;">Ganho médio anual composto no histórico ilustrativo — não garante resultados futuros.</div>
           <div class="kpi-line kpi-advanced-only">Vol {{ (compare_cap100_kpis.volatility * 100) | round(2) }}%</div>
           <div class="kpi-line kpi-simple-only">Risco esperado (vol.) {{ (compare_cap100_kpis.volatility * 100) | round(2) }}%</div>
-          <div class="kpi-line kpi-advanced-only">Sharpe {{ '%.3f' | format(compare_cap100_kpis.sharpe) }}</div>
+          <div class="kpi-line kpi-advanced-only">Consistência (rácio risco/retorno) {{ '%.3f' | format(compare_cap100_kpis.sharpe) }}</div>
           <div class="kpi-line value negative kpi-advanced-only">Max DD {{ (compare_cap100_kpis.max_drawdown * 100) | round(2) }}%</div>
           <div class="kpi-line value negative kpi-simple-only">Queda máxima histórica {{ (compare_cap100_kpis.max_drawdown * 100) | round(2) }}%</div>
           <div class="kpi-advanced-only kpi-card-total-return">Total return {{ compare_cap100_kpis.total_return | round(2) }}x</div>
@@ -3626,7 +3626,7 @@ HTML_TEMPLATE = """
             <div class="value positive kpi-hedge-under-value">{{ (hedge_kpis_embed.cap15_max100.cagr * 100) | round(2) }}% <span class="muted kpi-hedge-under-cagr">CAGR</span></div>
             <div class="kpi-hedge-under-metrics">
               <div class="kpi-line kpi-advanced-only kpi-hedge-under-line">Vol {{ (hedge_kpis_embed.cap15_max100.volatility * 100) | round(2) }}%</div>
-              <div class="kpi-line kpi-advanced-only kpi-hedge-under-line">Sharpe {{ '%.3f' | format(hedge_kpis_embed.cap15_max100.sharpe) }}</div>
+              <div class="kpi-line kpi-advanced-only kpi-hedge-under-line">Consistência (rácio risco/retorno) {{ '%.3f' | format(hedge_kpis_embed.cap15_max100.sharpe) }}</div>
               <div class="kpi-line value negative kpi-hedge-under-line">Max DD {{ (hedge_kpis_embed.cap15_max100.max_drawdown * 100) | round(2) }}%</div>
               <div class="kpi-advanced-only kpi-hedge-under-line kpi-card-total-return">Total return {{ hedge_kpis_embed.cap15_max100.total_return | round(2) }}x</div>
             </div>
@@ -3644,7 +3644,7 @@ HTML_TEMPLATE = """
           <div class="kpi-cagr-hint{% if kpi_simple %} kpi-simple-only{% endif %}" style="font-size:0.7rem;margin-top:6px;line-height:1.35;">Referência passiva para comparar o histórico ilustrativo da estratégia.</div>
           <div class="kpi-line kpi-advanced-only">Vol {{ (bench_kpis.volatility * 100) | round(2) }}%</div>
           <div class="kpi-line kpi-simple-only">Risco esperado (vol.) {{ (bench_kpis.volatility * 100) | round(2) }}%</div>
-          <div class="kpi-line kpi-advanced-only">Sharpe {{ bench_kpis.sharpe | round(2) }}</div>
+          <div class="kpi-line kpi-advanced-only">Consistência (rácio risco/retorno) {{ bench_kpis.sharpe | round(2) }}</div>
           <div class="kpi-line value negative kpi-advanced-only">Max DD {{ (bench_kpis.max_drawdown * 100) | round(2) }}%</div>
           <div class="kpi-line value negative kpi-simple-only">Queda máxima histórica {{ (bench_kpis.max_drawdown * 100) | round(2) }}%</div>
           <div class="kpi-advanced-only kpi-card-total-return">Total return {{ bench_kpis.total_return | round(2) }}x</div>

@@ -200,7 +200,8 @@ export default function DecideRecommendedPlanCta({
                         <span className="decide-app-recommended-plan-cagr-value">{fmtPctPt(cagrPct)}%</span>
                       </p>
                       <p className="decide-app-recommended-plan-context">
-                        Sharpe oficial: {showSharpe ? Number(sharpe).toFixed(3) : "—"} · Max DD oficial:{" "}
+                        Consistência oficial (rácio risco/retorno):{" "}
+                        {showSharpe ? Number(sharpe).toFixed(3) : "—"} · Queda máxima oficial:{" "}
                         {showMaxDd ? `${fmtPctPt(maxDdPct)}%` : "—"}
                       </p>
                       {yearRange ? (
