@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v56-margin-label-display-equal"
+    "-horizons-retornos-dd-v30-calc-source-v57-margin-label-bottom"
 )
 
 
@@ -3585,9 +3585,6 @@ HTML_TEMPLATE = """
         {% if compare_cap100_kpis %}
         <div class="card col-3 kpi-main-compare">
           <div class="label">{% if compare_cap100_is_margin %}{{ cap15_human_margin_label_pt }}{% else %}{{ cap15_human_label_pt }}{% endif %}</div>
-          {% if compare_cap100_is_margin and margin_vs_base_non_material %}
-          <div class="kpi-cap15-micro-hint" style="font-size:0.72rem;font-weight:750;letter-spacing:0.02em;text-transform:uppercase;margin-top:6px;line-height:1.4;color:#a7f3d0;">Sem diferença material face ao modelo base neste período</div>
-          {% endif %}
           {% if compare_cap100_is_margin and cap15_only %}
           <div class="kpi-cap15-micro-hint" style="font-size:0.74rem;font-weight:750;letter-spacing:0.045em;text-transform:uppercase;margin-top:6px;line-height:1.4;">Versão otimizada para implementação real</div>
           {% endif %}
@@ -3602,6 +3599,9 @@ HTML_TEMPLATE = """
           <div class="kpi-line value negative kpi-advanced-only">Max DD {{ (compare_cap100_kpis.max_drawdown * 100) | round(2) }}%</div>
           <div class="kpi-line value negative kpi-simple-only">Queda máxima histórica {{ (compare_cap100_kpis.max_drawdown * 100) | round(2) }}%</div>
           <div class="kpi-advanced-only kpi-card-total-return">Total return {{ compare_cap100_kpis.total_return | round(2) }}x</div>
+          {% if compare_cap100_is_margin and margin_vs_base_non_material %}
+          <div class="kpi-cap15-micro-hint" style="font-size:0.72rem;font-weight:750;letter-spacing:0.02em;text-transform:uppercase;margin-top:10px;line-height:1.35;color:#a7f3d0;">Sem diferença material face ao modelo base neste período</div>
+          {% endif %}
           <details class="kpi-card-details">
             <summary>Nota · <span style="font-weight:700;color:#99f6e4;">Saber mais</span></summary>
             <div class="kpi-card-details-body">
