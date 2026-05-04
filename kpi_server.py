@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v42-v7-preview-fallback-safe"
+    "-horizons-retornos-dd-v30-calc-source-v43-v7-default-on-missing-param"
 )
 
 
@@ -10108,7 +10108,6 @@ def index():
         )
     model_key = request.args.get("model", "v5_overlay")
     profile_key = normalize_risk_profile_key(request.args.get("profile", "moderado"))
-    model_version_key = _normalize_model_version_key(request.args.get("model_version"))
 
     # Vista embutida no dashboard Next: sem comparativo extra nem selector de modelo no topo.
     client_embed = _truthy_query_param(request.args.get("client_embed"))
@@ -10116,6 +10115,16 @@ def index():
     kpi_view_raw = (request.args.get("kpi_view") or ("simple" if client_embed else "advanced")).strip().lower()
     kpi_simple = kpi_view_raw != "advanced"
     cap15_only = _truthy_query_param(request.args.get("cap15_only")) or client_embed
+    model_version_raw = request.args.get("model_version")
+    if (
+        model_version_raw is None
+        and cap15_only
+        and normalize_risk_profile_key(profile_key) == "moderado"
+    ):
+        # Fallback de produção: se o frontend estiver em cache antigo e não enviar `model_version`,
+        # mostramos o candidato V7 por defeito no embed; `official_v6` explícito continua suportado.
+        model_version_raw = "v7_dynamic_light"
+    model_version_key = _normalize_model_version_key(model_version_raw)
     if cap15_only:
         model_key = "v5_overlay_cap15_max100exp"
     elif model_key == "v5_overlay":
