@@ -17,12 +17,11 @@ export default function handler(
   }
 
   const repoRoot = resolveDecideProjectRoot();
-  const jsonPath = path.join(
-    repoRoot,
-    "backend",
-    "data",
-    "moderado_trial_risk_control_battery.json",
-  );
+  const variant = String(req.query.variant ?? "").trim().toLowerCase();
+  const jsonPath =
+    variant === "v7"
+      ? path.join(repoRoot, "backend", "data", "moderado_v7_candidate_summary.json")
+      : path.join(repoRoot, "backend", "data", "moderado_trial_risk_control_battery.json");
 
   try {
     const txt = fs.readFileSync(jsonPath, "utf-8");

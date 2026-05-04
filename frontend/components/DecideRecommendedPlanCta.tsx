@@ -15,6 +15,8 @@ type PlanKpisOk = {
   recommendedMaxDdPct?: number | null;
   officialScenarioName?: string | null;
   officialKpiNote?: string | null;
+  modelVersionKey?: string;
+  modelVersionPreview?: boolean;
   adjustedEmbedLikeCagrPct?: number | null;
   historyPeriodLabel?: string | null;
   historyYearRangeLabel?: string | null;
@@ -33,6 +35,7 @@ function fmtPctPt(value: number): string {
 type Props = {
   /** Alinhado ao selector de perfil do dashboard / iframe Flask (`profile=`). */
   riskProfile?: "conservador" | "moderado" | "dinamico";
+  modelVersion?: "official_v6" | "v7_dynamic_light" | "v7_dynamic_medium";
 };
 
 function riskProfileLabelPt(profile: NonNullable<Props["riskProfile"]>): string {
@@ -74,6 +77,7 @@ function recommendedPlanStrategyLinePt(profile: NonNullable<Props["riskProfile"]
  */
 export default function DecideRecommendedPlanCta({
   riskProfile = "moderado",
+  modelVersion = "official_v6",
 }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -84,7 +88,7 @@ export default function DecideRecommendedPlanCta({
     setLoading(true);
     try {
       const rPlan = await fetch(
-        `/api/client/plan-decision-kpis?profile=${encodeURIComponent(riskProfile)}`,
+        `/api/client/plan-decision-kpis?profile=${encodeURIComponent(riskProfile)}&model_version=${encodeURIComponent(modelVersion)}`,
         { credentials: "same-origin", cache: "no-store" },
       );
       const j = (await rPlan.json()) as PlanKpisOk | PlanKpisErr;
@@ -98,7 +102,7 @@ export default function DecideRecommendedPlanCta({
     } finally {
       setLoading(false);
     }
-  }, [riskProfile]);
+  }, [riskProfile, modelVersion]);
 
   useEffect(() => {
     void load();
@@ -150,6 +154,12 @@ export default function DecideRecommendedPlanCta({
       ? data.officialKpiNote.trim()
       : "KPIs oficiais calculados a partir do último artefacto de bateria versionado. Variantes ajustadas podem diferir.";
 
+  const modelVersionPreview = data?.modelVersionPreview === true;
+  const modelVersionKey =
+    typeof data?.modelVersionKey === "string" && data.modelVersionKey.trim().length > 0
+      ? data.modelVersionKey.trim()
+      : modelVersion;
+
   return (
     <section className="decide-app-recommended-plan" aria-labelledby="decide-plan-title">
       <div className="decide-app-recommended-plan-inner">
@@ -166,6 +176,11 @@ export default function DecideRecommendedPlanCta({
                 <p className="decide-app-recommended-plan-model-strategy">{strategyLine}</p>
                 <p className="decide-app-recommended-plan-cagr-costs-notice">{DECIDE_CAGR_INCLUDES_MARKET_COSTS_PT}</p>
                 <p className="decide-app-recommended-plan-adjust-note">{officialNote}</p>
+                {modelVersionPreview ? (
+                  <p className="decide-app-recommended-plan-context" style={{ color: "#93c5fd" }}>
+                    Preview ativo: {modelVersionKey} (oficial mantém V6)
+                  </p>
+                ) : null}
               </div>
               <div className="decide-app-recommended-plan-decision-metric-col">
                 <div className="decide-app-recommended-plan-metric" aria-live="polite">

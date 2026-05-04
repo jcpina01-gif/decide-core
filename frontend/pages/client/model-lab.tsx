@@ -29,6 +29,22 @@ type BatteryPayload = {
   acceptance_evaluation?: AcceptanceRow[];
 };
 
+type V7SummaryPayload = {
+  status?: {
+    v6_baseline?: string;
+    v7_preferred_candidate?: string;
+    v7_defensive_variant?: string;
+  };
+  summary_table?: Array<{
+    name: string;
+    cagr: number;
+    sharpe: number;
+    max_drawdown: number;
+    cvar1: number;
+    turnover: number;
+  }>;
+};
+
 const pct = (v?: number) =>
   typeof v === "number" && Number.isFinite(v) ? `${(v * 100).toFixed(2)}%` : "—";
 const num = (v?: number, d = 3) =>
@@ -39,6 +55,8 @@ export default function ModelLabPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [data, setData] = useState<BatteryPayload | null>(null);
+  const [v7Data, setV7Data] = useState<V7SummaryPayload | null>(null);
+  const [variant, setVariant] = useState<"v6" | "v7">("v6");
 
   useEffect(() => {
     setLoggedIn(isClientLoggedIn());
@@ -50,11 +68,15 @@ export default function ModelLabPage() {
       setLoading(true);
       setErr("");
       try {
-        const r = await fetch("/api/client/model-lab-battery", { cache: "no-store" });
+        const r = await fetch(`/api/client/model-lab-battery?variant=${variant}`, { cache: "no-store" });
         const j = await r.json();
         if (!cancelled) {
           if (!j?.ok) setErr(j?.error || "Erro ao carregar bateria.");
-          setData((j?.payload || null) as BatteryPayload | null);
+          if (variant === "v7") {
+            setV7Data((j?.payload || null) as V7SummaryPayload | null);
+          } else {
+            setData((j?.payload || null) as BatteryPayload | null);
+          }
         }
       } catch (e: any) {
         if (!cancelled) setErr(e?.message || "Erro de rede.");
@@ -66,7 +88,7 @@ export default function ModelLabPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [variant]);
 
   const scenarios = useMemo(() => data?.scenarios || [], [data]);
   const checks = useMemo(() => data?.acceptance_evaluation || [], [data]);
@@ -97,16 +119,58 @@ export default function ModelLabPage() {
       {loading ? <p style={{ marginTop: 12 }}>A carregar resultados…</p> : null}
       {err ? <p style={{ marginTop: 12, color: "#fecaca" }}>Erro: {err}</p> : null}
 
-      {data?.decision_note ? (
+      <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+        <button
+          type="button"
+          onClick={() => setVariant("v6")}
+          style={{
+            borderRadius: 10,
+            padding: "6px 10px",
+            border: "1px solid #475569",
+            background: variant === "v6" ? "rgba(51,65,85,0.85)" : "rgba(15,23,42,0.45)",
+            color: "#e2e8f0",
+            cursor: "pointer",
+            fontWeight: 700,
+          }}
+        >
+          V6 / Oficial
+        </button>
+        <button
+          type="button"
+          onClick={() => setVariant("v7")}
+          style={{
+            borderRadius: 10,
+            padding: "6px 10px",
+            border: "1px solid #60a5fa",
+            background: variant === "v7" ? "rgba(30,58,138,0.75)" : "rgba(15,23,42,0.45)",
+            color: "#e2e8f0",
+            cursor: "pointer",
+            fontWeight: 700,
+          }}
+        >
+          Novo modelo V7 (preview)
+        </button>
+      </div>
+
+      {variant === "v6" && data?.decision_note ? (
         <div style={{ marginTop: 12, padding: 10, border: "1px solid #475569", borderRadius: 10 }}>
           <strong>Nota:</strong> {data.decision_note}
         </div>
       ) : null}
+      {variant === "v6" ? (
       <div style={{ marginTop: 8, color: "#94a3b8", fontSize: 13 }}>
         Candidato principal: <strong>{data?.main_candidate || "—"}</strong>
         {" · "}Referências lab: <strong>{(data?.lab_references || []).join(", ") || "—"}</strong>
       </div>
+      ) : (
+      <div style={{ marginTop: 8, color: "#93c5fd", fontSize: 13 }}>
+        Baseline: <strong>{v7Data?.status?.v6_baseline || "—"}</strong>
+        {" · "}Candidato V7: <strong>{v7Data?.status?.v7_preferred_candidate || "—"}</strong>
+        {" · "}Variante defensiva: <strong>{v7Data?.status?.v7_defensive_variant || "—"}</strong>
+      </div>
+      )}
 
+      {variant === "v6" ? (
       <div
         style={{
           marginTop: 14,
@@ -132,8 +196,32 @@ export default function ModelLabPage() {
           </section>
         ))}
       </div>
+      ) : (
+      <div
+        style={{
+          marginTop: 14,
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+          gap: 10,
+        }}
+      >
+        {(v7Data?.summary_table || []).map((r) => (
+          <section
+            key={r.name}
+            style={{ border: "1px solid #334155", borderRadius: 10, padding: 10, background: "rgba(30,58,138,0.18)" }}
+          >
+            <div style={{ fontWeight: 800, marginBottom: 8 }}>{r.name}</div>
+            <div>CAGR: <strong>{pct(r.cagr)}</strong></div>
+            <div>Sharpe: <strong>{num(r.sharpe, 4)}</strong></div>
+            <div>Max DD: <strong>{pct(r.max_drawdown)}</strong></div>
+            <div>CVaR1%: <strong>{pct(r.cvar1)}</strong></div>
+            <div>Turnover: <strong>{num(r.turnover, 4)}</strong></div>
+          </section>
+        ))}
+      </div>
+      )}
 
-      {checks.length ? (
+      {variant === "v6" && checks.length ? (
         <div style={{ marginTop: 16 }}>
           <h2 style={{ fontSize: 18, marginBottom: 8 }}>Acceptance check</h2>
           {checks.map((c) => (

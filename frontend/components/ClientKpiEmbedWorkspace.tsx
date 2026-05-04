@@ -88,6 +88,8 @@ export type ClientKpiEmbedWorkspaceProps = {
   workspaceVariant?: "dashboard" | "carteira";
   /** Perfil de risco (mesmo que o iframe Flask) — CAGR do cartão recomendado = Modelo CAP15 (`/api/embed-plafonado-cagr`). */
   riskProfile?: "conservador" | "moderado" | "dinamico";
+  /** Versão do modelo para KPI card no dashboard (rollout controlado). */
+  modelVersion?: "official_v6" | "v7_dynamic_light" | "v7_dynamic_medium";
   kpiEmbedTab: string;
   applyKpiEmbedTab: (id: string) => void;
   kpiViewMode: "simple" | "advanced";
@@ -418,6 +420,7 @@ function KpiEmbedIframe({
 export default function ClientKpiEmbedWorkspace({
   workspaceVariant = "dashboard",
   riskProfile = "moderado",
+  modelVersion = "official_v6",
   kpiEmbedTab,
   applyKpiEmbedTab,
   kpiViewMode,
@@ -499,7 +502,7 @@ export default function ClientKpiEmbedWorkspace({
         </div>
       ) : null}
       {showRecommendedBlock ? (
-        <DecideRecommendedPlanCta riskProfile={riskProfile} />
+        <DecideRecommendedPlanCta riskProfile={riskProfile} modelVersion={modelVersion} />
       ) : null}
 
       {!onDashboardRobustnessPanel &&
