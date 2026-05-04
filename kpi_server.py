@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v52-main-card-coherent-sharpe"
+    "-horizons-retornos-dd-v30-calc-source-v53-restore-engine-sharpe"
 )
 
 
@@ -10336,17 +10336,14 @@ def index():
     # Mantemos CAGR/Sharpe/MaxDD da curva activa; apenas o campo de vol exibido é ancorado ao referencial.
     if cap15_only and normalize_risk_profile_key(profile_key) == "moderado":
         _disp_vol = float(bench_kpis.volatility)
-        _disp_sharpe = float(model_kpis.sharpe)
-        if np.isfinite(_disp_vol) and _disp_vol > 0:
-            _disp_sharpe = float(model_kpis.cagr) / _disp_vol
         model_kpis = type(
             "KPIs",
             (),
             {
                 "cagr": float(model_kpis.cagr),
                 "volatility": _disp_vol,
-                # Consistência visual do cartão: Sharpe exibido usa a mesma vol exibida (bench-aligned).
-                "sharpe": _disp_sharpe,
+                # Sharpe deve manter a métrica do motor (média diária/vol diária anualizada), não CAGR/Vol.
+                "sharpe": float(model_kpis.sharpe),
                 "max_drawdown": float(model_kpis.max_drawdown),
                 "total_return": float(model_kpis.total_return),
             },
