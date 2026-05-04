@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v44-raw-preoverlay-no-rail"
+    "-horizons-retornos-dd-v30-calc-source-v45-margin-real-curve-vol-rule"
 )
 
 
@@ -10473,25 +10473,6 @@ def index():
                 compare_max100_equity = None
                 compare_max100_drawdowns = None
                 compare_max100_alpha_vals = None
-
-    if (
-        preview_summary_kpis is not None
-        and cap15_only
-        and normalize_risk_profile_key(profile_key) == "moderado"
-    ):
-        compare_cap100_kpis = type(
-            "KPIs",
-            (),
-            {
-                "cagr": float(preview_summary_kpis["cagr"]),
-                "volatility": float(bench_kpis.volatility),
-                "sharpe": float(preview_summary_kpis["sharpe"]),
-                "max_drawdown": float(preview_summary_kpis["max_drawdown"]),
-                "total_return": float(getattr(compare_cap100_kpis, "total_return", model_kpis.total_return)),
-            },
-        )()
-        compare_cap100_is_margin = True
-        show_max100_compare = True
 
     if cap15_only and model_key == "v5_overlay_cap15_max100exp" and not show_max100_compare:
         y_m = yearly_calendar_returns_fraction(model_eq, dates)
