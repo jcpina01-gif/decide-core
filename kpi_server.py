@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v46-margin-curve-refreshed"
+    "-horizons-retornos-dd-v30-calc-source-v47-margin-sharpe-3dp"
 )
 
 
@@ -3598,7 +3598,7 @@ HTML_TEMPLATE = """
           <div class="kpi-cagr-hint kpi-simple-only" style="font-size:0.7rem;margin-top:6px;line-height:1.35;">Ganho médio anual composto no histórico ilustrativo — não garante resultados futuros.</div>
           <div class="kpi-line kpi-advanced-only">Vol {{ (compare_cap100_kpis.volatility * 100) | round(2) }}%</div>
           <div class="kpi-line kpi-simple-only">Risco esperado (vol.) {{ (compare_cap100_kpis.volatility * 100) | round(2) }}%</div>
-          <div class="kpi-line kpi-advanced-only">Sharpe {{ compare_cap100_kpis.sharpe | round(2) }}</div>
+          <div class="kpi-line kpi-advanced-only">Sharpe {{ '%.3f' | format(compare_cap100_kpis.sharpe) }}</div>
           <div class="kpi-line value negative kpi-advanced-only">Max DD {{ (compare_cap100_kpis.max_drawdown * 100) | round(2) }}%</div>
           <div class="kpi-line value negative kpi-simple-only">Queda máxima histórica {{ (compare_cap100_kpis.max_drawdown * 100) | round(2) }}%</div>
           <div class="kpi-advanced-only kpi-card-total-return">Total return {{ compare_cap100_kpis.total_return | round(2) }}x</div>
@@ -3626,7 +3626,7 @@ HTML_TEMPLATE = """
             <div class="value positive kpi-hedge-under-value">{{ (hedge_kpis_embed.cap15_max100.cagr * 100) | round(2) }}% <span class="muted kpi-hedge-under-cagr">CAGR</span></div>
             <div class="kpi-hedge-under-metrics">
               <div class="kpi-line kpi-advanced-only kpi-hedge-under-line">Vol {{ (hedge_kpis_embed.cap15_max100.volatility * 100) | round(2) }}%</div>
-              <div class="kpi-line kpi-advanced-only kpi-hedge-under-line">Sharpe {{ hedge_kpis_embed.cap15_max100.sharpe | round(2) }}</div>
+              <div class="kpi-line kpi-advanced-only kpi-hedge-under-line">Sharpe {{ '%.3f' | format(hedge_kpis_embed.cap15_max100.sharpe) }}</div>
               <div class="kpi-line value negative kpi-hedge-under-line">Max DD {{ (hedge_kpis_embed.cap15_max100.max_drawdown * 100) | round(2) }}%</div>
               <div class="kpi-advanced-only kpi-hedge-under-line kpi-card-total-return">Total return {{ hedge_kpis_embed.cap15_max100.total_return | round(2) }}x</div>
             </div>
