@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v48-client-consistency-label"
+    "-horizons-retornos-dd-v30-calc-source-v49-v7-smooth-execution-preview"
 )
 
 
