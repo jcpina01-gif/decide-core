@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v69-v7-true-macro-light-promotion"
+    "-horizons-retornos-dd-v30-calc-source-v70-cap15-embed-debug-audit"
 )
 
 
@@ -10079,6 +10079,72 @@ def compute_client_embed_plafonado_kpis(profile_key: str) -> dict | None:
         return None
 
 
+def compute_client_embed_plafonado_kpis_debug(profile_key: str) -> dict | None:
+    """Audit payload: raw investible KPIs vs post-processed embed KPIs."""
+    pk = normalize_risk_profile_key(profile_key)
+    smooth_base = MODEL_PATHS.get("v5_overlay_cap15_max100exp")
+    if smooth_base is None:
+        return None
+    fs = False
+    m100_base = smooth_base
+    m100_path, m100_used_profile_file = pick_plafonado_smooth_model_equity_path(
+        m100_base, pk, force_synthetic_profile_vol=fs
+    )
+    bench_path = resolve_coerced_benchmark_equity_csv_path(smooth_base)
+    if not m100_path.exists() or not bench_path.exists():
+        return None
+    try:
+        _, _, _, dates = load_equity_curve(m100_path, "model_equity")
+        _, _, bench_eq, bench_dates = load_equity_curve(bench_path, "benchmark_equity")
+        bench_eq = align_equity_series_to_target_dates(bench_eq, bench_dates, dates)
+        _, _, m100_eq_file, m100_dates_s = load_equity_curve(m100_path, "model_equity")
+        dt_m = pd.to_datetime(dates)
+        s_f = pd.Series(np.asarray(m100_eq_file, dtype=float), index=pd.to_datetime(m100_dates_s))
+        s_aligned = s_f.reindex(dt_m).ffill().bfill()
+        if len(s_aligned) != len(dt_m) or not bool(s_aligned.notna().all()):
+            return None
+
+        m100_series_investible = pd.Series([float(x) for x in s_aligned.values], dtype=float)
+        m100_series_investible = _backfill_cap15_flat_model_prefix_with_benchmark(
+            m100_series_investible, bench_eq, dates
+        )
+        m100_series_investible = cap_equity_vs_benchmark_rail(bench_eq, m100_series_investible)
+        m100_series_adjusted = apply_model_equity_profile_policy(
+            m100_series_investible.copy(),
+            bench_eq,
+            pk,
+            used_profile_file=m100_used_profile_file,
+            client_embed=True,
+            force_synthetic_profile_vol=fs,
+            strict_cap15_vol_targets=True,
+        )
+        k_invest, _ = compute_kpis(m100_series_investible)
+        k_adj, _ = compute_kpis(m100_series_adjusted)
+        k_bench, _ = compute_kpis(pd.Series(bench_eq, dtype=float))
+
+        def _pack(k: Any) -> dict[str, float]:
+            return {
+                "cagr_pct": round(float(k.cagr) * 100.0, 2),
+                "vol_annual_pct": round(float(k.volatility) * 100.0, 2),
+                "sharpe": round(float(k.sharpe), 3),
+                "max_drawdown_pct": round(abs(float(k.max_drawdown)) * 100.0, 2),
+            }
+
+        return {
+            "profile": pk,
+            "model_path": str(m100_path),
+            "bench_path": str(bench_path),
+            "used_profile_file": bool(m100_used_profile_file),
+            "force_synthetic_profile_vol": bool(fs),
+            "strict_cap15_vol_targets": True,
+            "kpis_investible_raw": _pack(k_invest),
+            "kpis_post_processed_embed": _pack(k_adj),
+            "kpis_benchmark": _pack(k_bench),
+        }
+    except Exception:
+        return None
+
+
 def compute_client_embed_plafonado_cagr_pct(profile_key: str) -> float | None:
     """Retrocompatível: só o CAGR % (2 casas)."""
     k = compute_client_embed_plafonado_kpis(profile_key)
@@ -10107,6 +10173,19 @@ def api_embed_plafonado_cagr():
         r = jsonify({"ok": False, "profile": pk, "error": "no_plafonado_series"})
     else:
         r = jsonify({"ok": True, "profile": pk, **k})
+    r.headers["Access-Control-Allow-Origin"] = "*"
+    return r
+
+
+@app.get("/api/embed-cap15-cagr-debug")
+def api_embed_cap15_cagr_debug():
+    """Audit endpoint: show CAP15 raw investible KPIs vs embed post-processed KPIs."""
+    pk = normalize_risk_profile_key(request.args.get("profile") or "moderado")
+    d = compute_client_embed_plafonado_kpis_debug(pk)
+    if d is None:
+        r = jsonify({"ok": False, "profile": pk, "error": "no_plafonado_series_debug"})
+    else:
+        r = jsonify({"ok": True, **d})
     r.headers["Access-Control-Allow-Origin"] = "*"
     return r
 
