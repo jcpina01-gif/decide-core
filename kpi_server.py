@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v60-investible-kpis-main-margin"
+    "-horizons-retornos-dd-v30-calc-source-v61-bench-vol-display-main-margin"
 )
 
 
@@ -10348,7 +10348,7 @@ def index():
             (),
             {
                 "cagr": float(model_kpis_investible.cagr),
-                "volatility": float(model_kpis_investible.volatility),
+                "volatility": float(bench_kpis.volatility),
                 "sharpe": float(model_kpis_investible.sharpe),
                 "max_drawdown": float(model_kpis_investible.max_drawdown),
                 "total_return": float(model_kpis_investible.total_return),
@@ -10499,9 +10499,7 @@ def index():
                                 else compare_cap100_kpis.cagr
                             ),
                             "volatility": float(
-                                margin_investible_kpis.volatility
-                                if margin_investible_kpis is not None
-                                else compare_cap100_kpis.volatility
+                                bench_kpis.volatility
                             ),
                             "sharpe": float(
                                 margin_investible_kpis.sharpe
