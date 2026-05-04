@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v65-disable-embed-summary-override"
+    "-horizons-retornos-dd-v30-calc-source-v66-cap15-embed-single-curve-kpis"
 )
 
 
@@ -7360,7 +7360,7 @@ def load_cap15_margin_series_distinct_from_plafonado(
                 used_profile_file=used_profile_file,
                 client_embed=client_embed,
                 force_synthetic_profile_vol=force_synthetic_profile_vol,
-                strict_cap15_vol_targets=True,
+                strict_cap15_vol_targets=not client_embed,
             )
             margin_series = _backfill_cap15_flat_model_prefix_with_benchmark(
                 margin_series, bench_eq, dates
@@ -10025,8 +10025,8 @@ def compute_client_embed_plafonado_kpis(profile_key: str) -> dict | None:
     smooth_base = MODEL_PATHS.get("v5_overlay_cap15_max100exp")
     if smooth_base is None:
         return None
-    # No embed CAP15 priorizamos curva investível por perfil; override global continua possível por env.
-    fs = kpi_env_synthetic_profile_vol_override()
+    # Embed CAP15 deve usar sempre a curva investível por perfil (single source of truth).
+    fs = False
     m100_base = smooth_base
     m100_path, m100_used_profile_file = pick_plafonado_smooth_model_equity_path(
         m100_base, pk, force_synthetic_profile_vol=fs
@@ -10162,8 +10162,8 @@ def index():
     # Iframe: por defeito usa `model_equity_final_20y.csv` para todos; `DECIDE_KPI_REAL_EQUITY=1` permite CSV por perfil.
     force_synthetic_profile_vol = kpi_force_synthetic_vol(client_embed=client_embed)
     if client_embed and model_key in CAP15_VOL_TARGET_MODEL_KEYS:
-        # Dashboard embed CAP15: usar série investível por perfil como fonte oficial de KPIs.
-        force_synthetic_profile_vol = kpi_env_synthetic_profile_vol_override()
+        # Dashboard embed CAP15: ignorar overrides sintéticos e usar sempre série investível por perfil.
+        force_synthetic_profile_vol = False
     if model_key in CAP15_VOL_TARGET_MODEL_KEYS:
         model_path, used_profile_file = pick_plafonado_smooth_model_equity_path(
             base_path, profile_key, force_synthetic_profile_vol=force_synthetic_profile_vol
@@ -10276,7 +10276,7 @@ def index():
         used_profile_file=used_profile_file,
         client_embed=client_embed,
         force_synthetic_profile_vol=force_synthetic_profile_vol,
-        strict_cap15_vol_targets=(model_key in CAP15_VOL_TARGET_MODEL_KEYS),
+        strict_cap15_vol_targets=((model_key in CAP15_VOL_TARGET_MODEL_KEYS) and (not client_embed)),
     )
     if model_key in ("v5_overlay_cap15", "v5_overlay_cap15_max100exp"):
         model_eq = _backfill_cap15_flat_model_prefix_with_benchmark(model_eq, bench_eq, dates)
