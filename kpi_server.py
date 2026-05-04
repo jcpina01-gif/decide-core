@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v54-full-curve-vol-align"
+    "-horizons-retornos-dd-v30-calc-source-v55-margin-materiality-label"
 )
 
 
@@ -3585,6 +3585,9 @@ HTML_TEMPLATE = """
         {% if compare_cap100_kpis %}
         <div class="card col-3 kpi-main-compare">
           <div class="label">{% if compare_cap100_is_margin %}{{ cap15_human_margin_label_pt }}{% else %}{{ cap15_human_label_pt }}{% endif %}</div>
+          {% if compare_cap100_is_margin and margin_vs_base_non_material %}
+          <div class="kpi-cap15-micro-hint" style="font-size:0.72rem;font-weight:750;letter-spacing:0.02em;text-transform:uppercase;margin-top:6px;line-height:1.4;color:#a7f3d0;">Sem diferença material face ao modelo base neste período</div>
+          {% endif %}
           {% if compare_cap100_is_margin and cap15_only %}
           <div class="kpi-cap15-micro-hint" style="font-size:0.74rem;font-weight:750;letter-spacing:0.045em;text-transform:uppercase;margin-top:6px;line-height:1.4;">Versão otimizada para implementação real</div>
           {% endif %}
@@ -3604,6 +3607,9 @@ HTML_TEMPLATE = """
             <div class="kpi-card-details-body">
               {% if compare_cap100_is_margin %}
               Variante ilustrativa <strong>com margem</strong>: a exposição económica pode exceder <strong>100%</strong> do capital nos períodos em que o motor o aplica. <strong>Não corresponde</strong> ao produto plafonado (≤100% NAV) do cartão principal. Mesma regra de vol por perfil que os outros cartões, onde aplicável (se a vol natural exceder o alvo vs benchmark, o CAGR mostrado reflecte a série já reescalada). Indicativo — não é aconselhamento.
+              {% if margin_vs_base_non_material %}
+              <br><br><strong>Neste período, a diferença para o modelo base é não material</strong>{% if margin_vs_base_identical %} (curvas coincidem no histórico analisado){% endif %}.
+              {% endif %}
               {% else %}
               Exposição a risco limitada a <strong>100%</strong> do NAV (sem alavancagem além do capital).
               {% if current_profile == 'moderado' %}
@@ -10581,6 +10587,30 @@ def index():
     profile_label_pt = PROFILE_LABEL_PT_SHORT.get(profile_key, profile_key)
     cap15_human_label_pt = f"Modelo {profile_label_pt} — limite máximo de 15% por posição"
     cap15_human_margin_label_pt = f"{cap15_human_label_pt} · variante com margem (ilustrativo)"
+    margin_vs_base_identical = False
+    margin_vs_base_non_material = False
+    if compare_cap100_is_margin and compare_cap100_kpis is not None:
+        try:
+            d_cagr = float(compare_cap100_kpis.cagr) - float(model_kpis.cagr)
+            d_sharpe = float(compare_cap100_kpis.sharpe) - float(model_kpis.sharpe)
+            d_mdd = float(compare_cap100_kpis.max_drawdown) - float(model_kpis.max_drawdown)
+            margin_vs_base_non_material = (
+                abs(d_cagr) <= 0.002  # <= 0.2 p.p./ano
+                and abs(d_sharpe) <= 0.03
+                and abs(d_mdd) <= 0.01  # <= 1.0 p.p.
+            )
+        except Exception:
+            margin_vs_base_non_material = False
+        try:
+            if compare_max100_equity is not None:
+                a_model = np.asarray(pd.Series(model_eq, dtype=float).to_numpy(), dtype=float)
+                a_margin = np.asarray(compare_max100_equity, dtype=float)
+                if a_model.shape == a_margin.shape and a_model.size > 0:
+                    margin_vs_base_identical = bool(np.allclose(a_model, a_margin, rtol=0.0, atol=1e-12))
+        except Exception:
+            margin_vs_base_identical = False
+        if margin_vs_base_identical:
+            margin_vs_base_non_material = True
 
     kpi_diag_build = KPI_SERVER_BUILD_TAG
     kpi_diag_repo = str(REPO_ROOT.resolve())
@@ -10639,6 +10669,8 @@ def index():
         profile_label_pt=profile_label_pt,
         cap15_human_label_pt=cap15_human_label_pt,
         cap15_human_margin_label_pt=cap15_human_margin_label_pt,
+        margin_vs_base_non_material=margin_vs_base_non_material,
+        margin_vs_base_identical=margin_vs_base_identical,
         profile_source_note=profile_source_note,
         frontend_url=resolve_frontend_url_for_embed(request),
         risk_info=risk_info,
