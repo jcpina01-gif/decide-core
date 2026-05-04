@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v55-margin-materiality-label"
+    "-horizons-retornos-dd-v30-calc-source-v56-margin-label-display-equal"
 )
 
 
@@ -10589,6 +10589,7 @@ def index():
     cap15_human_margin_label_pt = f"{cap15_human_label_pt} · variante com margem (ilustrativo)"
     margin_vs_base_identical = False
     margin_vs_base_non_material = False
+    margin_vs_base_display_equal = False
     if compare_cap100_is_margin and compare_cap100_kpis is not None:
         try:
             d_cagr = float(compare_cap100_kpis.cagr) - float(model_kpis.cagr)
@@ -10601,6 +10602,17 @@ def index():
             )
         except Exception:
             margin_vs_base_non_material = False
+        # Se os números exibidos no cartão coincidem (2 casas em CAGR/DD; 3 em Sharpe),
+        # também tratamos como não-material para evitar ambiguidade visual ao cliente.
+        try:
+            margin_vs_base_display_equal = (
+                round(float(compare_cap100_kpis.cagr) * 100.0, 2) == round(float(model_kpis.cagr) * 100.0, 2)
+                and round(float(compare_cap100_kpis.sharpe), 3) == round(float(model_kpis.sharpe), 3)
+                and round(float(compare_cap100_kpis.max_drawdown) * 100.0, 2)
+                == round(float(model_kpis.max_drawdown) * 100.0, 2)
+            )
+        except Exception:
+            margin_vs_base_display_equal = False
         try:
             if compare_max100_equity is not None:
                 a_model = np.asarray(pd.Series(model_eq, dtype=float).to_numpy(), dtype=float)
@@ -10609,7 +10621,7 @@ def index():
                     margin_vs_base_identical = bool(np.allclose(a_model, a_margin, rtol=0.0, atol=1e-12))
         except Exception:
             margin_vs_base_identical = False
-        if margin_vs_base_identical:
+        if margin_vs_base_identical or margin_vs_base_display_equal:
             margin_vs_base_non_material = True
 
     kpi_diag_build = KPI_SERVER_BUILD_TAG
