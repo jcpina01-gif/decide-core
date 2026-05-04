@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v62-all-investible-with-vol-rule"
+    "-horizons-retornos-dd-v30-calc-source-v63-candidate-source-priority-fix"
 )
 
 
@@ -363,6 +363,23 @@ def _resolve_plafonado_cap15_outputs_dir() -> Path:
             candidates.append(cand)
     if not candidates:
         return REPO_ROOT / "freeze" / "DECIDE_MODEL_V5_V2_3_SMOOTH" / "model_outputs"
+
+    # Prioridade explícita ao candidato activo (backend/data/model_candidates.json), quando existir.
+    # Evita cair numa cópia paralela/stale com `data_end` igual mas KPIs antigos.
+    try:
+        marker = REPO_ROOT / "backend" / "data" / "model_candidates.json"
+        if marker.is_file():
+            payload = json.loads(marker.read_text(encoding="utf-8-sig"))
+            primary = str(payload.get("primary_candidate") or "").strip().lower()
+            for c in candidates:
+                meta = _read_v5_meta(c) or {}
+                label = str(meta.get("model_label") or "").strip().lower()
+                variant = str(meta.get("model_variant") or "").strip().lower()
+                if primary and (primary == label or primary in variant):
+                    return c
+    except Exception:
+        pass
+
     scored: list[tuple[tuple[int, date], Path]] = []
     for c in candidates:
         meta = _read_v5_meta(c)
