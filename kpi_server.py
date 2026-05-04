@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v66-cap15-embed-single-curve-kpis"
+    "-horizons-retornos-dd-v30-calc-source-v67-cap15-embed-bench-vol-adjusted"
 )
 
 
@@ -628,11 +628,9 @@ def apply_model_equity_profile_policy(
     no embed sem `force_synthetic_profile_vol` conservador/dinâmico ficam sem reescala.
     """
     pk = normalize_risk_profile_key(profile_key)
-    # CAP15 strict: alinhar por alvo de vol apenas quando a curva vem do CSV base (sintético).
-    # Se já estamos num CSV investível por perfil, preservar a curva nativa.
+    # CAP15 strict: aplicar sempre alvo de vol por perfil na curva completa.
+    # Isto garante que CAGR/vol/Sharpe/DD permanecem coerentes na mesma série ajustada.
     if strict_cap15_vol_targets:
-        if used_profile_file:
-            return model_eq.astype(float)
         return scale_model_equity_to_profile_vol(
             model_eq, bench_eq, pk, has_profile_file=False
         )
@@ -7360,7 +7358,7 @@ def load_cap15_margin_series_distinct_from_plafonado(
                 used_profile_file=used_profile_file,
                 client_embed=client_embed,
                 force_synthetic_profile_vol=force_synthetic_profile_vol,
-                strict_cap15_vol_targets=not client_embed,
+                strict_cap15_vol_targets=True,
             )
             margin_series = _backfill_cap15_flat_model_prefix_with_benchmark(
                 margin_series, bench_eq, dates
@@ -10053,7 +10051,7 @@ def compute_client_embed_plafonado_kpis(profile_key: str) -> dict | None:
             used_profile_file=m100_used_profile_file,
             client_embed=True,
             force_synthetic_profile_vol=fs,
-            strict_cap15_vol_targets=False,
+            strict_cap15_vol_targets=True,
         )
         m100_series = _backfill_cap15_flat_model_prefix_with_benchmark(
             m100_series, bench_eq, dates
@@ -10276,7 +10274,7 @@ def index():
         used_profile_file=used_profile_file,
         client_embed=client_embed,
         force_synthetic_profile_vol=force_synthetic_profile_vol,
-        strict_cap15_vol_targets=((model_key in CAP15_VOL_TARGET_MODEL_KEYS) and (not client_embed)),
+        strict_cap15_vol_targets=(model_key in CAP15_VOL_TARGET_MODEL_KEYS),
     )
     if model_key in ("v5_overlay_cap15", "v5_overlay_cap15_max100exp"):
         model_eq = _backfill_cap15_flat_model_prefix_with_benchmark(model_eq, bench_eq, dates)
