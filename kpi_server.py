@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v53-restore-engine-sharpe"
+    "-horizons-retornos-dd-v30-calc-source-v54-full-curve-vol-align"
 )
 
 
@@ -600,7 +600,7 @@ def apply_model_equity_profile_policy(
 ) -> pd.Series:
     """
     - **Moderado:** no CAP15 com `strict_cap15_vol_targets`, alinha a vol realizada a ≈ **1×** a do benchmark
-      (`scale_model_equity_to_profile_vol`, mult 1,0). Noutros modelos v5, por defeito mantém a série do CSV.
+      (`scale_model_equity_to_profile_vol`, mult 1,0). Noutros modelos v5, mantém o comportamento legado.
     - **Conservador / dinâmico:** alvo ≈ 0,75× / 1,25× vol do benchmark quando a reescala está activa.
 
     Com `strict_cap15_vol_targets=True` (CAP15 plafonado, série m100 alinhada, com margem): todos os perfis
@@ -611,10 +611,7 @@ def apply_model_equity_profile_policy(
     no embed sem `force_synthetic_profile_vol` conservador/dinâmico ficam sem reescala.
     """
     pk = normalize_risk_profile_key(profile_key)
-    # Single official KPI definition: moderado should remain the raw model series (no post-rescale),
-    # including CAP15 paths where strict targets are used for other profiles.
-    if pk == "moderado":
-        return model_eq.astype(float)
+    # CAP15 strict: alinhar TODOS os perfis (inclui moderado 1×) na curva completa.
     if strict_cap15_vol_targets:
         return scale_model_equity_to_profile_vol(
             model_eq, bench_eq, pk, has_profile_file=False
@@ -10332,23 +10329,6 @@ def index():
                     "total_return": float(model_kpis.total_return),
                 },
             )()
-    # Política do produto (cliente): no CAP15 moderado, mostrar vol anual alinhada ao benchmark (≈1x).
-    # Mantemos CAGR/Sharpe/MaxDD da curva activa; apenas o campo de vol exibido é ancorado ao referencial.
-    if cap15_only and normalize_risk_profile_key(profile_key) == "moderado":
-        _disp_vol = float(bench_kpis.volatility)
-        model_kpis = type(
-            "KPIs",
-            (),
-            {
-                "cagr": float(model_kpis.cagr),
-                "volatility": _disp_vol,
-                # Sharpe deve manter a métrica do motor (média diária/vol diária anualizada), não CAGR/Vol.
-                "sharpe": float(model_kpis.sharpe),
-                "max_drawdown": float(model_kpis.max_drawdown),
-                "total_return": float(model_kpis.total_return),
-            },
-        )()
-
     monthly = compute_monthly_stats(model_eq, bench_eq, dates)
 
     holdings, zone_breakdown, sector_breakdown = load_holdings_and_breakdowns(base_path)
