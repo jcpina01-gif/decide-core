@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v57-margin-label-bottom"
+    "-horizons-retornos-dd-v30-calc-source-v58-investible-dd-main-card"
 )
 
 
@@ -10244,6 +10244,10 @@ def index():
     # RAW = motor pré-overlay (não investível): nunca aplicar perfil/rail/alinhamento ao benchmark.
     # O cartão RAW deve refletir a série teórica original do freeze.
 
+    # Guardar a curva investível "as-run" antes do alinhamento de vol para UI.
+    # Isto permite mostrar Max DD do modelo real, sem o viés de reescala do painel.
+    model_eq_investible = model_eq.copy()
+
     # CAP15 e restantes: ver `apply_model_equity_profile_policy`.
     model_eq = apply_model_equity_profile_policy(
         model_eq,
@@ -10310,6 +10314,7 @@ def index():
             },
         )()
     model_kpis, model_drawdowns = compute_kpis(model_eq)
+    model_kpis_investible, _ = compute_kpis(model_eq_investible)
     bench_kpis, bench_drawdowns = compute_kpis(bench_eq)
     # Por defeito, o cartão principal usa SEMPRE os KPIs calculados da curva activa (single source of truth).
     # Compat legado: activar override por sumário externo apenas se explicitamente pedido por env.
@@ -10335,6 +10340,20 @@ def index():
                     "total_return": float(model_kpis.total_return),
                 },
             )()
+    # CAP15 moderado: mostrar Max DD da curva investível original (pré-alinhamento de vol no painel).
+    # Mantém CAGR/Sharpe da curva actualmente exibida, mas evita amplificar DD por reescala visual.
+    if cap15_only and normalize_risk_profile_key(profile_key) == "moderado":
+        model_kpis = type(
+            "KPIs",
+            (),
+            {
+                "cagr": float(model_kpis.cagr),
+                "volatility": float(model_kpis.volatility),
+                "sharpe": float(model_kpis.sharpe),
+                "max_drawdown": float(model_kpis_investible.max_drawdown),
+                "total_return": float(model_kpis.total_return),
+            },
+        )()
     monthly = compute_monthly_stats(model_eq, bench_eq, dates)
 
     holdings, zone_breakdown, sector_breakdown = load_holdings_and_breakdowns(base_path)
