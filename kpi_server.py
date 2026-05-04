@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v45-raw-pre-overlay-fallback-kpis"
+    "-horizons-retornos-dd-v30-calc-source-v44-raw-preoverlay-no-rail"
 )
 
 
@@ -320,20 +320,6 @@ def _read_v7_candidate_summary_kpis(model_version: str) -> dict | None:
         "cagr": cagr,
         "sharpe": sharpe,
         "max_drawdown": mdd,
-    }
-
-
-def _raw_pre_overlay_fallback_kpis() -> dict[str, float]:
-    """
-    KPIs oficiais do RAW pré-overlays (série única, sem perfis) para ambientes
-    onde o CSV `DECIDE_MODEL_V5/model_equity_final_20y.csv` não está disponível.
-    """
-    return {
-        "cagr": 0.3022,
-        "volatility": 0.2193,
-        "sharpe": 1.31,
-        "max_drawdown": -0.2599,
-        "total_return": 193.94714889944228,
     }
 
 
@@ -7063,47 +7049,21 @@ def resolve_canon_smooth_benchmark_clone_csv() -> Path | None:
     return None
 
 
-def resolve_pre_overlay_raw_equity_csv_path() -> Path | None:
-    """
-    Série RAW oficial: motor antes dos overlays (sem perfis).
-    Fonte preferida: `freeze/DECIDE_MODEL_V5/model_outputs/model_equity_final_20y.csv`.
-    """
-    candidates: list[Path] = [MODEL_PATHS.get("v5", REPO_ROOT / "freeze" / "DECIDE_MODEL_V5" / "model_outputs") / "model_equity_final_20y.csv"]
-    for root in _freeze_search_roots():
-        candidates.append(root / "freeze" / "DECIDE_MODEL_V5" / "model_outputs" / "model_equity_final_20y.csv")
-    # Fallback defensivo: overlay legacy caso o V5 base não esteja presente no runtime.
-    candidates.append(MODEL_PATHS.get("v5_overlay", REPO_ROOT / "freeze" / "DECIDE_MODEL_V5_OVERLAY" / "model_outputs") / "model_equity_final_20y.csv")
-    for root in _freeze_search_roots():
-        candidates.append(root / "freeze" / "DECIDE_MODEL_V5_OVERLAY" / "model_outputs" / "model_equity_final_20y.csv")
-    seen: set[str] = set()
-    for cand in candidates:
-        if not cand.exists():
-            continue
-        try:
-            key = str(cand.resolve())
-        except OSError:
-            key = str(cand)
-        if key in seen:
-            continue
-        seen.add(key)
-        return cand
-    return None
-
-
 def resolve_cap15_embed_raw_motor_equity_csv_path(model_path: Path, base_path: Path) -> Path | None:
     """
     Cartão esquerdo do iframe: série **RAW / motor** (não o plafonado `model_path`).
-    Ordem: curva pré-overlays (sem perfil) → fallback teórico histórico.
+    Ordem: teórico ao lado do modelo → teórico no freeze V2.3 smooth (sem fallback para outros modelos).
     Nunca devolve o mesmo ficheiro que `model_path` (evita duplicar KPIs com o CAP15 plafonado).
     """
     candidates: list[Path] = []
-    pre_overlay = resolve_pre_overlay_raw_equity_csv_path()
-    if pre_overlay is not None:
-        candidates.append(pre_overlay)
-    # Último fallback histórico para não quebrar o cartão em ambientes parciais.
     th = resolve_theoretical_model_equity_csv_path(base_path)
     if th is not None:
         candidates.append(th)
+    candidates.append(base_path / "model_equity_theoretical_20y.csv")
+    for root in _freeze_search_roots():
+        candidates.append(
+            root / "freeze" / "DECIDE_MODEL_V5_V2_3_SMOOTH" / "model_outputs" / "model_equity_theoretical_20y.csv",
+        )
     seen: set[str] = set()
     for cand in candidates:
         if not cand.exists():
@@ -10238,7 +10198,6 @@ def index():
     # Página completa (não embed): opcionalmente `series.equity_raw` + `raw_kpis` em run_model snapshot.
     # Override explícito: `DECIDE_KPI_USE_RAW_KPI_SNAPSHOT=1`.
     raw_eq_from_snapshot = False
-    pre_overlay_raw_path = resolve_pre_overlay_raw_equity_csv_path()
     theoretical_path = resolve_theoretical_model_equity_csv_path(base_path)
     if client_embed and cap15_only:
         _rpm = resolve_cap15_embed_raw_motor_equity_csv_path(model_path, base_path)
@@ -10250,11 +10209,7 @@ def index():
                 file=sys.stderr,
             )
     else:
-        raw_path = (
-            pre_overlay_raw_path
-            if pre_overlay_raw_path is not None
-            else (theoretical_path if theoretical_path is not None else (base_path / "model_equity_final_20y.csv"))
-        )
+        raw_path = theoretical_path if theoretical_path is not None else (base_path / "model_equity_final_20y.csv")
 
     if run_model_snapshot and isinstance(run_model_snapshot.get("series"), dict):
         raw_series_values = run_model_snapshot["series"].get("equity_raw") or []
@@ -10283,8 +10238,8 @@ def index():
     if cap15_only and model_key == "v5_overlay_cap15_max100exp" and len(raw_eq) == len(model_eq):
         raw_eq, raw_path = resolve_distinct_smooth_theoretical_vs_plafonado(dates, model_eq, raw_eq, raw_path)
 
-    if cap15_only and len(raw_eq) == len(bench_eq):
-        raw_eq = cap_equity_vs_benchmark_rail(bench_eq, raw_eq)
+    # RAW = motor pré-overlay (não investível): nunca aplicar perfil/rail/alinhamento ao benchmark.
+    # O cartão RAW deve refletir a série teórica original do freeze.
 
     # CAP15 e restantes: ver `apply_model_equity_profile_policy`.
     model_eq = apply_model_equity_profile_policy(
@@ -10334,19 +10289,6 @@ def index():
     patch_equity_knot_dates_linear(dates, model_eq, raw_eq, bench_eq)
 
     raw_kpis, raw_drawdowns = compute_kpis(raw_eq)
-    if cap15_only and pre_overlay_raw_path is None:
-        raw_fb = _raw_pre_overlay_fallback_kpis()
-        raw_kpis = type(
-            "KPIs",
-            (),
-            {
-                "cagr": float(raw_fb["cagr"]),
-                "volatility": float(raw_fb["volatility"]),
-                "sharpe": float(raw_fb["sharpe"]),
-                "max_drawdown": float(raw_fb["max_drawdown"]),
-                "total_return": float(raw_fb["total_return"]),
-            },
-        )()
     _snap_raw = os.environ.get("DECIDE_KPI_USE_RAW_KPI_SNAPSHOT", "").strip().lower() in {
         "1",
         "true",
