@@ -155,7 +155,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 # Meta no HTML embebido — «Ver código-fonte da página» deve mostrar este valor após deploy/restart.
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
-    "-horizons-retornos-dd-v30-calc-source-v49-v7-smooth-execution-preview"
+    "-horizons-retornos-dd-v30-calc-source-v50-main-card-live-curve"
 )
 
 
@@ -10308,12 +10308,16 @@ def index():
         )()
     model_kpis, model_drawdowns = compute_kpis(model_eq)
     bench_kpis, bench_drawdowns = compute_kpis(bench_eq)
-    preview_summary_kpis = (
-        _read_v7_candidate_summary_kpis(model_version_key)
-        if cap15_only and normalize_risk_profile_key(profile_key) == "moderado"
-        else None
-    )
-    if cap15_only and normalize_risk_profile_key(profile_key) == "moderado":
+    # Por defeito, o cartão principal usa SEMPRE os KPIs calculados da curva activa (single source of truth).
+    # Compat legado: activar override por sumário externo apenas se explicitamente pedido por env.
+    preview_summary_kpis = None
+    _use_summary_override = os.environ.get("DECIDE_KPI_USE_SUMMARY_KPI_OVERRIDE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if cap15_only and normalize_risk_profile_key(profile_key) == "moderado" and _use_summary_override:
+        preview_summary_kpis = _read_v7_candidate_summary_kpis(model_version_key)
         source = preview_summary_kpis if preview_summary_kpis is not None else _read_official_moderado_battery_kpis()
         if source is not None:
             model_kpis = type(
