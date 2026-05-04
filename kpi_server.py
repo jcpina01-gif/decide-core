@@ -240,6 +240,54 @@ def _read_official_moderado_battery_kpis() -> dict | None:
     }
 
 
+def _normalize_model_version_key(raw: str | None) -> str:
+    v = str(raw or "").strip().lower()
+    if v in {"v7_dynamic_light", "v7_dynamic_medium", "v6_combo_floor070_convex22", "official_v6"}:
+        return v
+    return "official_v6"
+
+
+def _read_v7_candidate_summary_kpis(model_version: str) -> dict | None:
+    row_name = {
+        "v7_dynamic_light": "V7_dynamic_light",
+        "v7_dynamic_medium": "V7_dynamic_medium",
+        "v6_combo_floor070_convex22": "V6_combo_floor070_convex22",
+    }.get(_normalize_model_version_key(model_version))
+    if not row_name:
+        return None
+    p = REPO_ROOT / "backend" / "data" / "moderado_v7_candidate_summary.json"
+    if not p.is_file():
+        return None
+    try:
+        payload = json.loads(p.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return None
+    rows = payload.get("summary_table") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return None
+    chosen = None
+    for r in rows:
+        if isinstance(r, dict) and str(r.get("name") or "").strip() == row_name:
+            chosen = r
+            break
+    if not isinstance(chosen, dict):
+        return None
+    try:
+        cagr = float(chosen.get("cagr"))
+        sharpe = float(chosen.get("sharpe"))
+        mdd = float(chosen.get("max_drawdown"))
+    except Exception:
+        return None
+    if not (np.isfinite(cagr) and np.isfinite(sharpe) and np.isfinite(mdd)):
+        return None
+    return {
+        "scenario_name": row_name,
+        "cagr": cagr,
+        "sharpe": sharpe,
+        "max_drawdown": mdd,
+    }
+
+
 def _meta_data_end(meta: dict | None) -> date:
     if not isinstance(meta, dict):
         return date.min
@@ -10025,6 +10073,7 @@ def index():
         )
     model_key = request.args.get("model", "v5_overlay")
     profile_key = normalize_risk_profile_key(request.args.get("profile", "moderado"))
+    model_version_key = _normalize_model_version_key(request.args.get("model_version"))
 
     # Vista embutida no dashboard Next: sem comparativo extra nem selector de modelo no topo.
     client_embed = _truthy_query_param(request.args.get("client_embed"))
@@ -10117,22 +10166,6 @@ def index():
             )
     else:
         raw_path = theoretical_path if theoretical_path is not None else (base_path / "model_equity_final_20y.csv")
-
-    if client_embed and cap15_only and raw_path.exists() and model_path.exists():
-        try:
-            if raw_path.resolve().samefile(model_path.resolve()):
-                for root in _freeze_search_roots():
-                    ow = root / "freeze" / "DECIDE_MODEL_V5_OVERLAY" / "model_outputs" / "model_equity_final_20y.csv"
-                    if ow.exists():
-                        try:
-                            if ow.resolve().samefile(model_path.resolve()):
-                                continue
-                        except OSError:
-                            pass
-                        raw_path = ow
-                        break
-        except OSError:
-            pass
 
     if run_model_snapshot and isinstance(run_model_snapshot.get("series"), dict):
         raw_series_values = run_model_snapshot["series"].get("equity_raw") or []
@@ -10231,18 +10264,23 @@ def index():
         )()
     model_kpis, model_drawdowns = compute_kpis(model_eq)
     bench_kpis, bench_drawdowns = compute_kpis(bench_eq)
+    preview_summary_kpis = (
+        _read_v7_candidate_summary_kpis(model_version_key)
+        if cap15_only and normalize_risk_profile_key(profile_key) == "moderado"
+        else None
+    )
     if cap15_only and normalize_risk_profile_key(profile_key) == "moderado":
-        official_battery = _read_official_moderado_battery_kpis()
-        if official_battery is not None:
+        source = preview_summary_kpis if preview_summary_kpis is not None else _read_official_moderado_battery_kpis()
+        if source is not None:
             model_kpis = type(
                 "KPIs",
                 (),
                 {
-                    "cagr": float(official_battery["cagr"]),
+                    "cagr": float(source["cagr"]),
                     # Keep moderado KPI card aligned to benchmark risk framing (≈1x vol vs bench).
                     "volatility": float(bench_kpis.volatility),
-                    "sharpe": float(official_battery["sharpe"]),
-                    "max_drawdown": float(official_battery["max_drawdown"]),
+                    "sharpe": float(source["sharpe"]),
+                    "max_drawdown": float(source["max_drawdown"]),
                     "total_return": float(model_kpis.total_return),
                 },
             )()
@@ -10391,6 +10429,25 @@ def index():
                 compare_max100_equity = None
                 compare_max100_drawdowns = None
                 compare_max100_alpha_vals = None
+
+    if (
+        preview_summary_kpis is not None
+        and cap15_only
+        and normalize_risk_profile_key(profile_key) == "moderado"
+    ):
+        compare_cap100_kpis = type(
+            "KPIs",
+            (),
+            {
+                "cagr": float(preview_summary_kpis["cagr"]),
+                "volatility": float(bench_kpis.volatility),
+                "sharpe": float(preview_summary_kpis["sharpe"]),
+                "max_drawdown": float(preview_summary_kpis["max_drawdown"]),
+                "total_return": float(getattr(compare_cap100_kpis, "total_return", model_kpis.total_return)),
+            },
+        )()
+        compare_cap100_is_margin = True
+        show_max100_compare = True
 
     if cap15_only and model_key == "v5_overlay_cap15_max100exp" and not show_max100_compare:
         y_m = yearly_calendar_returns_fraction(model_eq, dates)

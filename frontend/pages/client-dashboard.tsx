@@ -182,7 +182,7 @@ export default function ClientDashboardPage() {
     setKpiViewMode,
     kpiIframeSrc,
     kpiIframeRef,
-  } = useClientKpiEmbed({ profile, loggedIn, iframeRefresh });
+  } = useClientKpiEmbed({ profile, loggedIn, modelVersion, iframeRefresh });
 
   const syncClientSession = useCallback(() => {
     try {

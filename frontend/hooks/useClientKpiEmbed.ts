@@ -24,6 +24,7 @@ function shouldPersistKpiTabToSession(tab: string): boolean {
 export type UseClientKpiEmbedOptions = {
   profile: "conservador" | "moderado" | "dinamico";
   loggedIn: boolean;
+  modelVersion?: "official_v6" | "v7_dynamic_light" | "v7_dynamic_medium";
   /** Bump (ex.: `Date.now()`) para cache-bust do iframe Flask. */
   iframeRefresh: number;
 };
@@ -32,7 +33,12 @@ export type UseClientKpiEmbedOptions = {
  * Estado das tabs do simulador (KPI / gráficos / …), sincronização com `?embed_tab=`,
  * sessionStorage, e mensagens `postMessage` do iframe Flask.
  */
-export function useClientKpiEmbed({ profile, loggedIn, iframeRefresh }: UseClientKpiEmbedOptions) {
+export function useClientKpiEmbed({
+  profile,
+  loggedIn,
+  modelVersion = "official_v6",
+  iframeRefresh,
+}: UseClientKpiEmbedOptions) {
   const router = useRouter();
   /** Por omissão: Gráficos (prova histórica) antes da Simulação — credibilidade primeiro. */
   const [kpiEmbedTab, setKpiEmbedTab] = useState<string>("charts");
@@ -173,10 +179,12 @@ export function useClientKpiEmbed({ profile, loggedIn, iframeRefresh }: UseClien
     }
     /** Força novo URL do iframe após mudanças no Flask (cache agressivo / SW). Ver `KPI_IFRAME_SRC_REV`. */
     const embedRev = `&embed_src_rev=${encodeURIComponent(KPI_IFRAME_SRC_REV)}`;
-    return `${base}/?client_embed=1&profile=${encodeURIComponent(profile)}&embed_tab=${encodeURIComponent(
+    return `${base}/?client_embed=1&profile=${encodeURIComponent(profile)}&model_version=${encodeURIComponent(
+      modelVersion,
+    )}&embed_tab=${encodeURIComponent(
       tab,
     )}&kpi_view=${encodeURIComponent(kpiViewMode)}${embedRev}${t}${hedgeQs}`;
-  }, [profile, iframeRefresh, kpiEmbedTab, kpiViewMode, loggedIn, router.pathname]);
+  }, [profile, modelVersion, iframeRefresh, kpiEmbedTab, kpiViewMode, loggedIn, router.pathname]);
 
   return {
     kpiEmbedTab,
