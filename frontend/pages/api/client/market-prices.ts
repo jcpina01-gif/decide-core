@@ -62,6 +62,7 @@ async function fetchIbkrPrices(tickers: string[]): Promise<PriceResult | null> {
 
 // Some tickers need a YF alias (e.g. BATS is the exchange; BTI is the stock)
 const YF_ALIAS: Record<string, string> = {
+  SQ: "XYZ",       // Block Inc. rebranded ticker from SQ → XYZ
   BATS: "BTI",
   SFTBY: "9984.T",
   MRAAY: "6981.T",

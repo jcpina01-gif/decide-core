@@ -273,6 +273,7 @@ const getCompany=(t:string)=>COMPANY[t.toUpperCase()]??"";
 
 /* ─── Yahoo Finance ticker aliases (some ADRs use different symbols) ──────── */
 const YF_ALIAS:Record<string,string>={
+  SQ:"XYZ",         // Block Inc. rebranded ticker SQ → XYZ
   BATS:"BTI",       // British American Tobacco ADR
   BAYRY:"BAYRY",    // Bayer ADR
   MARUY:"MARUY",    // Marubeni ADR
@@ -1126,7 +1127,7 @@ export default function ClientDashboardPage() {
                               return (
                                 <tr key={r.ticker} className="border-b border-[#111520] hover:bg-white/[0.02]">
                                   <td className="py-2">
-                                    <a href={`https://finance.yahoo.com/quote/${r.ticker}`} target="_blank" rel="noopener noreferrer"
+                                    <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
                                       className="font-bold text-blue-400 hover:text-blue-300 hover:underline">{r.ticker}</a>
                                     {getCompany(r.ticker)&&<span className="ml-1 text-slate-500 font-normal">{getCompany(r.ticker)}</span>}
                                   </td>
@@ -1319,7 +1320,7 @@ export default function ClientDashboardPage() {
                               {isXeon?(
                                 <span className="font-bold text-slate-300">{r.ticker}</span>
                               ):(
-                                <a href={`https://finance.yahoo.com/quote/${r.ticker}`} target="_blank" rel="noopener noreferrer"
+                                <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
                                   className="font-bold text-blue-400 hover:text-blue-300 hover:underline">{r.ticker}</a>
                               )}
                               {getCompany(r.ticker)&&<span className="ml-1.5 text-slate-500 font-normal">{getCompany(r.ticker)}</span>}
@@ -1494,7 +1495,7 @@ export default function ClientDashboardPage() {
                                   {isXeon||isHedge?(
                                     <span className="text-slate-300">{isHedge?"EUR/USD":r.ticker}</span>
                                   ):(
-                                    <a href={`https://finance.yahoo.com/quote/${r.ticker}`} target="_blank" rel="noopener noreferrer"
+                                    <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
                                       className="text-blue-400 hover:text-blue-300 hover:underline">{r.ticker}</a>
                                   )}
                                 </td>
