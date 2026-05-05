@@ -185,6 +185,7 @@ const SECTOR: Record<string, string> = {
   WMT:"Cons. Básico",PG:"Cons. Básico",KO:"Cons. Básico",BATS:"Cons. Básico",
   PEP:"Cons. Básico",COST:"Cons. Básico",MDLZ:"Cons. Básico",
   NEM:"Mat. Básicos",GOLD:"Mat. Básicos",
+  XEON:"Liquidez",
 };
 const getSector = (t: string) => SECTOR[t.toUpperCase()] ?? "Outros";
 
@@ -206,6 +207,7 @@ const COUNTRY:Record<string,string>={
   HON:"EUA",MMM:"EUA",GE:"EUA",LMT:"EUA",RTX:"EUA",UNP:"EUA",
   CSX:"EUA",DE:"EUA",EMR:"EUA",ETN:"EUA",
   NOK:"Finlândia",BATS:"Reino Unido",E:"Itália",BAYRY:"Alemanha",MARUY:"Japão",
+  XEON:"Eurozona",
 };
 const getZone=(t:string)=>COUNTRY[t.toUpperCase()]??"EUA";
 
@@ -231,6 +233,7 @@ const COMPANY:Record<string,string>={
   COST:"Costco",MDLZ:"Mondelez",
   HON:"Honeywell",MMM:"3M",GE:"GE",LMT:"Lockheed Martin",RTX:"RTX",
   UNP:"Union Pacific",CSX:"CSX",DE:"Deere",EMR:"Emerson",ETN:"Eaton",
+  XEON:"MM Euro",
 };
 const getCompany=(t:string)=>COMPANY[t.toUpperCase()]??"";
 
@@ -549,31 +552,36 @@ export default function ClientDashboardPage() {
   const actionCounts=useMemo(()=>{
     const empty:{ticker:string;prev:number;cur:number;delta:number;action:string}[]=[];
     if(!latestMonth||!prevMonth) return {comprar:0,aumentar:0,reduzir:0,vender:0,manter:0,rows:empty,allRows:empty};
-    const N_POS=20; // número máximo de posições do modelo
-    const DMIN=1.0; // variação mínima para Comprar/Reduzir (pp)
+    const N_POS=20;
+    const DMIN=1.0;
+    const ALWAYS_INCLUDE=new Set(["XEON"]);
     const pm=new Map(prevMonth.rows.map(r=>[r.ticker,r.weightPct]));
     const cm=new Map(latestMonth.rows.map(r=>[r.ticker,r.weightPct]));
-    // Top-N tickers por peso máximo entre os dois meses (sem cash/tbill)
     const candidates=[...new Set([...pm.keys(),...cm.keys()])]
-      .filter(t=>t!=="TBILL_PROXY"&&!t.startsWith("CASH")&&!t.startsWith("TBILL"));
+      .filter(t=>!ALWAYS_INCLUDE.has(t)&&t!=="TBILL_PROXY"&&!t.startsWith("CASH")&&!t.startsWith("TBILL"));
     const ranked=candidates
       .map(t=>({t,w:Math.max(pm.get(t)??0,cm.get(t)??0)}))
       .sort((a,b)=>b.w-a.w).slice(0,N_POS).map(x=>x.t);
-    const all=new Set(ranked);
+    const all=[...ranked,...ALWAYS_INCLUDE];
     let c=0,au=0,rd=0,v=0,m=0;
     const rows:{ticker:string;prev:number;cur:number;delta:number;action:string}[]=[];
     all.forEach(t=>{
-      const p=pm.get(t)??0,cur=cm.get(t)??0,delta=cur-p;
+      // XEON fallback: use tbillsTotalPct if not explicitly in rows
+      const p=pm.get(t)??(t==="XEON"?prevMonth.tbillsTotalPct??0:0);
+      const cur=cm.get(t)??(t==="XEON"?latestMonth.tbillsTotalPct??0:0);
+      const delta=cur-p;
       let action="Manter";
       if(p===0&&cur>0){action="Comprar";c++;}
       else if(cur===0&&p>0){action="Vender";v++;}
-      else if(delta>=DMIN){action="Aumentar";au++;}  // posição existente a aumentar
+      else if(delta>=DMIN){action="Aumentar";au++;}
       else if(delta<=-DMIN){action="Reduzir";rd++;}
       else{action="Manter";m++;}
       rows.push({ticker:t,prev:p,cur,delta,action});
     });
     const changedRows=rows.filter(r=>r.action!=="Manter").sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta)).slice(0,8);
-    const allRows=rows.sort((a,b)=>{
+    const allRows=[...rows].sort((a,b)=>{
+      if(a.ticker==="XEON") return 1;
+      if(b.ticker==="XEON") return -1;
       const order={Comprar:0,Aumentar:1,Reduzir:2,Vender:3,Manter:4};
       const oa=(order as any)[a.action]??5, ob=(order as any)[b.action]??5;
       if(oa!==ob) return oa-ob;
@@ -987,19 +995,19 @@ export default function ClientDashboardPage() {
                     <ActionBadge label="VENDER"   count={recoLoading?0:actionCounts.vender}   color="text-red-400"/>
                     <ActionBadge label="MANTER"   count={recoLoading?0:actionCounts.manter}   color="text-slate-300"/>
                   </div>
-                  <div className="ml-auto flex flex-col gap-2 min-w-[200px]">
+                  <div className="ml-auto flex flex-col gap-2 min-w-[220px]">
                     {loggedIn ? (
-                      <button className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors">
-                        ✓ Aprovar recomendações
+                      <button className="relative bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-900/50 ring-1 ring-emerald-500/40 hover:shadow-emerald-800/60 hover:scale-[1.02] active:scale-100">
+                        <CheckCircle2 size={16}/> Aprovar Plano
                       </button>
                     ) : (
                       <button onClick={()=>setShowRegModal(true)}
-                        className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors">
-                        Criar conta para aplicar →
+                        className="relative bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-900/50 ring-1 ring-emerald-500/40 hover:shadow-emerald-800/60 hover:scale-[1.02] active:scale-100">
+                        <CheckCircle2 size={16}/> Aprovar Plano
                       </button>
                     )}
-                    <button className="bg-[#111827] border border-[#252a3a] hover:bg-[#151929] text-slate-300 text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors">
-                      Rever alterações
+                    <button onClick={()=>setActivePage("carteira")} className="bg-[#111827] border border-[#252a3a] hover:bg-[#151929] text-slate-300 text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors">
+                      Ver carteira completa
                     </button>
                   </div>
                 </div>
@@ -1054,12 +1062,17 @@ export default function ClientDashboardPage() {
                       {actionCounts.allRows.map(r=>{
                         const ac=r.action==="Comprar"?"text-emerald-400":r.action==="Aumentar"?"text-cyan-400":r.action==="Vender"?"text-red-400":r.action==="Reduzir"?"text-amber-400":"text-slate-400";
                         const dc=r.delta>0?"text-emerald-400":r.delta<0?"text-red-400":"text-slate-500";
-                        const rowBg=r.action==="Comprar"?"bg-emerald-950/20":r.action==="Aumentar"?"bg-cyan-950/20":r.action==="Vender"?"bg-red-950/20":r.action==="Reduzir"?"bg-amber-950/10":"";
+                        const isXeon=r.ticker==="XEON";
+                        const rowBg=isXeon?"bg-slate-800/30 border-t border-[#1a1f2e]":r.action==="Comprar"?"bg-emerald-950/20":r.action==="Aumentar"?"bg-cyan-950/20":r.action==="Vender"?"bg-red-950/20":r.action==="Reduzir"?"bg-amber-950/10":"";
                         return (
                           <tr key={r.ticker} className={`border-b border-[#111520] hover:bg-white/[0.03] ${rowBg}`}>
                             <td className="py-2">
-                              <a href={`https://finance.yahoo.com/quote/${r.ticker}`} target="_blank" rel="noopener noreferrer"
-                                className="font-bold text-blue-400 hover:text-blue-300 hover:underline">{r.ticker}</a>
+                              {isXeon?(
+                                <span className="font-bold text-slate-300">{r.ticker}</span>
+                              ):(
+                                <a href={`https://finance.yahoo.com/quote/${r.ticker}`} target="_blank" rel="noopener noreferrer"
+                                  className="font-bold text-blue-400 hover:text-blue-300 hover:underline">{r.ticker}</a>
+                              )}
                               {getCompany(r.ticker)&&<span className="ml-1.5 text-slate-500 font-normal">{getCompany(r.ticker)}</span>}
                             </td>
                             <td className="py-2 text-slate-400">{getSector(r.ticker)}</td>
