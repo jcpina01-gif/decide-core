@@ -39,17 +39,20 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
     return {eq:equity.slice(s),bch:bench.slice(s),dts:dates.slice(s)};
   },[equity,bench,dates,prazo]);
 
-  const histYears=React.useMemo(()=>slice.eq.length>1?slice.eq.length/252:prazo,[slice,prazo]);
-  const cagrHist=React.useMemo(()=>slice.eq.length>1?cagrFn(slice.eq[0],slice.eq[slice.eq.length-1],histYears)*100:0,[slice,histYears]);
+  // CAGR usa o prazo seleccionado como denominador (igual ao gráfico de performance)
+  const cagrHist=React.useMemo(()=>
+    slice.eq.length>1?cagrFn(slice.eq[0],slice.eq[slice.eq.length-1],prazo)*100:0
+  ,[slice,prazo]);
 
   const simData=React.useMemo(()=>{
     if(!slice.eq.length||!slice.dts.length) return [];
     const step=Math.max(1,Math.floor(slice.eq.length/300));
-    const base=slice.eq[0];
+    const base=slice.eq[0]||1;
+    const bbase=slice.bch[0]||1; // base separada para benchmark
     return slice.dts.filter((_,i)=>i%step===0).map((d,i)=>({
       date:d.slice(0,4),
       modelo:Math.round((slice.eq[i*step]/base)*capital),
-      bench: Math.round(((slice.bch[i*step]||base))/base*capital),
+      bench: Math.round((slice.bch[i*step]/bbase)*capital),
     }));
   },[slice,capital]);
 
@@ -402,8 +405,8 @@ function RegisterModal({onClose,onSuccess}:{onClose:()=>void;onSuccess:(user:str
 
 /* â”€â”€â”€ small components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function ActionBadge({label,count,color}:{label:string;count:number;color:string}) {
-  const Icon=label==="COMPRAR"?ArrowUpRight:label==="VENDER"?ArrowDownRight:label==="REDUZIR"?ArrowDownRight:Minus;
-  const bar=label==="COMPRAR"?"bg-emerald-500":label==="VENDER"?"bg-red-500":label==="REDUZIR"?"bg-amber-500":"bg-slate-500";
+  const Icon=label==="COMPRAR"||label==="AUMENTAR"?ArrowUpRight:label==="VENDER"||label==="REDUZIR"?ArrowDownRight:Minus;
+  const bar=label==="COMPRAR"?"bg-emerald-500":label==="AUMENTAR"?"bg-cyan-500":label==="VENDER"?"bg-red-500":label==="REDUZIR"?"bg-amber-500":"bg-slate-500";
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-1.5"><span className={`text-3xl font-black ${color}`}>{count}</span><Icon size={20} className={color}/></div>
@@ -486,7 +489,7 @@ export default function ClientDashboardPage() {
   const prevMonth=sortedMonths[sortedMonths.length-2];
 
   const actionCounts=useMemo(()=>{
-    if(!latestMonth||!prevMonth) return {comprar:0,reduzir:0,vender:0,manter:0,rows:[] as {ticker:string;prev:number;cur:number;delta:number;action:string}[]};
+    if(!latestMonth||!prevMonth) return {comprar:0,aumentar:0,reduzir:0,vender:0,manter:0,rows:[] as {ticker:string;prev:number;cur:number;delta:number;action:string}[]};
     const N_POS=20; // número máximo de posições do modelo
     const DMIN=1.0; // variação mínima para Comprar/Reduzir (pp)
     const pm=new Map(prevMonth.rows.map(r=>[r.ticker,r.weightPct]));
@@ -498,19 +501,19 @@ export default function ClientDashboardPage() {
       .map(t=>({t,w:Math.max(pm.get(t)??0,cm.get(t)??0)}))
       .sort((a,b)=>b.w-a.w).slice(0,N_POS).map(x=>x.t);
     const all=new Set(ranked);
-    let c=0,rd=0,v=0,m=0;
+    let c=0,au=0,rd=0,v=0,m=0;
     const rows:{ticker:string;prev:number;cur:number;delta:number;action:string}[]=[];
     all.forEach(t=>{
       const p=pm.get(t)??0,cur=cm.get(t)??0,delta=cur-p;
       let action="Manter";
       if(p===0&&cur>0){action="Comprar";c++;}
       else if(cur===0&&p>0){action="Vender";v++;}
-      else if(delta>=DMIN){action="Comprar";c++;}
+      else if(delta>=DMIN){action="Aumentar";au++;}  // posição existente a aumentar
       else if(delta<=-DMIN){action="Reduzir";rd++;}
       else{action="Manter";m++;}
       rows.push({ticker:t,prev:p,cur,delta,action});
     });
-    return {comprar:c,reduzir:rd,vender:v,manter:m,
+    return {comprar:c,aumentar:au,reduzir:rd,vender:v,manter:m,
       rows:rows.filter(r=>r.action!=="Manter").sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta)).slice(0,8)};
   },[latestMonth,prevMonth]);
 
@@ -544,8 +547,8 @@ export default function ClientDashboardPage() {
 
   const whatChanged=useMemo(()=>{
     if(!actionCounts.rows.length) return [{icon:"📈",title:"Modelo mantém posicionamento",desc:"Sem alterações significativas este mês."}];
-    const bought=actionCounts.rows.filter(r=>r.action==="Comprar").map(r=>r.ticker).slice(0,3);
-    const sold=actionCounts.rows.filter(r=>r.action!=="Comprar").map(r=>r.ticker).slice(0,3);
+    const bought=actionCounts.rows.filter(r=>r.action==="Comprar"||r.action==="Aumentar").map(r=>r.ticker).slice(0,3);
+    const sold=actionCounts.rows.filter(r=>r.action==="Vender"||r.action==="Reduzir").map(r=>r.ticker).slice(0,3);
     const bs=[...new Set(bought.map(getSector))],ss=[...new Set(sold.map(getSector))];
     return [
       bought.length&&{icon:"📈",title:`Aumentámos exposição a ${bs[0]??"ativos"}`,desc:`${bought.join(", ")} com momentum positivo.`},
@@ -619,10 +622,11 @@ export default function ClientDashboardPage() {
                 <SH title="Recomendação deste mês"/>
                 <div className="flex items-start gap-8">
                   <div className="flex gap-8">
-                    <ActionBadge label="COMPRAR" count={recoLoading?0:actionCounts.comprar} color="text-emerald-400"/>
-                    <ActionBadge label="REDUZIR" count={recoLoading?0:actionCounts.reduzir} color="text-amber-400"/>
-                    <ActionBadge label="VENDER"  count={recoLoading?0:actionCounts.vender}  color="text-red-400"/>
-                    <ActionBadge label="MANTER"  count={recoLoading?0:actionCounts.manter}  color="text-slate-300"/>
+                    <ActionBadge label="COMPRAR"  count={recoLoading?0:actionCounts.comprar}  color="text-emerald-400"/>
+                    <ActionBadge label="AUMENTAR" count={recoLoading?0:actionCounts.aumentar} color="text-cyan-400"/>
+                    <ActionBadge label="REDUZIR"  count={recoLoading?0:actionCounts.reduzir}  color="text-amber-400"/>
+                    <ActionBadge label="VENDER"   count={recoLoading?0:actionCounts.vender}   color="text-red-400"/>
+                    <ActionBadge label="MANTER"   count={recoLoading?0:actionCounts.manter}   color="text-slate-300"/>
                   </div>
                   <div className="ml-auto flex flex-col gap-2 min-w-[200px]">
                     {loggedIn ? (
@@ -733,7 +737,7 @@ export default function ClientDashboardPage() {
                       </tr></thead>
                       <tbody>
                         {actionCounts.rows.map(r=>{
-                          const ac=r.action==="Comprar"?"text-emerald-400":r.action==="Vender"?"text-red-400":"text-amber-400";
+                          const ac=r.action==="Comprar"?"text-emerald-400":r.action==="Aumentar"?"text-cyan-400":r.action==="Vender"?"text-red-400":"text-amber-400";
                           const dc=r.delta>0?"text-emerald-400":"text-red-400";
                           return (
                             <tr key={r.ticker} className="border-b border-[#111520] hover:bg-white/[0.02]">
