@@ -6,9 +6,10 @@ import {
   PieChart, Pie, Cell, ReferenceLine,
 } from "recharts";
 import {
-  LayoutDashboard, BookOpen, Briefcase, TrendingUp, ShieldCheck,
-  Clock, Settings, LogOut, ChevronDown, Info, ArrowUpRight,
-  ArrowDownRight, Minus, X, Eye, EyeOff,
+  LayoutDashboard, BookOpen, Briefcase, TrendingUp, TrendingDown,
+  ShieldCheck, Clock, Settings, LogOut, ChevronDown, Info,
+  ArrowUpRight, ArrowDownRight, Minus, X, Eye, EyeOff,
+  Globe, Activity,
 } from "lucide-react";
 import {
   isClientLoggedIn, getCurrentSessionUser,
@@ -546,15 +547,15 @@ export default function ClientDashboardPage() {
   },[latestMonth]);
 
   const whatChanged=useMemo(()=>{
-    if(!actionCounts.rows.length) return [{icon:"📈",title:"Modelo mantém posicionamento",desc:"Sem alterações significativas este mês."}];
+    if(!actionCounts.rows.length) return [{icon:"up",title:"Modelo mantém posicionamento",desc:"Sem alterações significativas este mês."}];
     const bought=actionCounts.rows.filter(r=>r.action==="Comprar"||r.action==="Aumentar").map(r=>r.ticker).slice(0,3);
     const sold=actionCounts.rows.filter(r=>r.action==="Vender"||r.action==="Reduzir").map(r=>r.ticker).slice(0,3);
     const bs=[...new Set(bought.map(getSector))],ss=[...new Set(sold.map(getSector))];
     return [
-      bought.length&&{icon:"📈",title:`Aumentámos exposição a ${bs[0]??"ativos"}`,desc:`${bought.join(", ")} com momentum positivo.`},
-      sold.length&&{icon:"📉",title:`Reduzimos ${ss[0]??"posições"}`,desc:`${sold.join(", ")} com deterioração de tendências.`},
-      {icon:"🌍",title:"Mercado com tendência moderada",desc:"Ambiente favorável a ativos de risco no curto prazo."},
-      {icon:"〰",title:"Volatilidade controlada",desc:`Vol actual ${perfData?.curVol?.toFixed(1)??"—"}% anual — nível Moderado.`},
+      bought.length&&{icon:"up",title:`Aumentámos exposição a ${bs[0]??"ativos"}`,desc:`${bought.join(", ")} com momentum positivo.`},
+      sold.length&&{icon:"down",title:`Reduzimos ${ss[0]??"posições"}`,desc:`${sold.join(", ")} com deterioração de tendências.`},
+      {icon:"globe",title:"Mercado com tendência moderada",desc:"Ambiente favorável a ativos de risco no curto prazo."},
+      {icon:"wave",title:"Volatilidade controlada",desc:`Vol actual ${perfData?.curVol?.toFixed(1)??"—"}% anual — nível Moderado.`},
     ].filter(Boolean).slice(0,4) as {icon:string;title:string;desc:string}[];
   },[actionCounts.rows,perfData]);
 
@@ -659,7 +660,12 @@ export default function ClientDashboardPage() {
                   <div className="space-y-4">
                     {whatChanged.map((b,i)=>(
                       <div key={i} className="flex gap-3">
-                        <div className="text-lg mt-0.5 shrink-0">{b.icon}</div>
+                        <div className="mt-0.5 shrink-0">
+                          {b.icon==="up"&&<TrendingUp size={18} className="text-emerald-400"/>}
+                          {b.icon==="down"&&<TrendingDown size={18} className="text-red-400"/>}
+                          {b.icon==="globe"&&<Globe size={18} className="text-blue-400"/>}
+                          {b.icon==="wave"&&<Activity size={18} className="text-slate-400"/>}
+                        </div>
                         <div><div className="text-slate-200 text-sm font-semibold">{b.title}</div><div className="text-slate-400 text-xs mt-0.5">{b.desc}</div></div>
                       </div>
                     ))}
