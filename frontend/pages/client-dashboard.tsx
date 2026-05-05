@@ -357,8 +357,8 @@ function Sidebar({user,profile,loggedIn,onRegister,activePage,onNavigate}:{
           </>
         ) : (
           <button onClick={onRegister}
-            className="w-full px-3 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-lg transition-colors">
-            Criar conta grátis
+            className="w-full flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-slate-200 text-xs rounded-lg hover:bg-white/5 transition-colors">
+            <LogOut size={14}/>Entrar / Criar conta
           </button>
         )}
       </div>
@@ -663,16 +663,26 @@ export default function ClientDashboardPage() {
   },[latestMonth]);
 
   const whatChanged=useMemo(()=>{
-    if(!actionCounts.rows.length) return [{icon:"up",title:"Modelo mantém posicionamento",desc:"Sem alterações significativas este mês."}];
-    const bought=actionCounts.rows.filter(r=>r.action==="Comprar"||r.action==="Aumentar").map(r=>r.ticker).slice(0,3);
-    const sold=actionCounts.rows.filter(r=>r.action==="Vender"||r.action==="Reduzir").map(r=>r.ticker).slice(0,3);
-    const bs=[...new Set(bought.map(getSector))],ss=[...new Set(sold.map(getSector))];
-    return [
-      bought.length&&{icon:"up",title:`Aumentámos exposição a ${bs[0]??"ativos"}`,desc:`${bought.join(", ")} com momentum positivo.`},
-      sold.length&&{icon:"down",title:`Reduzimos ${ss[0]??"posições"}`,desc:`${sold.join(", ")} com deterioração de tendências.`},
-      {icon:"globe",title:"Mercado com tendência moderada",desc:"Ambiente favorável a ativos de risco no curto prazo."},
+    const changed=actionCounts.rows.filter(r=>r.action!=="Manter"&&r.ticker!=="XEON");
+    if(!changed.length) return [{icon:"up",title:"Modelo mantém posicionamento",desc:"Sem alterações significativas este mês."}];
+    // Group by sector: bought/increased vs sold/reduced
+    const bySector=(tickers:{ticker:string;action:string}[],dir:"up"|"down")=>{
+      const map=new Map<string,string[]>();
+      tickers.forEach(r=>{const s=getSector(r.ticker);if(!map.has(s))map.set(s,[]);map.get(s)!.push(r.ticker);});
+      return [...map.entries()].map(([sector,tks])=>({
+        icon:dir,
+        title:dir==="up"?`Aumentámos exposição a ${sector}`:`Reduzimos ${sector}`,
+        desc:`${tks.join(", ")}.`,
+      }));
+    };
+    const bought=changed.filter(r=>r.action==="Comprar"||r.action==="Aumentar");
+    const sold=changed.filter(r=>r.action==="Vender"||r.action==="Reduzir");
+    const items=[
+      ...bySector(bought,"up"),
+      ...bySector(sold,"down"),
       {icon:"wave",title:"Volatilidade controlada",desc:`Vol actual ${perfData?.curVol?.toFixed(1)??"—"}% anual — nível Moderado.`},
-    ].filter(Boolean).slice(0,4) as {icon:string;title:string;desc:string}[];
+    ];
+    return items.slice(0,4) as {icon:string;title:string;desc:string}[];
   },[actionCounts.rows,perfData]);
 
   const simulatorSrc=useMemo(()=>mounted?buildSimulatorSrc(profile):"",[mounted,profile]);
