@@ -1599,18 +1599,20 @@ export default function ClientDashboardPage() {
                     <ResponsiveContainer width="100%" height={260}>
                       <BarChart data={annualReturns} margin={{top:4,right:8,left:8,bottom:24}} barCategoryGap="20%" barGap={1}>
                         <CartesianGrid vertical={false} stroke="#1a1f2e"/>
-                        <XAxis dataKey="year" tick={{fontSize:9,fill:"#e2e8f0"}} axisLine={false} tickLine={false} angle={-45} textAnchor="end" interval={0} height={40}/>
-                        <YAxis tick={{fontSize:9,fill:"#e2e8f0"}} axisLine={false} tickLine={false} tickFormatter={v=>`${v}%`} width={40}/>
+                        <XAxis dataKey="year" tick={{fontSize:10,fill:"#ffffff",fontWeight:600}} axisLine={false} tickLine={false} angle={-45} textAnchor="end" interval={0} height={40}/>
+                        <YAxis tick={{fontSize:10,fill:"#ffffff",fontWeight:500}} axisLine={false} tickLine={false} tickFormatter={v=>`${v}%`} width={44}/>
                         <Tooltip
-                          formatter={(v:number,name:string)=>[`${v>0?"+":""}${v}%`, name==="modelo"?"Modelo":"Benchmark"]}
-                          contentStyle={{background:"#111827",border:"1px solid #252a3a",borderRadius:8,fontSize:11}}
-                          cursor={{fill:"rgba(255,255,255,0.03)"}}
+                          formatter={(v:number,name:string)=>[`${Number(v)>0?"+":""}${Number(v).toFixed(1)}%`, name]}
+                          labelStyle={{color:"#ffffff",fontWeight:700,marginBottom:4}}
+                          contentStyle={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,fontSize:12,color:"#f1f5f9"}}
+                          itemStyle={{color:"#f1f5f9"}}
+                          cursor={{fill:"rgba(255,255,255,0.04)"}}
                         />
                         <ReferenceLine y={0} stroke="#334155" strokeWidth={1}/>
                         <Bar dataKey="modelo" name="Modelo" radius={[2,2,0,0]} maxBarSize={24}>
                           {annualReturns.map((r,i)=><Cell key={i} fill={r.modelo>=0?"#3b82f6":"#f87171"}/>)}
                         </Bar>
-                        <Bar dataKey="bench" name="Benchmark" fill="#1e293b" radius={[2,2,0,0]} maxBarSize={24}/>
+                        <Bar dataKey="bench" name="MSCI World" fill="#334155" radius={[2,2,0,0]} maxBarSize={24}/>
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
