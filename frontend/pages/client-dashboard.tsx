@@ -726,6 +726,180 @@ function PerfTooltip({active,payload,label}:any) {
 }
 
 /* â”€â”€â”€ main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/* ─── HistoricoPage sub-component ──────────────────────────── */
+type MonthRec={date?:string;rebalance_date?:string;rows:{ticker:string;weightPct?:number}[];tbillsTotalPct?:number};
+function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];dates:string[];equityRaw:number[]}) {
+  const [histTab,setHistTab]=useState<"reco"|"ops"|"carteira">("reco");
+  const [expandedIdx,setExpandedIdx]=useState<number|null>(null);
+  const DMIN=1;
+
+  const histRows=useMemo(()=>[...sortedMonths].reverse().map((m,i)=>{
+    const raw=m.date??m.rebalance_date??"";
+    const label=raw?new Date(raw).toLocaleDateString("pt-PT",{month:"long",year:"numeric"}):raw;
+    const prevM=sortedMonths[sortedMonths.length-1-i-1];
+    const pm=new Map((prevM?.rows??[]).map(r=>[r.ticker,r.weightPct??0]));
+    const cm=new Map(m.rows.map(r=>[r.ticker,r.weightPct??0]));
+    const tickers=[...new Set([...pm.keys(),...cm.keys()])].filter(t=>t!=="TBILL_PROXY"&&!t.startsWith("TBILL")&&!t.startsWith("CASH")&&t!=="XEON");
+    const compras:string[]=[],aumentos:string[]=[],vendas:string[]=[],reducoes:string[]=[],manter:string[]=[];
+    tickers.forEach(t=>{
+      const p=pm.get(t)??0,cu=cm.get(t)??0,d=cu-p;
+      if(p===0&&cu>0) compras.push(t);
+      else if(cu===0&&p>0) vendas.push(t);
+      else if(d>=DMIN) aumentos.push(t);
+      else if(d<=-DMIN) reducoes.push(t);
+      else if(cu>0) manter.push(t);
+    });
+    const rebalDate=raw?new Date(raw):null;
+    const getMiniPts=():Array<{date:string;v:number}>|null=>{
+      if(!rebalDate||!dates.length) return null;
+      const idx=dates.findIndex(d=>new Date(d)>=rebalDate);
+      const start=Math.max(0,idx-63);
+      const end=Math.min(dates.length-1,idx+63);
+      const base=equityRaw[start]??1;
+      const pts:Array<{date:string;v:number}>=[];
+      for(let j=start;j<=end;j+=5){
+        pts.push({date:dates[j]!.slice(0,7),v:+((equityRaw[j]??base)/base*100).toFixed(2)});
+      }
+      return pts;
+    };
+    const isLatest=i===0;
+    const estado=isLatest?"Recente":"Aprovado";
+    const estadoStyle=isLatest?"bg-blue-500/20 text-blue-400":"bg-emerald-500/15 text-emerald-400";
+    const resumo=compras.length
+      ?`Comprar ${compras.slice(0,2).join(", ")}${compras.length>2?` +${compras.length-2}`:""}${vendas.length?` · Vender ${vendas.slice(0,1).join(", ")}${vendas.length>1?` +${vendas.length-1}`:""}`:""}`
+      :aumentos.length
+        ?`Reforçar ${aumentos.slice(0,2).join(", ")}${reducoes.length?` · Reduzir ${reducoes.slice(0,1).join(", ")}`:""}`:
+        "Rebalanceamento sem alterações";
+    return {label,compras,aumentos,vendas,reducoes,manter,getMiniPts,isLatest,estado,estadoStyle,resumo};
+  }),[sortedMonths,dates,equityRaw]);
+
+  return (
+    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+      <div className="flex border-b border-[#1a1f2e]">
+        {([["reco","Recomendações"],["ops","Operações"],["carteira","Histórico de carteira"]] as const).map(([k,l])=>(
+          <button key={k} onClick={()=>setHistTab(k)}
+            className={`px-5 py-3.5 text-xs font-semibold transition-colors ${histTab===k?"text-white border-b-2 border-blue-500 bg-white/[0.02]":"text-slate-500 hover:text-slate-300"}`}>
+            {l}
+          </button>
+        ))}
+      </div>
+      {histTab==="reco"&&(
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
+              <th className="px-5 py-3 font-semibold w-36">Data</th>
+              <th className="px-3 py-3 font-semibold text-center text-emerald-500 w-9" title="Compras">▲</th>
+              <th className="px-3 py-3 font-semibold text-center text-cyan-500 w-9" title="Reforços">↑</th>
+              <th className="px-3 py-3 font-semibold text-center text-red-500 w-9" title="Vendas">▼</th>
+              <th className="px-3 py-3 font-semibold text-center text-amber-500 w-9" title="Reduções">↓</th>
+              <th className="px-3 py-3 font-semibold text-center text-slate-500 w-9" title="Mantidas">≈</th>
+              <th className="px-5 py-3 font-semibold">Resumo</th>
+              <th className="px-5 py-3 font-semibold w-24">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {histRows.map((r,i)=>(
+              <React.Fragment key={i}>
+                <tr className={`border-b border-[#0f1420] cursor-pointer transition-colors select-none ${expandedIdx===i?"bg-white/[0.04]":"hover:bg-white/[0.02]"}`}
+                  onClick={()=>setExpandedIdx(expandedIdx===i?null:i)}>
+                  <td className="px-5 py-3 font-semibold text-slate-200 capitalize">{r.label}</td>
+                  <td className="px-3 py-3 text-center font-bold text-emerald-400">{r.compras.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-3 py-3 text-center font-bold text-cyan-400">{r.aumentos.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-3 py-3 text-center font-bold text-red-400">{r.vendas.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-3 py-3 text-center font-bold text-amber-400">{r.reducoes.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-3 py-3 text-center text-slate-500">{r.manter.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-5 py-3 text-slate-400 max-w-xs truncate">{r.resumo}</td>
+                  <td className="px-5 py-3"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${r.estadoStyle}`}>{r.estado}</span></td>
+                </tr>
+                {expandedIdx===i&&(
+                  <tr className="border-b border-[#0f1420] bg-[#060a12]">
+                    <td colSpan={8} className="px-6 py-5">
+                      <div className="grid grid-cols-2 gap-6">
+                        <div>
+                          <div className="text-[10px] text-slate-500 mb-2 font-semibold uppercase tracking-wide">Evolução ±3 meses</div>
+                          {(()=>{
+                            const pts=r.getMiniPts();
+                            if(!pts||pts.length<2) return <div className="text-slate-600 text-xs italic">Sem dados de gráfico</div>;
+                            return (
+                              <ResponsiveContainer width="100%" height={110}>
+                                <LineChart data={pts} margin={{top:4,right:4,left:-20,bottom:0}}>
+                                  <XAxis dataKey="date" tick={{fontSize:8,fill:"#475569"}} tickLine={false} axisLine={false} interval={Math.floor(pts.length/4)}/>
+                                  <YAxis tick={{fontSize:8,fill:"#475569"}} tickLine={false} axisLine={false} tickFormatter={v=>`${Number(v).toFixed(0)}`} domain={["dataMin-1","dataMax+1"]}/>
+                                  <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3"/>
+                                  <Tooltip formatter={(v:number)=>[`${Number(v).toFixed(1)}`,"Modelo (base 100)"]}
+                                    contentStyle={{background:"#0f172a",border:"1px solid #3b82f6",borderRadius:6,fontSize:10,color:"#e2e8f0"}}
+                                    labelStyle={{color:"#94a3b8"}} itemStyle={{color:"#60a5fa"}}/>
+                                  <Line type="monotone" dataKey="v" stroke="#60a5fa" strokeWidth={1.5} dot={false}/>
+                                </LineChart>
+                              </ResponsiveContainer>
+                            );
+                          })()}
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-[11px] content-start">
+                          {r.compras.length>0&&(
+                            <div>
+                              <div className="text-emerald-400 font-bold mb-1.5">▲ Comprar</div>
+                              {r.compras.map(t=>(
+                                <div key={t} className="py-0.5">
+                                  <span className="font-mono text-slate-200">{t}</span>
+                                  {COMPANY[t.toUpperCase()]&&<span className="ml-1 text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {r.aumentos.length>0&&(
+                            <div>
+                              <div className="text-cyan-400 font-bold mb-1.5">↑ Reforçar</div>
+                              {r.aumentos.map(t=>(
+                                <div key={t} className="py-0.5">
+                                  <span className="font-mono text-slate-200">{t}</span>
+                                  {COMPANY[t.toUpperCase()]&&<span className="ml-1 text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {r.vendas.length>0&&(
+                            <div>
+                              <div className="text-red-400 font-bold mb-1.5">▼ Vender</div>
+                              {r.vendas.map(t=>(
+                                <div key={t} className="py-0.5">
+                                  <span className="font-mono text-slate-200">{t}</span>
+                                  {COMPANY[t.toUpperCase()]&&<span className="ml-1 text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {r.reducoes.length>0&&(
+                            <div>
+                              <div className="text-amber-400 font-bold mb-1.5">↓ Reduzir</div>
+                              {r.reducoes.map(t=>(
+                                <div key={t} className="py-0.5">
+                                  <span className="font-mono text-slate-200">{t}</span>
+                                  {COMPANY[t.toUpperCase()]&&<span className="ml-1 text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {r.compras.length===0&&r.aumentos.length===0&&r.vendas.length===0&&r.reducoes.length===0&&(
+                            <div className="col-span-2 text-slate-600 italic">Sem alterações significativas</div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {histTab==="ops"&&<div className="p-8 text-slate-600 text-sm italic text-center">Operações executadas em corretora — disponível após ligação ao Interactive Brokers.</div>}
+      {histTab==="carteira"&&<div className="p-8 text-slate-600 text-sm italic text-center">Evolução histórica da composição da carteira — em breve.</div>}
+    </div>
+  );
+}
+
 export default function ClientDashboardPage() {
   const router=useRouter();
   const {profile}=useSyncedRiskProfileFromOnboarding();
@@ -1867,49 +2041,7 @@ export default function ClientDashboardPage() {
               })()}
 
               {/* ── HISTÓRICO ── */}
-              {activePage==="historico"&&(
-                <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                  <div className="font-bold text-slate-200 text-sm mb-5">Histórico de recomendações</div>
-                  <table className="w-full text-xs">
-                    <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
-                      <th className="pb-3 font-semibold">Data</th>
-                      <th className="pb-3 font-semibold">Comprar</th>
-                      <th className="pb-3 font-semibold">Vender</th>
-                      <th className="pb-3 font-semibold">Manter</th>
-                      <th className="pb-3 font-semibold">Resumo</th>
-                      <th className="pb-3 font-semibold">Estado</th>
-                    </tr></thead>
-                    <tbody>
-                      {[...sortedMonths].reverse().map((m,i)=>{
-                        const raw=m.date??m.rebalance_date??"";
-                        const label=raw?new Date(raw).toLocaleDateString("pt-PT",{month:"long",year:"numeric"}):raw;
-                        const prev=sortedMonths[sortedMonths.length-1-i-1];
-                        const pm=new Map((prev?.rows??[]).map(r=>[r.ticker,r.weightPct]));
-                        const cm=new Map(m.rows.map(r=>[r.ticker,r.weightPct]));
-                        let c2=0,v2=0,mt=0;
-                        const N2=20,DMIN2=1;
-                        const cands=[...new Set([...pm.keys(),...cm.keys()])].filter(t=>t!=="TBILL_PROXY"&&!t.startsWith("TBILL")).slice(0,N2);
-                        cands.forEach(t=>{const p=pm.get(t)??0,cu=cm.get(t)??0,d=cu-p;if(p===0&&cu>0||d>=DMIN2)c2++;else if(cu===0&&p>0||d<=-DMIN2)v2++;else mt++;});
-                        const isLatest=i===0;
-                        return (
-                          <tr key={i} className="border-b border-[#0f1420] hover:bg-white/2">
-                            <td className="py-3 text-slate-200 font-semibold capitalize">{label}</td>
-                            <td className="py-3 text-emerald-400 font-bold">{c2}</td>
-                            <td className="py-3 text-red-400 font-bold">{v2}</td>
-                            <td className="py-3 text-slate-400">{mt}</td>
-                            <td className="py-3 text-slate-400">Rebalanceamento mensal</td>
-                            <td className="py-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isLatest?"bg-amber-500/20 text-amber-400":"bg-emerald-500/15 text-emerald-400"}`}>
-                                {isLatest?"Pendente":"Aprovado"}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {activePage==="historico"&&<HistoricoPage sortedMonths={sortedMonths} dates={dates} equityRaw={equityRaw}/>}
 
               {/* ── AJUDA ── */}
               {activePage==="ajuda"&&(
