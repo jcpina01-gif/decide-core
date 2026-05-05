@@ -1599,8 +1599,8 @@ export default function ClientDashboardPage() {
                     <ResponsiveContainer width="100%" height={260}>
                       <BarChart data={annualReturns} margin={{top:4,right:8,left:8,bottom:24}} barCategoryGap="20%" barGap={1}>
                         <CartesianGrid vertical={false} stroke="#1a1f2e"/>
-                        <XAxis dataKey="year" tick={{fontSize:9,fill:"#64748b"}} axisLine={false} tickLine={false} angle={-45} textAnchor="end" interval={0} height={40}/>
-                        <YAxis tick={{fontSize:9,fill:"#64748b"}} axisLine={false} tickLine={false} tickFormatter={v=>`${v}%`} width={40}/>
+                        <XAxis dataKey="year" tick={{fontSize:9,fill:"#e2e8f0"}} axisLine={false} tickLine={false} angle={-45} textAnchor="end" interval={0} height={40}/>
+                        <YAxis tick={{fontSize:9,fill:"#e2e8f0"}} axisLine={false} tickLine={false} tickFormatter={v=>`${v}%`} width={40}/>
                         <Tooltip
                           formatter={(v:number,name:string)=>[`${v>0?"+":""}${v}%`, name==="modelo"?"Modelo":"Benchmark"]}
                           contentStyle={{background:"#111827",border:"1px solid #252a3a",borderRadius:8,fontSize:11}}
