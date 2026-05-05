@@ -116,7 +116,7 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
             {l:"Ganho total",v:`${gain>=0?"+":""}${fmt(gain)}`,c:gain>=0?"text-emerald-400":"text-red-400"},
             {l:"Valor final",v:fmt(finalVal),c:"text-white"},
             {l:"CAGR hist\u00f3rico",v:`+${cagrHist.toFixed(1)}%/ano`,c:"text-blue-400"},
-            {l:"vs MSCI World",v:fmt(benchFinal),c:"text-slate-400"},
+            {l:`vs ${BENCH_SHORT}`,v:fmt(benchFinal),c:"text-slate-400"},
           ].map(({l,v,c})=>(
             <div key={l}>
               <div className="text-slate-500 text-[10px] uppercase tracking-wide mb-0.5">{l}</div>
@@ -135,13 +135,13 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
           <Tooltip content={simTooltip}/>
           <ReferenceLine y={capital} stroke="#334155" strokeDasharray="3 3"/>
           <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2.5} dot={false} name="DECIDE"/>
-          <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name="MSCI World" strokeDasharray="4 2"/>
+          <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name={BENCH_SHORT} strokeDasharray="4 2"/>
         </LineChart>
       </ResponsiveContainer>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-5 text-xs text-slate-400">
           <span className="flex items-center gap-1.5"><span className="w-5 h-0.5 bg-blue-400 inline-block rounded"/>DECIDE</span>
-          <span className="flex items-center gap-1.5"><span className="w-5 h-px bg-slate-500 inline-block rounded"/>MSCI World</span>
+          <span className="flex items-center gap-1.5"><span className="w-5 h-px bg-slate-500 inline-block rounded"/>{BENCH_SHORT}</span>
         </div>
         {!loggedIn&&(
           <button onClick={onRegister}
@@ -271,6 +271,10 @@ const COMPANY:Record<string,string>={
   XEON:"MM Euro",
 };
 const getCompany=(t:string)=>COMPANY[t.toUpperCase()]??"";
+
+/* ─── Benchmark label (blended: US 60% / EU+UK 25% / JP 10% / CAN 5%) ────── */
+const BENCH_LABEL="Benchmark (60% EUA / 25% EU · UK / 10% JP / 5% CAN)";
+const BENCH_SHORT="Benchmark";
 
 /* ─── Yahoo Finance ticker aliases (some ADRs use different symbols) ──────── */
 const YF_ALIAS:Record<string,string>={
@@ -1255,9 +1259,10 @@ export default function ClientDashboardPage() {
                         <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name="Benchmark" strokeDasharray="4 2"/>
                       </LineChart>
                     </ResponsiveContainer>
-                    <div className="flex items-center gap-4 mt-3">
+                    <div className="flex items-center gap-4 mt-3 flex-wrap">
                       <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-0.5 bg-blue-400 rounded"/>Modelo</div>
-                      <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-px bg-slate-400 rounded"/>Benchmark</div>
+                      <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-px bg-slate-400 rounded"/>{BENCH_SHORT}</div>
+                      <div className="ml-auto text-[10px] text-slate-600 italic">{BENCH_LABEL}</div>
                     </div>
                   </div>
                   {/* 5. Simulator */}
@@ -1635,9 +1640,10 @@ export default function ClientDashboardPage() {
                         <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name="Benchmark" strokeDasharray="4 2"/>
                       </LineChart>
                     </ResponsiveContainer>
-                    <div className="flex items-center gap-4 mt-3">
+                    <div className="flex items-center gap-4 mt-3 flex-wrap">
                       <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-0.5 bg-blue-400 rounded"/>Modelo</div>
-                      <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-px bg-slate-400 rounded"/>Benchmark</div>
+                      <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-px bg-slate-400 rounded"/>{BENCH_SHORT}</div>
+                      <div className="ml-auto text-[10px] text-slate-600 italic">{BENCH_LABEL}</div>
                     </div>
                   </div>
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
@@ -1658,7 +1664,7 @@ export default function ClientDashboardPage() {
                         <Bar dataKey="modelo" name="Modelo" radius={[2,2,0,0]} maxBarSize={24}>
                           {annualReturns.map((r,i)=><Cell key={i} fill={r.modelo>=0?"#3b82f6":"#f87171"}/>)}
                         </Bar>
-                        <Bar dataKey="bench" name="MSCI World" fill="#334155" radius={[2,2,0,0]} maxBarSize={24}/>
+                        <Bar dataKey="bench" name={BENCH_SHORT} fill="#334155" radius={[2,2,0,0]} maxBarSize={24}/>
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -1741,7 +1747,7 @@ export default function ClientDashboardPage() {
                           <div className="text-2xl font-black text-red-300">{riskMetrics?`${riskMetrics.var95.toFixed(2)}%`:"—"}</div>
                         </div>
                         <div>
-                          <div className="text-slate-400 text-xs mb-1">Beta vs MSCI World</div>
+                          <div className="text-slate-400 text-xs mb-1">Beta vs {BENCH_SHORT}</div>
                           <div className="text-2xl font-black text-slate-200">{riskMetrics?riskMetrics.beta:"—"}</div>
                         </div>
                         <div>
@@ -1769,7 +1775,7 @@ export default function ClientDashboardPage() {
                           <YAxis tick={{fontSize:10,fill:"#e2e8f0"}} tickLine={false} axisLine={false}
                             tickFormatter={v=>`${Number(v).toFixed(0)}%`} domain={["dataMin",0]} width={42}/>
                           <Tooltip
-                            formatter={(v:number,name:string)=>[`${Number(v).toFixed(1)}%`, name==="dd"?"Modelo":"MSCI World"]}
+                            formatter={(v:number,name:string)=>[`${Number(v).toFixed(1)}%`, name==="dd"?"Modelo":BENCH_SHORT]}
                             labelStyle={{color:"#fff",fontWeight:700}}
                             contentStyle={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,fontSize:12,color:"#f1f5f9"}}
                             itemStyle={{color:"#f1f5f9"}}
