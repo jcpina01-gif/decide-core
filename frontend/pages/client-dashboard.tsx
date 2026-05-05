@@ -541,7 +541,8 @@ export default function ClientDashboardPage() {
 
   const perfData=useMemo(()=>{
     if(!dates.length) return null;
-    const s=periodStart(dates,period);
+    // Apply skipWarmup so the start is identical to what NativeSimulator uses
+    const s=skipWarmup(equityRaw,periodStart(dates,period));
     const chart=makeChartData(dates,equityRaw,benchRaw,period);
     const m=periodMetrics(equityRaw.slice(s),benchRaw.slice(s),period);
     const allRets=equityRaw.slice(1).map((v,i)=>v/equityRaw[i]-1);
