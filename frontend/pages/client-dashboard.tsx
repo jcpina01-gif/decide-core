@@ -271,6 +271,22 @@ const COMPANY:Record<string,string>={
 };
 const getCompany=(t:string)=>COMPANY[t.toUpperCase()]??"";
 
+/* ─── Yahoo Finance ticker aliases (some ADRs use different symbols) ──────── */
+const YF_ALIAS:Record<string,string>={
+  BATS:"BTI",       // British American Tobacco ADR
+  BAYRY:"BAYRY",    // Bayer ADR
+  MARUY:"MARUY",    // Marubeni ADR
+  SFTBY:"SFTBY",    // SoftBank ADR
+  MRAAY:"MRAAY",    // Murata ADR
+  IFNNY:"IFNNY",    // Infineon ADR
+  MSBHF:"MSBHF",    // Mitsubishi ADR
+  JXHLY:"JXHLY",    // ENEOS ADR
+  SMFG:"SMFG",      // Sumitomo Mitsui ADR
+  NMR:"NMR",        // Nomura ADR
+  NVO:"NVO",        // Novo Nordisk ADR
+};
+const getYFTicker=(t:string)=>YF_ALIAS[t.toUpperCase()]??t;
+
 type Page="dashboard"|"reco"|"carteira"|"perf"|"risco"|"historico"|"ajuda"|"contactos";
 
 /* â”€â”€â”€ maths â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -761,13 +777,24 @@ export default function ClientDashboardPage() {
 
   useEffect(()=>{
     if(activePage!=="carteira"||!latestMonth) return;
-    const tickers=(latestMonth.rows??[])
+    const origTickers=(latestMonth.rows??[])
       .filter((r:any)=>r.weightPct>=0.5&&r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH")&&!r.ticker.startsWith("TBILL")&&r.ticker!=="XEON")
-      .map((r:any)=>r.ticker).join(",");
-    if(!tickers) return;
+      .map((r:any)=>r.ticker as string);
+    if(!origTickers.length) return;
+    // Map to Yahoo Finance aliases for the API call
+    const yfTickers=origTickers.map(getYFTicker);
+    const uniqueYF=[...new Set(yfTickers)];
     setPricesLoading(true);
-    fetch(`/api/client/market-prices?tickers=${encodeURIComponent(tickers)}`)
-      .then(r=>r.json()).then((d:any)=>setPrices(d)).catch(()=>{})
+    fetch(`/api/client/market-prices?tickers=${encodeURIComponent(uniqueYF.join(","))}`)
+      .then(r=>r.json()).then((d:any)=>{
+        // Re-map results back to original tickers
+        const mapped:Record<string,{price:number;currency:string}|null>={};
+        origTickers.forEach(orig=>{
+          const yf=getYFTicker(orig);
+          mapped[orig]=d[yf]??null;
+        });
+        setPrices(mapped);
+      }).catch(()=>{})
       .finally(()=>setPricesLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[activePage,latestMonth?.date]);
@@ -1412,10 +1439,11 @@ export default function ClientDashboardPage() {
                           const xeonCur=latestMonth?.tbillsTotalPct??0;
                           const xeonPrev=sortedMonths[sortedMonths.length-2]?.tbillsTotalPct??0;
                           const usdExposure=equityRows.filter(r=>getZone(r.ticker)==="EUA").reduce((s,r)=>s+r.cur,0);
-                          // Filter out rows where shares < 1 (when prices are loaded)
+                          // Once prices are loaded: hide rows with no price or shares < 1
                           const equityFiltered=equityRows.filter(r=>{
                             const p=prices[r.ticker];
-                            if(!p||!p.price) return true; // keep if price not yet loaded
+                            if(pricesLoading||Object.keys(prices).length===0) return true; // keep while loading
+                            if(!p||!p.price) return false; // remove if price unavailable
                             const shares=(r.cur/100)*aum/p.price;
                             return shares>=1;
                           });
