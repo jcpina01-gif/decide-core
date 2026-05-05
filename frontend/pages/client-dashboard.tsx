@@ -727,7 +727,238 @@ function PerfTooltip({active,payload,label}:any) {
 
 /* â”€â”€â”€ main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-/* ─── HistoricoPage sub-component ──────────────────────────── */
+/*
+/* ─── AjudaPage sub-component ──────────────────────────────── */
+const FAQ_CATS=[
+  {cat:"Plataforma",faqs:[
+    {q:"O que é o DECIDE?",a:"O DECIDE é uma plataforma portuguesa de gestão de carteira de investimentos. Usa modelos quantitativos de momentum e qualidade para gerar recomendações mensais de compra, venda e reforço de posições em acções globais."},
+    {q:"Como funciona o modelo quantitativo?",a:"O modelo analisa mensalmente um universo de centenas de acções globais usando factores de momentum de preço, qualidade financeira e tendência macro. Os activos são pontuados e os 20 melhores formam a carteira."},
+    {q:"O que é o mecanismo CAP15?",a:"CAP15 é o sistema de controlo de risco que limita a volatilidade da carteira ao nível Moderado (12–20% aa). Quando o mercado está volátil, o modelo reduz a exposição automaticamente, protegendo o capital."},
+    {q:"Quantas posições tem a carteira?",a:"A carteira tem ~20 posições de acções globais, complementadas por XEON (fundo de liquidez em euros) e uma posição de hedge cambial EUR/USD proporcional à exposição em dólares."},
+    {q:"Com que frequência são geradas recomendações?",a:"Mensalmente. No início de cada mês o modelo reavalia todo o universo e gera uma nova lista de recomendações: Comprar, Reforçar, Vender, Reduzir e Manter."},
+    {q:"Como aprovar as recomendações?",a:"Na página Recomendações, revê a lista e clica em 'Aprovar Plano'. O sistema gera as ordens e envia para a tua corretora (Interactive Brokers). Sempre com aprovação prévia do utilizador."},
+  ]},
+  {cat:"Performance e métricas",faqs:[
+    {q:"O que é o CAGR histórico de 25%?",a:"CAGR (Compound Annual Growth Rate) é a taxa de crescimento anual composta ao longo de 20 anos de backtest (desde 2006). Com 25% ao ano, €10.000 iniciais tornam-se em mais de €700.000."},
+    {q:"O que é o Sharpe Ratio?",a:"O Sharpe Ratio mede o retorno ajustado ao risco: retorno em excesso dividido pela volatilidade. Um Sharpe de 1.3 (como o do DECIDE) é considerado muito bom — significa que cada unidade de risco gera 1.3 unidades de retorno."},
+    {q:"O que é o Max Drawdown?",a:"Max Drawdown (MDD) é a maior queda percentual do pico ao vale ao longo do histórico. O DECIDE teve um MDD de aproximadamente -35%, ocorrido durante a crise de 2008."},
+    {q:"Como se calcula o VaR 95%?",a:"Value at Risk a 95% indica a perda máxima esperada num dia normal de mercado com 95% de confiança. Por exemplo, VaR 95% de -1.5% significa que em 95% dos dias a perda diária não deverá exceder 1.5%."},
+    {q:"Qual é o benchmark usado?",a:"O benchmark é uma composição mista: 60% mercado EUA + 25% Europa e UK + 10% Japão + 5% Canadá. Reflecte a exposição geográfica típica da carteira."},
+    {q:"O backtest de 20 anos é fiável?",a:"O backtest usa dados reais de preços e foi construído com cuidado para evitar look-ahead bias. Inclui custos de transação e realismo operacional. Ainda assim, resultados passados não garantem resultados futuros."},
+  ]},
+  {cat:"Risco",faqs:[
+    {q:"Qual é o perfil de risco da carteira?",a:"Moderado. A volatilidade anual é mantida entre 12–20% pelo mecanismo CAP15. É adequado para investidores com horizonte de 5+ anos que toleram flutuações temporárias mas querem protecção em crises."},
+    {q:"O que acontece em crises de mercado?",a:"O modelo CAP15 reduz a exposição automaticamente quando a volatilidade sobe. Em 2008 e 2020 a carteira sofreu quedas, mas o mecanismo limitou o impacto. O modelo não é market-neutral mas é adaptativo."},
+    {q:"O que é o Beta?",a:"Beta mede a sensibilidade da carteira ao mercado. Beta = 1.0 significa que a carteira move igual ao benchmark. Beta < 1.0 indica menor sensibilidade. O DECIDE tem Beta tendencialmente abaixo de 1.0 em períodos voláteis."},
+    {q:"Como interpretar a contribuição para o risco por sector?",a:"Na página Risco, o gráfico de contribuição mostra quais sectores contribuem mais para o risco total da carteira (ajustado pelo beta estimado). Sectores em vermelho sobreponderam o risco vs. o seu peso em carteira."},
+    {q:"Posso perder todo o capital?",a:"Não existe produto de investimento que elimine totalmente o risco de perda. O DECIDE reduz o risco através de diversificação e gestão dinâmica, mas perdas significativas são possíveis em cenários extremos."},
+  ]},
+  {cat:"Carteira e ordens",faqs:[
+    {q:"O que é o XEON?",a:"XEON é o Xtrackers EUR Overnight Rate Swap UCITS ETF — um ETF de liquidez que rende a taxa de juro de curto prazo em euros (€STR). É usado como 'estacionamento' de capital quando o modelo reduz a exposição a acções."},
+    {q:"O que é o hedge cambial?",a:"Parte da carteira está em activos denominados em USD. Para reduzir o risco cambial EUR/USD, é mantida uma posição de cobertura proporcional à exposição em dólares. Isso protege contra valorizações do euro face ao dólar."},
+    {q:"O que é 'Aumentar' vs 'Comprar'?",a:"'Comprar' significa iniciar uma nova posição (o activo não estava em carteira). 'Reforçar' significa adicionar capital a uma posição já existente, aumentando o seu peso na carteira."},
+    {q:"Como se calcula o número de acções a comprar?",a:"Na página Carteira, introduz o teu AUM (capital total). O sistema calcula o número de acções para cada posição com base no peso da carteira dividido pelo preço actual de mercado."},
+    {q:"A corretora Interactive Brokers é obrigatória?",a:"Não é obrigatória para ver as recomendações, mas é necessária para execução automática de ordens. Podes também seguir as recomendações manualmente em qualquer corretora."},
+    {q:"Com que frequência actualizam os preços?",a:"Os preços são obtidos em tempo real através do Interactive Brokers (quando ligado) ou do Yahoo Finance como fallback. A actualização ocorre quando abres a página Carteira."},
+  ]},
+  {cat:"Conta e segurança",faqs:[
+    {q:"Como é feita a verificação de identidade?",a:"No registo, o teu email é verificado via link de confirmação e o telemóvel via código SMS (Twilio). Isso garante que a conta é associada a um utilizador real e previne fraude."},
+    {q:"Os meus dados financeiros estão seguros?",a:"O DECIDE não armazena dados bancários nem credenciais de corretora. A ligação ao Interactive Brokers usa tokens API que podes revogar a qualquer momento. Os dados de carteira são armazenados de forma encriptada."},
+    {q:"Posso cancelar a conta?",a:"Sim, podes cancelar a qualquer momento. Contacta a equipa através da página Contactos ou envia email para geral@decide.pt. Todos os teus dados serão apagados dentro de 30 dias."},
+    {q:"Há um período de teste gratuito?",a:"A plataforma tem uma camada gratuita que permite ver as recomendações sem execução automática. Para integração com corretora e funcionalidades avançadas, existe uma subscrição mensal."},
+  ]},
+];
+
+type ChatMsg={role:"user"|"assistant";content:string};
+function AjudaPage() {
+  const [openFaq,setOpenFaq]=useState<string|null>(null);
+  const [openCat,setOpenCat]=useState<string>("Plataforma");
+  const [chatMsgs,setChatMsgs]=useState<ChatMsg[]>([]);
+  const [chatInput,setChatInput]=useState("");
+  const [chatLoading,setChatLoading]=useState(false);
+  const chatEndRef=useRef<HTMLDivElement>(null);
+
+  useEffect(()=>{
+    chatEndRef.current?.scrollIntoView({behavior:"smooth"});
+  },[chatMsgs]);
+
+  const sendChat=async()=>{
+    const q=chatInput.trim();
+    if(!q||chatLoading) return;
+    const newMsgs:ChatMsg[]=[...chatMsgs,{role:"user",content:q}];
+    setChatMsgs(newMsgs);
+    setChatInput("");
+    setChatLoading(true);
+    try{
+      const r=await fetch("/api/client/ai-chat",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({messages:newMsgs}),
+      });
+      const d=await r.json();
+      setChatMsgs(m=>[...m,{role:"assistant",content:d.content??"Sem resposta."}]);
+    }catch{
+      setChatMsgs(m=>[...m,{role:"assistant",content:"Erro de ligação. Tenta novamente."}]);
+    }finally{
+      setChatLoading(false);
+    }
+  };
+
+  const SUGGESTIONS=["Como funciona o modelo DECIDE?","O que é o CAP15?","Qual o risco desta carteira?","Como aprovar as recomendações?","O que é o Sharpe Ratio?","Qual a diferença entre Comprar e Reforçar?"];
+
+  return (
+    <div className="space-y-5">
+
+      {/* ── AI Assistant ── */}
+      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-[#1a1f2e] bg-gradient-to-r from-blue-600/10 to-transparent">
+          <div className="w-8 h-8 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center shrink-0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 16v-4M12 8h.01"/></svg>
+          </div>
+          <div>
+            <div className="text-slate-200 font-bold text-sm">Assistente DECIDE</div>
+            <div className="text-slate-500 text-[10px]">Alimentado por IA · Responde sobre finanças e a plataforma</div>
+          </div>
+          <div className="ml-auto flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"/>
+            <span className="text-emerald-400 text-[10px] font-semibold">Online</span>
+          </div>
+        </div>
+
+        {/* Suggestions — only when no messages */}
+        {chatMsgs.length===0&&(
+          <div className="px-5 py-4 border-b border-[#0f1420]">
+            <div className="text-[10px] text-slate-500 mb-2.5 font-semibold uppercase tracking-wide">Sugestões</div>
+            <div className="flex flex-wrap gap-2">
+              {SUGGESTIONS.map(s=>(
+                <button key={s} onClick={()=>{setChatInput(s);}}
+                  className="text-[11px] text-blue-400 border border-blue-500/25 bg-blue-500/5 rounded-full px-3 py-1 hover:bg-blue-500/15 hover:border-blue-400/50 transition-colors">
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Messages */}
+        {chatMsgs.length>0&&(
+          <div className="px-5 py-4 space-y-4 max-h-72 overflow-y-auto">
+            {chatMsgs.map((m,i)=>(
+              <div key={i} className={`flex gap-3 ${m.role==="user"?"justify-end":""}`}>
+                {m.role==="assistant"&&(
+                  <div className="w-6 h-6 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 16v-4M12 8h.01"/></svg>
+                  </div>
+                )}
+                <div className={`max-w-[80%] rounded-xl px-4 py-2.5 text-xs leading-relaxed ${m.role==="user"?"bg-blue-600 text-white":"bg-[#0f1420] border border-[#1a1f2e] text-slate-300"}`}>
+                  {m.content}
+                </div>
+              </div>
+            ))}
+            {chatLoading&&(
+              <div className="flex gap-3">
+                <div className="w-6 h-6 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 16v-4M12 8h.01"/></svg>
+                </div>
+                <div className="bg-[#0f1420] border border-[#1a1f2e] rounded-xl px-4 py-2.5">
+                  <div className="flex gap-1 items-center h-4">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce" style={{animationDelay:"0ms"}}/>
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce" style={{animationDelay:"150ms"}}/>
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce" style={{animationDelay:"300ms"}}/>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef}/>
+          </div>
+        )}
+
+        {/* Input */}
+        <div className="px-4 py-3 border-t border-[#0f1420] flex gap-2 items-end">
+          <textarea
+            value={chatInput}
+            onChange={e=>setChatInput(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat();}}}
+            placeholder="Coloca aqui a tua questão sobre finanças ou a plataforma…"
+            rows={1}
+            className="flex-1 bg-[#080c14] border border-[#252a3a] text-slate-200 text-xs rounded-lg px-3 py-2.5 outline-none focus:border-blue-500 transition-colors resize-none"
+          />
+          <button onClick={sendChat} disabled={!chatInput.trim()||chatLoading}
+            className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg px-4 py-2.5 text-xs font-bold transition-colors shrink-0 flex items-center gap-1.5">
+            <Send size={12}/>Enviar
+          </button>
+          {chatMsgs.length>0&&(
+            <button onClick={()=>setChatMsgs([])} className="text-slate-600 hover:text-slate-400 text-[10px] transition-colors shrink-0 py-2.5">
+              Limpar
+            </button>
+          )}
+        </div>
+        <div className="px-5 pb-3 text-[9px] text-slate-600">O assistente pode cometer erros. Não constitui conselho de investimento personalizado.</div>
+      </div>
+
+      {/* ── FAQs ── */}
+      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-[#1a1f2e]">
+          <div className="font-bold text-slate-200 text-sm">Perguntas frequentes</div>
+        </div>
+        {/* Category tabs */}
+        <div className="flex border-b border-[#1a1f2e] overflow-x-auto">
+          {FAQ_CATS.map(({cat})=>(
+            <button key={cat} onClick={()=>{setOpenCat(cat);setOpenFaq(null);}}
+              className={`px-4 py-3 text-[11px] font-semibold whitespace-nowrap transition-colors shrink-0 ${openCat===cat?"text-white border-b-2 border-blue-500 bg-white/[0.02]":"text-slate-500 hover:text-slate-300"}`}>
+              {cat}
+            </button>
+          ))}
+        </div>
+        {/* Accordion */}
+        <div className="divide-y divide-[#0f1420]">
+          {FAQ_CATS.find(c=>c.cat===openCat)?.faqs.map(({q,a})=>(
+            <div key={q}>
+              <button onClick={()=>setOpenFaq(openFaq===q?null:q)}
+                className="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-white/[0.02] transition-colors">
+                <span className={`text-xs font-semibold ${openFaq===q?"text-blue-400":"text-slate-200"}`}>{q}</span>
+                <span className={`text-slate-500 ml-3 shrink-0 transition-transform ${openFaq===q?"rotate-180":""}`}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="m6 9 6 6 6-6"/></svg>
+                </span>
+              </button>
+              {openFaq===q&&(
+                <div className="px-5 pb-4 text-xs text-slate-400 leading-relaxed bg-[#080c14] border-t border-[#0f1420]">
+                  {a}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Resources ── */}
+      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+        <div className="font-bold text-slate-200 text-sm mb-4">Guias e recursos</div>
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            {Icon:Activity,label:"Vídeos tutoriais",desc:"Tutoriais em vídeo passo a passo",href:"https://www.youtube.com/@decide",color:"text-red-400"},
+            {Icon:BookOpen,label:"Guia rápido",desc:"Passos essenciais para começar",href:null,color:"text-blue-400"},
+            {Icon:Globe,label:"Glossário de termos",desc:"Definição dos principais termos financeiros",href:null,color:"text-emerald-400"},
+            {Icon:ShieldCheck,label:"Política de risco",desc:"Como o modelo CAP15 gere o risco",href:null,color:"text-amber-400"},
+            {Icon:TrendingUp,label:"Metodologia do modelo",desc:"Documentação técnica do algoritmo",href:null,color:"text-cyan-400"},
+            {Icon:Mail,label:"Contactar suporte",desc:"Fala directamente com a equipa",href:"contactos",color:"text-purple-400"},
+          ].map(({Icon,label,desc,href,color},idx)=>(
+            <button key={idx}
+              onClick={()=>href==="contactos"?undefined:href?window.open(href,"_blank"):undefined}
+              className="bg-[#080c14] border border-[#1a1f2e] rounded-lg p-4 text-left hover:border-blue-500/40 transition-colors group">
+              <Icon size={16} className={`${color} mb-2 transition-transform group-hover:scale-110`}/>
+              <div className="text-slate-200 text-xs font-semibold">{label}</div>
+              <div className="text-slate-500 text-[10px] mt-0.5">{desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+ ─── HistoricoPage sub-component ──────────────────────────── */
 type MonthRec={date?:string;rebalance_date?:string;rows:{ticker:string;weightPct?:number}[];tbillsTotalPct?:number};
 function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];dates:string[];equityRaw:number[]}) {
   const [histTab,setHistTab]=useState<"reco"|"ops"|"carteira">("reco");
@@ -2047,49 +2278,8 @@ export default function ClientDashboardPage() {
               {/* ── HISTÓRICO ── */}
               {activePage==="historico"&&<HistoricoPage sortedMonths={sortedMonths} dates={dates} equityRaw={equityRaw}/>}
 
-              {/* ── AJUDA ── */}
-              {activePage==="ajuda"&&(
-                <div className="space-y-5">
-                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                    <div className="font-bold text-slate-200 text-sm mb-4">Tópicos frequentes</div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        {q:"Como funcionam as recomendações?",a:"O DECIDE analisa mensalmente o universo de activos com modelos quantitativos de momentum e qualidade. O resultado é uma lista de comprar, vender e manter para rebalancear a carteira."},
-                        {q:"Como aprovar as recomendações?",a:"Na página Recomendações, clica em 'Aprovar recomendações'. O sistema gera as ordens e envia para a tua corretora (Interactive Brokers). Precisas de conta na corretora ligada."},
-                        {q:"Como é calculado o risco?",a:"O risco é medido pela volatilidade anualizada da carteira e pelo VaR 95% diário. O modelo usa o mecanismo CAP15 para limitar a volatilidade ao nível Moderado (12-20% aa)."},
-                        {q:"O que é o CAGR histórico?",a:"Compound Annual Growth Rate — taxa de crescimento anual composta ao longo do período histórico. Com 25.04% ao ano durante 20 anos, €10.000 tornam-se em mais de €700.000."},
-                        {q:"Com que frequência rebalancear?",a:"O modelo gera recomendações mensalmente. Rebalanceamentos muito frequentes aumentam custos. Podes aprovar mensalmente ou seguir sinais fortes (Comprar/Vender) apenas."},
-                        {q:"Como ligar a corretora?",a:"No onboarding, seleccionas Interactive Brokers como corretora. Precisas de API Key e Account ID. O DECIDE envia ordens via IBKR API com aprovação prévia do utilizador."},
-                      ].map(({q,a},i)=>(
-                        <div key={i} className="bg-[#080c14] border border-[#1a1f2e] rounded-lg p-4">
-                          <div className="text-slate-200 font-semibold text-xs mb-2">{q}</div>
-                          <div className="text-slate-400 text-xs leading-relaxed">{a}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                    <div className="font-bold text-slate-200 text-sm mb-4">Guias e recursos</div>
-                    <div className="grid grid-cols-3 gap-3">
-                      {[
-                        {label:"Guia rápido da plataforma",desc:"Passos essenciais para começar"},
-                        {label:"Glossário de termos",desc:"Definição dos principais termos"},
-                        {label:"Vídeos tutoriais",desc:"Tutoriais em vídeo passo a passo"},
-                        {label:"Política de risco",desc:"Como o modelo gere o risco"},
-                        {label:"FAQ completo",desc:"Todas as perguntas e respostas"},
-                        {label:"Contactar suporte",desc:"Fala directamente com a equipa"},
-                      ].map(({label,desc})=>(
-                        <button key={label} onClick={()=>label==="Contactar suporte"&&setActivePage("contactos")}
-                          className="bg-[#080c14] border border-[#1a1f2e] rounded-lg p-4 text-left hover:border-blue-500/40 transition-colors">
-                          <HelpCircle size={16} className="text-blue-400 mb-2"/>
-                          <div className="text-slate-200 text-xs font-semibold">{label}</div>
-                          <div className="text-slate-500 text-[10px] mt-0.5">{desc}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* `u{2500}`u{2500} AJUDA `u{2500}`u{2500} */}
+              {activePage==="ajuda"&&<AjudaPage/>}
 
               {/* ── CONTACTOS ── */}
               {activePage==="contactos"&&(
