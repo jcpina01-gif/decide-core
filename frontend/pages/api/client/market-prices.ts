@@ -126,21 +126,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   const tickers = raw.split(",").map(t => t.trim().toUpperCase()).filter(Boolean).slice(0, 40);
 
-  // 1. Try IB
+  // 1. Try IB snapshot (only covers tickers held in IB portfolio)
   const ibkr = await fetchIbkrPrices(tickers);
-  if (ibkr) {
-    // Check if IB actually returned any prices (not all null)
-    const hasAnyPrice = Object.values(ibkr).some(p => p !== null);
-    if (hasAnyPrice) {
-      res.setHeader("Cache-Control", "no-store");
-      res.setHeader("X-Price-Source", "ibkr");
-      return res.status(200).json(ibkr);
-    }
+
+  // Tickers that IB did NOT price → fetch from Yahoo Finance
+  const missingFromIb = tickers.filter(t => !ibkr || ibkr[t] === null);
+
+  if (missingFromIb.length === 0 && ibkr) {
+    // All covered by IB
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Price-Source", "ibkr");
+    return res.status(200).json(ibkr);
   }
 
-  // 2. Fallback: Yahoo Finance
-  const yf = await fetchYahooPrices(tickers);
-  res.setHeader("Cache-Control", "public, max-age=300, s-maxage=300");
-  res.setHeader("X-Price-Source", "yahoo");
-  return res.status(200).json(yf);
+  // 2. Yahoo Finance for any missing tickers
+  const yf = await fetchYahooPrices(missingFromIb);
+
+  const merged: PriceResult = {};
+  tickers.forEach(t => {
+    merged[t] = (ibkr && ibkr[t] !== null ? ibkr[t] : yf[t]) ?? null;
+  });
+
+  const hasIbkr = ibkr && Object.values(ibkr).some(p => p !== null);
+  res.setHeader("Cache-Control", hasIbkr ? "no-store" : "public, max-age=300, s-maxage=300");
+  res.setHeader("X-Price-Source", hasIbkr ? "ibkr+yahoo" : "yahoo");
+  return res.status(200).json(merged);
 }
