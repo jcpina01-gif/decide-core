@@ -18,24 +18,40 @@ import { useSyncedRiskProfileFromOnboarding } from "../hooks/useSyncedRiskProfil
 import { KPI_IFRAME_SRC_REV } from "../lib/kpiFlaskBuildGate";
 
 /* ─── native simulator ──────────────────────────────────────── */
+const PRAZO_OPTS=[1,3,5,10,15,20] as const;
 function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
   dates:string[];equity:number[];bench:number[];onRegister:()=>void;loggedIn:boolean;
 }) {
   const [capital,setCapital]=React.useState(10000);
   const [capInput,setCapInput]=React.useState("10000");
-  const histYears=React.useMemo(()=>equity.length>1?equity.length/252:20,[equity]);
-  const cagrHist=React.useMemo(()=>equity.length>1?cagrFn(equity[0],equity[equity.length-1],histYears)*100:0,[equity,histYears]);
+  const [prazo,setPrazo]=React.useState(20); // anos de horizonte
+
+  // Slice de dados para o prazo seleccionado (com skipWarmup)
+  const slice=React.useMemo(()=>{
+    if(!equity.length||!dates.length) return {eq:equity,bch:bench,dts:dates};
+    const last=new Date(dates[dates.length-1]);
+    const cut=new Date(last.getFullYear()-prazo,last.getMonth(),last.getDate());
+    let s=dates.findIndex(d=>new Date(d)>=cut);
+    if(s<0) s=0;
+    // skip warmup flat period
+    const v0=equity[s];
+    while(s<equity.length-1&&equity[s]===v0) s++;
+    return {eq:equity.slice(s),bch:bench.slice(s),dts:dates.slice(s)};
+  },[equity,bench,dates,prazo]);
+
+  const histYears=React.useMemo(()=>slice.eq.length>1?slice.eq.length/252:prazo,[slice,prazo]);
+  const cagrHist=React.useMemo(()=>slice.eq.length>1?cagrFn(slice.eq[0],slice.eq[slice.eq.length-1],histYears)*100:0,[slice,histYears]);
 
   const simData=React.useMemo(()=>{
-    if(!equity.length||!dates.length) return [];
-    const step=Math.max(1,Math.floor(equity.length/300));
-    const base=equity[0];
-    return dates.filter((_,i)=>i%step===0).map((d,i)=>({
+    if(!slice.eq.length||!slice.dts.length) return [];
+    const step=Math.max(1,Math.floor(slice.eq.length/300));
+    const base=slice.eq[0];
+    return slice.dts.filter((_,i)=>i%step===0).map((d,i)=>({
       date:d.slice(0,4),
-      modelo:Math.round((equity[i*step]/base)*capital),
-      bench: Math.round(((bench[i*step]||base))/base*capital),
+      modelo:Math.round((slice.eq[i*step]/base)*capital),
+      bench: Math.round(((slice.bch[i*step]||base))/base*capital),
     }));
-  },[equity,bench,dates,capital]);
+  },[slice,capital]);
 
   const finalVal=simData[simData.length-1]?.modelo??capital;
   const benchFinal=simData[simData.length-1]?.bench??capital;
@@ -68,6 +84,17 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
               className="bg-[#0d1118] border border-[#252a3a] text-slate-200 text-sm rounded-lg px-3 py-2.5 w-36 outline-none focus:border-blue-500 transition-colors"
             />
             <span className="text-slate-500 text-sm">&euro;</span>
+          </div>
+        </label>
+        <label className="flex flex-col gap-1.5 text-xs text-slate-400 font-semibold">
+          Prazo
+          <div className="flex gap-1">
+            {PRAZO_OPTS.map(y=>(
+              <button key={y} onClick={()=>setPrazo(y)}
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-colors border ${prazo===y?"bg-blue-600 border-blue-500 text-white":"bg-[#0d1118] border-[#252a3a] text-slate-400 hover:border-blue-700 hover:text-slate-200"}`}>
+                {y}a
+              </button>
+            ))}
           </div>
         </label>
         <div className="flex gap-6 pb-1 flex-wrap">
@@ -109,7 +136,7 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
           </button>
         )}
       </div>
-      <p className="text-slate-600 text-[10px]">Simula\u00e7\u00e3o baseada em dados hist\u00f3ricos reais (2006&ndash;hoje). Rendimentos passados n\u00e3o garantem resultados futuros.</p>
+      <p className="text-slate-600 text-[10px]">Simulação baseada em dados históricos reais (últimos {prazo} anos). Rendimentos passados não garantem resultados futuros.</p>
     </div>
   );
 }
@@ -460,22 +487,24 @@ export default function ClientDashboardPage() {
 
   const actionCounts=useMemo(()=>{
     if(!latestMonth||!prevMonth) return {comprar:0,reduzir:0,vender:0,manter:0,rows:[] as {ticker:string;prev:number;cur:number;delta:number;action:string}[]};
-    const WMIN=2.0; // peso mínimo para considerar posição real (%)
+    const N_POS=20; // número máximo de posições do modelo
     const DMIN=1.0; // variação mínima para Comprar/Reduzir (pp)
     const pm=new Map(prevMonth.rows.map(r=>[r.ticker,r.weightPct]));
     const cm=new Map(latestMonth.rows.map(r=>[r.ticker,r.weightPct]));
-    // Apenas tickers com presença significativa em algum dos meses
-    const all=new Set([
-      ...[...pm.entries()].filter(([,v])=>v>=WMIN).map(([k])=>k),
-      ...[...cm.entries()].filter(([,v])=>v>=WMIN).map(([k])=>k),
-    ].filter(t=>t!=="TBILL_PROXY"&&!t.startsWith("CASH")));
+    // Top-N tickers por peso máximo entre os dois meses (sem cash/tbill)
+    const candidates=[...new Set([...pm.keys(),...cm.keys()])]
+      .filter(t=>t!=="TBILL_PROXY"&&!t.startsWith("CASH")&&!t.startsWith("TBILL"));
+    const ranked=candidates
+      .map(t=>({t,w:Math.max(pm.get(t)??0,cm.get(t)??0)}))
+      .sort((a,b)=>b.w-a.w).slice(0,N_POS).map(x=>x.t);
+    const all=new Set(ranked);
     let c=0,rd=0,v=0,m=0;
     const rows:{ticker:string;prev:number;cur:number;delta:number;action:string}[]=[];
     all.forEach(t=>{
       const p=pm.get(t)??0,cur=cm.get(t)??0,delta=cur-p;
       let action="Manter";
-      if(p<WMIN&&cur>=WMIN){action="Comprar";c++;}
-      else if(cur<WMIN&&p>=WMIN){action="Vender";v++;}
+      if(p===0&&cur>0){action="Comprar";c++;}
+      else if(cur===0&&p>0){action="Vender";v++;}
       else if(delta>=DMIN){action="Comprar";c++;}
       else if(delta<=-DMIN){action="Reduzir";rd++;}
       else{action="Manter";m++;}
