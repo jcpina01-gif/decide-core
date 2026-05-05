@@ -175,7 +175,7 @@ const SECTOR: Record<string, string> = {
   ORCL:"Tecnologia",QCOM:"Tecnologia",TXN:"Tecnologia",AMAT:"Tecnologia",
   KLAC:"Tecnologia",LRCX:"Tecnologia",SNPS:"Tecnologia",CDNS:"Tecnologia",
   CTSH:"Tecnologia",NOW:"Tecnologia",ADBE:"Tecnologia",INTU:"Tecnologia",
-  INTC:"Tecnologia",MU:"Tecnologia",MRVL:"Tecnologia",ON:"Tecnologia",NOK:"Tecnologia",SQ:"Tecnologia",
+  INTC:"Tecnologia",MU:"Tecnologia",MRVL:"Tecnologia",ON:"Tecnologia",NOK:"Tecnologia",XYZ:"Tecnologia",
   ADI:"Tecnologia",MSI:"Tecnologia",PANW:"Tecnologia",DDOG:"Tecnologia",ASML:"Tecnologia",
   SFTBY:"Tecnologia",MRAAY:"Tecnologia",IFNNY:"Tecnologia",APH:"Tecnologia",PLTR:"Tecnologia",
   JPM:"Financeiro",GS:"Financeiro",MS:"Financeiro",BAC:"Financeiro",
@@ -207,7 +207,7 @@ const COUNTRY:Record<string,string>={
   AAPL:"EUA",NVDA:"EUA",MSFT:"EUA",GOOGL:"EUA",GOOG:"EUA",META:"EUA",
   AVGO:"EUA",AMD:"EUA",CRM:"EUA",ORCL:"EUA",QCOM:"EUA",TXN:"EUA",
   AMAT:"EUA",MRVL:"EUA",KLAC:"EUA",ON:"EUA",MU:"EUA",INTC:"EUA",
-  LRCX:"EUA",SQ:"EUA",CAT:"EUA",NEM:"EUA",GOLD:"Canadá",WBD:"EUA",
+  LRCX:"EUA",XYZ:"EUA",CAT:"EUA",NEM:"EUA",GOLD:"Canadá",WBD:"EUA",
   ADI:"EUA",MSI:"EUA",PANW:"EUA",DDOG:"EUA",PLTR:"EUA",APH:"EUA",
   DHI:"EUA",UBER:"EUA",CMG:"EUA",CTAS:"EUA",PH:"EUA",PCAR:"EUA",
   ALL:"EUA",FANG:"EUA",
@@ -240,7 +240,7 @@ const COMPANY:Record<string,string>={
   META:"Meta",AVGO:"Broadcom",AMD:"AMD",CRM:"Salesforce",ORCL:"Oracle",
   QCOM:"Qualcomm",TXN:"Texas Instruments",AMAT:"Applied Materials",
   MRVL:"Marvell",KLAC:"KLA Corp",ON:"ON Semi",MU:"Micron",INTC:"Intel",
-  LRCX:"Lam Research",SQ:"Block",NOK:"Nokia",
+  LRCX:"Lam Research",XYZ:"Block",NOK:"Nokia",
   ADI:"Analog Devices",MSI:"Motorola Solutions",PANW:"Palo Alto Networks",
   DDOG:"Datadog",ASML:"ASML",PLTR:"Palantir",APH:"Amphenol",
   SFTBY:"SoftBank",MRAAY:"Murata Mfg",IFNNY:"Infineon",
@@ -273,7 +273,6 @@ const getCompany=(t:string)=>COMPANY[t.toUpperCase()]??"";
 
 /* ─── Yahoo Finance ticker aliases (some ADRs use different symbols) ──────── */
 const YF_ALIAS:Record<string,string>={
-  SQ:"XYZ",         // Block Inc. rebranded ticker SQ → XYZ
   BATS:"BTI",       // British American Tobacco ADR
   BAYRY:"BAYRY",    // Bayer ADR
   MARUY:"MARUY",    // Marubeni ADR

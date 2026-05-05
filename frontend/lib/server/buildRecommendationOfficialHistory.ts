@@ -26,6 +26,17 @@ import path from "path";
 
 import { isDecideCashSleeveBrokerSymbol } from "../decideCashSleeveDisplay";
 import { lookupCompanyMetaEntry } from "../companyMeta";
+
+/**
+ * Tickers que mudaram de símbolo na bolsa após o modelo ter sido treinado.
+ * Renomeia automaticamente o ticker no output sem alterar os CSVs históricos.
+ */
+const TICKER_RENAMES: Record<string, string> = {
+  SQ: "XYZ", // Block Inc. rebranded NYSE ticker SQ → XYZ
+};
+function renameTicker(t: string): string {
+  return TICKER_RENAMES[t.trim().toUpperCase()] ?? t.trim().toUpperCase();
+}
 import { canonicalTickerForGeo, isJapaneseEquityTicker } from "../tickerGeoFallback";
 import { FREEZE_PLAFONADO_MODEL_DIR } from "../freezePlafonadoDir";
 import { isJpNumericListingTicker, jpListingToAdrMap, remapJpListingToAdrTicker } from "./jpListingToAdrMap";
@@ -267,7 +278,7 @@ function loadCompanyLookup(root: string): Map<string, { company?: string; sector
 
     for (const r of rows) {
       if (r.length <= iT) continue;
-      const t = String(r[iT] || "").trim().toUpperCase();
+      const t = renameTicker(String(r[iT] || "").trim());
       if (!t) continue;
       const co = iC >= 0 && r[iC] ? String(r[iC]).trim() : undefined;
       const seRaw = iS >= 0 && r[iS] ? String(r[iS]).trim() : undefined;
@@ -559,7 +570,7 @@ function loadFullWeightsByDateMap(root: string): Map<string, FullUniverseEntry[]
       if (r.length <= Math.max(iD, iT)) continue;
       const ds = normalizeDate(r[iD] || "").slice(0, 10);
       if (ds.length < 10) continue;
-      const ticker = String(r[iT] || "").trim().toUpperCase();
+      const ticker = renameTicker(String(r[iT] || "").trim());
       if (!ticker) continue;
       const wRaw = iW >= 0 ? parseFloat(String(r[iW] || "").replace(",", ".")) : NaN;
       const scRaw = iS >= 0 ? parseFloat(String(r[iS] || "").replace(",", ".")) : NaN;
@@ -631,7 +642,7 @@ function loadTickerLatestScoresMap(root: string): Map<string, number> {
       if (r.length <= Math.max(iD, iT, iS)) continue;
       const ds = normalizeDate(r[iD] || "").slice(0, 10);
       if (ds.length < 10 || ds > cutoff) continue;
-      const tk = remapJpListingToAdrTicker(String(r[iT] || "").trim()).trim().toUpperCase();
+      const tk = renameTicker(remapJpListingToAdrTicker(String(r[iT] || "").trim()));
       if (!tk) continue;
       const sc = parseFloat(String(r[iS] || "").replace(",", "."));
       if (!Number.isFinite(sc)) continue;
@@ -1249,7 +1260,7 @@ function parseWeightsFile(absPath: string, lookup: Map<string, { company?: strin
     if (r.length <= Math.max(iDate, iTicker, iWeight)) continue;
     const d = normalizeDate(r[iDate] || "");
     if (!d || d.length < 8) continue;
-    const ticker = remapJpListingToAdrTicker(String(r[iTicker] || "").trim());
+    const ticker = renameTicker(remapJpListingToAdrTicker(String(r[iTicker] || "").trim()));
     if (!ticker) continue;
     let w: number | null = null;
     if (iBaseWeight >= 0 && r[iBaseWeight]) {
