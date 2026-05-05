@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections import deque
 from datetime import date, datetime
@@ -175,6 +175,7 @@ COMPANY_META_KPI_OVERRIDES_PATH = REPO_ROOT / "backend" / "data" / "company_meta
 KPI_SERVER_BUILD_TAG = (
     "decide-kpi-2026-04-cap15-moderado-vol-align-kpi-strict-v29-company-meta-overrides"
     "-horizons-retornos-dd-v30-calc-source-v70-cap15-embed-debug-audit"
+    "-margin-csv-and-kpi-loader-v72-dark-blue-theme"
 )
 
 
@@ -761,16 +762,16 @@ HTML_TEMPLATE = """
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
       :root{
-        --bg0:#09090b;
-        --bg1:#18181b;
-        --card:#18181b;
-        --border:rgba(63,63,70,0.75);
+        --bg0:#080c14;
+        --bg1:#0b0f1a;
+        --card:#0b0f1a;
+        --border:rgba(26,31,46,0.9);
         --text:#e5e7eb;
         --muted:#d4d4d8;
         --muted2:#b4b4bc;
         --good:#16a34a;
         --bad:#dc2626;
-        --accent:#0d9488;
+        --accent:#2563eb;
         --shadow: 0 10px 35px rgba(0,0,0,.45);
       }
       *{ box-sizing:border-box; }
@@ -778,8 +779,8 @@ HTML_TEMPLATE = """
         font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         margin: 0;
         background:
-          radial-gradient(120% 90% at 50% -10%, rgba(45,212,191,.10) 0%, transparent 55%),
-          radial-gradient(900px 600px at 100% 0%, rgba(13,148,136,.12), transparent 58%),
+          radial-gradient(120% 90% at 50% -10%, rgba(59,130,246,.12) 0%, transparent 55%),
+          radial-gradient(900px 600px at 100% 0%, rgba(37,99,235,.13), transparent 58%),
           linear-gradient(180deg, var(--bg1), var(--bg0));
         color: var(--text);
       }
@@ -790,8 +791,8 @@ HTML_TEMPLATE = """
         top: 0;
         z-index: 5;
         backdrop-filter: blur(10px);
-        background: linear-gradient(90deg, rgba(9,9,11,.97), rgba(24,24,27,.96));
-        border-bottom: 1px solid rgba(63,63,70,.75);
+        background: linear-gradient(90deg, rgba(7,9,15,.97), rgba(11,15,26,.96));
+        border-bottom: 1px solid rgba(26,31,46,0.9);
       }
       .topbar-inner{
         max-width: 1200px;
@@ -835,7 +836,7 @@ HTML_TEMPLATE = """
         font-size: .8rem;
       }
       select{
-        background: rgba(24,24,27,.96);
+        background: rgba(11,15,26,.96);
         color: var(--text);
         border: 1px solid rgba(63,63,70,.85);
         border-radius: 999px;
@@ -843,7 +844,7 @@ HTML_TEMPLATE = """
         font-size: .9rem;
         outline: none;
       }
-      select:focus{ border-color: rgba(45,212,191,.85); box-shadow: 0 0 0 3px rgba(45,212,191,.18); }
+      select:focus{ border-color: rgba(96,165,250,.85); box-shadow: 0 0 0 3px rgba(96,165,250,.18); }
       h2{
         margin-top: 32px;
         margin-bottom: 14px;
@@ -856,34 +857,34 @@ HTML_TEMPLATE = """
         margin-top: 4px;
         margin-bottom: 6px;
         padding: 12px 0 16px;
-        border-bottom: 2px solid rgba(45,212,191,.35);
+        border-bottom: 2px solid rgba(96,165,250,.35);
         flex-wrap: wrap;
         align-items: center;
       }
       .tab{
         padding: 14px 26px;
         border-radius: 14px;
-        border: 2px solid rgba(45,212,191,.45);
+        border: 2px solid rgba(96,165,250,.45);
         cursor: pointer;
         font-size: 1.08rem;
         font-weight: 800;
         letter-spacing: .04em;
-        color: #99f6e4;
+        color: #bfdbfe;
         background: rgba(24,24,27,.92);
         box-shadow: 0 4px 16px rgba(0,0,0,.35);
         transition: border-color .15s, color .15s, background .15s, box-shadow .15s;
       }
       .tab:hover{
         color: #fff;
-        border-color: rgba(45,212,191,.9);
-        background: rgba(13,148,136,.28);
-        box-shadow: 0 6px 20px rgba(13,148,136,.22);
+        border-color: rgba(96,165,250,.9);
+        background: rgba(37,99,235,.28);
+        box-shadow: 0 6px 20px rgba(37,99,235,.22);
       }
       .tab.active{
-        background: linear-gradient(180deg, #0f766e 0%, #115e59 55%, #134e4a 100%);
+        background: linear-gradient(180deg,#1d4ed8 0%,#1e40af 55%,#1e3a8a 100%);
         color: #fff;
-        border-color: rgba(45,212,191,.75);
-        box-shadow: 0 0 0 4px rgba(13,148,136,.25), 0 10px 28px rgba(15,118,110,.35);
+        border-color: rgba(96,165,250,.75);
+        box-shadow: 0 0 0 4px rgba(37,99,235,.25), 0 10px 28px rgba(29,78,216,.35);
       }
       .tab-nav-label{
         width: 100%;
@@ -928,7 +929,7 @@ HTML_TEMPLATE = """
         background: linear-gradient(145deg, rgba(12,22,41,.98) 0%, rgba(10,15,28,.98) 100%);
         padding: 20px 20px;
         border-radius: 18px;
-        border: 1px solid rgba(13,148,136,.28);
+        border: 1px solid rgba(37,99,235,.28);
         box-shadow: var(--shadow);
       }
       .grid{
@@ -974,7 +975,7 @@ HTML_TEMPLATE = """
         padding: 4px 10px;
         border-radius: 999px;
         background: rgba(39,39,42,.88);
-        border: 1px solid rgba(45,212,191,.2);
+        border: 1px solid rgba(96,165,250,.2);
         font-size: .75rem;
         color: var(--muted);
       }
@@ -989,15 +990,15 @@ HTML_TEMPLATE = """
         align-items:center;
         padding: 8px 14px;
         border-radius: 999px;
-        border: 1px solid rgba(45,212,191,.22);
+        border: 1px solid rgba(96,165,250,.22);
         background: linear-gradient(180deg, rgba(15,23,42,.96) 0%, rgba(9,9,11,.98) 100%);
         color: var(--text);
         font-size: .82rem;
         text-decoration:none;
       }
-      .chip:hover{ border-color: rgba(45,212,191,.85); box-shadow: 0 0 0 3px rgba(45,212,191,.14); }
+      .chip:hover{ border-color: rgba(96,165,250,.85); box-shadow: 0 0 0 3px rgba(96,165,250,.14); }
       .stats-grid{ display:grid; grid-template-columns: repeat(12, 1fr); gap: 14px; margin-top: 16px; }
-      .stat-box{ grid-column: span 4; background: linear-gradient(180deg, rgba(15,23,42,.96) 0%, rgba(9,9,11,.98) 100%); padding: 14px 16px; border-radius: 16px; border: 1px solid rgba(45,212,191,.22); }
+      .stat-box{ grid-column: span 4; background: linear-gradient(180deg, rgba(15,23,42,.96) 0%, rgba(9,9,11,.98) 100%); padding: 14px 16px; border-radius: 16px; border: 1px solid rgba(96,165,250,.22); }
       @media (max-width: 920px){ .stat-box{ grid-column: span 6; } }
       @media (max-width: 560px){ .stat-box{ grid-column: span 12; } }
       .stat-box .label{ font-size: .72rem; }
@@ -1073,10 +1074,10 @@ HTML_TEMPLATE = """
         margin-top: 0;
         white-space: nowrap;
       }
-      table{ border-collapse: collapse; margin-top: 16px; width: 100%; background: rgba(24,24,27,.96); border-radius: 16px; overflow: hidden; border: 1px solid rgba(63,63,70,.85); }
+      table{ border-collapse: collapse; margin-top: 16px; width: 100%; background: rgba(11,15,26,.96); border-radius: 16px; overflow: hidden; border: 1px solid rgba(63,63,70,.85); }
       th, td{ padding: 11px 14px; text-align: right; }
       th{ background: rgba(39,39,42,.95); font-weight: 650; font-size: .72rem; color: var(--muted); letter-spacing: .02em; text-transform: uppercase; }
-      tr:hover td{ background: rgba(45,212,191,.08); }
+      tr:hover td{ background: rgba(96,165,250,.08); }
       /* Carteira: linhas alternadas mais legíveis */
       #tab-portfolio table tbody tr:nth-child(odd) td{
         background: rgba(15,23,42,.45);
@@ -1085,10 +1086,10 @@ HTML_TEMPLATE = """
         background: rgba(148,163,184,.11);
       }
       #tab-portfolio table tbody tr:hover td{
-        background: rgba(45,212,191,.12) !important;
+        background: rgba(96,165,250,.12) !important;
       }
       td:first-child, th:first-child{ text-align: left; }
-      canvas{ background: rgba(24,24,27,.96); border-radius: 18px; padding: 14px; border: 1px solid rgba(63,63,70,.85); box-shadow: var(--shadow); }
+      canvas{ background: rgba(11,15,26,.96); border-radius: 18px; padding: 14px; border: 1px solid rgba(63,63,70,.85); box-shadow: var(--shadow); }
 
       /* Clique no painel → ecrã inteiro; «Diminuir» ou Esc para sair */
       .kpi-chart-panel--zoomable {
@@ -1097,7 +1098,7 @@ HTML_TEMPLATE = """
       }
       .kpi-chart-panel--zoomable:fullscreen {
         cursor: default;
-        background: #09090b;
+        background: #080c14;
         padding: 16px 18px 20px;
         display: flex !important;
         flex-direction: column;
@@ -1109,7 +1110,7 @@ HTML_TEMPLATE = """
         z-index: 0;
       }
       .kpi-chart-panel--zoomable:-webkit-full-screen {
-        background: #09090b;
+        background: #080c14;
         padding: 16px 18px 20px;
       }
       .kpi-chart-panel--zoomable:fullscreen canvas {
@@ -1137,7 +1138,7 @@ HTML_TEMPLATE = """
         box-shadow: 0 4px 16px rgba(0,0,0,0.35);
       }
       .kpi-chart-fs-exit:hover {
-        border-color: rgba(45,212,191,0.75);
+        border-color: rgba(96,165,250,0.75);
         color: #fff;
       }
       .kpi-chart-panel--zoomable:fullscreen .kpi-chart-fs-exit {
@@ -1151,7 +1152,7 @@ HTML_TEMPLATE = """
       .breakdown-card{
         margin-top: 16px;
         width: 100%;
-        background: rgba(24,24,27,.96);
+        background: rgba(11,15,26,.96);
         border-radius: 16px;
         border: 1px solid rgba(63,63,70,.85);
         overflow: hidden;
@@ -1198,14 +1199,14 @@ HTML_TEMPLATE = """
       .breakdown-bar{
         height: 10px;
         border-radius: 999px;
-        background: #18181b;
+        background: #0b0f1a;
         border: 1px solid rgba(63,63,70,.85);
         overflow: hidden;
       }
       .breakdown-bar-fill{
         height: 100%;
         width: 0%;
-        background: linear-gradient(90deg, rgba(13,148,136,.95), rgba(45,212,191,.55));
+        background: linear-gradient(90deg, rgba(37,99,235,.95), rgba(96,165,250,.55));
       }
       .breakdown-value{
         color: #ffffff;
@@ -1244,7 +1245,7 @@ HTML_TEMPLATE = """
         margin-bottom: 4px;
         padding: 12px 14px;
         border-radius: 14px;
-        border: 1px solid rgba(45,212,191,.28);
+        border: 1px solid rgba(96,165,250,.28);
         background: rgba(15,23,42,.55);
         font-size: .78rem;
         line-height: 1.55;
@@ -1260,7 +1261,7 @@ HTML_TEMPLATE = """
         flex-wrap: nowrap;
         margin: 6px 0 10px;
         border-radius: 12px;
-        border: 1px solid rgba(45,212,191,.38);
+        border: 1px solid rgba(96,165,250,.38);
         overflow: hidden;
         background: rgba(15,23,42,.9);
         width: fit-content;
@@ -1270,7 +1271,7 @@ HTML_TEMPLATE = """
         padding: 8px 16px;
         border-radius: 0;
         border: none;
-        border-right: 1px solid rgba(45,212,191,.28);
+        border-right: 1px solid rgba(96,165,250,.28);
         background: transparent;
         color: #94a3b8;
         font-size: .78rem;
@@ -1281,7 +1282,7 @@ HTML_TEMPLATE = """
       .kpi-view-btn:last-child{ border-right: none; }
       .kpi-view-btn.active{
         color: #ecfdf5;
-        background: rgba(13,148,136,.42);
+        background: rgba(37,99,235,.42);
         box-shadow: none;
       }
       /* Iframe cliente: começar no simulador — esconder meta técnica do topo em vista simples */
@@ -1301,7 +1302,7 @@ HTML_TEMPLATE = """
         margin: 0 0 10px;
         border-radius: 12px;
         background: rgba(15,23,42,0.75);
-        border: 1px solid rgba(45,212,191,0.22);
+        border: 1px solid rgba(96,165,250,0.22);
         font-size: 0.78rem;
         line-height: 1.45;
       }
@@ -1326,17 +1327,17 @@ HTML_TEMPLATE = """
       body:not(.decide-kpi-embed) .kpi-chart-title-simple { display: none !important; }
       {% if client_embed %}
       /* Modo embutido: fundo alinhado ao painel Next (cinza muito escuro) */
-      html{ background: #0c0c0e; }
+      html{ background: #07090f; }
       body.decide-kpi-embed{
-        background: #0c0c0e !important;
+        background: #07090f !important;
       }
       /* Evita retângulo claro (canvas / slot) antes do Chart.js pintar — alinhado a .kpi-chart-panel canvas */
       body.decide-kpi-embed .kpi-chart-canvas-slot {
-        background: rgba(39, 39, 42, 0.96);
+        background: rgba(11,15,26,0.96);
         border-radius: 18px;
       }
       body.decide-kpi-embed .kpi-chart-panel--zoomable > canvas {
-        background: rgba(39, 39, 42, 0.96) !important;
+        background: rgba(11,15,26,0.96) !important;
         border-radius: 18px;
       }
       body.decide-kpi-embed .topbar{
@@ -1429,7 +1430,7 @@ HTML_TEMPLATE = """
       .horizon-embed-tab.active{
         border-color: rgba(82, 82, 91, 0.85);
         color: #e4e4e7;
-        background: linear-gradient(165deg, rgba(63, 63, 70, 0.65) 0%, rgba(39, 39, 42, 0.92) 100%);
+        background: linear-gradient(165deg, rgba(63, 63, 70, 0.65) 0%, rgba(11,15,26,0.92) 100%);
         box-shadow: 0 2px 12px rgba(0, 0, 0, 0.28);
       }
       body.decide-kpi-embed #tab-horizons .horizon-bench-composition{
@@ -1559,7 +1560,7 @@ HTML_TEMPLATE = """
         margin: 8px 0 10px;
         padding: 8px 10px;
         border-radius: 10px;
-        background: rgba(39, 39, 42, 0.75);
+        background: rgba(11,15,26,0.75);
         border: 1px solid rgba(63, 63, 70, 0.55);
         font-size: 0.82rem;
         line-height: 1.45;
@@ -1682,7 +1683,7 @@ HTML_TEMPLATE = """
         user-select: none;
       }
       body.decide-kpi-embed #tab-charts .kpi-dd-margin-toggle input {
-        accent-color: #2dd4bf;
+        accent-color: #60a5fa;
       }
       @media (max-width: 720px) {
         body.decide-kpi-embed #tab-charts .kpi-charts-embed-summary {
@@ -1882,12 +1883,12 @@ HTML_TEMPLATE = """
         font-size: 0.88rem;
         font-weight: 700;
         color: #ecfdf5;
-        background: #115e59;
+        background: #1e40af;
         border: 1px solid rgba(63,63,70,0.55);
         text-decoration: none;
       }
       body.decide-kpi-embed #tab-simulator .kpi-charts-embed-cta-secondary{
-        color: #5eead4;
+        color: #93c5fd;
         font-weight: 600;
         text-decoration: underline;
         font-size: 0.78rem;
@@ -1924,8 +1925,8 @@ HTML_TEMPLATE = """
         margin: 0 0 12px;
         padding: 14px 16px;
         border-radius: 14px;
-        border: 1px solid rgba(45,212,191,0.38);
-        background: linear-gradient(165deg, rgba(13,148,136,0.16) 0%, rgba(24,24,27,0.75) 100%);
+        border: 1px solid rgba(96,165,250,0.38);
+        background: linear-gradient(165deg, rgba(37,99,235,0.16) 0%, rgba(24,24,27,0.75) 100%);
         color: #e2e8f0;
       }
       .kpi-charts-embed-version-pill{
@@ -1935,11 +1936,11 @@ HTML_TEMPLATE = """
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: #6ee7b7;
-        border: 1px solid rgba(45,212,191,0.45);
+        border: 1px solid rgba(96,165,250,0.45);
         border-radius: 999px;
         padding: 4px 10px;
         margin-bottom: 10px;
-        background: rgba(13,148,136,0.2);
+        background: rgba(37,99,235,0.2);
       }
       .kpi-charts-embed-hero-title{
         margin: 0 0 10px;
@@ -2041,7 +2042,7 @@ HTML_TEMPLATE = """
         padding: 10px 4px;
         font-size: 0.8rem;
         font-weight: 800;
-        color: #5eead4;
+        color: #93c5fd;
       }
       .kpi-charts-embed-more summary::-webkit-details-marker{ display: none; }
       .kpi-charts-embed-footer{
@@ -2518,11 +2519,11 @@ HTML_TEMPLATE = """
         color: #94a3b8;
         box-shadow: none;
       }
-      .kpi-embed-hedge-banner strong{ color: #2dd4bf; font-weight: 700; }
+      .kpi-embed-hedge-banner strong{ color: #60a5fa; font-weight: 700; }
       .kpi-embed-hedge-banner .kpi-embed-hedge-numbers{
         margin-top: 8px;
         padding-top: 8px;
-        border-top: 1px solid rgba(45,212,191,0.16);
+        border-top: 1px solid rgba(96,165,250,0.16);
         display: flex;
         flex-wrap: wrap;
         align-items: baseline;
@@ -2532,7 +2533,7 @@ HTML_TEMPLATE = """
       .kpi-embed-hedge-banner .kpi-embed-hedge-numbers .hedge-cagr-big{
         font-size: 1.02rem;
         font-weight: 800;
-        color: #5eead4;
+        color: #93c5fd;
         letter-spacing: -0.02em;
         opacity: 0.92;
       }
@@ -2548,7 +2549,7 @@ HTML_TEMPLATE = """
         list-style: none;
         font-size: 0.84rem;
         font-weight: 800;
-        color: #5eead4;
+        color: #93c5fd;
         display: inline-flex;
         align-items: center;
         gap: 6px;
@@ -2593,7 +2594,7 @@ HTML_TEMPLATE = """
       body.decide-kpi-embed .kpi-hedge-embed-fallback{
         margin-top: 8px;
         padding-top: 8px;
-        border-top: 1px solid rgba(45,212,191,0.22);
+        border-top: 1px solid rgba(96,165,250,0.22);
       }
       body.decide-kpi-embed .kpi-hedge-fallback-note{
         font-size: 0.72rem !important;
@@ -2604,12 +2605,12 @@ HTML_TEMPLATE = """
       body.decide-kpi-embed .kpi-hedge-under{
         margin-top: 8px;
         padding-top: 8px;
-        border-top: 1px solid rgba(45,212,191,0.3);
+        border-top: 1px solid rgba(96,165,250,0.3);
       }
       body.decide-kpi-embed .kpi-hedge-under-title{
         font-size: 0.72rem;
         font-weight: 800;
-        color: #5eead4;
+        color: #93c5fd;
         margin-bottom: 6px;
         letter-spacing: 0.03em;
       }
@@ -2694,7 +2695,7 @@ HTML_TEMPLATE = """
       }
       body.decide-kpi-embed #tab-simulator #simRunBtn,
       body.decide-kpi-embed #tab-simulator .kpi-charts-simulator-embed #simRunBtn{
-        background: #115e59 !important;
+        background: #1e40af !important;
         background-image: none !important;
         border: 1px solid rgba(63,63,70,0.75) !important;
         box-shadow: none !important;
@@ -2706,14 +2707,14 @@ HTML_TEMPLATE = """
       }
       body.decide-kpi-embed #tab-simulator .sim-hero-model,
       body.decide-kpi-embed #tab-simulator .kpi-charts-simulator-embed .sim-hero-model{
-        background: rgba(39,39,42,0.96) !important;
+        background: rgba(11,15,26,0.96) !important;
         background-image: none !important;
-        border: 1px solid rgba(45,212,191,0.32) !important;
+        border: 1px solid rgba(96,165,250,0.32) !important;
         box-shadow: none !important;
       }
       body.decide-kpi-embed #tab-simulator .sim-hero-bench,
       body.decide-kpi-embed #tab-simulator .kpi-charts-simulator-embed .sim-hero-bench{
-        background: rgba(39,39,42,0.96) !important;
+        background: rgba(11,15,26,0.96) !important;
         background-image: none !important;
         border: 1px solid rgba(63,63,70,0.72) !important;
         box-shadow: none !important;
@@ -2813,21 +2814,21 @@ HTML_TEMPLATE = """
         background: rgba(24,24,27,.68) !important;
       }
       body.decide-kpi-embed #tab-portfolio table tbody tr:hover td{
-        background: rgba(45,212,191,.12) !important;
+        background: rgba(96,165,250,.12) !important;
       }
       body.decide-kpi-embed #tab-portfolio .breakdown-list .breakdown-row:nth-child(odd){
         background: rgba(39,39,42,.42) !important;
       }
       body.decide-kpi-embed #tab-portfolio .breakdown-list .breakdown-row:nth-child(even){
-        background: rgba(24,24,27,.55) !important;
+        background: rgba(11,15,26,.55) !important;
       }
       body.decide-kpi-embed .kpi-chart-fs-exit{
-        background: rgba(39,39,42,0.96) !important;
+        background: rgba(11,15,26,0.96) !important;
       }
       body.decide-kpi-embed .simulator-panel input,
       body.decide-kpi-embed .simulator-panel select{
-        background: rgba(39, 39, 42, 0.92) !important;
-        border-color: rgba(63, 63, 70, 0.85) !important;
+        background: rgba(11,15,26,0.92) !important;
+        border-color: rgba(26,31,46,0.9) !important;
       }
       {% endif %}
       {% if client_embed %}
@@ -2843,7 +2844,7 @@ HTML_TEMPLATE = """
         line-height: 1.45;
       }
       #decide-embed-standalone-tip a{
-        color: #5eead4;
+        color: #93c5fd;
         font-weight: 700;
         text-decoration: underline;
       }
@@ -2856,7 +2857,7 @@ HTML_TEMPLATE = """
         font-size: .74rem;
         padding: .1rem .35rem;
         border-radius: 6px;
-        background: rgba(39, 39, 42, 0.75);
+        background: rgba(11,15,26,0.75);
       }
       {% endif %}
       .simulator-panel label{
@@ -2975,9 +2976,9 @@ HTML_TEMPLATE = """
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        background: linear-gradient(180deg,#0f766e 0%,#115e59 55%,#134e4a 100%);
+        background: linear-gradient(180deg,#1d4ed8 0%,#1e40af 55%,#1e3a8a 100%);
         color:#fff;
-        border:1px solid rgba(45,212,191,0.45);
+        border:1px solid rgba(96,165,250,0.45);
         border-radius:12px;
         padding: 0 20px;
         font-weight:900;
@@ -3017,7 +3018,7 @@ HTML_TEMPLATE = """
         font-weight: 800;
         font-style: normal;
         color: #0f172a;
-        background: rgba(45,212,191,.88);
+        background: rgba(96,165,250,.88);
         cursor: help;
         vertical-align: middle;
         line-height: 1;
@@ -3029,13 +3030,13 @@ HTML_TEMPLATE = """
         margin: 0 0 14px;
         padding: 12px 14px;
         border-radius: 12px;
-        background: linear-gradient(180deg, rgba(39,39,42,.92) 0%, rgba(24,24,27,.96) 100%);
+        background: linear-gradient(180deg, rgba(39,39,42,.92) 0%, rgba(11,15,26,.96) 100%);
         border: 1px solid rgba(63,63,70,.85);
         box-shadow: 0 1px 6px rgba(0,0,0,.28);
       }
       .sim-example-hint strong{ font-weight: 800; }
       .sim-example-hint .sim-example-strong-white{ color: #fafafa; }
-      .sim-example-hint .sim-example-strong-teal{ color: #5eead4; }
+      .sim-example-hint .sim-example-strong-blue{ color: #93c5fd; }
       .sim-results-hero{
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -3166,7 +3167,7 @@ HTML_TEMPLATE = """
         margin-top: 22px;
         padding: 20px 18px;
         border-radius: 16px;
-        background: linear-gradient(145deg, rgba(39,39,42,.92), rgba(24,24,27,.96));
+        background: linear-gradient(145deg, rgba(39,39,42,.92), rgba(11,15,26,.96));
         border: 1px solid rgba(63,63,70,.55);
         text-align: center;
       }
@@ -3183,7 +3184,7 @@ HTML_TEMPLATE = """
         font-weight: 900;
         letter-spacing: 0.14em;
         text-transform: uppercase;
-        color: #5eead4;
+        color: #93c5fd;
       }
       .sim-cta-secondary-link{
         color: #94a3b8;
@@ -3191,7 +3192,7 @@ HTML_TEMPLATE = """
         text-decoration: underline;
         text-underline-offset: 3px;
       }
-      .sim-cta-secondary-link:hover{ color: #5eead4; }
+      .sim-cta-secondary-link:hover{ color: #93c5fd; }
       #simCtaLink{
         display: inline-block;
         background: linear-gradient(180deg,#fdba74 0%,#f97316 45%,#ea580c 100%);
@@ -3209,7 +3210,7 @@ HTML_TEMPLATE = """
         color: #a1a1aa !important;
       }
       .sim-cta-montante-line strong{
-        color: #5eead4;
+        color: #93c5fd;
         font-weight: 800;
       }
       .sim-cta-micro{
@@ -3285,7 +3286,7 @@ HTML_TEMPLATE = """
           Ajuste o capital inicial e o horizonte para ver um exemplo concreto baseado no histórico do modelo.
         </p>
         <p class="muted sim-embed-profile-note" style="font-size:0.82rem; margin-top:0.35rem; line-height:1.45; color:#94a3b8 !important;">
-          O <strong style="color:#cbd5e1;">perfil de risco</strong> segue o selector do <strong style="color:#5eead4;">dashboard</strong> (fora deste quadro).
+          O <strong style="color:#cbd5e1;">perfil de risco</strong> segue o selector do <strong style="color:#93c5fd;">dashboard</strong> (fora deste quadro).
         </p>
         <div class="simulator-panel sim-row-actions sim-embed-row-actions">
           <label class="sim-capital-label">
@@ -3309,7 +3310,7 @@ HTML_TEMPLATE = """
         </p>
         <p class="sim-example-hint">
           <strong class="sim-example-strong-white">Exemplo pré-preenchido:</strong>
-          <strong class="sim-example-strong-teal">10 000 €</strong> durante <strong class="sim-example-strong-teal">20 anos</strong>.
+          <strong class="sim-example-strong-blue">10 000 €</strong> durante <strong class="sim-example-strong-blue">20 anos</strong>.
           Pode alterar os valores abaixo.
         </p>
         <div class="simulator-panel" style="display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; margin-top:4px;">
@@ -3543,7 +3544,7 @@ HTML_TEMPLATE = """
         Navegação rápida (frontend) — base: <span class="pill">{{ frontend_url }}</span>
       </div>
       <div class="quick-links">
-        <a class="chip" href="{{ frontend_url }}/client-dashboard" target="_blank" rel="noreferrer" style="border-color:rgba(45,212,191,.55);color:#99f6e4;font-weight:600;">Dashboard Cliente</a>
+        <a class="chip" href="{{ frontend_url }}/client-dashboard" target="_blank" rel="noreferrer" style="border-color:rgba(96,165,250,.55);color:#bfdbfe;font-weight:600;">Dashboard Cliente</a>
         <a class="chip" href="{{ frontend_url }}/fees-client" target="_blank" rel="noreferrer">Fees Client</a>
         <a class="chip" href="{{ frontend_url }}/fees-business" target="_blank" rel="noreferrer">Fees Business</a>
         <a class="chip" href="{{ frontend_url }}/onboarding" target="_blank" rel="noreferrer">Onboarding</a>
@@ -3610,7 +3611,7 @@ HTML_TEMPLATE = """
           <div class="kpi-line value negative kpi-simple-only">Queda máxima histórica {{ (raw_kpis.max_drawdown * 100) | round(2) }}%</div>
           <div class="kpi-advanced-only kpi-card-total-return">Total return {{ raw_kpis.total_return | round(2) }}x</div>
           <details class="kpi-card-details">
-            <summary>O que é isto? · <span style="font-weight:700;color:#99f6e4;">Saber mais</span></summary>
+            <summary>O que é isto? · <span style="font-weight:700;color:#bfdbfe;">Saber mais</span></summary>
             <div class="kpi-card-details-body">
               Curva <strong>teórica</strong> do motor <strong>antes</strong> das molduras aplicadas ao produto investível (overlay CAP15, limites de drawdown, vol por perfil, etc.). <strong>Não é investível</strong> — mostra a «potência» bruta do modelo face à versão apresentada ao cliente no cartão ao lado.
             </div>
@@ -3634,7 +3635,7 @@ HTML_TEMPLATE = """
           <div class="kpi-advanced-only kpi-card-total-return">Total return {{ model_kpis.total_return | round(2) }}x</div>
           {% if cap15_only %}
           <details class="kpi-card-details">
-            <summary>O que é isto? · <span style="font-weight:700;color:#99f6e4;">Saber mais</span></summary>
+            <summary>O que é isto? · <span style="font-weight:700;color:#bfdbfe;">Saber mais</span></summary>
             <div class="kpi-card-details-body">
               {% if current_profile == 'moderado' %}
               Histórico ilustrativo de <strong>{{ cap15_human_label_pt }}</strong> — identificação interna do motor <code>CAP15</code>. O freeze smooth usa <strong>momentum multi-horizonte prudente</strong> (<code>v2_prudent</code>) no motor V5. No perfil <strong>moderado</strong>, a <strong>volatilidade</strong> do cartão reflecte a série investível com alvo <strong>≈1×</strong> a vol do benchmark no motor (perna overlay) e o <strong>alinhamento no painel</strong> à mesma referência. No conservador e no dinâmico, o cartão investível usa ≈0,75× e ≈1,25× da vol do referencial. Exposição a risco <strong>limitada ao capital</strong> (≤100% do NAV). Rentabilidade líquida de custos estimados de transação e slippage no backtest; não inclui impostos nem comissões da plataforma. Informação indicativa — não é aconselhamento.
@@ -3679,7 +3680,7 @@ HTML_TEMPLATE = """
           <div class="kpi-cap15-micro-hint" style="font-size:0.72rem;font-weight:750;letter-spacing:0.02em;text-transform:uppercase;margin-top:10px;line-height:1.35;color:#a7f3d0;">Sem diferença material face ao modelo base neste período</div>
           {% endif %}
           <details class="kpi-card-details">
-            <summary>Nota · <span style="font-weight:700;color:#99f6e4;">Saber mais</span></summary>
+            <summary>Nota · <span style="font-weight:700;color:#bfdbfe;">Saber mais</span></summary>
             <div class="kpi-card-details-body">
               {% if compare_cap100_is_margin %}
               Variante ilustrativa <strong>com margem</strong>: a exposição económica pode exceder <strong>100%</strong> do capital nos períodos em que o motor o aplica. <strong>Não corresponde</strong> ao produto plafonado (≤100% NAV) do cartão principal. Mesma regra de vol por perfil que os outros cartões, onde aplicável (se a vol natural exceder o alvo vs benchmark, o CAGR mostrado reflecte a série já reescalada). Indicativo — não é aconselhamento.
@@ -3738,7 +3739,7 @@ HTML_TEMPLATE = """
           </div>
           {% endif %}
           <details class="kpi-card-details">
-            <summary>O que é isto? · <span style="font-weight:700;color:#99f6e4;">Saber mais</span></summary>
+            <summary>O que é isto? · <span style="font-weight:700;color:#bfdbfe;">Saber mais</span></summary>
             <div class="kpi-card-details-body">
               Referência <strong>passiva</strong> (série histórica em <code style="color:#e5e7eb;font-size:0.82rem;">{{ bench_path.name }}</code>) usada para comparar o modelo: retorno, risco, meses acima/abaixo e alpha rolling. Não é recomendação nem produto investível — é o «termómetro» de comparação no mesmo horizonte temporal.
             </div>
@@ -3758,7 +3759,7 @@ HTML_TEMPLATE = """
 
       <div class="kpi-simple-summary">
         {% if client_embed and cap15_only %}
-        <strong style="color:#e5e7eb;">Resumo:</strong> o cartão <strong style="color:#5eead4;">«Recomendado para o seu perfil»</strong> alinha o horizonte ao seu nível de risco.
+        <strong style="color:#e5e7eb;">Resumo:</strong> o cartão <strong style="color:#93c5fd;">«Recomendado para o seu perfil»</strong> alinha o horizonte ao seu nível de risco.
         Na vista avançada, o <strong style="color:#e5e7eb;">modelo teórico</strong> é só referência técnica (não investível). O cartão principal mostra <strong style="color:#e5e7eb;">{{ cap15_human_label_pt }}</strong> — versão otimizada para implementação real no backtest, exposição ≤100% NV; no <strong>moderado</strong> o motor aplica na perna overlay alvo <strong>≈1×</strong> vol do referencial e o painel alinha o cartão a <strong>≈1×</strong> vs benchmark; conservador/dinâmico têm alvo 0,75× / 1,25× no cartão investível. Identificador interno do motor: <code style="color:#a1a1aa;font-size:0.82rem;">CAP15</code>.
         Informação indicativa — não é aconselhamento nem promessa de resultados futuros.
         {% elif cap15_only %}
@@ -3767,8 +3768,8 @@ HTML_TEMPLATE = """
         Comparação em horizonte longo com <strong style="color:#e5e7eb;">volatilidade alinhada ao benchmark</strong> (0,75× / 1× / 1,25× conforme o perfil).
         <strong style="color:#e5e7eb;">CAGR</strong> e <strong style="color:#e5e7eb;">queda máxima</strong> lado a lado com o benchmark{% if compare_cap100_kpis %} e com <strong style="color:#e5e7eb;">{{ cap15_human_label_pt }}</strong>{% endif %}.
         {% endif %}
-        Para simular capital ao longo do tempo (com o seu perfil), abra <strong style="color:#5eead4;">Simulador</strong>.
-        Para curvas completas e drawdowns, abra <strong style="color:#5eead4;">Gráficos</strong>.
+        Para simular capital ao longo do tempo (com o seu perfil), abra <strong style="color:#93c5fd;">Simulador</strong>.
+        Para curvas completas e drawdowns, abra <strong style="color:#93c5fd;">Gráficos</strong>.
         Informação indicativa — não é aconselhamento nem promessa de resultados futuros.
       </div>
 
@@ -4155,7 +4156,7 @@ HTML_TEMPLATE = """
       </div>
       <div class="horizon-embed-cta" role="note">
         Baseado neste histórico ilustrativo, o plano proposto procura alinhar-se a este tipo de comportamento <strong style="color:#cbd5e1;">relativo ao mercado de referência</strong>.
-        O passo seguinte é rever e <strong style="color:#5eead4;">confirmar o plano</strong> quando estiver confortável (atalho «Ver plano» no topo do dashboard).
+        O passo seguinte é rever e <strong style="color:#93c5fd;">confirmar o plano</strong> quando estiver confortável (atalho «Ver plano» no topo do dashboard).
       </div>
       {% else %}
       <div class="horizon-intro-one-line" role="note" style="margin: 0 0 1rem; font-size: 0.88rem; line-height: 1.45; color: #94a3b8;">
@@ -4413,7 +4414,7 @@ HTML_TEMPLATE = """
             A estratégia é revista regularmente para garantir alinhamento com o seu perfil e evolução dos mercados.
           </p>
           <p style="margin:0; font-size:0.78rem; line-height:1.45;">
-            Quando estiver confortável, abra a vista <strong style="color:#5eead4;">Simulação</strong> e utilize o botão <strong style="color:#5eead4;">«Ver plano para a sua carteira»</strong> após rever o histórico e o risco para o passo regulamentar aplicável.
+            Quando estiver confortável, abra a vista <strong style="color:#93c5fd;">Simulação</strong> e utilize o botão <strong style="color:#93c5fd;">«Ver plano para a sua carteira»</strong> após rever o histórico e o risco para o passo regulamentar aplicável.
           </p>
         </div>
         {% endif %}
@@ -4455,8 +4456,8 @@ HTML_TEMPLATE = """
             </div>
             {% endfor %}
           </div>
-          <div style="margin-top:16px; padding:14px 16px; border-radius:12px; background:rgba(13,148,136,0.12); border:1px solid rgba(45,212,191,0.35);">
-            <div style="font-size:0.68rem; font-weight:800; letter-spacing:0.07em; color:#5eead4; text-transform:uppercase; margin-bottom:6px;">Decisão sugerida (heurística)</div>
+          <div style="margin-top:16px; padding:14px 16px; border-radius:12px; background:rgba(37,99,235,0.12); border:1px solid rgba(96,165,250,0.35);">
+            <div style="font-size:0.68rem; font-weight:800; letter-spacing:0.07em; color:#93c5fd; text-transform:uppercase; margin-bottom:6px;">Decisão sugerida (heurística)</div>
             <div style="font-size:0.92rem; font-weight:700; color:#ecfdf5; line-height:1.5;">{{ p.suggested_action_pt }}</div>
           </div>
         </div>
@@ -4510,8 +4511,8 @@ HTML_TEMPLATE = """
         </div>
         {% endif %}
         {% if diagnostics and diagnostics.ok %}
-        <div style="background:linear-gradient(165deg, rgba(30,58,60,0.5) 0%, rgba(24,24,27,0.95) 100%); border:1px solid rgba(45,212,191,0.35); border-radius:16px; padding:16px 18px;">
-          <div style="font-size:0.72rem; font-weight:800; letter-spacing:0.08em; color:#5eead4; text-transform:uppercase; margin-bottom:8px;">Conclusão automática (heurística) — detalhe</div>
+        <div style="background:linear-gradient(165deg, rgba(11,15,26,0.5) 0%, rgba(11,15,26,0.95) 100%); border:1px solid rgba(96,165,250,0.35); border-radius:16px; padding:16px 18px;">
+          <div style="font-size:0.72rem; font-weight:800; letter-spacing:0.08em; color:#93c5fd; text-transform:uppercase; margin-bottom:8px;">Conclusão automática (heurística) — detalhe</div>
           <div style="font-size:1.05rem; font-weight:800; color:#fafafa; margin-bottom:10px;">{{ diagnostics.summary_verdict }}</div>
           {% if diagnostics.summary_edge_state %}
           <div style="font-size:0.68rem; font-weight:700; letter-spacing:0.06em; color:#71717a; text-transform:uppercase; margin-bottom:8px;">Estado: {{ diagnostics.summary_edge_state }}</div>
@@ -4555,8 +4556,8 @@ HTML_TEMPLATE = """
           </div>
           {% endif %}
           {% if diagnostics.attribution_hints and diagnostics.attribution_hints|length > 0 %}
-          <div style="margin-top:12px; padding-top:10px; border-top:1px solid rgba(45,212,191,0.2); font-size:0.76rem; color:#a1a1aa; line-height:1.5;">
-            <strong style="color:#5eead4;">Leitura seleção / timing / custos:</strong>
+          <div style="margin-top:12px; padding-top:10px; border-top:1px solid rgba(96,165,250,0.2); font-size:0.76rem; color:#a1a1aa; line-height:1.5;">
+            <strong style="color:#93c5fd;">Leitura seleção / timing / custos:</strong>
             <ul style="margin:6px 0 0 1rem; padding:0;">
               {% for line in diagnostics.attribution_hints %}<li style="margin-bottom:4px;">{{ line }}</li>{% endfor %}
             </ul>
@@ -5048,7 +5049,7 @@ HTML_TEMPLATE = """
         var sp5 = sliceByIdx(D.roll_spread_cagr_5y);
         lineChart('diagChartCagr5', lab, [
           { label: 'Modelo CAGR 5y', data: cm5.map(function (x) { return x == null ? null : x * 100; }), borderColor: '#4ade80', tension: 0.05, pointRadius: 0 },
-          { label: 'Benchmark CAGR 5y', data: cb5.map(function (x) { return x == null ? null : x * 100; }), borderColor: '#2dd4bf', tension: 0.05, pointRadius: 0 },
+          { label: 'Benchmark CAGR 5y', data: cb5.map(function (x) { return x == null ? null : x * 100; }), borderColor: '#60a5fa', tension: 0.05, pointRadius: 0 },
           { label: 'Spread (p.p.)', data: sp5.map(function (x) { return x == null ? null : x * 100; }), borderColor: '#fbbf24', tension: 0.05, pointRadius: 0 },
           { label: 'Zero (spread)', data: cm5.map(function () { return 0; }), borderColor: 'rgba(82,82,91,0.75)', borderDash: [5, 5], tension: 0, pointRadius: 0 },
         ], '% anual implícito');
@@ -5062,7 +5063,7 @@ HTML_TEMPLATE = """
         });
         lineChart('diagChartSharpe5', lab, [
           { label: 'Sharpe modelo 5y', data: sm5, borderColor: '#4ade80', tension: 0.05, pointRadius: 0 },
-          { label: 'Sharpe bench 5y', data: sb5, borderColor: '#2dd4bf', tension: 0.05, pointRadius: 0 },
+          { label: 'Sharpe bench 5y', data: sb5, borderColor: '#60a5fa', tension: 0.05, pointRadius: 0 },
           { label: 'Modelo − bench', data: srel, borderColor: '#fbbf24', tension: 0.05, pointRadius: 0 },
           { label: 'Zero', data: lab.map(function () { return 0; }), borderColor: 'rgba(148,163,184,0.65)', borderDash: [6, 4], tension: 0, pointRadius: 0 },
         ], 'Sharpe');
@@ -5334,7 +5335,7 @@ HTML_TEMPLATE = """
             if (!area || area.width <= 0 || area.height <= 0) return;
             const ctx = chart.ctx;
             ctx.save();
-            ctx.fillStyle = 'rgba(39, 39, 42, 0.96)';
+            ctx.fillStyle = 'rgba(11,15,26,0.96)';
             ctx.fillRect(area.left, area.top, area.width, area.height);
             ctx.restore();
           },
@@ -5358,7 +5359,7 @@ HTML_TEMPLATE = """
         {
           label: 'Benchmark',
           data: benchEquity,
-          borderColor: '#2dd4bf',
+          borderColor: '#60a5fa',
           tension: 0.05,
           pointRadius: 0,
         },
@@ -5436,7 +5437,7 @@ HTML_TEMPLATE = """
         {
           label: 'Benchmark',
           data: benchDD,
-          borderColor: '#2dd4bf',
+          borderColor: '#60a5fa',
           borderWidth: 1,
           tension: 0.05,
           pointRadius: 0,
@@ -5626,7 +5627,7 @@ HTML_TEMPLATE = """
           label: 'Benchmark',
           data: yB,
           backgroundColor: 'rgba(56, 189, 248, 0.5)',
-          borderColor: '#2dd4bf',
+          borderColor: '#60a5fa',
           borderWidth: 1,
         });
         yearlyChartInst = new Chart(yCtx, {
@@ -5884,7 +5885,7 @@ HTML_TEMPLATE = """
                 {
                   label: horizonBenchLabel,
                   data: horizonSanitizeLogSeries(ds.bench),
-                  borderColor: '#2dd4bf',
+                  borderColor: '#60a5fa',
                   tension: 0.05,
                   pointRadius: 0,
                   spanGaps: true,
@@ -6009,7 +6010,7 @@ HTML_TEMPLATE = """
                     {
                       label: horizonBenchLabel,
                       data: ddBench,
-                      borderColor: '#2dd4bf',
+                      borderColor: '#60a5fa',
                       borderWidth: 1,
                       tension: 0.05,
                       pointRadius: 0,
@@ -6723,7 +6724,7 @@ HTML_TEMPLATE = """
           eqDatasetsSim.push({
             label: 'Referência (benchmark)',
             data: benchVal,
-            borderColor: '#2dd4bf',
+            borderColor: '#60a5fa',
             tension: 0.05,
             pointRadius: 0,
           });
@@ -6795,7 +6796,7 @@ HTML_TEMPLATE = """
             ddDatasetsSim.push({
               label: 'Referência (benchmark)',
               data: ddBench,
-              borderColor: '#2dd4bf',
+              borderColor: '#60a5fa',
               borderWidth: 1,
               tension: 0.05,
               pointRadius: 0,
@@ -11179,4 +11180,7 @@ if __name__ == "__main__":
     )
     _debug = os.environ.get("FLASK_DEBUG", "").lower() in ("1", "true", "yes")
     app.run(host=_host, port=_port, debug=_debug)
+
+
+
 
