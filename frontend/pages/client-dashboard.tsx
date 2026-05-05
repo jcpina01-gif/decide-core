@@ -508,7 +508,8 @@ export default function ClientDashboardPage() {
   const prevMonth=sortedMonths[sortedMonths.length-2];
 
   const actionCounts=useMemo(()=>{
-    if(!latestMonth||!prevMonth) return {comprar:0,aumentar:0,reduzir:0,vender:0,manter:0,rows:[] as {ticker:string;prev:number;cur:number;delta:number;action:string}[]};
+    const empty:{ticker:string;prev:number;cur:number;delta:number;action:string}[]=[];
+    if(!latestMonth||!prevMonth) return {comprar:0,aumentar:0,reduzir:0,vender:0,manter:0,rows:empty,allRows:empty};
     const N_POS=20; // número máximo de posições do modelo
     const DMIN=1.0; // variação mínima para Comprar/Reduzir (pp)
     const pm=new Map(prevMonth.rows.map(r=>[r.ticker,r.weightPct]));
@@ -532,8 +533,14 @@ export default function ClientDashboardPage() {
       else{action="Manter";m++;}
       rows.push({ticker:t,prev:p,cur,delta,action});
     });
-    return {comprar:c,aumentar:au,reduzir:rd,vender:v,manter:m,
-      rows:rows.filter(r=>r.action!=="Manter").sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta)).slice(0,8)};
+    const changedRows=rows.filter(r=>r.action!=="Manter").sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta)).slice(0,8);
+    const allRows=rows.sort((a,b)=>{
+      const order={Comprar:0,Aumentar:1,Reduzir:2,Vender:3,Manter:4};
+      const oa=(order as any)[a.action]??5, ob=(order as any)[b.action]??5;
+      if(oa!==ob) return oa-ob;
+      return b.cur-a.cur;
+    });
+    return {comprar:c,aumentar:au,reduzir:rd,vender:v,manter:m,rows:changedRows,allRows};
   },[latestMonth,prevMonth]);
 
   const sectorData=useMemo(()=>{
@@ -979,44 +986,47 @@ export default function ClientDashboardPage() {
                 </div>
               </div>
 
-              {/* Alterações na carteira (full width) */}
+              {/* Recomendações completas */}
               <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                 <div className="flex items-center justify-between mb-4">
-                  <SH title="Alterações na carteira"/>
-                  <button onClick={()=>setActivePage("carteira")} className="text-blue-400 text-xs hover:underline flex items-center gap-1 -mt-4">Ver carteira completa<ArrowUpRight size={12}/></button>
+                  <SH title="Recomendações"/>
+                  <span className="text-slate-500 text-xs -mt-4">{actionCounts.allRows.length} posições</span>
                 </div>
-                  {recoLoading?(
-                    <div className="text-slate-500 text-sm text-center py-6">A carregar…</div>
-                  ):actionCounts.rows.length===0?(
-                    <div className="text-slate-500 text-sm text-center py-6">Sem alterações este mês</div>
-                  ):(
-                    <table className="w-full text-xs">
-                      <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
-                        <th className="text-left pb-2 font-semibold">Ativo</th>
-                        <th className="text-left pb-2 font-semibold">Setor</th>
-                        <th className="text-right pb-2 font-semibold">Actual</th>
-                        <th className="text-right pb-2 font-semibold">Novo</th>
-                        <th className="text-right pb-2 font-semibold">Î”</th>
-                        <th className="text-right pb-2 font-semibold">Ação</th>
-                      </tr></thead>
-                      <tbody>
-                        {actionCounts.rows.map(r=>{
-                          const ac=r.action==="Comprar"?"text-emerald-400":r.action==="Aumentar"?"text-cyan-400":r.action==="Vender"?"text-red-400":"text-amber-400";
-                          const dc=r.delta>0?"text-emerald-400":"text-red-400";
-                          return (
-                            <tr key={r.ticker} className="border-b border-[#111520] hover:bg-white/[0.02]">
-                              <td className="py-2.5 font-bold text-slate-200">{r.ticker}</td>
-                              <td className="py-2.5 text-slate-400">{getSector(r.ticker)}</td>
-                              <td className="py-2.5 text-right text-slate-300">{r.prev.toFixed(1)}%</td>
-                              <td className="py-2.5 text-right text-slate-300">{r.cur.toFixed(1)}%</td>
-                              <td className={`py-2.5 text-right font-semibold ${dc}`}>{r.delta>0?"+":""}{r.delta.toFixed(1)}%</td>
-                              <td className={`py-2.5 text-right font-bold ${ac}`}>{r.action}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  )}
+                {recoLoading?(
+                  <div className="text-slate-500 text-sm text-center py-6">A carregar…</div>
+                ):actionCounts.allRows.length===0?(
+                  <div className="text-slate-500 text-sm text-center py-6">Sem recomendações este mês</div>
+                ):(
+                  <table className="w-full text-xs">
+                    <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
+                      <th className="text-left pb-2 font-semibold">Ativo</th>
+                      <th className="text-left pb-2 font-semibold">Setor</th>
+                      <th className="text-left pb-2 font-semibold">País</th>
+                      <th className="text-right pb-2 font-semibold">Actual</th>
+                      <th className="text-right pb-2 font-semibold">Novo</th>
+                      <th className="text-right pb-2 font-semibold">&#916;</th>
+                      <th className="text-right pb-2 font-semibold">Ação</th>
+                    </tr></thead>
+                    <tbody>
+                      {actionCounts.allRows.map(r=>{
+                        const ac=r.action==="Comprar"?"text-emerald-400":r.action==="Aumentar"?"text-cyan-400":r.action==="Vender"?"text-red-400":r.action==="Reduzir"?"text-amber-400":"text-slate-400";
+                        const dc=r.delta>0?"text-emerald-400":r.delta<0?"text-red-400":"text-slate-500";
+                        const rowBg=r.action==="Comprar"?"bg-emerald-950/20":r.action==="Aumentar"?"bg-cyan-950/20":r.action==="Vender"?"bg-red-950/20":r.action==="Reduzir"?"bg-amber-950/10":"";
+                        return (
+                          <tr key={r.ticker} className={`border-b border-[#111520] hover:bg-white/[0.03] ${rowBg}`}>
+                            <td className="py-2 font-bold text-slate-200">{r.ticker}</td>
+                            <td className="py-2 text-slate-400">{getSector(r.ticker)}</td>
+                            <td className="py-2 text-slate-400">{getZone(r.ticker)}</td>
+                            <td className="py-2 text-right text-slate-300">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
+                            <td className="py-2 text-right text-slate-200 font-semibold">{r.cur>0?`${r.cur.toFixed(1)}%`:"—"}</td>
+                            <td className={`py-2 text-right font-semibold ${dc}`}>{r.delta!==0?`${r.delta>0?"+":""}${r.delta.toFixed(1)}%`:"—"}</td>
+                            <td className={`py-2 text-right font-bold ${ac}`}>{r.action}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </>
             )}
