@@ -734,7 +734,7 @@ export default function ClientDashboardPage() {
   const [contactForm,setContactForm]=useState({nome:"",email:"",assunto:"",msg:""});
   const [contactSent,setContactSent]=useState(false);
   const [aum,setAum]=useState(100000); // portfolio size in EUR for shares calculation
-  const [prices,setPrices]=useState<Record<string,{price:number;currency:string}|null>>({});
+  const [prices,setPrices]=useState<Record<string,{price:number;currency:string;qty?:number;value?:number}|null>>({});
   const [pricesLoading,setPricesLoading]=useState(false);
 
   // freeze series
@@ -777,24 +777,13 @@ export default function ClientDashboardPage() {
 
   useEffect(()=>{
     if(activePage!=="carteira"||!latestMonth) return;
-    const origTickers=(latestMonth.rows??[])
+    const tickers=(latestMonth.rows??[])
       .filter((r:any)=>r.weightPct>=0.5&&r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH")&&!r.ticker.startsWith("TBILL")&&r.ticker!=="XEON")
       .map((r:any)=>r.ticker as string);
-    if(!origTickers.length) return;
-    // Map to Yahoo Finance aliases for the API call
-    const yfTickers=origTickers.map(getYFTicker);
-    const uniqueYF=[...new Set(yfTickers)];
+    if(!tickers.length) return;
     setPricesLoading(true);
-    fetch(`/api/client/market-prices?tickers=${encodeURIComponent(uniqueYF.join(","))}`)
-      .then(r=>r.json()).then((d:any)=>{
-        // Re-map results back to original tickers
-        const mapped:Record<string,{price:number;currency:string}|null>={};
-        origTickers.forEach(orig=>{
-          const yf=getYFTicker(orig);
-          mapped[orig]=d[yf]??null;
-        });
-        setPrices(mapped);
-      }).catch(()=>{})
+    fetch(`/api/client/market-prices?tickers=${encodeURIComponent(tickers.join(","))}`)
+      .then(r=>r.json()).then((d:any)=>setPrices(d)).catch(()=>{})
       .finally(()=>setPricesLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[activePage,latestMonth?.date]);
@@ -1434,17 +1423,28 @@ export default function ClientDashboardPage() {
                       </tr></thead>
                       <tbody>
                         {(()=>{
-                          // Use the same top-20 equity rows as actionCounts (already N_POS filtered)
-                          const equityRows=actionCounts.allRows.filter(r=>r.ticker!=="XEON"&&r.cur>0);
+                          // Carteira uses ALL model positions (not top-20 subset), so weights sum to ~100%
+                          const allModelRows=(latestMonth?.rows??[])
+                            .filter((r:any)=>r.ticker!=="XEON"&&!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="TBILL_PROXY")
+                            .map((r:any)=>{
+                              const pm=new Map((sortedMonths[sortedMonths.length-2]?.rows??[]).map((x:any)=>[x.ticker,x.weightPct??0]));
+                              const cur:number=r.weightPct??0;
+                              const prev:number=pm.get(r.ticker)??0;
+                              const action=actionCounts.allRows.find((x:any)=>x.ticker===r.ticker)?.action??"Manter";
+                              return {ticker:r.ticker,cur,prev,delta:cur-prev,action};
+                            })
+                            .filter((r:any)=>r.cur>=0.5);
+                          const equityRows=allModelRows;
                           const xeonCur=latestMonth?.tbillsTotalPct??0;
                           const xeonPrev=sortedMonths[sortedMonths.length-2]?.tbillsTotalPct??0;
                           const usdExposure=equityRows.filter(r=>getZone(r.ticker)==="EUA").reduce((s,r)=>s+r.cur,0);
-                          // Once prices are loaded: hide rows with no price or shares < 1
+                          // Always show all top-20 positions; filter <1 share only when IB is connected
+                          const ibConnected=!pricesLoading&&Object.values(prices).some(p=>p!==null);
                           const equityFiltered=equityRows.filter(r=>{
+                            if(!ibConnected) return true; // keep all while loading or IB unavailable
                             const p=prices[r.ticker];
-                            if(pricesLoading||Object.keys(prices).length===0) return true; // keep while loading
-                            if(!p||!p.price) return false; // remove if price unavailable
-                            const shares=(r.cur/100)*aum/p.price;
+                            if(!p||!p.price) return true; // keep row even if this ticker has no IB price
+                            const shares=p.qty??(r.cur/100)*aum/p.price;
                             return shares>=1;
                           });
                           const allRows=[
@@ -1477,7 +1477,7 @@ export default function ClientDashboardPage() {
                                 </td>
                                 <td className="py-2 text-right text-slate-300">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
                                 <td className="py-2 text-right text-white font-semibold">
-                                  {isHedge?<span className="text-slate-400 font-normal italic text-[10px]">~{r.cur.toFixed(0)}% hedge</span>:`${r.cur.toFixed(1)}%`}
+                                  {isHedge?<span className="text-slate-500 font-normal italic text-[10px]">derivado (~{r.cur.toFixed(0)}% USD)</span>:`${r.cur.toFixed(1)}%`}
                                 </td>
                                 <td className={`py-2 text-right font-semibold ${isHedge?"text-slate-500":delta>0?"text-emerald-400":delta<0?"text-red-400":"text-slate-500"}`}>
                                   {isHedge?"—":delta!==0?`${delta>0?"+":""}${delta.toFixed(1)}pp`:"—"}
@@ -1486,7 +1486,8 @@ export default function ClientDashboardPage() {
                                   if(isHedge||isXeon) return <><td className="py-2 text-right text-slate-600">—</td><td className="py-2 text-right text-slate-600">—</td></>;
                                   const p=prices[r.ticker];
                                   const priceVal=p?.price;
-                                  const shares=priceVal&&r.cur>0?Math.round((r.cur/100)*aum/priceVal):null;
+                                  // IB qty is authoritative; fallback to model weight × AUM / price
+                                  const shares=p?.qty!=null?Math.round(p.qty):priceVal&&r.cur>0?Math.round((r.cur/100)*aum/priceVal):null;
                                   return (
                                     <>
                                       <td className="py-2 text-right text-slate-300">
@@ -1501,6 +1502,21 @@ export default function ClientDashboardPage() {
                               </tr>
                             );
                           });
+                        })()}
+                        {(()=>{
+                          // Weight total footer (equity + XEON should be ~100%; hedge is informational)
+                          const xeonCurFt=latestMonth?.tbillsTotalPct??0;
+                          const equityTotalFt=(latestMonth?.rows??[])
+                            .filter((r:any)=>r.ticker!=="XEON"&&!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="TBILL_PROXY"&&(r.weightPct??0)>=0.5)
+                            .reduce((s:number,r:any)=>s+(r.weightPct??0),0);
+                          const totalFt=equityTotalFt+xeonCurFt;
+                          return (
+                            <tr className="border-t-2 border-slate-600 bg-slate-800/40">
+                              <td colSpan={5} className="py-2 text-right text-slate-400 font-semibold text-xs pr-3">Total</td>
+                              <td className="py-2 text-right font-bold text-white">{totalFt.toFixed(1)}%</td>
+                              <td colSpan={2} className="py-2 text-slate-600 text-xs pl-2">≈ 100%</td>
+                            </tr>
+                          );
                         })()}
                       </tbody>
                     </table>
