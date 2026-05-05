@@ -847,9 +847,15 @@ export default function ClientDashboardPage() {
     const allRets=equityRaw.slice(1).map((v,i)=>v/equityRaw[i]-1);
     const curVol=annualVol(allRets.slice(-252))*100;
     const curDD=currentDD(equityRaw.slice(-252*3))*100;
-    const ddChart=rollingDD(dates,equityRaw,10);
     const dd5Start=skipWarmup(equityRaw,periodStart(dates,"20 Anos"));
-    const dd5=rollingDD(dates.slice(dd5Start),equityRaw.slice(dd5Start),10);
+    const modelDD=rollingDD(dates.slice(dd5Start),equityRaw.slice(dd5Start),10);
+    // Benchmark DD merged into same array
+    let bpk=benchRaw[dd5Start]??1;
+    const dd5=modelDD.map((pt,j)=>{
+      const bv=benchRaw[dd5Start+j*10]??benchRaw[benchRaw.length-1];
+      if(bv>bpk)bpk=bv;
+      return {...pt, bench:+((( bv-bpk)/bpk)*100).toFixed(2)};
+    });
     return {chart,m,curVol,curDD,ddChart:dd5};
   },[dates,equityRaw,benchRaw,period]);
 
@@ -1689,9 +1695,11 @@ export default function ClientDashboardPage() {
                           <path d={arc(0,0.38,R,RI)} fill="#22c55e" opacity={0.85}/>
                           <path d={arc(0.38,0.67,R,RI)} fill="#f59e0b" opacity={0.85}/>
                           <path d={arc(0.67,1,R,RI)} fill="#ef4444" opacity={0.85}/>
-                          {/* Needle */}
+                          {/* Needle shaft */}
+                          <line x1={CX} y1={CY} x2={np.x} y2={np.y} stroke="white" strokeWidth={2.5} strokeLinecap="round" opacity={0.9}/>
+                          {/* Needle arrowhead */}
                           <polygon points={`${np.x},${np.y} ${nb1.x},${nb1.y} ${nb2.x},${nb2.y}`} fill="white" opacity={0.95}/>
-                          <circle cx={CX} cy={CY} r={5} fill="#0b0f1a" stroke="white" strokeWidth={1.5}/>
+                          <circle cx={CX} cy={CY} r={6} fill="#0b0f1a" stroke="white" strokeWidth={2}/>
                           {/* Labels */}
                           <text x={CX-R+4} y={CY+14} fontSize={9} fill="#22c55e" textAnchor="middle">Baixo</text>
                           <text x={CX} y={CY-R-6} fontSize={9} fill="#f59e0b" textAnchor="middle">Médio</text>
@@ -1752,13 +1760,14 @@ export default function ClientDashboardPage() {
                           <YAxis tick={{fontSize:10,fill:"#e2e8f0"}} tickLine={false} axisLine={false}
                             tickFormatter={v=>`${Number(v).toFixed(0)}%`} domain={["dataMin",0]} width={42}/>
                           <Tooltip
-                            formatter={(v:number)=>[`${Number(v).toFixed(1)}%`,"Drawdown"]}
+                            formatter={(v:number,name:string)=>[`${Number(v).toFixed(1)}%`, name==="dd"?"Modelo":"MSCI World"]}
                             labelStyle={{color:"#fff",fontWeight:700}}
                             contentStyle={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,fontSize:12,color:"#f1f5f9"}}
-                            itemStyle={{color:"#fca5a5"}}
+                            itemStyle={{color:"#f1f5f9"}}
                           />
                           <ReferenceLine y={0} stroke="#334155"/>
-                          <Area type="monotone" dataKey="dd" stroke="#f87171" strokeWidth={1.5} fill="url(#ddGrad)" dot={false} name="Drawdown"/>
+                          <Area type="monotone" dataKey="dd" stroke="#f87171" strokeWidth={1.5} fill="url(#ddGrad)" dot={false} name="dd"/>
+                          <Line type="monotone" dataKey="bench" stroke="#64748b" strokeWidth={1} dot={false} name="bench" strokeDasharray="4 2"/>
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
@@ -1789,8 +1798,10 @@ export default function ClientDashboardPage() {
                             <Tooltip
                               formatter={(v:number)=>[`${v} meses`,"Frequência"]}
                               labelFormatter={(l:string)=>`Retorno: ${l}`}
-                              labelStyle={{color:"#fff",fontWeight:700}}
-                              contentStyle={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,fontSize:12,color:"#f1f5f9"}}
+                              labelStyle={{color:"#ffffff",fontWeight:700,fontSize:13}}
+                              contentStyle={{background:"#0f172a",border:"1px solid #3b82f6",borderRadius:8,fontSize:12,color:"#f1f5f9",boxShadow:"0 4px 24px rgba(0,0,0,0.6)"}}
+                              itemStyle={{color:"#93c5fd",fontWeight:600}}
+                              cursor={{fill:"rgba(255,255,255,0.06)"}}
                             />
                             <Bar dataKey="count" name="Frequência" radius={[2,2,0,0]} maxBarSize={20}>
                               {returnDist.map((r,i)=><Cell key={i} fill={r.mid>=0?"#3b82f6":"#f87171"}/>)}
