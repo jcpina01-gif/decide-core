@@ -1407,16 +1407,20 @@ export default function ClientDashboardPage() {
                       </tr></thead>
                       <tbody>
                         {(()=>{
-                          const equity=(latestMonth?.rows??[])
-                            .filter(r=>r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH")&&!r.ticker.startsWith("TBILL")&&r.ticker!=="XEON"&&r.weightPct>=0.5)
-                            .sort((a,b)=>b.weightPct-a.weightPct);
-                          const prevRows=sortedMonths[sortedMonths.length-2]?.rows??[];
-                          const pm=new Map(prevRows.map(r=>[r.ticker,r.weightPct]));
+                          // Use the same top-20 equity rows as actionCounts (already N_POS filtered)
+                          const equityRows=actionCounts.allRows.filter(r=>r.ticker!=="XEON"&&r.cur>0);
                           const xeonCur=latestMonth?.tbillsTotalPct??0;
                           const xeonPrev=sortedMonths[sortedMonths.length-2]?.tbillsTotalPct??0;
-                          const usdExposure=equity.filter(r=>getZone(r.ticker)==="EUA").reduce((s,r)=>s+r.weightPct,0);
+                          const usdExposure=equityRows.filter(r=>getZone(r.ticker)==="EUA").reduce((s,r)=>s+r.cur,0);
+                          // Filter out rows where shares < 1 (when prices are loaded)
+                          const equityFiltered=equityRows.filter(r=>{
+                            const p=prices[r.ticker];
+                            if(!p||!p.price) return true; // keep if price not yet loaded
+                            const shares=(r.cur/100)*aum/p.price;
+                            return shares>=1;
+                          });
                           const allRows=[
-                            ...equity.map(r=>({ticker:r.ticker,cur:r.weightPct,prev:pm.get(r.ticker)??0,special:false})),
+                            ...equityFiltered.map(r=>({ticker:r.ticker,cur:r.cur,prev:r.prev,special:false})),
                             {ticker:"XEON",cur:xeonCur,prev:xeonPrev,special:true},
                             {ticker:"EURUSD",cur:usdExposure,prev:usdExposure,special:true},
                           ];
