@@ -191,8 +191,13 @@ function periodStart(dates:string[], period:Period) {
   const i=dates.findIndex(d=>new Date(d)>=cut);
   return i<0?0:i;
 }
+function skipWarmup(eq:number[], from:number) {
+  const v0=eq[from]; let i=from;
+  while(i<eq.length-1&&eq[i]===v0) i++;
+  return i;
+}
 function makeChartData(dates:string[], eq:number[], bench:number[], period:Period) {
-  const s=periodStart(dates,period);
+  const s=skipWarmup(eq,periodStart(dates,period));
   const base=eq[s]||1, bb=bench[s]||1;
   const step=Math.max(1,Math.floor((dates.length-s)/200));
   return dates.slice(s).filter((_,i)=>i%step===0).map((d,i)=>({
@@ -455,7 +460,7 @@ export default function ClientDashboardPage() {
 
   const actionCounts=useMemo(()=>{
     if(!latestMonth||!prevMonth) return {comprar:0,reduzir:0,vender:0,manter:0,rows:[] as {ticker:string;prev:number;cur:number;delta:number;action:string}[]};
-    const WMIN=0.5; // peso mínimo para considerar posição real (%)
+    const WMIN=2.0; // peso mínimo para considerar posição real (%)
     const DMIN=1.0; // variação mínima para Comprar/Reduzir (pp)
     const pm=new Map(prevMonth.rows.map(r=>[r.ticker,r.weightPct]));
     const cm=new Map(latestMonth.rows.map(r=>[r.ticker,r.weightPct]));
@@ -497,7 +502,7 @@ export default function ClientDashboardPage() {
     const curVol=annualVol(allRets.slice(-252))*100;
     const curDD=currentDD(equityRaw.slice(-252*3))*100;
     const ddChart=rollingDD(dates,equityRaw,10);
-    const dd5Start=periodStart(dates,"20 Anos");
+    const dd5Start=skipWarmup(equityRaw,periodStart(dates,"20 Anos"));
     const dd5=rollingDD(dates.slice(dd5Start),equityRaw.slice(dd5Start),10);
     return {chart,m,curVol,curDD,ddChart:dd5};
   },[dates,equityRaw,benchRaw,period]);
@@ -509,13 +514,13 @@ export default function ClientDashboardPage() {
   },[latestMonth]);
 
   const whatChanged=useMemo(()=>{
-    if(!actionCounts.rows.length) return [{icon:"ðŸ“ˆ",title:"Modelo mantém posicionamento",desc:"Sem alterações significativas este mês."}];
+    if(!actionCounts.rows.length) return [{icon:"📈",title:"Modelo mantém posicionamento",desc:"Sem alterações significativas este mês."}];
     const bought=actionCounts.rows.filter(r=>r.action==="Comprar").map(r=>r.ticker).slice(0,3);
     const sold=actionCounts.rows.filter(r=>r.action!=="Comprar").map(r=>r.ticker).slice(0,3);
     const bs=[...new Set(bought.map(getSector))],ss=[...new Set(sold.map(getSector))];
     return [
-      bought.length&&{icon:"ðŸ“ˆ",title:`Aumentámos exposição a ${bs[0]??"ativos"}`,desc:`${bought.join(", ")} com momentum positivo.`},
-      sold.length&&{icon:"ðŸ“‰",title:`Reduzimos ${ss[0]??"posições"}`,desc:`${sold.join(", ")} com deterioração de tendências.`},
+      bought.length&&{icon:"📈",title:`Aumentámos exposição a ${bs[0]??"ativos"}`,desc:`${bought.join(", ")} com momentum positivo.`},
+      sold.length&&{icon:"📉",title:`Reduzimos ${ss[0]??"posições"}`,desc:`${sold.join(", ")} com deterioração de tendências.`},
       {icon:"🌍",title:"Mercado com tendência moderada",desc:"Ambiente favorável a ativos de risco no curto prazo."},
       {icon:"〰",title:"Volatilidade controlada",desc:`Vol actual ${perfData?.curVol?.toFixed(1)??"—"}% anual — nível Moderado.`},
     ].filter(Boolean).slice(0,4) as {icon:string;title:string;desc:string}[];
@@ -560,7 +565,7 @@ export default function ClientDashboardPage() {
                 <p className="text-slate-400 text-xs mt-0.5">Visão geral da sua carteira e recomendações</p>
               </div>
               <div className="flex items-center gap-3">
-                <button className="flex items-center gap-2 bg-[#111827] border border-[#252a3a] rounded-lg px-4 py-2 text-sm text-slate-300 hover:bg-[#151929] transition-colors">
+                <button onClick={()=>document.querySelector('[data-section="reco"]')?.scrollIntoView({behavior:"smooth"})} className="flex items-center gap-2 bg-[#111827] border border-[#252a3a] rounded-lg px-4 py-2 text-sm text-slate-300 hover:bg-[#151929] transition-colors">
                   📅 Recomendação de {recoLabel}
                   <ChevronDown size={14} className="text-slate-400"/>
                 </button>
