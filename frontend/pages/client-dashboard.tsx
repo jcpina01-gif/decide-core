@@ -138,7 +138,7 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
         {!loggedIn&&(
           <button onClick={onRegister}
             className="text-xs px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors">
-            Guardar e executar esta estrat\u00e9gia &rarr;
+            Guardar e executar esta estratégia &rarr;
           </button>
         )}
       </div>
@@ -161,39 +161,78 @@ function buildSimulatorSrc(profile: string): string {
   return `${base}?client_embed=1&profile=${encodeURIComponent(profile)}&embed_tab=simulator&kpi_view=simple&embed_src_rev=${rev}&_ts=${_TS}`;
 }
 
-/* â”€â”€â”€ sector map â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─── sector map ─────────────────────────────────────────────────────────── */
 const SECTOR: Record<string, string> = {
-  AAPL:"Tecnologia",NVDA:"Tecnologia",MSFT:"Tecnologia",GOOGL:"Tecnologia",
+  AAPL:"Tecnologia",NVDA:"Tecnologia",MSFT:"Tecnologia",GOOGL:"Tecnologia",GOOG:"Tecnologia",
   META:"Tecnologia",AVGO:"Tecnologia",AMD:"Tecnologia",CRM:"Tecnologia",
   ORCL:"Tecnologia",QCOM:"Tecnologia",TXN:"Tecnologia",AMAT:"Tecnologia",
   KLAC:"Tecnologia",LRCX:"Tecnologia",SNPS:"Tecnologia",CDNS:"Tecnologia",
   CTSH:"Tecnologia",NOW:"Tecnologia",ADBE:"Tecnologia",INTU:"Tecnologia",
+  INTC:"Tecnologia",MU:"Tecnologia",MRVL:"Tecnologia",ON:"Tecnologia",NOK:"Tecnologia",SQ:"Tecnologia",
   JPM:"Financeiro",GS:"Financeiro",MS:"Financeiro",BAC:"Financeiro",
   V:"Financeiro",MA:"Financeiro",AXP:"Financeiro",BLK:"Financeiro",
   SPGI:"Financeiro",ICE:"Financeiro",MCO:"Financeiro",COF:"Financeiro",
   BKNG:"Cons. Discr.",AMZN:"Cons. Discr.",TSLA:"Cons. Discr.",
   NKE:"Cons. Discr.",MCD:"Cons. Discr.",SBUX:"Cons. Discr.",
-  TJX:"Cons. Discr.",LOW:"Cons. Discr.",HD:"Cons. Discr.",
+  TJX:"Cons. Discr.",LOW:"Cons. Discr.",HD:"Cons. Discr.",WBD:"Comunicação",
   CAT:"Industrial",HON:"Industrial",MMM:"Industrial",GE:"Industrial",
   LMT:"Industrial",RTX:"Industrial",UNP:"Industrial",CSX:"Industrial",
-  DE:"Industrial",EMR:"Industrial",ETN:"Industrial",
+  DE:"Industrial",EMR:"Industrial",ETN:"Industrial",MARUY:"Industrial",
   UNH:"Saúde",JNJ:"Saúde",LLY:"Saúde",ABBV:"Saúde",
-  MRK:"Saúde",PFE:"Saúde",TMO:"Saúde",ABT:"Saúde",
-  XOM:"Energia",CVX:"Energia",COP:"Energia",EOG:"Energia",
+  MRK:"Saúde",PFE:"Saúde",TMO:"Saúde",ABT:"Saúde",BAYRY:"Saúde",
+  XOM:"Energia",CVX:"Energia",COP:"Energia",EOG:"Energia",E:"Energia",
   PXD:"Energia",SLB:"Energia",PSX:"Energia",VLO:"Energia",
-  WMT:"Cons. Básico",PG:"Cons. Básico",KO:"Cons. Básico",
+  WMT:"Cons. Básico",PG:"Cons. Básico",KO:"Cons. Básico",BATS:"Cons. Básico",
   PEP:"Cons. Básico",COST:"Cons. Básico",MDLZ:"Cons. Básico",
+  NEM:"Mat. Básicos",GOLD:"Mat. Básicos",
 };
 const getSector = (t: string) => SECTOR[t.toUpperCase()] ?? "Outros";
 
-const ZONE:Record<string,string>={
-  AAPL:"EUA",NVDA:"EUA",MSFT:"EUA",GOOGL:"EUA",META:"EUA",AVGO:"EUA",
-  AMD:"EUA",CRM:"EUA",ORCL:"EUA",QCOM:"EUA",TXN:"EUA",AMAT:"EUA",
-  MRVL:"EUA",KLAC:"EUA",ON:"EUA",MU:"EUA",INTC:"EUA",LRCX:"EUA",
-  SQ:"EUA",CAT:"EUA",NEM:"EUA",GOLD:"EUA",WBD:"EUA",GOOG:"EUA",
-  BATS:"Europa",NOK:"Europa",E:"Europa",BAYRY:"Europa",MARUY:"Asia",
+/* ─── country map ──────────────────────────────────────────────────────────── */
+const COUNTRY:Record<string,string>={
+  AAPL:"EUA",NVDA:"EUA",MSFT:"EUA",GOOGL:"EUA",GOOG:"EUA",META:"EUA",
+  AVGO:"EUA",AMD:"EUA",CRM:"EUA",ORCL:"EUA",QCOM:"EUA",TXN:"EUA",
+  AMAT:"EUA",MRVL:"EUA",KLAC:"EUA",ON:"EUA",MU:"EUA",INTC:"EUA",
+  LRCX:"EUA",SQ:"EUA",CAT:"EUA",NEM:"EUA",GOLD:"Canadá",WBD:"EUA",
+  JPM:"EUA",GS:"EUA",MS:"EUA",BAC:"EUA",V:"EUA",MA:"EUA",AXP:"EUA",
+  BLK:"EUA",SPGI:"EUA",ICE:"EUA",MCO:"EUA",COF:"EUA",
+  BKNG:"EUA",AMZN:"EUA",TSLA:"EUA",NKE:"EUA",MCD:"EUA",SBUX:"EUA",
+  TJX:"EUA",LOW:"EUA",HD:"EUA",
+  UNH:"EUA",JNJ:"EUA",LLY:"EUA",ABBV:"EUA",MRK:"EUA",PFE:"EUA",
+  TMO:"EUA",ABT:"EUA",
+  XOM:"EUA",CVX:"EUA",COP:"EUA",EOG:"EUA",PXD:"EUA",SLB:"EUA",
+  PSX:"EUA",VLO:"EUA",
+  WMT:"EUA",PG:"EUA",KO:"EUA",PEP:"EUA",COST:"EUA",MDLZ:"EUA",
+  HON:"EUA",MMM:"EUA",GE:"EUA",LMT:"EUA",RTX:"EUA",UNP:"EUA",
+  CSX:"EUA",DE:"EUA",EMR:"EUA",ETN:"EUA",
+  NOK:"Finlândia",BATS:"Reino Unido",E:"Itália",BAYRY:"Alemanha",MARUY:"Japão",
 };
-const getZone=(t:string)=>ZONE[t.toUpperCase()]??"Outros";
+const getZone=(t:string)=>COUNTRY[t.toUpperCase()]??"EUA";
+
+/* ─── company name map ─────────────────────────────────────────────────────── */
+const COMPANY:Record<string,string>={
+  AAPL:"Apple",NVDA:"Nvidia",MSFT:"Microsoft",GOOGL:"Alphabet A",GOOG:"Alphabet C",
+  META:"Meta",AVGO:"Broadcom",AMD:"AMD",CRM:"Salesforce",ORCL:"Oracle",
+  QCOM:"Qualcomm",TXN:"Texas Instruments",AMAT:"Applied Materials",
+  MRVL:"Marvell",KLAC:"KLA Corp",ON:"ON Semi",MU:"Micron",INTC:"Intel",
+  LRCX:"Lam Research",SQ:"Block",NOK:"Nokia",
+  CAT:"Caterpillar",NEM:"Newmont",GOLD:"Barrick Gold",WBD:"Warner Bros.",
+  BATS:"BAT",E:"ENI",BAYRY:"Bayer",MARUY:"Marubeni",
+  JPM:"JPMorgan",GS:"Goldman Sachs",MS:"Morgan Stanley",BAC:"Bank of America",
+  V:"Visa",MA:"Mastercard",AXP:"Amex",BLK:"BlackRock",
+  SPGI:"S&P Global",ICE:"ICE",MCO:"Moody's",COF:"Capital One",
+  BKNG:"Booking",AMZN:"Amazon",TSLA:"Tesla",NKE:"Nike",MCD:"McDonald's",
+  SBUX:"Starbucks",TJX:"TJX",LOW:"Lowe's",HD:"Home Depot",
+  UNH:"UnitedHealth",JNJ:"J&J",LLY:"Eli Lilly",ABBV:"AbbVie",
+  MRK:"Merck",PFE:"Pfizer",TMO:"Thermo Fisher",ABT:"Abbott",
+  XOM:"ExxonMobil",CVX:"Chevron",COP:"ConocoPhillips",EOG:"EOG Resources",
+  PXD:"Pioneer Natural",SLB:"SLB",PSX:"Phillips 66",VLO:"Valero",
+  WMT:"Walmart",PG:"P&G",KO:"Coca-Cola",PEP:"PepsiCo",
+  COST:"Costco",MDLZ:"Mondelez",
+  HON:"Honeywell",MMM:"3M",GE:"GE",LMT:"Lockheed Martin",RTX:"RTX",
+  UNP:"Union Pacific",CSX:"CSX",DE:"Deere",EMR:"Emerson",ETN:"Eaton",
+};
+const getCompany=(t:string)=>COMPANY[t.toUpperCase()]??"";
 
 type Page="dashboard"|"reco"|"carteira"|"perf"|"risco"|"historico"|"ajuda"|"contactos";
 
@@ -829,7 +868,11 @@ export default function ClientDashboardPage() {
                               const dc=r.delta>0?"text-emerald-400":"text-red-400";
                               return (
                                 <tr key={r.ticker} className="border-b border-[#111520] hover:bg-white/[0.02]">
-                                  <td className="py-2 font-bold text-slate-200">{r.ticker}</td>
+                                  <td className="py-2">
+                                    <a href={`https://finance.yahoo.com/quote/${r.ticker}`} target="_blank" rel="noopener noreferrer"
+                                      className="font-bold text-blue-400 hover:text-blue-300 hover:underline">{r.ticker}</a>
+                                    {getCompany(r.ticker)&&<span className="ml-1 text-slate-500 font-normal">{getCompany(r.ticker)}</span>}
+                                  </td>
                                   <td className="py-2 text-slate-400">{getSector(r.ticker)}</td>
                                   <td className="py-2 text-right text-slate-300">{r.prev.toFixed(1)}%</td>
                                   <td className="py-2 text-right text-slate-300">{r.cur.toFixed(1)}%</td>
@@ -1014,7 +1057,11 @@ export default function ClientDashboardPage() {
                         const rowBg=r.action==="Comprar"?"bg-emerald-950/20":r.action==="Aumentar"?"bg-cyan-950/20":r.action==="Vender"?"bg-red-950/20":r.action==="Reduzir"?"bg-amber-950/10":"";
                         return (
                           <tr key={r.ticker} className={`border-b border-[#111520] hover:bg-white/[0.03] ${rowBg}`}>
-                            <td className="py-2 font-bold text-slate-200">{r.ticker}</td>
+                            <td className="py-2">
+                              <a href={`https://finance.yahoo.com/quote/${r.ticker}`} target="_blank" rel="noopener noreferrer"
+                                className="font-bold text-blue-400 hover:text-blue-300 hover:underline">{r.ticker}</a>
+                              {getCompany(r.ticker)&&<span className="ml-1.5 text-slate-500 font-normal">{getCompany(r.ticker)}</span>}
+                            </td>
                             <td className="py-2 text-slate-400">{getSector(r.ticker)}</td>
                             <td className="py-2 text-slate-400">{getZone(r.ticker)}</td>
                             <td className="py-2 text-right text-slate-300">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
