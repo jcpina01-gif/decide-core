@@ -14,7 +14,9 @@ export default function AppLayout({
   /** Iframes: `/embed/*` e `/fees-client?embed=1` — sem header; o shell pai já mostra logo e menu. */
   const isFeesClientEmbed =
     router.pathname === "/fees-client" && String(router.query.embed ?? "") === "1";
-  const isEmbedChromeless = router.pathname.startsWith("/embed/") || isFeesClientEmbed;
+  /** Dashboard v2 tem sidebar própria — sem header global */
+  const isDashboardWithOwnNav = router.pathname === "/client-dashboard";
+  const isEmbedChromeless = router.pathname.startsWith("/embed/") || isFeesClientEmbed || isDashboardWithOwnNav;
 
   return (
     <div

@@ -1,1481 +1,700 @@
 import Head from "next/head";
-import ClientPendingTextLink from "../components/ClientPendingTextLink";
 import { useRouter } from "next/router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  CLIENT_SESSION_CHANGED_EVENT,
-  fetchProspectEmailVerifiedFromServer,
-  getCurrentSessionUser,
-  getCurrentSessionUserEmail,
-  getCurrentSessionUserPhone,
-  isClientLoggedIn,
-  isSessionEmailVerified,
-  normalizeClientPhone,
-  requestEmailVerificationProspectSend,
-  requestEmailVerificationSend,
-  updateClientContact,
-} from "../lib/clientAuth";
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, ReferenceLine,
+} from "recharts";
 import {
-  acknowledgeMonthlyReview,
-  describeScheduleForUi,
-  formatPtDate,
-  getNotifyPhone,
-  getPortfolioSchedule,
-  setOnboardingSnapshotNow,
-  toLocalYmd,
-} from "../lib/clientPortfolioSchedule";
-import { collapseHistMonthsToLatestPerCalendarMonth } from "../lib/recommendationsHistoryMonthCollapse";
-import {
-  DECIDE_NEXT_DEV_PORT,
-  devConfirmationLinkUsesLoopback,
-  devConfirmationLinkWrongPort,
-} from "../lib/emailConfirmationDevLink";
-import { DECIDE_APP_PAGE_BG, DECIDE_DASHBOARD } from "../lib/decideClientTheme";
-import CarteiraIbkrSummary from "../components/CarteiraIbkrSummary";
-import InlineLoadingDots from "../components/InlineLoadingDots";
-import ClientKpiEmbedWorkspace from "../components/ClientKpiEmbedWorkspace";
-import ClientKpiPageChrome from "../components/ClientKpiPageChrome";
-import ClientGrowthNarrative from "../components/ClientGrowthNarrative";
-import { DECIDE_DASHBOARD_KPI_REFRESH_EVENT } from "../lib/decideDashboardEvents";
-import { ONBOARDING_LOCALSTORAGE_CHANGED_EVENT } from "../components/OnboardingFlowBar";
-import { useClientKpiEmbed } from "../hooks/useClientKpiEmbed";
-import { FLASK_KPI_EMBED_TABS, normalizeKpiEmbedTabId } from "../lib/kpiEmbedNav";
+  LayoutDashboard, BookOpen, Briefcase, TrendingUp, ShieldCheck,
+  Clock, Settings, LogOut, ChevronDown, Info, ArrowUpRight,
+  ArrowDownRight, Minus, AlertCircle, Cpu,
+} from "lucide-react";
+import { isClientLoggedIn, getCurrentSessionUser } from "../lib/clientAuth";
 import { useSyncedRiskProfileFromOnboarding } from "../hooks/useSyncedRiskProfileFromOnboarding";
-import {
-  consumeSkipHedgeGateFromUrl,
-  isFxHedgeGateOk,
-  shouldSkipHedgeGateRedirect,
-} from "../lib/fxHedgePrefs";
-type SeriesPoint = {
-  dates?: string[];
-  equity_raw?: number[];
-  equity_overlayed?: number[];
-  equity_raw_volmatched?: number[];
-  benchmark_equity?: number[];
+
+/* ─── sector mapping ─────────────────────────────────────── */
+const SECTOR: Record<string, string> = {
+  AAPL:"Tecnologia", NVDA:"Tecnologia", MSFT:"Tecnologia", GOOGL:"Tecnologia",
+  META:"Tecnologia", AVGO:"Tecnologia", AMD:"Tecnologia", CRM:"Tecnologia",
+  ORCL:"Tecnologia", QCOM:"Tecnologia", TXN:"Tecnologia", AMAT:"Tecnologia",
+  KLAC:"Tecnologia", LRCX:"Tecnologia", SNPS:"Tecnologia", CDNS:"Tecnologia",
+  CTSH:"Tecnologia", NOW:"Tecnologia", ADBE:"Tecnologia", INTU:"Tecnologia",
+  JPM:"Financeiro", GS:"Financeiro", MS:"Financeiro", BAC:"Financeiro",
+  V:"Financeiro", MA:"Financeiro", AXP:"Financeiro", BLK:"Financeiro",
+  SPGI:"Financeiro", ICE:"Financeiro", MCO:"Financeiro", COF:"Financeiro",
+  BKNG:"Cons. Discr.", AMZN:"Cons. Discr.", TSLA:"Cons. Discr.",
+  NKE:"Cons. Discr.", MCD:"Cons. Discr.", SBUX:"Cons. Discr.",
+  TJX:"Cons. Discr.", LOW:"Cons. Discr.", HD:"Cons. Discr.",
+  CAT:"Industrial", HON:"Industrial", MMM:"Industrial", GE:"Industrial",
+  LMT:"Industrial", RTX:"Industrial", UNP:"Industrial", CSX:"Industrial",
+  DE:"Industrial", EMR:"Industrial", ETN:"Industrial",
+  UNH:"Saúde", JNJ:"Saúde", LLY:"Saúde", ABBV:"Saúde",
+  MRK:"Saúde", PFE:"Saúde", TMO:"Saúde", ABT:"Saúde",
+  XOM:"Energia", CVX:"Energia", COP:"Energia", EOG:"Energia",
+  PXD:"Energia", SLB:"Energia", PSX:"Energia", VLO:"Energia",
+  WMT:"Cons. Básico", PG:"Cons. Básico", KO:"Cons. Básico",
+  PEP:"Cons. Básico", COST:"Cons. Básico", MDLZ:"Cons. Básico",
+  NEE:"Utilities", DUK:"Utilities", SO:"Utilities",
+  AMT:"Real Estate", PLD:"Real Estate", EQIX:"Real Estate",
 };
-
-type CoreOverlayedResp = {
-  ok?: boolean;
-  detail?: any;
-  series?: SeriesPoint;
-};
-
-/** Alinhado a `ONBOARDING_STORAGE_KEYS.approve` — plano regulamentar aprovado no `/client/approve`. */
-const CLIENT_PLAN_APPROVED_LS_KEY = "decide_onboarding_step4_done";
-
-/** CTA secção recomendações / plano — verde acinzentado (tema principal) */
-const PLAN_CTA_ORANGE: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "9px 14px",
-  borderRadius: 11,
-  border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
-  background: DECIDE_DASHBOARD.kpiMenuMainButtonBackground,
-  color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
-  fontSize: 12,
-  fontWeight: 900,
-  textDecoration: "none",
-  textAlign: "center",
-  boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
-};
-
-function getOverlayFactor(resp: CoreOverlayedResp | null) {
-  const d = (resp && resp.detail) || {};
-  const candidates = [
-    d && d.ddcap && d.ddcap.cap_scale_factor_last,
-    d && d.ddcap && d.ddcap.cap_scale_factor,
-    d && d.ddcap && d.ddcap.factor_last,
-    d && d.ddcap && d.ddcap.factor,
-    d && d.cap_scale_factor_last,
-    d && d.cap_scale_factor,
-    d && d.overlay_factor_last,
-    d && d.overlay_factor,
-  ];
-  for (const c of candidates) {
-    if (typeof c === "number" && isFinite(c)) return c;
-  }
-  return null;
+function getSector(ticker: string): string {
+  return SECTOR[ticker.toUpperCase()] ?? "Outros";
 }
 
+/* ─── maths helpers ──────────────────────────────────────── */
+function cagr(start: number, end: number, years: number): number {
+  if (!start || start <= 0 || years <= 0) return 0;
+  return Math.pow(end / start, 1 / years) - 1;
+}
+function annualVol(returns: number[]): number {
+  if (returns.length < 5) return 0;
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const variance = returns.reduce((a, b) => a + (b - mean) ** 2, 0) / (returns.length - 1);
+  return Math.sqrt(variance) * Math.sqrt(252);
+}
+function sharpe(returns: number[], rf = 0): number {
+  if (returns.length < 5) return 0;
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const vol = annualVol(returns) / Math.sqrt(252);
+  if (!vol) return 0;
+  return ((mean - rf / 252) / vol) * Math.sqrt(252);
+}
+function currentDrawdown(equity: number[]): number {
+  if (!equity.length) return 0;
+  let peak = equity[0];
+  let dd = 0;
+  for (const v of equity) {
+    if (v > peak) peak = v;
+    const d = (v - peak) / peak;
+    if (d < dd) dd = d;
+  }
+  return dd;
+}
+function rollingDrawdownSeries(
+  dates: string[], equity: number[], step = 7
+): { date: string; dd: number }[] {
+  const out: { date: string; dd: number }[] = [];
+  let peak = equity[0] ?? 1;
+  for (let i = 0; i < equity.length; i += step) {
+    if (equity[i] > peak) peak = equity[i];
+    out.push({ date: dates[i].slice(0, 7), dd: ((equity[i] - peak) / peak) * 100 });
+  }
+  return out;
+}
+
+/* ─── types ──────────────────────────────────────────────── */
+type WeightRow = { ticker: string; weight: number; weightPct: number; score: number };
+type RecoMonth  = { date?: string; rebalance_date?: string; rows: WeightRow[]; tbillsTotalPct?: number; equitySleeveTotalPct?: number };
+
+/* ─── sidebar ────────────────────────────────────────────── */
+const NAV = [
+  { id:"dashboard", label:"Dashboard",      Icon:LayoutDashboard },
+  { id:"reco",      label:"Recomendações",  Icon:BookOpen        },
+  { id:"carteira",  label:"Carteira",       Icon:Briefcase       },
+  { id:"perf",      label:"Performance",    Icon:TrendingUp      },
+  { id:"risco",     label:"Risco",          Icon:ShieldCheck     },
+  { id:"historico", label:"Histórico",      Icon:Clock           },
+  { id:"defs",      label:"Definições",     Icon:Settings        },
+];
+
+function Sidebar({ user, profile, active }: { user:string|null; profile:string; active:string }) {
+  const router = useRouter();
+  const initials = user ? user.slice(0,2).toUpperCase() : "JC";
+  const profilePt = profile === "conservador" ? "Conservador" : profile === "dinamico" ? "Dinâmico" : "Moderado";
+  return (
+    <aside className="flex flex-col w-56 min-h-screen bg-[#0b1629] border-r border-[#1e2d45] shrink-0">
+      {/* logo */}
+      <div className="px-5 py-5 border-b border-[#1e2d45]">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-teal-500 flex items-center justify-center">
+            <Cpu size={16} className="text-white" />
+          </div>
+          <div>
+            <div className="text-white font-bold text-sm leading-tight">DECIDE</div>
+            <div className="text-slate-400 text-[10px] leading-tight">Advisory Quantitativo</div>
+          </div>
+        </div>
+      </div>
+      {/* nav */}
+      <nav className="flex-1 px-3 py-4 space-y-0.5">
+        {NAV.map(({ id, label, Icon }) => {
+          const isActive = active === id;
+          return (
+            <button
+              key={id}
+              onClick={() => { if (id === "dashboard") router.push("/client-dashboard"); }}
+              className={[
+                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                isActive
+                  ? "bg-teal-500/15 text-teal-400 border border-teal-500/25"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-white/5",
+              ].join(" ")}
+            >
+              <Icon size={16} />
+              {label}
+            </button>
+          );
+        })}
+      </nav>
+      {/* user */}
+      <div className="px-3 py-4 border-t border-[#1e2d45] space-y-1">
+        <div className="flex items-center gap-3 px-3 py-2">
+          <div className="w-8 h-8 rounded-full bg-teal-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
+            {initials}
+          </div>
+          <div className="min-w-0">
+            <div className="text-slate-200 text-xs font-semibold truncate">{user ?? "João Cliente"}</div>
+            <div className="text-slate-400 text-[10px]">Perfil: {profilePt}</div>
+          </div>
+        </div>
+        <button
+          onClick={() => router.push("/client/logout")}
+          className="w-full flex items-center gap-3 px-3 py-2 text-slate-500 hover:text-slate-300 text-xs rounded-lg hover:bg-white/5 transition-colors"
+        >
+          <LogOut size={14} />
+          Sair
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+/* ─── stat badge ─────────────────────────────────────────── */
+function ActionBadge({ label, count, color }: { label:string; count:number; color:string }) {
+  const Icon = label === "COMPRAR" ? ArrowUpRight
+    : label === "VENDER" ? ArrowDownRight
+    : label === "REDUZIR" ? ArrowDownRight
+    : Minus;
+  const bar = label === "COMPRAR" ? "bg-emerald-500"
+    : label === "VENDER" ? "bg-red-500"
+    : label === "REDUZIR" ? "bg-amber-500"
+    : "bg-slate-500";
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-1.5">
+        <span className={`text-3xl font-black ${color}`}>{count}</span>
+        <Icon size={20} className={color} />
+      </div>
+      <div className="text-slate-400 text-[11px] font-semibold tracking-wide">{label}</div>
+      <div className={`h-0.5 rounded-full ${bar} opacity-60`} />
+    </div>
+  );
+}
+
+/* ─── section header ─────────────────────────────────────── */
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-4">
+      <h2 className="text-slate-200 text-sm font-bold tracking-wide uppercase">{title}</h2>
+      <Info size={13} className="text-slate-500" />
+    </div>
+  );
+}
+
+/* ─── performance period tabs ────────────────────────────── */
+const PERIODS = ["YTD","1 Ano","3 Anos","5 Anos","Desde início"] as const;
+type Period = (typeof PERIODS)[number];
+
+function periodSlice(dates: string[], equity: number[], bench: number[], period: Period) {
+  if (!dates.length) return { dates:[], equity:[], bench:[] };
+  const last = new Date(dates[dates.length-1]);
+  let cutoff: Date;
+  if (period === "YTD") cutoff = new Date(last.getFullYear(), 0, 1);
+  else if (period === "1 Ano") cutoff = new Date(last.getFullYear()-1, last.getMonth(), last.getDate());
+  else if (period === "3 Anos") cutoff = new Date(last.getFullYear()-3, last.getMonth(), last.getDate());
+  else if (period === "5 Anos") cutoff = new Date(last.getFullYear()-5, last.getMonth(), last.getDate());
+  else cutoff = new Date(dates[0]);
+  const idx = dates.findIndex(d => new Date(d) >= cutoff);
+  const start = idx < 0 ? 0 : idx;
+  const base = equity[start] || 1;
+  const bbase = bench[start] || 1;
+  // subsample to ~200 pts max for chart performance
+  const slice = dates.slice(start);
+  const step = Math.max(1, Math.floor(slice.length / 200));
+  const out = { dates:[] as string[], equity:[] as number[], bench:[] as number[] };
+  for (let i = 0; i < slice.length; i += step) {
+    out.dates.push(slice[i]);
+    out.equity.push(((equity[start+i] ?? equity[start]) / base - 1) * 100);
+    out.bench.push(((bench[start+i] ?? bench[start]) / bbase - 1) * 100);
+  }
+  return out;
+}
+
+function periodMetrics(equity: number[], bench: number[], period: Period) {
+  if (equity.length < 2) return { ret:0, annRet:0, sharpeVal:0, benchRet:0 };
+  const years = period === "YTD" ? (new Date().getMonth()+1)/12
+    : period === "1 Ano" ? 1 : period === "3 Anos" ? 3 : period === "5 Anos" ? 5
+    : (equity.length / 252);
+  const totalRet = (equity[equity.length-1] / equity[0]) - 1;
+  const totalBench = (bench[bench.length-1] / bench[0]) - 1;
+  const annRet = cagr(equity[0], equity[equity.length-1], years);
+  const rets = equity.slice(1).map((v,i) => v/equity[i]-1);
+  const shp = sharpe(rets);
+  return { ret: totalRet*100, annRet: annRet*100, sharpeVal: shp, benchRet: totalBench*100 };
+}
+
+const PIE_COLORS = ["#14b8a6","#3b82f6","#f59e0b","#8b5cf6","#22c55e","#ef4444","#64748b"];
+
+/* ─── custom tooltip ─────────────────────────────────────── */
+function PerfTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-xs">
+      <div className="text-slate-300 mb-1">{label}</div>
+      {payload.map((p: any) => (
+        <div key={p.dataKey} style={{ color: p.color }}>
+          {p.name}: {p.value?.toFixed(1)}%
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ─── main page ──────────────────────────────────────────── */
 export default function ClientDashboardPage() {
   const router = useRouter();
-  const modelVersion =
-    typeof router.query.model_version === "string" &&
-    (router.query.model_version === "v7_dynamic_light" ||
-      router.query.model_version === "v7_dynamic_medium")
-      ? (router.query.model_version as "v7_dynamic_light" | "v7_dynamic_medium")
-      : "official_v6";
-  const [planPageNavPending, setPlanPageNavPending] = useState(false);
-  const goToApprovePlan = useCallback(() => {
-    setPlanPageNavPending(true);
-    void router.push("/client/approve").catch(() => {
-      setPlanPageNavPending(false);
-    });
-  }, [router]);
-
-  useEffect(() => {
-    const onNavError = () => setPlanPageNavPending(false);
-    router.events?.on("routeChangeError", onNavError);
-    return () => router.events?.off("routeChangeError", onNavError);
-  }, [router]);
-  const { profile, setProfile } = useSyncedRiskProfileFromOnboarding();
-  const [loading, setLoading] = useState(false);
-  const [errMsg, setErrMsg] = useState<string>("");
-  const [resp, setResp] = useState<CoreOverlayedResp | null>(null);
-  const [iframeRefresh, setIframeRefresh] = useState(0);
-  const [kpiToolbarRefreshBusy, setKpiToolbarRefreshBusy] = useState(false);
-  const kpiRefreshSafetyRef = useRef<number | undefined>(undefined);
-  /** Força releitura do calendário de carteira após gravar no localStorage */
-  const [portfolioScheduleRev, setPortfolioScheduleRev] = useState(0);
-  const [notifyPhoneInput, setNotifyPhoneInput] = useState("");
-  /** Feedback ao gravar telemóvel (onBlur falha em muitos browsers móveis). */
-  const [notifyPhoneSaveFeedback, setNotifyPhoneSaveFeedback] = useState("");
-  /** Erro ou aviso do envio automático (antes do rebalance); o botão grande não dispara envio. */
-  const [preadviceMsg, setPreadviceMsg] = useState("");
-  const [verifyResendBusy, setVerifyResendBusy] = useState(false);
-  const [verifyBannerNote, setVerifyBannerNote] = useState("");
-  const [prospectEmail, setProspectEmail] = useState("");
-  const [prospectBusy, setProspectBusy] = useState(false);
-  const [prospectErr, setProspectErr] = useState("");
-  const [prospectDevLink, setProspectDevLink] = useState<string | null>(null);
-  const [prospectListVerified, setProspectListVerified] = useState(false);
-  const [prospectListStatusLoading, setProspectListStatusLoading] = useState(false);
-  /** Email (normalizado) para o qual o último envio teve sucesso — mostra «link enviado» até confirmar ou mudar o email. */
-  const [prospectListLinkSentEmail, setProspectListLinkSentEmail] = useState<string | null>(null);
-  const prospectSendInFlight = useRef(false);
-  /** Último mês do histórico de pesos (modelo) — T-Bills vs ações na “carteira actual” recomendada. */
-  const [latestModelMonth, setLatestModelMonth] = useState<{
-    date: string;
-    tbillsTotalPct?: number;
-    equitySleeveTotalPct?: number;
-  } | null>(null);
-
-  // Importante para evitar "hydration mismatch": no server sem window.
+  const { profile } = useSyncedRiskProfileFromOnboarding();
   const [mounted, setMounted] = useState(false);
-  const [sessionUser, setSessionUser] = useState<string | null>(null);
+  const [sessionUser, setSessionUser] = useState<string|null>(null);
   const [loggedIn, setLoggedIn] = useState(false);
+  const [period, setPeriod] = useState<Period>("5 Anos");
 
-  const {
-    kpiEmbedTab,
-    applyKpiEmbedTab,
-    kpiViewMode,
-    setKpiViewMode,
-    kpiIframeSrc,
-    kpiIframeRef,
-  } = useClientKpiEmbed({ profile, loggedIn, modelVersion, iframeRefresh });
+  // freeze series
+  const [dates, setDates] = useState<string[]>([]);
+  const [equityRaw, setEquityRaw] = useState<number[]>([]);
+  const [benchRaw, setBenchRaw] = useState<number[]>([]);
 
-  const syncClientSession = useCallback(() => {
-    try {
-      if (typeof window === "undefined") return;
-      setSessionUser(getCurrentSessionUser());
-      setLoggedIn(isClientLoggedIn());
-    } catch {
-      setSessionUser(null);
-      setLoggedIn(false);
-    }
-  }, []);
+  // recommendations
+  const [recoMonths, setRecoMonths] = useState<RecoMonth[]>([]);
+  const [recoLoading, setRecoLoading] = useState(true);
 
+  /* auth */
   useEffect(() => {
     setMounted(true);
-    syncClientSession();
-  }, [syncClientSession]);
-
-  useEffect(() => {
-    consumeSkipHedgeGateFromUrl();
+    try {
+      setSessionUser(getCurrentSessionUser());
+      setLoggedIn(isClientLoggedIn());
+    } catch { /* */ }
   }, []);
 
   useEffect(() => {
-    if (!mounted || !loggedIn || isFxHedgeGateOk()) return;
-    if (shouldSkipHedgeGateRedirect()) return;
-    void router.replace("/client/fx-hedge-onboarding");
+    if (mounted && !loggedIn) {
+      void router.replace("/client/login");
+    }
   }, [mounted, loggedIn, router]);
 
+  /* fetch freeze series */
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    document.documentElement.style.background = DECIDE_APP_PAGE_BG;
-    document.body.style.background = DECIDE_APP_PAGE_BG;
+    fetch("/api/landing/freeze-cap15-backtest")
+      .then(r => r.json())
+      .then((d: any) => {
+        if (d?.series) {
+          setDates(d.series.dates ?? []);
+          setEquityRaw(d.series.equity_overlayed ?? []);
+          setBenchRaw(d.series.benchmark_equity ?? []);
+        }
+      })
+      .catch(() => {});
   }, []);
 
+  /* fetch recommendations */
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const onFocus = () => syncClientSession();
-    const onStorage = () => syncClientSession();
-    const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) syncClientSession();
-    };
-    const onSessionCustom = () => syncClientSession();
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") syncClientSession();
-    };
-    window.addEventListener("focus", onFocus);
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("pageshow", onPageShow);
-    window.addEventListener(CLIENT_SESSION_CHANGED_EVENT, onSessionCustom);
-    document.addEventListener("visibilitychange", onVisibility);
-    const onRoute = () => syncClientSession();
-    router.events?.on("routeChangeComplete", onRoute);
-    return () => {
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("pageshow", onPageShow);
-      window.removeEventListener(CLIENT_SESSION_CHANGED_EVENT, onSessionCustom);
-      document.removeEventListener("visibilitychange", onVisibility);
-      router.events?.off("routeChangeComplete", onRoute);
-    };
-  }, [router, syncClientSession]);
-
-  useEffect(() => {
-    if (!prospectBusy) return;
-    const t = window.setTimeout(() => {
-      setProspectBusy(false);
-      setProspectErr((prev) => prev || "O pedido demorou demasiado. Recarregue a página e tente outra vez.");
-    }, 95_000);
-    return () => window.clearTimeout(t);
-  }, [prospectBusy]);
-
-  useEffect(() => {
-    if (!mounted || loggedIn) return;
-    const em = prospectEmail.trim().toLowerCase();
-    if (!em.includes("@")) {
-      setProspectListVerified(false);
-      setProspectListStatusLoading(false);
-      return;
-    }
-    setProspectListStatusLoading(true);
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const v = await fetchProspectEmailVerifiedFromServer(em);
-          setProspectListVerified(v);
-          if (v) setProspectListLinkSentEmail(null);
-        } catch {
-          setProspectListVerified(false);
-        } finally {
-          setProspectListStatusLoading(false);
-        }
-      })();
-    }, 450);
-    return () => window.clearTimeout(timer);
-  }, [mounted, loggedIn, prospectEmail]);
-
-  useEffect(() => {
-    if (!mounted || loggedIn) return;
-    const onVis = () => {
-      if (document.visibilityState !== "visible") return;
-      const em = prospectEmail.trim().toLowerCase();
-      if (!em.includes("@")) return;
-      void fetchProspectEmailVerifiedFromServer(em).then((v) => {
-        setProspectListVerified(v);
-        if (v) setProspectListLinkSentEmail(null);
-      });
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, [mounted, loggedIn, prospectEmail]);
-
-  useEffect(() => {
-    if (!mounted || !loggedIn) {
-      setLatestModelMonth(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch("/api/client/recommendations-history");
-        const j = (await r.json()) as {
-          ok?: boolean;
-          months?: { date: string; tbillsTotalPct?: number; equitySleeveTotalPct?: number }[];
-        };
-        if (cancelled) return;
-        if (!r.ok || j.ok === false || !j.months?.length) {
-          setLatestModelMonth(null);
-          return;
-        }
-        const months = collapseHistMonthsToLatestPerCalendarMonth(j.months ?? []);
-        setLatestModelMonth(months[0] ?? null);
-      } catch {
-        if (!cancelled) setLatestModelMonth(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [mounted, loggedIn]);
-
-  async function sendProspectListVerification() {
-    if (prospectBusy || prospectSendInFlight.current) return;
-    setProspectErr("");
-    setProspectDevLink(null);
-    const em = prospectEmail.trim();
-    if (!em || !em.includes("@")) {
-      setProspectErr("Indique um email válido.");
-      return;
-    }
-    prospectSendInFlight.current = true;
-    setProspectBusy(true);
-    try {
-      const vr = await requestEmailVerificationProspectSend(em, { prospectSource: "dashboard" });
-      setProspectBusy(false);
-      if (vr.mode === "simulated" && vr.link) {
-        setProspectDevLink(vr.link);
-        void navigator.clipboard?.writeText(vr.link).catch(() => {});
-        setProspectListLinkSentEmail(em.toLowerCase());
-      } else if (!vr.ok) {
-        setProspectErr(vr.error || "Não foi possível enviar o email.");
-        setProspectListLinkSentEmail(null);
-      } else {
-        setProspectDevLink(null);
-        setProspectListLinkSentEmail(em.toLowerCase());
-        setProspectListVerified(false);
-      }
-    } catch {
-      setProspectErr("Erro inesperado ao pedir o link.");
-    } finally {
-      prospectSendInFlight.current = false;
-      setProspectBusy(false);
-    }
-  }
-
-  const portfolioScheduleUi = useMemo(() => {
-    if (!mounted || !sessionUser) {
-      return describeScheduleForUi(null);
-    }
-    const sch = getPortfolioSchedule(sessionUser);
-    return describeScheduleForUi(sch);
-  }, [mounted, sessionUser, portfolioScheduleRev]);
-
-  /** Plano aprovado em `/client/approve` (localStorage). Enquanto `false`, mostramos CTA para constituir carteira. */
-  const clientPlanApproved = useMemo(() => {
-    if (!mounted || typeof window === "undefined") return false;
-    try {
-      return window.localStorage.getItem(CLIENT_PLAN_APPROVED_LS_KEY) === "1";
-    } catch {
-      return false;
-    }
-  }, [mounted, portfolioScheduleRev]);
-
-  useEffect(() => {
-    if (!mounted || typeof window === "undefined") return;
-    const bump = () => setPortfolioScheduleRev((n) => n + 1);
-    window.addEventListener(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT, bump);
-    return () => window.removeEventListener(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT, bump);
-  }, [mounted]);
-
-  /** Só ao mudar sessão — não depender de portfolioScheduleRev (senão apaga o número a meio da edição). */
-  useEffect(() => {
-    if (!mounted || !sessionUser) {
-      setNotifyPhoneInput("");
-      return;
-    }
-    const fromAccount = getCurrentSessionUserPhone();
-    const loose = getNotifyPhone(sessionUser);
-    setNotifyPhoneInput(fromAccount || loose || "");
-  }, [mounted, sessionUser]);
-
-  const persistNotifyPhone = useCallback(() => {
-    if (!sessionUser) {
-      setNotifyPhoneSaveFeedback("Inicia sessão para gravar o telemóvel.");
-      return;
-    }
-    const phTry = normalizeClientPhone(notifyPhoneInput);
-    const current = (getCurrentSessionUserPhone() || "").trim();
-    if (phTry.ok && phTry.e164 === current) {
-      setNotifyPhoneSaveFeedback("");
-      return;
-    }
-    setNotifyPhoneSaveFeedback("");
-    const em = (getCurrentSessionUserEmail() || "").trim();
-    const r = updateClientContact(em, notifyPhoneInput);
-    if (r.ok) {
-      if (r.phoneE164) setNotifyPhoneInput(r.phoneE164);
-      setPortfolioScheduleRev((n) => n + 1);
-      setNotifyPhoneSaveFeedback("Telemóvel guardado.");
-      window.setTimeout(() => setNotifyPhoneSaveFeedback(""), 5000);
-    } else {
-      setNotifyPhoneSaveFeedback(r.error || "Não foi possível gravar.");
-    }
-  }, [sessionUser, notifyPhoneInput]);
-
-  useEffect(() => {
-    // Keep state consistent after login/logout without refresh.
-    setErrMsg("");
+    setRecoLoading(true);
+    fetch("/api/client/recommendations-history")
+      .then(r => r.json())
+      .then((d: any) => {
+        if (d?.months) setRecoMonths(d.months);
+      })
+      .catch(() => {})
+      .finally(() => setRecoLoading(false));
   }, []);
 
-  const clearKpiToolbarRefreshBusy = useCallback(() => {
-    if (kpiRefreshSafetyRef.current != null) {
-      window.clearTimeout(kpiRefreshSafetyRef.current);
-      kpiRefreshSafetyRef.current = undefined;
-    }
-    setKpiToolbarRefreshBusy(false);
-  }, []);
+  /* ── derived: latest 2 reco months ── */
+  const latestMonth = recoMonths[recoMonths.length - 1];
+  const prevMonth   = recoMonths[recoMonths.length - 2];
 
-  /** Recarrega o iframe Flask (cache-bust). Útil se o :5000 acabou de arrancar ou queres forçar refresh. */
-  function refreshKpiIframe() {
-    setErrMsg("");
-    clearKpiToolbarRefreshBusy();
-    setKpiToolbarRefreshBusy(true);
-    setIframeRefresh(Date.now());
-    try {
-      window.dispatchEvent(new Event(DECIDE_DASHBOARD_KPI_REFRESH_EVENT));
-    } catch {
-      /* ignore */
-    }
-    const expectsIframeReload =
-      Boolean(kpiIframeSrc) &&
-      (FLASK_KPI_EMBED_TABS.has(normalizeKpiEmbedTabId(kpiEmbedTab)) ||
-        normalizeKpiEmbedTabId(kpiEmbedTab) === "fees_intro" ||
-        normalizeKpiEmbedTabId(kpiEmbedTab) === "fees");
-    kpiRefreshSafetyRef.current = window.setTimeout(
-      () => clearKpiToolbarRefreshBusy(),
-      expectsIframeReload ? 55_000 : 2_500,
-    );
-  }
+  /* ── action counts (comprar/reduzir/vender/manter) ── */
+  const actionCounts = useMemo(() => {
+    if (!latestMonth || !prevMonth) return { comprar:0, reduzir:0, vender:0, manter:0, rows:[] as {ticker:string;prev:number;cur:number;delta:number;action:string}[] };
+    const prevMap = new Map(prevMonth.rows.map(r => [r.ticker, r.weightPct]));
+    const curMap  = new Map(latestMonth.rows.map(r => [r.ticker, r.weightPct]));
+    const allTickers = new Set([...prevMap.keys(), ...curMap.keys()].filter(t => t !== "TBILL_PROXY"));
+    let comprar=0, reduzir=0, vender=0, manter=0;
+    const rows: {ticker:string;prev:number;cur:number;delta:number;action:string}[] = [];
+    allTickers.forEach(t => {
+      const p = prevMap.get(t) ?? 0;
+      const c = curMap.get(t) ?? 0;
+      const delta = c - p;
+      let action = "Manter";
+      if (p === 0 && c > 0)            { action="Comprar"; comprar++; }
+      else if (c === 0 && p > 0)       { action="Vender";  vender++;  }
+      else if (delta >  0.3)           { action="Comprar"; comprar++; }
+      else if (delta < -0.3)           { action="Reduzir"; reduzir++; }
+      else                              { action="Manter";  manter++;  }
+      if (action !== "Manter")
+        rows.push({ ticker:t, prev:p, cur:c, delta, action });
+    });
+    // also count unchanged positions as manter
+    manter = allTickers.size - comprar - reduzir - vender;
+    return { comprar, reduzir, vender, manter, rows: rows.sort((a,b) => Math.abs(b.delta)-Math.abs(a.delta)).slice(0,6) };
+  }, [latestMonth, prevMonth]);
 
-  /** Carteira IBKR = página global «Carteira» (sub-menu local), não o embed do Dashboard. */
-  function openPortfolioRecommendationsPanel() {
-    if (!portfolioScheduleUi.actionRequired) return;
-    void router.push({ pathname: "/client/carteira", query: { embed_tab: "portfolio" } });
-  }
+  /* ── sector allocation ── */
+  const sectorData = useMemo(() => {
+    if (!latestMonth) return [];
+    const map = new Map<string, number>();
+    latestMonth.rows.forEach(r => {
+      if (r.ticker === "TBILL_PROXY") return;
+      const s = getSector(r.ticker);
+      map.set(s, (map.get(s) ?? 0) + r.weightPct);
+    });
+    const total = [...map.values()].reduce((a,b) => a+b, 0) || 1;
+    return [...map.entries()]
+      .map(([name, pct]) => ({ name, value: Math.round(pct/total*100) }))
+      .sort((a,b) => b.value-a.value);
+  }, [latestMonth]);
 
-  /** Envio automático 1× por dia (local), antes do cliente operar o rebalanceamento. */
-  useEffect(() => {
-    if (!mounted || !sessionUser || !portfolioScheduleUi.actionRequired) return;
-    const email = (getCurrentSessionUserEmail() || "").trim();
-    const phone = (getCurrentSessionUserPhone() || getNotifyPhone(sessionUser)).trim();
-    if (!email || !phone) {
-      setPreadviceMsg(
-        "Complete email e telemóvel ao criar a conta (registo) para os alertas automáticos.",
-      );
-      return;
-    }
-    if (!isSessionEmailVerified()) {
-      setPreadviceMsg(
-        "Confirme o email (link enviado no registo) para ativar alertas automáticos. Reenvie em /client/register se precisar.",
-      );
-      return;
-    }
-    setPreadviceMsg("");
-    const event = !portfolioScheduleUi.hasOnboarding ? "constitution" : "monthly_review";
-    const dayKey = toLocalYmd(new Date());
-    const lsKey = `decide_preadvice_sent_v1_${sessionUser.toLowerCase()}_${dayKey}_${event}`;
-    try {
-      if (typeof window !== "undefined" && window.localStorage.getItem(lsKey) === "1") return;
-      /* Reserva o slot **antes** do await: evita duplicar SMS/email no React Strict Mode ou quando o efeito re-corre. */
-      if (typeof window !== "undefined") window.localStorage.setItem(lsKey, "1");
-    } catch {
-      return;
-    }
+  /* ── performance slice ── */
+  const perfSlice = useMemo(() => {
+    if (!dates.length) return null;
+    const slice = periodSlice(dates, equityRaw, benchRaw, period);
+    // raw equity for the same period (unsampled, for metrics)
+    const last = new Date(dates[dates.length-1]);
+    const periodYears = period === "YTD" ? (new Date().getMonth()+1)/12
+      : period === "1 Ano" ? 1 : period === "3 Anos" ? 3 : period === "5 Anos" ? 5
+      : dates.length / 252;
+    const cutoff = period === "YTD"
+      ? new Date(last.getFullYear(), 0, 1)
+      : period === "Desde início"
+      ? new Date(dates[0])
+      : new Date(last.getFullYear() - periodYears, last.getMonth(), last.getDate());
+    const startIdx = Math.max(0, dates.findIndex(d => new Date(d) >= cutoff));
+    const eSlice = equityRaw.slice(startIdx);
+    const bSlice = benchRaw.slice(startIdx);
+    const totalRet  = eSlice.length > 1 ? (eSlice[eSlice.length-1] / eSlice[0] - 1) * 100 : 0;
+    const annRet    = eSlice.length > 1 ? cagr(eSlice[0], eSlice[eSlice.length-1], periodYears) * 100 : 0;
+    const rets      = eSlice.slice(1).map((v,i) => v/eSlice[i]-1);
+    const shp       = sharpe(rets);
+    const benchRet  = bSlice.length > 1 ? (bSlice[bSlice.length-1] / bSlice[0] - 1) * 100 : 0;
+    // current vol + drawdown (rolling 252d)
+    const allRets   = equityRaw.slice(1).map((v,i) => v/equityRaw[i]-1);
+    const curVol    = annualVol(allRets.slice(-252)) * 100;
+    const curDD     = currentDrawdown(equityRaw.slice(-252*3)) * 100;
+    return { slice, totalRet, annRet, shp, benchRet, curVol, curDD };
+  }, [dates, equityRaw, benchRaw, period]);
 
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch("/api/client/notify-portfolio", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            event,
-            email: email || undefined,
-            phone: phone || undefined,
-            clientLabel: sessionUser,
-          }),
-        });
-        const j = (await r.json().catch(() => ({}))) as {
-          ok?: boolean;
-          mode?: string;
-          message?: string;
-          email?: { sent?: boolean; error?: string };
-          sms?: { sent?: boolean; error?: string };
-        };
-        if (cancelled) return;
-        if (r.ok && j.ok !== false) {
-          /* chave já estava a 1 — nada a fazer */
-        } else {
-          try {
-            window.localStorage.removeItem(lsKey);
-          } catch {
-            // ignore
-          }
-          if (r.status === 503) {
-            setPreadviceMsg("Alertas automáticos desligados no servidor (ALLOW_CLIENT_NOTIFY_API).");
-          } else {
-            let detail = j.message || "Não foi possível registar o alerta do dia.";
-            const parts: string[] = [];
-            if (j.email && j.email.sent === false && j.email.error && j.email.error !== "no_email") {
-              parts.push(`Email: ${j.email.error}`);
-            }
-            if (j.sms && j.sms.sent === false && j.sms.error && j.sms.error !== "no_phone") {
-              parts.push(`SMS: ${j.sms.error}`);
-            }
-            if (parts.length) detail = `${detail} ${parts.join(" · ")}`;
-            setPreadviceMsg(detail);
-          }
-        }
-      } catch {
-        try {
-          window.localStorage.removeItem(lsKey);
-        } catch {
-          // ignore
-        }
-        if (!cancelled) {
-          setPreadviceMsg("Sem ligação ao servidor Next — alerta automático não enviado.");
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [mounted, sessionUser, portfolioScheduleUi.actionRequired, portfolioScheduleUi.hasOnboarding, portfolioScheduleRev]);
-
-  const overlayFactor = useMemo(() => getOverlayFactor(resp), [resp]);
-  const overlayActive = overlayFactor !== null ? Math.abs(overlayFactor - 1.0) > 1e-6 : false;
-
-  /* equity_raw: alinha ao cartão «Modelo teórico» no kpi_server (CSV model_equity_final_20y.csv / snapshot raw_kpis). */
+  /* ── current period chart data ── */
   const chartData = useMemo(() => {
-    const series = resp?.series || {};
-    const dates = series.dates || [];
+    if (!perfSlice) return [];
+    return perfSlice.slice.dates.map((d,i) => ({
+      date: d.slice(0,7),
+      modelo: +perfSlice.slice.equity[i].toFixed(2),
+      bench:  +perfSlice.slice.bench[i].toFixed(2),
+    }));
+  }, [perfSlice]);
 
-    return {
-      dates,
-      seriesLines: [
-        {
-          name: "Benchmark",
-          values: series.benchmark_equity || [],
-          color: "#d4d4d4",
-        },
-        {
-          name: "Modelo teórico (não investível)",
-          values: series.equity_raw || [],
-          color: "#a3a3a3",
-        },
-        {
-          name: "Estratégia cliente (overlay)",
-          values: series.equity_overlayed || [],
-          color: "#fafafa",
-        },
-        {
-          name: "Raw Vol-Matched",
-          values: series.equity_raw_volmatched || [],
-          color: "#737373",
-          visible: true,
-        },
-      ],
-    };
-  }, [resp]);
+  /* ── drawdown chart ── */
+  const ddChartData = useMemo(() => {
+    if (!dates.length) return [];
+    const last = new Date(dates[dates.length-1]);
+    const cutoff = new Date(last.getFullYear()-5, last.getMonth(), last.getDate());
+    const idx = dates.findIndex(d => new Date(d) >= cutoff);
+    const s = idx < 0 ? 0 : idx;
+    return rollingDrawdownSeries(dates.slice(s), equityRaw.slice(s), 10);
+  }, [dates, equityRaw]);
+
+  /* ── "o que mudou" bullets ── */
+  const whatChanged = useMemo(() => {
+    if (!actionCounts.rows.length) return [
+      { icon:"📈", title:"Modelo mantém posicionamento", desc:"Sem alterações significativas este mês." },
+    ];
+    const bought  = actionCounts.rows.filter(r => r.action==="Comprar").map(r => r.ticker).slice(0,3);
+    const sold    = actionCounts.rows.filter(r => r.action==="Vender"  || r.action==="Reduzir").map(r => r.ticker).slice(0,3);
+    const bsectors = [...new Set(bought.map(getSector))];
+    const ssectors = [...new Set(sold.map(getSector))];
+    const bullets: {icon:string;title:string;desc:string}[] = [];
+    if (bought.length)  bullets.push({ icon:"📈", title:`Aumentámos exposição a ${bsectors[0] ?? "ativos"}`, desc:`${bought.join(", ")} com momentum positivo.` });
+    if (sold.length)    bullets.push({ icon:"📉", title:`Reduzimos ${ssectors[0] ?? "posições"}`, desc:`${sold.join(", ")} com deterioração de tendências.` });
+    bullets.push({ icon:"🌍", title:"Mercado com tendência moderada", desc:"Ambiente favorável a ativos de risco no curto prazo." });
+    bullets.push({ icon:"〰", title:"Volatilidade controlada", desc:`Vol atual ${perfSlice?.curVol?.toFixed(1) ?? "—"}% anual — nível Moderado.` });
+    return bullets.slice(0,4);
+  }, [actionCounts.rows, perfSlice]);
+
+  /* ── reco month label ── */
+  const recoLabel = useMemo(() => {
+    const raw = latestMonth?.date ?? latestMonth?.rebalance_date ?? "";
+    if (!raw) return "Última recomendação";
+    try {
+      const d = new Date(raw);
+      return d.toLocaleDateString("pt-PT", { month:"long", year:"numeric" });
+    } catch { return raw; }
+  }, [latestMonth]);
+
+  if (!mounted) return null;
+  if (!loggedIn) return null;
+
+  const fmt = (n: number, sign=false) =>
+    `${sign && n>=0?"+":""}${n.toFixed(1)}%`;
 
   return (
     <>
-      <Head>
-        <title>Dashboard</title>
-        <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <style>{`
-          details > summary { list-style: none; }
-          details > summary::-webkit-details-marker { display: none; }
-          /* Fundo cinzento: decide-app-client + DECIDE_APP_PAGE_BG em globals / theme */
-        `}</style>
-      </Head>
+      <Head><title>Dashboard — DECIDE</title></Head>
+      <div className="flex min-h-screen bg-[#0d1b2e] text-slate-200" style={{ fontFamily:"'Nunito', system-ui, sans-serif" }}>
+        <Sidebar user={sessionUser} profile={profile} active="dashboard" />
 
-      <div
-        style={{
-          minHeight: "100vh",
-          overflowY: "auto",
-          background: DECIDE_DASHBOARD.pageBg,
-          color: DECIDE_DASHBOARD.text,
-          padding: "0 12px 32px",
-          fontFamily: DECIDE_DASHBOARD.fontFamily,
-          boxSizing: "border-box",
-        }}
-      >
-        {mounted && !loggedIn ? (
-          <>
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 12,
-                alignItems: "center",
-                marginTop: 0,
-                marginBottom: 6,
-              }}
-            >
-              <input
-                type="email"
-                value={prospectEmail}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setProspectEmail(v);
-                  if (prospectErr) setProspectErr("");
-                  const norm = v.trim().toLowerCase();
-                  if (prospectListLinkSentEmail && norm !== prospectListLinkSentEmail) {
-                    setProspectListLinkSentEmail(null);
-                  }
-                }}
-                placeholder="nome@email.com"
-                autoComplete="email"
-                style={{
-                  flex: "1 1 200px",
-                  minWidth: 0,
-                  maxWidth: 340,
-                  background: "rgba(39,39,42,0.85)",
-                  border: "1px solid rgba(255,255,255,0.14)",
-                  borderRadius: 12,
-                  padding: "10px 14px",
-                  color: "#fff",
-                  fontSize: 14,
-                }}
-              />
-              <button
-                type="button"
-                disabled={prospectBusy}
-                onClick={() => void sendProspectListVerification()}
-                style={{
-                  background: DECIDE_DASHBOARD.buttonTealCta,
-                  color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
-                  border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
-                  borderRadius: 12,
-                  padding: "10px 18px",
-                  fontSize: 13,
-                  fontWeight: 900,
-                  cursor: prospectBusy ? "wait" : "pointer",
-                  opacity: prospectBusy ? 0.8 : 1,
-                  boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
-                  flexShrink: 0,
-                }}
-              >
-                {prospectBusy ? (
-                  <>
-                    A enviar
-                    <InlineLoadingDots />
-                  </>
-                ) : (
-                  "Enviar link de confirmação"
-                )}
-              </button>
+        {/* main */}
+        <main className="flex-1 overflow-y-auto">
+          {/* top bar */}
+          <div className="flex items-center justify-between px-8 py-5 border-b border-[#1e2d45]">
+            <div>
+              <h1 className="text-xl font-black text-white">Dashboard</h1>
+              <p className="text-slate-400 text-xs mt-0.5">Visão geral da sua carteira e recomendações</p>
             </div>
-            <div
-              style={{
-                fontSize: 12,
-                lineHeight: 1.5,
-                color: prospectErr
-                  ? "#fca5a5"
-                  : prospectBusy
-                    ? "#a1a1aa"
-                    : prospectListStatusLoading
-                      ? "#a1a1aa"
-                      : !prospectEmail.trim().includes("@")
-                        ? "#a1a1aa"
-                        : prospectListVerified
-                          ? DECIDE_DASHBOARD.accentSky
-                          : prospectDevLink
-                            ? "#fde68a"
-                            : prospectListLinkSentEmail === prospectEmail.trim().toLowerCase()
-                              ? "#fde68a"
-                              : "#a1a1aa",
-                marginBottom: prospectDevLink ? 8 : 10,
-                maxWidth: 640,
-              }}
-            >
-              {prospectErr
-                ? prospectErr
-                : prospectBusy ? (
-                  <>
-                    A enviar o link
-                    <InlineLoadingDots />
-                  </>
-                ) : prospectListStatusLoading ? (
-                  <>
-                    A verificar se o email já foi confirmado
-                    <InlineLoadingDots />
-                  </>
-                ) : !prospectEmail.trim().includes("@")
-                      ? "Indique o seu email e peça o link para confirmar a subscrição."
-                      : prospectListVerified
-                        ? "Email confirmado — estás na lista para novidades."
-                        : prospectDevLink
-                          ? "Sem envio real (desenvolvimento) — confirme com o link abaixo."
-                          : prospectListLinkSentEmail === prospectEmail.trim().toLowerCase()
-                            ? "Link enviado — abra o email e confirme para concluir."
-                            : "Ainda não confirmado — carregue em «Enviar link de confirmação»."}
-            </div>
-            {prospectDevLink ? (
-              <div
-                style={{
-                  marginBottom: 12,
-                  background: "rgba(13, 148, 136, 0.14)",
-                  border: "1px solid rgba(45, 212, 191, 0.35)",
-                  borderRadius: 12,
-                  padding: 12,
-                  fontSize: 11,
-                  lineHeight: 1.45,
-                  maxWidth: 640,
-                }}
-              >
-                {devConfirmationLinkUsesLoopback(prospectDevLink) ? (
-                  <div
-                    style={{
-                      marginBottom: 10,
-                      padding: 8,
-                      borderRadius: 8,
-                      background: "rgba(127,29,29,0.35)",
-                      border: "1px solid rgba(248,113,113,0.45)",
-                      color: "#fecaca",
-                    }}
-                  >
-                    <strong>Telemóvel:</strong> link com <code style={{ color: "#fff" }}>127.0.0.1</code> não abre fora do PC —
-                    defina <code style={{ color: "#fff" }}>EMAIL_LINK_BASE_URL</code> e <code style={{ color: "#fde68a" }}>npm run dev:lan</code>.
-                  </div>
-                ) : null}
-                {!devConfirmationLinkUsesLoopback(prospectDevLink) && devConfirmationLinkWrongPort(prospectDevLink) ? (
-                  <div
-                    style={{
-                      marginBottom: 10,
-                      padding: 8,
-                      borderRadius: 8,
-                      background: "rgba(120,53,15,0.35)",
-                      border: "1px solid rgba(251,191,36,0.45)",
-                      color: "#fde68a",
-                    }}
-                  >
-                    Porta no link deve ser <code style={{ color: "#fff" }}>{DECIDE_NEXT_DEV_PORT}</code> — vê{" "}
-                    <code style={{ color: "#fff" }}>EMAIL_LINK_BASE_URL</code>.
-                  </div>
-                ) : null}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                  <button
-                    type="button"
-                    onClick={() => void navigator.clipboard.writeText(prospectDevLink)}
-                    style={{
-                      background: DECIDE_DASHBOARD.buttonTealCta,
-                      color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
-                      border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
-                      borderRadius: 10,
-                      padding: "8px 12px",
-                      fontWeight: 800,
-                      cursor: "pointer",
-                      fontSize: 12,
-                      boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
-                    }}
-                  >
-                    Copiar link
+            <button className="flex items-center gap-2 bg-[#1a2d42] border border-[#2a3d55] rounded-lg px-4 py-2 text-sm text-slate-300 hover:bg-[#1e3349] transition-colors">
+              <span className="text-slate-400 text-xs">📅</span>
+              Recomendação de {recoLabel}
+              <ChevronDown size={14} className="text-slate-400" />
+            </button>
+          </div>
+
+          <div className="px-8 py-6 space-y-5">
+
+            {/* ── 1. recomendação deste mês ── */}
+            <div className="bg-[#0f2034] border border-[#1e3352] rounded-xl p-5">
+              <SectionHeader title="Recomendação deste mês" />
+              <div className="flex items-start gap-8">
+                <div className="flex gap-8">
+                  <ActionBadge label="COMPRAR" count={recoLoading ? 0 : actionCounts.comprar} color="text-emerald-400" />
+                  <ActionBadge label="REDUZIR" count={recoLoading ? 0 : actionCounts.reduzir} color="text-amber-400"   />
+                  <ActionBadge label="VENDER"  count={recoLoading ? 0 : actionCounts.vender}  color="text-red-400"     />
+                  <ActionBadge label="MANTER"  count={recoLoading ? 0 : actionCounts.manter}  color="text-slate-300"   />
+                </div>
+                <div className="ml-auto flex flex-col gap-2 min-w-[180px]">
+                  <button className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors">
+                    ✓ Aprovar recomendações
                   </button>
-                  <span style={{ color: "#71717a", wordBreak: "break-all", flex: "1 1 200px" }}>{prospectDevLink}</span>
+                  <button className="bg-[#1a2d42] border border-[#2a3d55] hover:bg-[#1e3349] text-slate-300 text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors">
+                    Rever alterações
+                  </button>
                 </div>
               </div>
-            ) : null}
-          </>
-        ) : null}
-
-        {loggedIn && mounted && preadviceMsg ? (
-          <div
-            style={{
-              marginTop: 6,
-              marginBottom: 6,
-              fontSize: 11,
-              color: preadviceMsg.includes("desligados") || preadviceMsg.includes("Não foi") || preadviceMsg.includes("Sem ligação")
-                ? "#fca5a5"
-                : "#a1a1aa",
-              lineHeight: 1.4,
-              maxWidth: 720,
-            }}
-          >
-            {preadviceMsg}
-          </div>
-        ) : null}
-
-        {mounted && !loggedIn ? (
-          <div
-            role="status"
-            style={{
-              marginTop: 0,
-              marginBottom: 12,
-              padding: "10px 14px",
-              borderRadius: 14,
-              background: "rgba(13,148,136,0.14)",
-              border: "1px solid rgba(45,212,191,0.28)",
-              fontSize: 12,
-              lineHeight: 1.35,
-              color: "#d4d4d8",
-              width: "100%",
-              maxWidth: "100%",
-              minWidth: 0,
-              boxSizing: "border-box",
-              overflowX: "auto",
-              overflowY: "hidden",
-              WebkitOverflowScrolling: "touch",
-              scrollbarWidth: "thin",
-            }}
-          >
-            <span
-              style={{
-                display: "inline-block",
-                whiteSpace: "nowrap",
-                width: "max-content",
-                maxWidth: "none",
-                wordBreak: "normal",
-              }}
-            >
-              <span aria-hidden style={{ marginRight: 6 }}>
-                💡
-              </span>
-              <strong style={{ color: "var(--text-primary)", whiteSpace: "nowrap" }}>Resumo:</strong> o histórico ilustrativo permite comparar a estratégia DECIDE com o mercado de referência ao longo do tempo — não é garantia de resultados futuros.
-            </span>
-          </div>
-        ) : null}
-
-        {loggedIn && mounted && !isSessionEmailVerified() ? (
-          <div
-            style={{
-              marginTop: 8,
-              padding: "8px 10px",
-              borderRadius: 12,
-              background: "rgba(234,179,8,0.14)",
-              border: "1px solid rgba(250,204,21,0.4)",
-              color: "#fde68a",
-              fontSize: 12,
-              lineHeight: 1.4,
-              flexShrink: 0,
-            }}
-          >
-            <strong>Confirme o email</strong> para ativar os alertas automáticos por email. Abra o link do último email que
-            enviámos ou{" "}
-            <a href="/client/register" style={{ color: "#fff", fontWeight: 800 }}>
-              vá à página de registo
-            </a>
-            .
-            <div style={{ marginTop: 8, fontSize: 11, color: "#fcd34d", lineHeight: 1.45 }}>
-              <strong>Reenviar email de confirmação</strong> envia <em>outro</em> email com o mesmo tipo de link (útil caso não
-              tenha encontrado o primeiro ou o link tenha expirado). Sem clicar nesse link, o servidor continua a tratar o email como não
-              confirmado.
+              <div className="mt-4 flex items-center gap-4 text-xs text-slate-400 pt-4 border-t border-[#1e3352]">
+                <span className="font-semibold">Impacto esperado</span>
+                <span>Risco: <span className="text-emerald-400">↓ Ligeiro</span></span>
+                <span className="text-slate-600">|</span>
+                <span>Retorno esperado: <span className="text-teal-400">↑ Moderado</span></span>
+              </div>
             </div>
-            <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-              <button
-                type="button"
-                disabled={verifyResendBusy}
-                onClick={() => {
-                  const u = sessionUser;
-                  const em = (getCurrentSessionUserEmail() || "").trim();
-                  if (!u || !em.includes("@")) {
-                    setVerifyBannerNote("Preencha o email na conta (registo).");
-                    return;
-                  }
-                  setVerifyResendBusy(true);
-                  setVerifyBannerNote("");
-                  void (async () => {
-                    try {
-                      const vr = await requestEmailVerificationSend(u, em);
-                      if (vr.mode === "simulated" && vr.link && typeof window !== "undefined") {
-                        window.prompt("Link de confirmação (dev):", vr.link);
-                      } else if (!vr.ok) {
-                        setVerifyBannerNote(vr.error || "Falha ao reenviar.");
-                      } else {
-                        setVerifyBannerNote("Enviámos outro email. Verifique a caixa de entrada.");
-                      }
-                    } finally {
-                      setVerifyResendBusy(false);
-                    }
-                  })();
-                }}
-                style={{
-                  background: DECIDE_DASHBOARD.buttonAmberCta,
-                  color: "#18181b",
-                  border: "1px solid rgba(255,255,255,0.22)",
-                  borderRadius: 12,
-                  padding: "8px 14px",
-                  fontSize: 12,
-                  fontWeight: 900,
-                  cursor: verifyResendBusy ? "wait" : "pointer",
-                  opacity: verifyResendBusy ? 0.75 : 1,
-                  boxShadow: DECIDE_DASHBOARD.buttonShadowSoft,
-                }}
-              >
-                {verifyResendBusy ? (
-                  <>
-                    A enviar
-                    <InlineLoadingDots />
-                  </>
-                ) : (
-                  "Reenviar email de confirmação"
-                )}
-              </button>
-              {verifyBannerNote ? <span style={{ fontSize: 12, color: "#fef9c3" }}>{verifyBannerNote}</span> : null}
-            </div>
-          </div>
-        ) : null}
 
-        <div
-          style={{
-            marginTop: 0,
-            width: "100%",
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          {loggedIn ? (
-            <div
-              style={{
-                background: DECIDE_DASHBOARD.headerPanel,
-                border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: 16,
-                padding: "10px 12px 12px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-                order: 2,
-                marginTop: mounted ? 6 : 0,
-              }}
-            >
-              {sessionUser && (!portfolioScheduleUi.hasOnboarding || !clientPlanApproved) ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {!portfolioScheduleUi.hasOnboarding ? (
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        padding: "12px 14px",
-                        borderRadius: 12,
-                        background: "linear-gradient(135deg, rgba(48,48,50,0.65) 0%, rgba(24,24,27,0.96) 100%)",
-                        border: "1px solid rgba(255,255,255,0.1)",
-                        boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
-                      }}
-                    >
-                      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-                        <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.06em", color: "#d4d4d4" }}>
-                          CALENDÁRIO — CONSTITUIÇÃO INICIAL
-                        </div>
-                        <p style={{ margin: "6px 0 0", fontSize: 12, lineHeight: 1.45, color: "#e4e4e7" }}>
-                          Marque o dia em que começa a seguir o plano (hoje). Isto regista o calendário de revisões mensais —{" "}
-                          <strong style={{ color: "#d4d4d8" }}>não substitui</strong> aprovar o plano nem executar ordens. Pode
-                          utilizar os atalhos para o plano e revisões na página Plano e no fluxo de aprovação quando estiverem
-                          disponíveis.
-                        </p>
+            {/* ── 2+3: o que mudou + nível de risco ── */}
+            <div className="grid grid-cols-2 gap-5">
+              {/* o que mudou */}
+              <div className="bg-[#0f2034] border border-[#1e3352] rounded-xl p-5">
+                <SectionHeader title="O que mudou" />
+                <div className="space-y-4">
+                  {whatChanged.map((b, i) => (
+                    <div key={i} className="flex gap-3">
+                      <div className="text-lg mt-0.5 shrink-0">{b.icon}</div>
+                      <div>
+                        <div className="text-slate-200 text-sm font-semibold">{b.title}</div>
+                        <div className="text-slate-400 text-xs mt-0.5">{b.desc}</div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const u = sessionUser || getCurrentSessionUser();
-                          if (!u) return;
-                          setOnboardingSnapshotNow(u, profile);
-                          setPortfolioScheduleRev((n) => n + 1);
-                        }}
-                        style={{
-                          flex: "0 0 auto",
-                          background: DECIDE_DASHBOARD.buttonRegister,
-                          color: "#fde68a",
-                          border: "1px solid rgba(251,191,36,0.55)",
-                          borderRadius: 12,
-                          padding: "10px 18px",
-                          fontSize: 13,
-                          fontWeight: 900,
-                          cursor: "pointer",
-                          boxShadow: `${DECIDE_DASHBOARD.buttonShadowSoft}, 0 4px 20px rgba(251,191,36,0.15)`,
-                        }}
-                      >
-                        Marcar início (hoje)
-                      </button>
                     </div>
-                  ) : null}
-                  {!clientPlanApproved ? (
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        padding: "12px 14px",
-                        borderRadius: 12,
-                        background: "linear-gradient(135deg, rgba(120,53,15,0.35) 0%, rgba(24,24,27,0.96) 100%)",
-                        border: "1px solid rgba(251,191,36,0.42)",
-                        boxShadow: "0 4px 24px rgba(0,0,0,0.35)",
-                      }}
-                    >
-                      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-                        <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.06em", color: "#fde68a" }}>
-                          CONSTITUIR CARTEIRA (PLANO)
-                        </div>
-                        <p style={{ margin: "6px 0 0", fontSize: 12, lineHeight: 1.45, color: "#e4e4e7" }}>
-                          Enquanto o plano não for <strong style={{ color: "#d4d4d8" }}>aprovado</strong> neste fluxo, a carteira
-                          não fica constituída ao nível regulamentar. Abra a página do plano recomendado para rever e confirmar —
-                          não depende do dia de revisão mensal.
-                        </p>
+                  ))}
+                </div>
+              </div>
+
+              {/* nível de risco */}
+              <div className="bg-[#0f2034] border border-[#1e3352] rounded-xl p-5">
+                <SectionHeader title="O seu nível de risco" />
+                <div className="flex gap-6">
+                  <div className="space-y-4">
+                    <div>
+                      <div className="text-slate-400 text-xs mb-1">Volatilidade (anual)</div>
+                      <div className="text-2xl font-black text-white">{perfSlice ? `${perfSlice.curVol.toFixed(1)}%` : "—"}</div>
+                      <div className="text-slate-400 text-xs">Média</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400 text-xs mb-1">Drawdown actual</div>
+                      <div className="text-2xl font-black text-red-400">{perfSlice ? `${perfSlice.curDD.toFixed(1)}%` : "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400 text-xs mb-1">Nível de risco</div>
+                      <div className="text-teal-400 font-bold text-sm">Moderado</div>
+                      <div className="mt-1.5 h-2 rounded-full bg-slate-700 w-28">
+                        <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400" style={{ width:"55%" }} />
                       </div>
-                      <button
-                        type="button"
-                        aria-busy={planPageNavPending}
-                        disabled={planPageNavPending}
-                        onClick={goToApprovePlan}
-                        style={{
-                          ...PLAN_CTA_ORANGE,
-                          flex: "0 0 auto",
-                          width: "auto",
-                          padding: "10px 18px",
-                          fontSize: 13,
-                          border: "none",
-                          fontFamily: "inherit",
-                          cursor: planPageNavPending ? "wait" : "pointer",
-                          opacity: planPageNavPending ? 0.9 : 1,
-                        }}
-                      >
-                        {planPageNavPending ? (
-                          <>
-                            A abrir
-                            <InlineLoadingDots />
-                          </>
-                        ) : (
-                          "Ver plano para a sua carteira"
-                        )}
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-              {(() => {
-                const t = normalizeKpiEmbedTabId(kpiEmbedTab);
-                if (t === "charts" || t === "simulator") return null;
-                return (
-              <details
-                style={{
-                  borderRadius: 12,
-                  background: "rgba(39,39,42,0.5)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                }}
-              >
-                <summary
-                  style={{
-                    padding: "8px 10px",
-                    fontSize: 12,
-                    fontWeight: 900,
-                    color: "#d4d4d4",
-                    cursor: "pointer",
-                    listStyle: "none",
-                  }}
-                >
-                  {portfolioScheduleUi.hasOnboarding
-                    ? "Recomendações de carteira (expandir)"
-                    : "Recomendações de carteira (telemóvel, alertas — expandir)"}
-                </summary>
-                <div style={{ padding: "0 10px 10px" }}>
-                <div style={{ fontSize: 11, color: "#d4d4d8", lineHeight: 1.45, marginBottom: 10 }}>
-                  {portfolioScheduleUi.ruleSummary} Abra a página <strong>Carteira</strong> no menu superior (vista IBKR
-                  e composição sugerida).
-                </div>
-                {latestModelMonth &&
-                typeof latestModelMonth.tbillsTotalPct === "number" &&
-                isFinite(latestModelMonth.tbillsTotalPct) ? (
-                  <div
-                    style={{
-                      marginBottom: 12,
-                      padding: "10px 12px",
-                      borderRadius: 12,
-                      background: "rgba(39, 39, 42, 0.55)",
-                      border: "1px solid rgba(255, 255, 255, 0.08)",
-                      fontSize: 12,
-                      lineHeight: 1.5,
-                      color: "#e4e4e7",
-                    }}
-                  >
-                    <strong style={{ color: "#d4d4d4" }}>Carteira modelo (última data)</strong>{" "}
-                    <span style={{ color: "#a1a1aa" }}>({formatPtDate(latestModelMonth.date)})</span>
-                    <div style={{ marginTop: 6 }}>
-                      <span style={{ fontWeight: 900, color: "#c4c4c4" }}>
-                        T-Bills {latestModelMonth.tbillsTotalPct.toFixed(1)}%
-                      </span>
-                      {typeof latestModelMonth.equitySleeveTotalPct === "number" &&
-                      isFinite(latestModelMonth.equitySleeveTotalPct) ? (
-                        <span style={{ fontWeight: 700, color: "#d4d4d8" }}>
-                          {" "}
-                          · Acções {latestModelMonth.equitySleeveTotalPct.toFixed(1)}%
-                        </span>
-                      ) : null}
                     </div>
                   </div>
-                ) : null}
-                <div style={{ marginBottom: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                    <span style={{ fontSize: 11, color: "#a1a1aa", fontWeight: 700 }}>Telemóvel (conta)</span>
-                    <input
-                      type="tel"
-                      inputMode="tel"
-                      autoComplete="tel"
-                      placeholder="+351912345678 ou 912345678"
-                      value={notifyPhoneInput}
-                      onChange={(e) => {
-                        setNotifyPhoneInput(e.target.value);
-                        if (notifyPhoneSaveFeedback) setNotifyPhoneSaveFeedback("");
-                      }}
-                      onBlur={() => {
-                        if (!sessionUser) return;
-                        persistNotifyPhone();
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          persistNotifyPhone();
-                        }
-                      }}
-                      style={{
-                        flex: "1 1 200px",
-                        maxWidth: 280,
-                        background: "rgba(24,24,27,0.75)",
-                        border: "1px solid rgba(255,255,255,0.12)",
-                        borderRadius: 10,
-                        padding: "6px 10px",
-                        color: "#fff",
-                        fontSize: 12,
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => persistNotifyPhone()}
-                      style={{
-                        background: DECIDE_DASHBOARD.buttonSlateCta,
-                        color: "var(--text-primary)",
-                        border: "1px solid rgba(255,255,255,0.22)",
-                        borderRadius: 10,
-                        padding: "6px 14px",
-                        fontSize: 12,
-                        fontWeight: 800,
-                        cursor: "pointer",
-                        boxShadow: DECIDE_DASHBOARD.buttonShadowSoft,
-                      }}
-                    >
-                      Guardar telemóvel
+                  <div className="flex-1">
+                    <div className="text-slate-400 text-xs mb-2">Evolução do drawdown</div>
+                    <ResponsiveContainer width="100%" height={130}>
+                      <LineChart data={ddChartData} margin={{ top:4, right:4, left:-24, bottom:0 }}>
+                        <XAxis dataKey="date" tick={{ fontSize:9, fill:"#64748b" }} tickLine={false} axisLine={false}
+                          tickFormatter={d => d.slice(0,4)} interval={Math.floor(ddChartData.length/4)} />
+                        <YAxis tick={{ fontSize:9, fill:"#64748b" }} tickLine={false} axisLine={false}
+                          tickFormatter={v => `${v.toFixed(0)}%`} domain={["dataMin", 0]} />
+                        <Tooltip content={<PerfTooltip />} />
+                        <ReferenceLine y={0} stroke="#334155" strokeDasharray="3 3" />
+                        <Line type="monotone" dataKey="dd" stroke="#14b8a6" strokeWidth={1.5} dot={false} name="DD" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── 4+5: alterações + alocação ── */}
+            <div className="grid grid-cols-2 gap-5">
+              {/* alterações na carteira */}
+              <div className="bg-[#0f2034] border border-[#1e3352] rounded-xl p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <SectionHeader title="Alterações na carteira" />
+                  <button className="text-teal-400 text-xs hover:underline flex items-center gap-1 -mt-4">
+                    Ver carteira completa <ArrowUpRight size={12} />
+                  </button>
+                </div>
+                {recoLoading ? (
+                  <div className="text-slate-500 text-sm text-center py-6">A carregar…</div>
+                ) : actionCounts.rows.length === 0 ? (
+                  <div className="text-slate-500 text-sm text-center py-6">Sem alterações este mês</div>
+                ) : (
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-slate-500 border-b border-[#1e3352]">
+                        <th className="text-left pb-2 font-semibold">Ativo</th>
+                        <th className="text-left pb-2 font-semibold">Setor</th>
+                        <th className="text-right pb-2 font-semibold">Actual</th>
+                        <th className="text-right pb-2 font-semibold">Novo</th>
+                        <th className="text-right pb-2 font-semibold">Δ</th>
+                        <th className="text-right pb-2 font-semibold">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {actionCounts.rows.map(r => {
+                        const actionColor = r.action==="Comprar" ? "text-emerald-400"
+                          : r.action==="Vender" ? "text-red-400" : "text-amber-400";
+                        const deltaColor = r.delta>0 ? "text-emerald-400" : "text-red-400";
+                        return (
+                          <tr key={r.ticker} className="border-b border-[#1a2d40] hover:bg-white/[0.02]">
+                            <td className="py-2.5 font-bold text-slate-200">{r.ticker}</td>
+                            <td className="py-2.5 text-slate-400">{getSector(r.ticker)}</td>
+                            <td className="py-2.5 text-right text-slate-300">{r.prev.toFixed(1)}%</td>
+                            <td className="py-2.5 text-right text-slate-300">{r.cur.toFixed(1)}%</td>
+                            <td className={`py-2.5 text-right font-semibold ${deltaColor}`}>
+                              {r.delta>0?"+":""}{r.delta.toFixed(1)}%
+                            </td>
+                            <td className={`py-2.5 text-right font-bold ${actionColor}`}>{r.action}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* alocação por setor */}
+              <div className="bg-[#0f2034] border border-[#1e3352] rounded-xl p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <SectionHeader title="Alocação por setor" />
+                  <button className="text-teal-400 text-xs hover:underline flex items-center gap-1 -mt-4">
+                    Ver alocação completa <ArrowUpRight size={12} />
+                  </button>
+                </div>
+                {sectorData.length === 0 ? (
+                  <div className="text-slate-500 text-sm text-center py-6">A carregar…</div>
+                ) : (
+                  <div className="flex items-center gap-4">
+                    <ResponsiveContainer width={160} height={160}>
+                      <PieChart>
+                        <Pie data={sectorData} cx="50%" cy="50%" innerRadius={48} outerRadius={72}
+                          dataKey="value" strokeWidth={0}>
+                          {sectorData.map((_,i) => (
+                            <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(v: number) => `${v}%`} contentStyle={{ background:"#1e293b", border:"1px solid #334155", borderRadius:8, fontSize:11 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="flex-1 space-y-2">
+                      {sectorData.map((s, i) => (
+                        <div key={s.name} className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                            <span className="text-slate-300">{s.name}</span>
+                          </div>
+                          <span className="text-slate-400 font-semibold">{s.value}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── 6. performance ── */}
+            <div className="bg-[#0f2034] border border-[#1e3352] rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <SectionHeader title="Performance" />
+                {/* period tabs */}
+                <div className="flex gap-1 -mt-4">
+                  {PERIODS.map(p => (
+                    <button key={p} onClick={() => setPeriod(p)}
+                      className={["px-3 py-1 rounded text-xs font-semibold transition-colors",
+                        period===p ? "bg-teal-500/20 text-teal-400 border border-teal-500/30"
+                                   : "text-slate-400 hover:text-slate-200"].join(" ")}>
+                      {p}
                     </button>
-                  </div>
-                  {notifyPhoneSaveFeedback ? (
-                    <div
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: notifyPhoneSaveFeedback.startsWith("Telemóvel guardado")
-                          ? DECIDE_DASHBOARD.accentSky
-                          : "#fca5a5",
-                        maxWidth: 420,
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      {notifyPhoneSaveFeedback}
-                    </div>
-                  ) : null}
-                  <span style={{ fontSize: 10, color: "#71717a" }}>
-                    Email na conta: {getCurrentSessionUserEmail() || "—"} · no telemóvel utilize «Guardar» ou Enter (só sair do
-                    campo por vezes não grava)
-                  </span>
+                  ))}
                 </div>
-                {portfolioScheduleUi.hasOnboarding ? (
-                  <div style={{ fontSize: 12, color: "var(--text-primary)", lineHeight: 1.55 }}>
-                    <div>
-                      <strong>Constituição inicial:</strong>{" "}
-                      {portfolioScheduleUi.onboardingYmd ? formatPtDate(portfolioScheduleUi.onboardingYmd) : "—"}
-                    </div>
-                    <div>
-                      <strong>Próxima revisão mensal</strong> (1.º dia útil do mês, ciclo global):{" "}
-                      {portfolioScheduleUi.nextReviewPt || "—"}
-                    </div>
-                    {portfolioScheduleUi.isReviewDueToday ? (
-                      <div
-                        style={{
-                          marginTop: 8,
-                          padding: "8px 10px",
-                          borderRadius: 10,
-                          background: "rgba(39, 39, 42, 0.75)",
-                          border: "1px solid rgba(255, 255, 255, 0.1)",
-                          color: "#e4e4e7",
-                          fontSize: 11,
-                          fontWeight: 700,
-                        }}
-                      >
-                        Hoje coincide com o dia de revisão mensal — consulte a carteira recomendada no iframe e ajuste
-                        encomendas conforme o seu perfil ({profile}).
-                      </div>
-                    ) : null}
-                    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8, maxWidth: 520 }}>
-                      <button
-                        type="button"
-                        aria-busy={planPageNavPending}
-                        disabled={planPageNavPending}
-                        onClick={goToApprovePlan}
-                        style={{
-                          ...PLAN_CTA_ORANGE,
-                          alignSelf: "flex-start",
-                          width: "auto",
-                          padding: "10px 18px",
-                          fontSize: 13,
-                          border: "none",
-                          fontFamily: "inherit",
-                          cursor: planPageNavPending ? "wait" : "pointer",
-                          opacity: planPageNavPending ? 0.9 : 1,
-                        }}
-                      >
-                        {planPageNavPending ? (
-                          <>
-                            A abrir
-                            <InlineLoadingDots />
-                          </>
-                        ) : (
-                          "Ver proposta de investimento (regulamentar)"
-                        )}
-                      </button>
-                      <p style={{ margin: 0, fontSize: 10, color: "#a1a1aa", lineHeight: 1.45 }}>
-                        <strong>Onde aprovar:</strong> a confirmação regulamentar das ordens do último rebalance faz-se nesta página
-                        (mesmos dados que o plano e o ficheiro <code style={{ color: "var(--text-primary)" }}>decide_trade_plan_ibkr.csv</code>
-                        ). O botão «Confirmar revisão mensal aplicada / lida» abaixo é só um registo opcional de que viste a
-                        recomendação no dashboard — não substitui a aprovação do plano.
-                      </p>
-                    </div>
-                    <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!sessionUser) return;
-                          acknowledgeMonthlyReview(sessionUser);
-                          setPortfolioScheduleRev((n) => n + 1);
-                        }}
-                        style={{
-                          background:
-                            "linear-gradient(165deg, rgba(63,63,70,0.5) 0%, rgba(39,39,42,0.9) 100%)",
-                          color: "#d4d4d4",
-                          border: "1px solid rgba(255,255,255,0.12)",
-                          borderRadius: 10,
-                          padding: "6px 12px",
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 8px rgba(0,0,0,0.35)",
-                        }}
-                      >
-                        Confirmar revisão mensal aplicada / lida
-                      </button>
-                      <span style={{ fontSize: 10, color: "#71717a" }}>
-                        (Registo opcional; não altera as datas do ciclo global.)
-                      </span>
+              </div>
+              {/* metrics */}
+              {perfSlice && (
+                <div className="flex gap-8 mb-4">
+                  <div>
+                    <div className="text-slate-400 text-xs mb-0.5">Retorno ({period})</div>
+                    <div className={`text-2xl font-black ${perfSlice.totalRet>=0?"text-emerald-400":"text-red-400"}`}>
+                      {fmt(perfSlice.totalRet, true)}
                     </div>
                   </div>
-                ) : (
-                  <p style={{ margin: "10px 0 0", fontSize: 11, color: "#71717a", lineHeight: 1.45 }}>
-                    {clientPlanApproved ? (
-                      <>
-                        A <strong style={{ color: "#a1a1aa" }}>constituição inicial</strong> marca-se com o botão acima («Marcar
-                        início») — não precisas de abrir esta secção para isso.
-                      </>
-                    ) : (
-                      <>
-                        Se já marcaste o início no calendário, falta <strong style={{ color: "#a1a1aa" }}>constituir a carteira</strong>{" "}
-                        (aprovar o plano em{" "}
-                        <button
-                          type="button"
-                          disabled={planPageNavPending}
-                          onClick={goToApprovePlan}
-                          style={{
-                            color: "#fb923c",
-                            fontWeight: 800,
-                            background: "none",
-                            border: "none",
-                            padding: 0,
-                            cursor: planPageNavPending ? "wait" : "pointer",
-                            textDecoration: "underline",
-                            fontSize: "inherit",
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          {planPageNavPending ? (
-                            <>
-                              A abrir
-                              <InlineLoadingDots />
-                            </>
-                          ) : (
-                            "Ver proposta de investimento"
-                          )}
-                        </button>
-                        ).
-                      </>
-                    )}
-                  </p>
-                )}
+                  <div>
+                    <div className="text-slate-400 text-xs mb-0.5">Retorno anualizado</div>
+                    <div className={`text-2xl font-black ${perfSlice.annRet>=0?"text-emerald-400":"text-red-400"}`}>
+                      {fmt(perfSlice.annRet, true)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-slate-400 text-xs mb-0.5">Sharpe</div>
+                    <div className="text-2xl font-black text-white">{perfSlice.shp.toFixed(2)}</div>
+                  </div>
                 </div>
-              </details>
-                );
-              })()}
-            </div>
-          ) : null}
-
-          {mounted ? (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 0,
-                marginTop: 0,
-                order: 1,
-              }}
-            >
-              <p
-                style={{
-                  fontSize: 12,
-                  color: "#71717a",
-                  margin: "0 0 10px",
-                  lineHeight: 1.45,
-                  maxWidth: 800,
-                }}
-              >
-                Este serviço gera recomendações. A execução depende sempre da sua aprovação.{" "}
-                <ClientPendingTextLink href="/client/como-funciona" style={{ color: "#a1a1aa", fontWeight: 700 }}>
-                  Como funciona
-                </ClientPendingTextLink>
+              )}
+              {/* chart */}
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={chartData} margin={{ top:4, right:4, left:-16, bottom:0 }}>
+                  <XAxis dataKey="date" tick={{ fontSize:10, fill:"#64748b" }} tickLine={false} axisLine={false}
+                    interval={Math.floor(chartData.length/6)} />
+                  <YAxis tick={{ fontSize:10, fill:"#64748b" }} tickLine={false} axisLine={false}
+                    tickFormatter={v => `${v.toFixed(0)}%`} />
+                  <Tooltip content={<PerfTooltip />} />
+                  <ReferenceLine y={0} stroke="#334155" strokeDasharray="3 3" />
+                  <Line type="monotone" dataKey="modelo" stroke="#14b8a6" strokeWidth={2} dot={false} name="Modelo" />
+                  <Line type="monotone" dataKey="bench"  stroke="#64748b"  strokeWidth={1.5} dot={false} name="Benchmark" strokeDasharray="4 2" />
+                </LineChart>
+              </ResponsiveContainer>
+              <div className="flex items-center gap-4 mt-3">
+                <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-0.5 bg-teal-400 rounded" /> Modelo</div>
+                <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-px bg-slate-400 rounded" style={{ borderTop:"1px dashed #64748b" }} /> Benchmark</div>
+              </div>
+              <p className="text-slate-600 text-[10px] mt-3 text-center">
+                As recomendações não constituem aconselhamento personalizado de investimento.
               </p>
-              <ClientGrowthNarrative riskProfile={profile} />
-              <ClientKpiPageChrome
-                as="div"
-                title="Dashboard"
-                toolbar={
-                  <>
-                    <label
-                      htmlFor={loggedIn ? "client-dash-profile" : "client-dash-profile-guest"}
-                      style={{ color: "#a1a1aa", fontSize: 12, fontWeight: 700 }}
-                    >
-                      Perfil de risco
-                    </label>
-                    <select
-                      id={loggedIn ? "client-dash-profile" : "client-dash-profile-guest"}
-                      value={profile}
-                      onChange={(e) => setProfile(e.target.value as "conservador" | "moderado" | "dinamico")}
-                      style={{
-                        background: "rgba(39,39,42,0.85)",
-                        color: "#fff",
-                        border: "1px solid rgba(255,255,255,0.2)",
-                        borderRadius: 12,
-                        padding: "8px 14px",
-                        fontWeight: 800,
-                        fontSize: 14,
-                        cursor: "pointer",
-                      }}
-                    >
-                      <option value="conservador">Conservador</option>
-                      <option value="moderado">Moderado</option>
-                      <option value="dinamico">Dinâmico</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={refreshKpiIframe}
-                      disabled={kpiToolbarRefreshBusy}
-                      aria-busy={kpiToolbarRefreshBusy}
-                      title="Atualizar recomendação e indicadores do simulador (o iframe KPI pode demorar a responder)"
-                      style={{
-                        background: DECIDE_DASHBOARD.refreshButton,
-                        color: DECIDE_DASHBOARD.refreshText,
-                        border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
-                        borderRadius: 12,
-                        padding: "8px 14px",
-                        fontSize: 13,
-                        fontWeight: 800,
-                        cursor: kpiToolbarRefreshBusy ? "wait" : "pointer",
-                        opacity: kpiToolbarRefreshBusy ? 0.88 : 1,
-                        boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
-                      }}
-                    >
-                      {kpiToolbarRefreshBusy ? (
-                        <>
-                          A atualizar
-                          <InlineLoadingDots />
-                        </>
-                      ) : (
-                        "Atualizar recomendação"
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void router.push("/client/model-lab")}
-                      title="Abrir laboratório interno de cenários do motor"
-                      style={{
-                        background: "rgba(39,39,42,0.82)",
-                        color: "#e2e8f0",
-                        border: "1px solid rgba(148,163,184,0.35)",
-                        borderRadius: 12,
-                        padding: "8px 14px",
-                        fontSize: 13,
-                        fontWeight: 800,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Model Lab
-                    </button>
-                  </>
-                }
-                toolbarFooter={
-                  errMsg ? (
-                    <div
-                      style={{
-                        background: "#2a0f12",
-                        border: "1px solid #7f1d1d",
-                        borderRadius: 12,
-                        padding: 10,
-                        fontSize: 13,
-                        maxWidth: "min(100%, 720px)",
-                        marginLeft: "auto",
-                      }}
-                    >
-                      <b>Erro:</b> {errMsg}
-                    </div>
-                  ) : undefined
-                }
-              >
-                <ClientKpiEmbedWorkspace
-                  chrome="navLinked"
-                  riskProfile={profile}
-                  modelVersion={modelVersion}
-                  kpiEmbedTab={kpiEmbedTab}
-                  applyKpiEmbedTab={applyKpiEmbedTab}
-                  kpiViewMode={kpiViewMode}
-                  setKpiViewMode={setKpiViewMode}
-                  kpiIframeSrc={kpiIframeSrc}
-                  kpiIframeRef={kpiIframeRef}
-                  onKpiIframeReady={clearKpiToolbarRefreshBusy}
-                  kpiConnectivityBump={iframeRefresh}
-                  mainTopSlot={
-                    normalizeKpiEmbedTabId(kpiEmbedTab) === "overview" ? (
-                      <CarteiraIbkrSummary refreshToken={iframeRefresh} embeddedInMainColumn />
-                    ) : undefined
-                  }
-                />
-              </ClientKpiPageChrome>
             </div>
-          ) : null}
-        </div>
 
-        {mounted && !loggedIn ? (
-          <div
-            style={{
-              marginTop: 12,
-              flexShrink: 0,
-              background: "rgba(24,24,27,0.65)",
-              border: "1px solid rgba(148,163,184,0.2)",
-              borderRadius: 16,
-              padding: "12px 14px",
-            }}
-          >
-            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)" }}>Funcionalidades com conta</div>
-            <div style={{ color: "#a1a1aa", marginTop: 6, fontSize: 12, lineHeight: 1.45 }}>
-              A análise acima é pública. Com{" "}
-              <a href="/client/login" style={{ color: "#d4d4d4", fontWeight: 800 }}>
-                login
-              </a>{" "}
-              ou{" "}
-              <a href="/client/register" style={{ color: "#d4d4d4", fontWeight: 800 }}>
-                registo
-              </a>{" "}
-              pode receber alertas, gerir revisões de carteira e gravar contactos.
-            </div>
           </div>
-        ) : null}
+        </main>
       </div>
     </>
   );
 }
-
