@@ -16,6 +16,13 @@ import {
 import {
   isClientLoggedIn, getCurrentSessionUser,
   registerClientUser, loginClientUser,
+  normalizeClientPhone,
+  setSignupEmailVerifiedFromServerEmail,
+  setSignupPhoneVerifiedFromServerPhone,
+  isSignupEmailVerifiedForInput,
+  isSignupPhoneVerifiedForInput,
+  fetchSignupEmailVerifiedFromServer,
+  deriveClientUsernameFromEmail,
 } from "../lib/clientAuth";
 import { useSyncedRiskProfileFromOnboarding } from "../hooks/useSyncedRiskProfileFromOnboarding";
 import { KPI_IFRAME_SRC_REV } from "../lib/kpiFlaskBuildGate";
@@ -387,70 +394,241 @@ function ConversionBanner({onRegister}:{onRegister:()=>void}) {
   );
 }
 
-/* â”€â”€â”€ register modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-function RegisterModal({onClose,onSuccess}:{onClose:()=>void;onSuccess:(user:string)=>void}) {
+/* ─── auth modal (register + login tabs) ──────────────────── */
+function RegisterModal({onClose,onSuccess,defaultTab="register"}:{onClose:()=>void;onSuccess:(user:string)=>void;defaultTab?:"register"|"login"}) {
+  const [tab,setTab]=useState<"register"|"login">(defaultTab);
+
+  /* register state */
   const [email,setEmail]=useState("");
+  const [phone,setPhone]=useState("");
   const [pw,setPw]=useState("");
   const [showPw,setShowPw]=useState(false);
-  const [err,setErr]=useState("");
-  const [busy,setBusy]=useState(false);
-  const emailRef=useRef<HTMLInputElement>(null);
+  const [emailSent,setEmailSent]=useState(false);
+  const [emailVerified,setEmailVerified]=useState(false);
+  const [phoneSent,setPhoneSent]=useState(false);
+  const [phoneOtp,setPhoneOtp]=useState("");
+  const [phoneVerified,setPhoneVerified]=useState(false);
+  const [otpProof,setOtpProof]=useState("");
+  const [regErr,setRegErr]=useState("");
+  const [regBusy,setRegBusy]=useState(false);
 
-  useEffect(()=>{ emailRef.current?.focus(); },[]);
+  /* login state */
+  const [loginId,setLoginId]=useState("");
+  const [loginPw,setLoginPw]=useState("");
+  const [showLoginPw,setShowLoginPw]=useState(false);
+  const [loginErr,setLoginErr]=useState("");
+  const [loginBusy,setLoginBusy]=useState(false);
 
-  function submit(e:React.FormEvent) {
-    e.preventDefault();
-    setErr(""); setBusy(true);
-    const emailTrim=email.trim();
-    const username=emailTrim.split("@")[0].replace(/[^a-z0-9_]/gi,"_").slice(0,24)||"user";
-    const r=registerClientUser(username,pw,pw,emailTrim,"",{requirePhoneSms:false});
-    if(!r.ok) { setErr(r.error??"Erro no registo."); setBusy(false); return; }
-    const l=loginClientUser(username,pw);
-    if(!l.ok) { setErr("Conta criada mas erro no login. Tenta entrar manualmente."); setBusy(false); return; }
-    setBusy(false);
-    onSuccess(username);
+  const inp="w-full bg-[#111827] border border-[#252a3a] text-slate-200 text-sm rounded-lg px-3 py-2.5 outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600";
+
+  /* poll email verification every 3 s */
+  useEffect(()=>{
+    if(!emailSent||emailVerified) return;
+    const id=setInterval(async()=>{
+      const ok=await fetchSignupEmailVerifiedFromServer(email);
+      if(ok){ setSignupEmailVerifiedFromServerEmail(email); setEmailVerified(true); }
+    },3000);
+    return ()=>clearInterval(id);
+  },[emailSent,emailVerified,email]);
+
+  async function sendEmailVerification(){
+    setRegErr(""); setRegBusy(true);
+    try{
+      const r=await fetch("/api/client/email-verification/send",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({email:email.trim(),signupOnly:true}),
+      });
+      const j=await r.json() as {ok:boolean;error?:string};
+      if(!j.ok){setRegErr(j.error??"Erro ao enviar email.");}
+      else{setEmailSent(true);}
+    }catch{setRegErr("Erro de rede ao enviar email.");}
+    setRegBusy(false);
   }
 
+  async function sendPhoneSms(){
+    setRegErr(""); setRegBusy(true);
+    const norm=normalizeClientPhone(phone);
+    if(!norm.ok){setRegErr(norm.error);setRegBusy(false);return;}
+    try{
+      const r=await fetch("/api/client/phone-verification/send",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({phone:norm.e164}),
+      });
+      const j=await r.json() as {ok:boolean;error?:string;otpProof?:string;devOtp?:string};
+      if(!j.ok){setRegErr(j.error??"Erro ao enviar SMS.");}
+      else{
+        setPhoneSent(true);
+        if(j.otpProof) setOtpProof(j.otpProof);
+        if(j.devOtp) setPhoneOtp(j.devOtp);
+      }
+    }catch{setRegErr("Erro de rede ao enviar SMS.");}
+    setRegBusy(false);
+  }
+
+  async function verifyPhoneOtp(){
+    setRegErr(""); setRegBusy(true);
+    const norm=normalizeClientPhone(phone);
+    if(!norm.ok){setRegErr(norm.error);setRegBusy(false);return;}
+    try{
+      const r=await fetch("/api/client/phone-verification/verify",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({phone:norm.e164,code:phoneOtp,otpProof}),
+      });
+      const j=await r.json() as {ok:boolean;error?:string};
+      if(!j.ok){setRegErr(j.error??"C\u00f3digo incorreto.");}
+      else{setSignupPhoneVerifiedFromServerPhone(norm.e164);setPhoneVerified(true);}
+    }catch{setRegErr("Erro de rede ao verificar c\u00f3digo.");}
+    setRegBusy(false);
+  }
+
+  function submitRegister(e:React.FormEvent){
+    e.preventDefault();
+    setRegErr(""); setRegBusy(true);
+    const emailTrim=email.trim();
+    if(!emailVerified&&!isSignupEmailVerifiedForInput(emailTrim)){
+      setRegErr("Confirme o email primeiro."); setRegBusy(false); return;
+    }
+    if(!phoneVerified&&!isSignupPhoneVerifiedForInput(phone)){
+      setRegErr("Confirme o telom\u00f3vel primeiro."); setRegBusy(false); return;
+    }
+    const username=deriveClientUsernameFromEmail(emailTrim)||emailTrim.split("@")[0].replace(/[^a-z0-9_]/gi,"_").slice(0,24)||"user";
+    const r=registerClientUser(username,pw,pw,emailTrim,phone,{requirePhoneSms:true});
+    if(!r.ok){setRegErr(r.error??"Erro no registo.");setRegBusy(false);return;}
+    const l=loginClientUser(username,pw);
+    if(!l.ok){setRegErr("Conta criada, erro no login autom\u00e1tico.");setRegBusy(false);return;}
+    setRegBusy(false); onSuccess(username);
+  }
+
+  function submitLogin(e:React.FormEvent){
+    e.preventDefault();
+    setLoginErr(""); setLoginBusy(true);
+    const raw=loginId.trim();
+    const username=raw.includes("@")?deriveClientUsernameFromEmail(raw)||raw.split("@")[0].replace(/[^a-z0-9_]/gi,"_").slice(0,24):raw;
+    const l=loginClientUser(username,loginPw);
+    if(!l.ok){setLoginErr(l.error??"Erro no login.");setLoginBusy(false);return;}
+    setLoginBusy(false); onSuccess(username);
+  }
+
+  const bothVerified=(emailVerified||isSignupEmailVerifiedForInput(email))&&(phoneVerified||isSignupPhoneVerifiedForInput(phone));
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}>
-      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-7">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-white font-black text-lg">Criar conta grátis</h2>
-            <p className="text-slate-400 text-xs mt-1">Sem cartão de crédito. Cancela quando quiseres.</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex gap-1 bg-[#111827] rounded-lg p-1">
+            <button onClick={()=>setTab("register")}
+              className={`px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${tab==="register"?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>
+              Criar conta
+            </button>
+            <button onClick={()=>setTab("login")}
+              className={`px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${tab==="login"?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>
+              Entrar
+            </button>
           </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 transition-colors"><X size={18}/></button>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 transition-colors ml-2"><X size={18}/></button>
         </div>
 
-        <form onSubmit={submit} className="space-y-4">
-          <div>
-            <label className="block text-xs text-slate-400 mb-1.5 font-semibold">Email</label>
-            <input ref={emailRef} type="email" value={email} onChange={e=>setEmail(e.target.value)}
-              placeholder="o.teu@email.com" required
-              className="w-full bg-[#111827] border border-[#252a3a] text-slate-200 text-sm rounded-lg px-3 py-2.5 outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600"/>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1.5 font-semibold">Password</label>
-            <div className="relative">
-              <input type={showPw?"text":"password"} value={pw} onChange={e=>setPw(e.target.value)}
-                placeholder="Mínimo 10 caracteres" required minLength={10}
-                className="w-full bg-[#111827] border border-[#252a3a] text-slate-200 text-sm rounded-lg px-3 py-2.5 pr-10 outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600"/>
-              <button type="button" onClick={()=>setShowPw(v=>!v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
-                {showPw?<EyeOff size={14}/>:<Eye size={14}/>}
-              </button>
+        {tab==="register"&&(
+          <form onSubmit={submitRegister} className="space-y-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1.5 font-semibold">Email</label>
+              <div className="flex gap-2">
+                <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setEmailSent(false);setEmailVerified(false);}}
+                  placeholder="o.teu@email.com" required disabled={emailVerified}
+                  className={`${inp} flex-1 ${emailVerified?"border-emerald-600/50 text-slate-400":""}`}/>
+                {emailVerified?(
+                  <span className="flex items-center gap-1 text-emerald-400 text-xs font-bold px-2 shrink-0"><CheckCircle2 size={14}/>Ok</span>
+                ):emailSent?(
+                  <span className="text-blue-400 text-xs px-2 flex items-center shrink-0">A verificar…</span>
+                ):(
+                  <button type="button" onClick={sendEmailVerification} disabled={!email.includes("@")||regBusy}
+                    className="shrink-0 px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 text-xs font-semibold rounded-lg disabled:opacity-40 transition-colors">
+                    Verificar
+                  </button>
+                )}
+              </div>
+              {emailSent&&!emailVerified&&<p className="text-slate-500 text-[10px] mt-1">Enviámos um link. Clique no email e volte aqui.</p>}
             </div>
-          </div>
-          {err && <p className="text-red-400 text-xs bg-red-900/20 border border-red-800/40 rounded-lg px-3 py-2">{err}</p>}
-          <button type="submit" disabled={busy}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white font-bold text-sm py-3 rounded-lg transition-colors">
-            {busy?"A criar conta…":"Criar conta e aplicar estratégia →"}
-          </button>
-        </form>
 
-        <p className="text-slate-600 text-[10px] text-center mt-4">
-          Ao criar conta aceitas os <span className="underline cursor-pointer text-slate-500">Termos de Serviço</span>. Os dados são processados com segurança.
-        </p>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1.5 font-semibold">Telomóvel</label>
+              <div className="flex gap-2">
+                <input type="tel" value={phone} onChange={e=>{setPhone(e.target.value);setPhoneSent(false);setPhoneVerified(false);setPhoneOtp("");}}
+                  placeholder="+351912345678" required disabled={phoneVerified}
+                  className={`${inp} flex-1 ${phoneVerified?"border-emerald-600/50 text-slate-400":""}`}/>
+                {phoneVerified?(
+                  <span className="flex items-center gap-1 text-emerald-400 text-xs font-bold px-2 shrink-0"><CheckCircle2 size={14}/>Ok</span>
+                ):(
+                  <button type="button" onClick={sendPhoneSms} disabled={phone.length<8||regBusy}
+                    className="shrink-0 px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 text-xs font-semibold rounded-lg disabled:opacity-40 transition-colors">
+                    SMS
+                  </button>
+                )}
+              </div>
+              {phoneSent&&!phoneVerified&&(
+                <div className="mt-2">
+                  <input value={phoneOtp} onChange={e=>setPhoneOtp(e.target.value.replace(/\D/g,"").slice(0,6))}
+                    placeholder="Código de 6 dígitos" maxLength={6}
+                    className={`${inp} tracking-[0.3em] text-center font-bold`}/>
+                  <button type="button" onClick={verifyPhoneOtp} disabled={phoneOtp.length<4||regBusy}
+                    className="mt-1.5 w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg disabled:opacity-40 transition-colors">
+                    Confirmar código
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs text-slate-400 mb-1.5 font-semibold">Password</label>
+              <div className="relative">
+                <input type={showPw?"text":"password"} value={pw} onChange={e=>setPw(e.target.value)}
+                  placeholder="Mínimo 10 caracteres" required minLength={10}
+                  className={`${inp} pr-10`}/>
+                <button type="button" onClick={()=>setShowPw(v=>!v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                  {showPw?<EyeOff size={14}/>:<Eye size={14}/>}
+                </button>
+              </div>
+            </div>
+
+            {regErr&&<p className="text-red-400 text-xs bg-red-900/20 border border-red-800/40 rounded-lg px-3 py-2">{regErr}</p>}
+
+            <button type="submit" disabled={regBusy||!bothVerified||pw.length<10}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-sm py-3 rounded-xl transition-all shadow-lg shadow-emerald-900/30">
+              {regBusy?"A criar conta…":"Criar conta →"}
+            </button>
+
+            {!bothVerified&&<p className="text-slate-600 text-[10px] text-center">Verifique o email e telomóvel para continuar.</p>}
+            <p className="text-slate-600 text-[10px] text-center">Sem cartão. Ao criar conta aceita os <span className="underline cursor-pointer text-slate-500">Termos de Serviço</span>.</p>
+          </form>
+        )}
+
+        {tab==="login"&&(
+          <form onSubmit={submitLogin} className="space-y-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1.5 font-semibold">Utilizador ou email</label>
+              <input value={loginId} onChange={e=>setLoginId(e.target.value)} placeholder="username ou email" required
+                className={inp} autoFocus/>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1.5 font-semibold">Password</label>
+              <div className="relative">
+                <input type={showLoginPw?"text":"password"} value={loginPw} onChange={e=>setLoginPw(e.target.value)}
+                  placeholder="A tua password" required className={`${inp} pr-10`}/>
+                <button type="button" onClick={()=>setShowLoginPw(v=>!v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                  {showLoginPw?<EyeOff size={14}/>:<Eye size={14}/>}
+                </button>
+              </div>
+            </div>
+            {loginErr&&<p className="text-red-400 text-xs bg-red-900/20 border border-red-800/40 rounded-lg px-3 py-2">{loginErr}</p>}
+            <button type="submit" disabled={loginBusy}
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white font-bold text-sm py-3 rounded-xl transition-colors">
+              {loginBusy?"A entrar…":"Entrar →"}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
