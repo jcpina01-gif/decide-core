@@ -957,7 +957,7 @@ function AjudaPage() {
   );
 }
 
- ─── HistoricoPage sub-component ──────────────────────────── */
+/* ─── HistoricoPage sub-component ──────────────────────────── */
 type MonthRec={date?:string;rebalance_date?:string;rows:{ticker:string;weightPct?:number}[];tbillsTotalPct?:number};
 function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];dates:string[];equityRaw:number[]}) {
   const [histTab,setHistTab]=useState<"reco"|"ops"|"carteira">("reco");
