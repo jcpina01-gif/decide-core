@@ -1,6 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import LandingVsCompetitors from "../components/LandingVsCompetitors";
 import { DecideLogoLockupEmbeddedRecolor, decideHeaderNavLinkStyle } from "../components/DecideLogoHeader";
 import { DECIDE_DEFAULT_INVEST_EUR, DECIDE_MIN_INVEST_EUR } from "../lib/decideInvestPrefill";
 import ThousandsNumberInput, { asThousandsNumberChange } from "../components/ThousandsNumberInput";
@@ -1650,6 +1651,8 @@ export default function DecideLandingPage() {
               </div>
             )}
           </section>
+
+          <LandingVsCompetitors />
 
           <section
             style={{

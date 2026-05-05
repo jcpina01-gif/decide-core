@@ -35,6 +35,7 @@ import CarteiraIbkrSummary from "../components/CarteiraIbkrSummary";
 import InlineLoadingDots from "../components/InlineLoadingDots";
 import ClientKpiEmbedWorkspace from "../components/ClientKpiEmbedWorkspace";
 import ClientKpiPageChrome from "../components/ClientKpiPageChrome";
+import ClientGrowthNarrative from "../components/ClientGrowthNarrative";
 import { DECIDE_DASHBOARD_KPI_REFRESH_EVENT } from "../lib/decideDashboardEvents";
 import { ONBOARDING_LOCALSTORAGE_CHANGED_EVENT } from "../components/OnboardingFlowBar";
 import { useClientKpiEmbed } from "../hooks/useClientKpiEmbed";
@@ -1329,6 +1330,7 @@ export default function ClientDashboardPage() {
                   Como funciona
                 </ClientPendingTextLink>
               </p>
+              <ClientGrowthNarrative riskProfile={profile} />
               <ClientKpiPageChrome
                 as="div"
                 title="Dashboard"

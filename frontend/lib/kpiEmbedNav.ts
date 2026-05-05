@@ -108,9 +108,17 @@ export const KPI_EMBED_NAV_DASHBOARD_ROBUSTNESS_SECTION: KpiEmbedNavSection = {
 
 
 
-/** Sub-menu local em `/client-dashboard` — análise (sem «Carteira»; isso é navegação global no topo). */
-
+/** Sub-menu local em `/client-dashboard` — análise (sem «Carteira»; isso é navegação global no topo).
+ *
+ * Ordem pensada para o cliente:
+ *   1. Simulação — o argumento mais concreto (€ em euros, impacto imediato)
+ *   2. KPIs — Resumo dos números principais vs mercado
+ *   3. Gráficos — Prova histórica visual
+ *   4. Robustez — Para quem quer aprofundar
+ */
 export const KPI_EMBED_NAV_PRIMARY_SECTIONS_DASHBOARD: KpiEmbedNavSection[] = [
+
+  { id: "sim", label: "Simulação", tabs: [{ id: "simulator", label: "Simulador" }] },
 
   { id: "kpis", label: "KPIs", tabs: [{ id: "overview", label: "Resumo" }] },
 
@@ -118,19 +126,17 @@ export const KPI_EMBED_NAV_PRIMARY_SECTIONS_DASHBOARD: KpiEmbedNavSection[] = [
 
     id: "charts",
 
-    label: "Gráficos",
+    label: "Histórico",
 
     tabs: [
 
-      { id: "charts", label: "Gráficos (longo prazo)" },
-
       { id: "horizons", label: "Retornos" },
+
+      { id: "charts", label: "Gráficos (longo prazo)" },
 
     ],
 
   },
-
-  { id: "sim", label: "Simulação", tabs: [{ id: "simulator", label: "Simulador" }] },
 
   KPI_EMBED_NAV_DASHBOARD_ROBUSTNESS_SECTION,
 

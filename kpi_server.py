@@ -87,13 +87,25 @@ def _smooth_series_freshness(root: Path) -> date | None:
 def _resolve_kpi_repo_root() -> Path:
     """Pasta do monorepo com `freeze/`.
 
-    Por omissão considera `DECIDE_KPI_REPO_ROOT`, `DECIDE_PROJECT_ROOT` e a pasta do `kpi_server.py`.
-    Se `DECIDE_KPI_STRICT_REPO_ROOT` não estiver activo, **escolhe o candidato com série CAP15 mais recente**
-    (`model_equity_final_20y.csv` e `v5_kpis.json` — evita gráficos presos a um clone com meta desactualizada
-    ou equity truncada quando o checkout canónico já foi regenerado).
+    Prioridade:
+    1. Env `DECIDE_KPI_REPO_ROOT` ou `DECIDE_PROJECT_ROOT` (se tiver `freeze/`).
+    2. A pasta do próprio `kpi_server.py` (`here`), SE tiver freeze completo (CSV + JSON).
+       Quando `here` tem freeze, é sempre preferida — evita que um sibling mais recente
+       mas com dados/configuração divergente substitua o repositório intencionalmente activo.
+    3. Sibling `decide-core` / `DECIDE_CORE22_CLONE` (fallback quando `here` não tem freeze).
+       Neste caso escolhe o mais recente por `_smooth_series_freshness`.
+    `DECIDE_KPI_STRICT_REPO_ROOT=1` força o primeiro candidato da lista sem scoring.
     """
     strict = os.environ.get("DECIDE_KPI_STRICT_REPO_ROOT", "").strip().lower() in {"1", "true", "yes", "on"}
     here = Path(__file__).resolve().parent
+
+    def _here_has_complete_freeze() -> bool:
+        """True quando `here` tem tanto o CSV de equity como o v5_kpis.json."""
+        for sub in ("DECIDE_MODEL_V5_V2_3_SMOOTH", "DECIDE_MODEL_V5_OVERLAY_CAP15_MAX100EXP"):
+            base = here / "freeze" / sub / "model_outputs"
+            if (base / "model_equity_final_20y.csv").is_file() and (base / "v5_kpis.json").is_file():
+                return True
+        return False
 
     def _ordered_candidates() -> list[Path]:
         out: list[Path] = []
@@ -113,21 +125,23 @@ def _resolve_kpi_repo_root() -> Path:
         k0 = str(here)
         if k0 not in seen and here.is_dir() and (here / "freeze").is_dir():
             out.append(here)
-        # Mesmo directorio pai (ex.: `Documents/`): outro checkout para desempate de frescura
-        # quando se arranca `kpi_server.py` a partir do clone e o freeze canónico está em `decide-core/`.
-        try:
-            par = here.parent
-            for sib_name in ("decide-core", "DECIDE_CORE22_CLONE"):
-                sib = (par / sib_name).resolve()
-                if not sib.is_dir() or not (sib / "freeze").is_dir():
-                    continue
-                ks = str(sib)
-                if ks in seen:
-                    continue
-                seen.add(ks)
-                out.append(sib)
-        except OSError:
-            pass
+        # Sibling search: apenas como fallback quando `here` não tem freeze completo.
+        # Não deve substituir `here` só por ter dados mais recentes — cada repo é
+        # intencionalmente isolado e pode ter configurações divergentes.
+        if not _here_has_complete_freeze():
+            try:
+                par = here.parent
+                for sib_name in ("decide-core", "DECIDE_CORE22_CLONE"):
+                    sib = (par / sib_name).resolve()
+                    if not sib.is_dir() or not (sib / "freeze").is_dir():
+                        continue
+                    ks = str(sib)
+                    if ks in seen:
+                        continue
+                    seen.add(ks)
+                    out.append(sib)
+            except OSError:
+                pass
         return out
 
     cands = _ordered_candidates()
@@ -136,6 +150,11 @@ def _resolve_kpi_repo_root() -> Path:
 
     if strict:
         return cands[0]
+
+    # Se `here` está na lista e tem freeze completo, usa-o directamente sem scoring.
+    here_str = str(here)
+    if any(str(c) == here_str for c in cands) and _here_has_complete_freeze():
+        return here
 
     scored: list[tuple[tuple[int, date], Path]] = []
     for c in cands:
@@ -1269,6 +1288,38 @@ HTML_TEMPLATE = """
       body.decide-kpi-start-sim.decide-kpi-simple .topbar .brand .subtitle.csv-source-line { display: none !important; }
       body.decide-kpi-start-sim.decide-kpi-simple .controls .pill.profile-source-pill { display: none !important; }
       body.decide-kpi-start-sim .tab-nav-label { display: none; }
+      /* CAGR hero strip — única barra de referência consistente em todos os tabs (embed + simples) */
+      .embed-hero-strip {
+        display: none;
+      }
+      body.decide-kpi-embed.decide-kpi-simple .embed-hero-strip {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 6px 14px;
+        padding: 9px 16px;
+        margin: 0 0 10px;
+        border-radius: 12px;
+        background: rgba(15,23,42,0.75);
+        border: 1px solid rgba(45,212,191,0.22);
+        font-size: 0.78rem;
+        line-height: 1.45;
+      }
+      .embed-hero-strip-cagr {
+        font-size: 1.15rem;
+        font-weight: 900;
+        color: #4ade80;
+        letter-spacing: -0.02em;
+      }
+      .embed-hero-strip-label {
+        color: #94a3b8;
+        font-weight: 600;
+      }
+      .embed-hero-strip-disclaimer {
+        color: #4b5563;
+        font-size: 0.7rem;
+        font-weight: 600;
+      }
       /* Títulos gráficos: linguagem cliente vs técnica (só embed) */
       body.decide-kpi-simple .kpi-chart-title-advanced { display: none !important; }
       body:not(.decide-kpi-simple) .kpi-chart-title-simple { display: none !important; }
@@ -3206,6 +3257,13 @@ HTML_TEMPLATE = """
       })();
     </script>
     {% endif %}
+    {% if client_embed and kpi_simple %}
+    <div class="embed-hero-strip" role="status" aria-label="Desempenho histórico do modelo">
+      <span class="embed-hero-strip-cagr">{{ (model_kpis.cagr * 100) | round(1) }}%/ano</span>
+      <span class="embed-hero-strip-label">{{ cap15_human_label_pt }}{% if model_dates and model_dates|length > 0 %} · {{ (model_dates|first)[:4] }}–{{ (model_dates|last)[:4] }}{% endif %}</span>
+      <span class="embed-hero-strip-disclaimer">Histórico ilustrativo — não garante resultados futuros</span>
+    </div>
+    {% endif %}
     {% macro simulator_client_embed_panel() %}
       <div id="simApiContext"
         {# Prefixo `/kpi-flask` só quando o documento do iframe está nesse path (Next → Flask). Não injectar
@@ -3222,9 +3280,9 @@ HTML_TEMPLATE = """
         aria-hidden="true"></div>
       <div class="card sim-client-narrative-card{% if client_embed %} sim-embed-simulation-card{% endif %}" style="margin-top:0.5rem;" data-enter-submit="#simRunBtn">
         {% if client_embed %}
-        <h2 class="sim-headline">Simulação ilustrativa baseada no histórico do modelo</h2>
+        <h2 class="sim-headline">Quanto cresceria o meu capital?</h2>
         <p class="sim-lead sim-embed-lead">
-          A evolução do capital reflecte o histórico da estratégia na janela que definir (capital e anos). Não constitui projeção nem garantia de resultados futuros.
+          Ajuste o capital inicial e o horizonte para ver um exemplo concreto baseado no histórico do modelo.
         </p>
         <p class="muted sim-embed-profile-note" style="font-size:0.82rem; margin-top:0.35rem; line-height:1.45; color:#94a3b8 !important;">
           O <strong style="color:#cbd5e1;">perfil de risco</strong> segue o selector do <strong style="color:#5eead4;">dashboard</strong> (fora deste quadro).
@@ -4236,9 +4294,6 @@ HTML_TEMPLATE = """
     <div id="tab-simulator" class="tab-content{% if tab_default == 'simulator' %} active{% endif %}">
       {% if client_embed and charts_embed_context %}
       {% set ce = charts_embed_context %}
-      <div class="kpi-charts-embed-hero kpi-charts-embed-hero--minimal" role="region" aria-label="Aviso sobre resultados ilustrativos">
-        <p class="kpi-charts-embed-hero-compliance">Ilustrativo — não garante resultados futuros. Cruze com o seu perfil e com a documentação de custos e riscos.</p>
-      </div>
       <div class="kpi-charts-inner kpi-charts-inner--embed kpi-charts-inner--embed-narrative" style="{% if not client_embed %}display:flex; flex-direction:column; gap:1.5rem; margin-top:0.5rem;{% endif %}">
         <div id="kpi-embed-simulator-anchor" class="kpi-charts-simulator-embed">
         {{ simulator_client_embed_panel() }}
@@ -4251,11 +4306,6 @@ HTML_TEMPLATE = """
 
     <!-- ABA 2: GRÁFICOS -->
     <div id="tab-charts" class="tab-content{% if tab_default == 'charts' %} active{% endif %}">
-      {% if client_embed and charts_embed_context %}
-      <div class="kpi-charts-embed-hero kpi-charts-embed-hero--minimal" role="region" aria-label="Aviso sobre resultados ilustrativos">
-        <p class="kpi-charts-embed-hero-compliance">Ilustrativo — não garante resultados futuros. Cruze com o seu perfil e com a documentação de custos e riscos.</p>
-      </div>
-      {% endif %}
       <div class="kpi-charts-inner{% if client_embed %} kpi-charts-inner--embed{% if charts_embed_context %} kpi-charts-inner--embed-narrative{% endif %}{% endif %}" style="{% if not client_embed %}display:flex; flex-direction:column; gap:1.5rem; margin-top:0.5rem;{% endif %}">
         {# Longo prazo (equity + DD): sempre no embed; antes estavam só no {% else %} e sumiam com charts_embed_context. #}
         {% if client_embed and charts_embed_context %}
@@ -10659,7 +10709,7 @@ def index():
     if client_embed and cap15_only and embed_hedge:
         hedge_kpis_embed = compute_hedged_cap15_kpis_embed(profile_key, hedge_pair_arg, hedge_pct_arg)
 
-    # Separador inicial: embed_tab do Next define a vista; sem parâmetro, embed cliente abre em Gráficos (histórico).
+    # Separador inicial: embed_tab do Next define a vista; sem parâmetro, embed cliente abre no simulador.
     if embed_tab_raw == "overview":
         client_focus_sim = False
     elif embed_tab_raw == "simulator":
@@ -10667,7 +10717,7 @@ def index():
     elif embed_tab_raw in ("charts", "portfolio", "portfolio_history", "faq", "horizons"):
         client_focus_sim = False
     else:
-        client_focus_sim = False
+        client_focus_sim = True  # fallback: simulação é o argumento mais concreto para um cliente novo
 
     # Aba «Retornos YTD…»: mesma curva que o simulador (Modelo CAP15 = max100exp no iframe).
     horizon_model_eq = model_eq
@@ -10692,7 +10742,7 @@ def index():
     )
     if client_embed:
         tab_default = embed_initial_tab if embed_initial_tab else (
-            "simulator" if client_focus_sim else "charts"
+            "simulator" if client_focus_sim else "simulator"
         )
     else:
         ui_tab = (request.args.get("tab") or "").strip().lower()

@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+/** Timestamp fixado no carregamento do módulo (não muda entre re-renders). Garante que o URL
+ *  do iframe muda quando o Next.js recarrega a página, forçando um fetch fresco ao Flask
+ *  independentemente do cache do browser ou do valor de `KPI_IFRAME_SRC_REV`. */
+const _IFRAME_LOAD_TS = typeof window !== "undefined" ? Math.floor(Date.now() / 60000) : 0;
 import { useRouter } from "next/router";
 import { isFxHedgeOnboardingApplicable } from "../lib/clientSegment";
 import { readFxHedgePrefs } from "../lib/fxHedgePrefs";
@@ -40,8 +45,8 @@ export function useClientKpiEmbed({
   iframeRefresh,
 }: UseClientKpiEmbedOptions) {
   const router = useRouter();
-  /** Por omissão: Gráficos (prova histórica) antes da Simulação — credibilidade primeiro. */
-  const [kpiEmbedTab, setKpiEmbedTab] = useState<string>("charts");
+  /** Por omissão: Simulação — argumento mais concreto (€ reais) para um cliente novo. */
+  const [kpiEmbedTab, setKpiEmbedTab] = useState<string>("simulator");
   const [kpiViewMode, setKpiViewMode] = useState<"simple" | "advanced">("simple");
   const kpiIframeRef = useRef<HTMLIFrameElement | null>(null);
 
@@ -177,8 +182,10 @@ export function useClientKpiEmbed({
       else hedgeQs += "&hedge_pct=100";
       hedgeQs += `&hedge_pair=${encodeURIComponent(prefs?.pair || "EURUSD")}`;
     }
-    /** Força novo URL do iframe após mudanças no Flask (cache agressivo / SW). Ver `KPI_IFRAME_SRC_REV`. */
-    const embedRev = `&embed_src_rev=${encodeURIComponent(KPI_IFRAME_SRC_REV)}`;
+    /** Força novo URL do iframe: combina rev estático + minuto de carregamento da página.
+     *  `_IFRAME_LOAD_TS` muda a cada nova sessão de browser (cada minuto), garantindo fetch
+     *  fresco mesmo que o `Cache-Control: no-store` do Flask seja ignorado pelo browser/proxy. */
+    const embedRev = `&embed_src_rev=${encodeURIComponent(KPI_IFRAME_SRC_REV)}&_ts=${_IFRAME_LOAD_TS}`;
     return `${base}/?client_embed=1&profile=${encodeURIComponent(profile)}&model_version=${encodeURIComponent(
       modelVersion,
     )}&embed_tab=${encodeURIComponent(

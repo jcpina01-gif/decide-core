@@ -16,12 +16,10 @@ import {
   History,
   Layers,
   LayoutGrid,
-  LineChart,
   Mail,
   MessageCircleQuestion,
   Scale,
   ShieldCheck,
-  SlidersHorizontal,
   Sparkles,
   TrendingUp,
   Wallet,
@@ -52,9 +50,9 @@ import InlineLoadingDots from "./InlineLoadingDots";
 import KpiFlaskConnectivityBanner from "./KpiFlaskConnectivityBanner";
 
 const SIDEBAR_SECTION_ICONS: Record<string, LucideIcon> = {
+  sim: Calculator,
   kpis: LayoutGrid,
-  charts: LineChart,
-  sim: SlidersHorizontal,
+  charts: AreaChart,
   portfolio_now: Wallet,
   portfolio_hist: History,
   fees: Coins,
