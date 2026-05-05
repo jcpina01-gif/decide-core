@@ -911,7 +911,12 @@ export default function ClientDashboardPage() {
     });
   },[equityRaw]);
 
-  // Sector allocation for risk factor chart
+  // Sector allocation + risk contribution
+  const SECTOR_BETA:Record<string,number>={
+    "Tecnologia":1.35,"Comunicação":1.15,"Energia":1.05,"Industrial":1.00,
+    "Mat. Básicos":0.90,"Cons. Básico":0.70,"Saúde":0.75,"Financeiro":1.10,
+    "Imobiliário":0.85,"Outro":1.00,
+  };
   const sectorAlloc=useMemo(()=>{
     if(!latestMonth) return [];
     const m=new Map<string,number>();
@@ -920,7 +925,11 @@ export default function ClientDashboardPage() {
       m.set(s,(m.get(s)??0)+(r.weightPct??0));
     });
     const total=[...m.values()].reduce((a,b)=>a+b,0)||1;
-    return [...m.entries()].sort((a,b)=>b[1]-a[1]).map(([name,v])=>({name,pct:+((v/total)*100).toFixed(1)}));
+    // compute risk contribution using beta-adjusted weights
+    const raw=[...m.entries()].sort((a,b)=>b[1]-a[1]).map(([name,v])=>({name,alloc:+((v/total)*100).toFixed(1),riskW:(v/total)*(SECTOR_BETA[name]??1)}));
+    const riskTotal=raw.reduce((s,r)=>s+r.riskW,0)||1;
+    return raw.map(r=>({name:r.name,pct:r.alloc,risk:+((r.riskW/riskTotal)*100).toFixed(1)}));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[latestMonth]);
 
   // Risk metrics: VaR 95%, Beta
@@ -1808,6 +1817,43 @@ export default function ClientDashboardPage() {
                             </Bar>
                           </BarChart>
                         </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* ── Risk contribution by sector (full width) ── */}
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="flex items-center gap-3 mb-1">
+                        <div className="font-bold text-slate-200 text-sm">Contribuição para o risco por sector</div>
+                        <div className="text-[10px] text-slate-500">(peso ajustado pelo beta estimado do sector)</div>
+                      </div>
+                      <div className="flex gap-4 text-[10px] mb-4">
+                        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-500 inline-block"/><span className="text-slate-400">Peso em carteira</span></span>
+                        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block"/><span className="text-slate-400">Contribuição para o risco</span></span>
+                      </div>
+                      <ResponsiveContainer width="100%" height={Math.max(180, sectorAlloc.length*36)}>
+                        <BarChart data={sectorAlloc} layout="vertical" margin={{top:0,right:48,left:80,bottom:0}} barGap={3} barCategoryGap="28%">
+                          <CartesianGrid horizontal={false} stroke="#1a1f2e"/>
+                          <XAxis type="number" tick={{fontSize:10,fill:"#e2e8f0"}} axisLine={false} tickLine={false} tickFormatter={v=>`${v}%`} domain={[0,"dataMax+5"]}/>
+                          <YAxis type="category" dataKey="name" tick={{fontSize:11,fill:"#e2e8f0"}} axisLine={false} tickLine={false} width={76}/>
+                          <Tooltip
+                            formatter={(v:number,name:string)=>[`${Number(v).toFixed(1)}%`, name==="pct"?"Peso carteira":"Risco (β-adj.)"]}
+                            labelStyle={{color:"#fff",fontWeight:700,fontSize:13}}
+                            contentStyle={{background:"#0f172a",border:"1px solid #f59e0b",borderRadius:8,fontSize:12,color:"#f1f5f9",boxShadow:"0 4px 24px rgba(0,0,0,0.6)"}}
+                            itemStyle={{color:"#f1f5f9",fontWeight:600}}
+                            cursor={{fill:"rgba(255,255,255,0.04)"}}
+                          />
+                          <Bar dataKey="pct" name="pct" fill="#3b82f6" radius={[0,3,3,0]} maxBarSize={14}/>
+                          <Bar dataKey="risk" name="risk" fill="#f59e0b" radius={[0,3,3,0]} maxBarSize={14}>
+                            {sectorAlloc.map((_,i)=>{
+                              const s=sectorAlloc[i]!;
+                              const diff=s.risk-s.pct;
+                              return <Cell key={i} fill={diff>1?"#ef4444":diff<-1?"#22c55e":"#f59e0b"}/>;
+                            })}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                      <div className="mt-2 text-[10px] text-slate-500">
+                        Vermelho = sector sobrepondera no risco vs peso · Verde = subpondera no risco · Sectores com beta estimado: Tec. 1.35 · Com. 1.15 · Ene. 1.05 · Ind. 1.00 · Mat. 0.90 · Fin. 1.10 · Saúde 0.75 · Cons. 0.70
                       </div>
                     </div>
                   </div>
