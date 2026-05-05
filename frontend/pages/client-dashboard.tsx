@@ -1336,28 +1336,69 @@ export default function ClientDashboardPage() {
                     </div>
                   </div>
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                    <div className="font-bold text-slate-200 text-sm mb-4">Principais posições</div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="font-bold text-slate-200 text-sm">Posições actuais</div>
+                      <span className="text-slate-500 text-xs">{(latestMonth?.rows??[]).filter(r=>r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH")&&!r.ticker.startsWith("TBILL")).length+2} posições</span>
+                    </div>
                     <table className="w-full text-xs">
-                      <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
-                        <th className="text-left pb-2">Ativo</th><th className="text-left pb-2">Setor</th>
-                        <th className="text-right pb-2">Peso actual</th><th className="text-right pb-2">Novo peso</th>
-                        <th className="text-right pb-2">Variação</th>
+                      <thead><tr className="text-slate-500 border-b border-[#1a1f2e] font-semibold">
+                        <th className="text-left pb-2">Ativo</th>
+                        <th className="text-left pb-2">Nome</th>
+                        <th className="text-left pb-2">Setor</th>
+                        <th className="text-left pb-2">País</th>
+                        <th className="text-right pb-2">Anterior</th>
+                        <th className="text-right pb-2">Actual</th>
+                        <th className="text-right pb-2">&#916;</th>
                       </tr></thead>
                       <tbody>
-                        {(latestMonth?.rows??[]).filter(r=>r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH"))
-                          .sort((a,b)=>b.weightPct-a.weightPct).slice(0,15).map(r=>{
-                          const prev=(sortedMonths[sortedMonths.length-2]?.rows??[]).find(x=>x.ticker===r.ticker)?.weightPct??0;
-                          const delta=r.weightPct-prev;
-                          return (
-                            <tr key={r.ticker} className="border-b border-[#0f1420] hover:bg-white/2">
-                              <td className="py-2.5 text-slate-200 font-semibold">{r.ticker}</td>
-                              <td className="py-2.5 text-slate-400">{getSector(r.ticker)}</td>
-                              <td className="py-2.5 text-right text-slate-300">{prev.toFixed(1)}%</td>
-                              <td className="py-2.5 text-right text-white font-semibold">{r.weightPct.toFixed(1)}%</td>
-                              <td className={`py-2.5 text-right font-semibold ${delta>=0?"text-emerald-400":"text-red-400"}`}>{delta>=0?"+":""}{delta.toFixed(1)}pp</td>
-                            </tr>
-                          );
-                        })}
+                        {(()=>{
+                          const equity=(latestMonth?.rows??[])
+                            .filter(r=>r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH")&&!r.ticker.startsWith("TBILL")&&r.ticker!=="XEON")
+                            .sort((a,b)=>b.weightPct-a.weightPct);
+                          const prevRows=sortedMonths[sortedMonths.length-2]?.rows??[];
+                          const pm=new Map(prevRows.map(r=>[r.ticker,r.weightPct]));
+                          const xeonCur=latestMonth?.tbillsTotalPct??0;
+                          const xeonPrev=sortedMonths[sortedMonths.length-2]?.tbillsTotalPct??0;
+                          const usdExposure=equity.filter(r=>getZone(r.ticker)==="EUA").reduce((s,r)=>s+r.weightPct,0);
+                          const allRows=[
+                            ...equity.map(r=>({ticker:r.ticker,cur:r.weightPct,prev:pm.get(r.ticker)??0,special:false})),
+                            {ticker:"XEON",cur:xeonCur,prev:xeonPrev,special:true},
+                            {ticker:"EURUSD",cur:usdExposure,prev:usdExposure,special:true},
+                          ];
+                          return allRows.map(r=>{
+                            const delta=r.cur-r.prev;
+                            const isXeon=r.ticker==="XEON";
+                            const isHedge=r.ticker==="EURUSD";
+                            return (
+                              <tr key={r.ticker} className={`border-b border-[#0f1420] hover:bg-white/[0.02] ${r.special?"bg-slate-800/20":""}`}>
+                                <td className="py-2 font-bold">
+                                  {isXeon||isHedge?(
+                                    <span className="text-slate-300">{isHedge?"EUR/USD":r.ticker}</span>
+                                  ):(
+                                    <a href={`https://finance.yahoo.com/quote/${r.ticker}`} target="_blank" rel="noopener noreferrer"
+                                      className="text-blue-400 hover:text-blue-300 hover:underline">{r.ticker}</a>
+                                  )}
+                                </td>
+                                <td className="py-2 text-slate-400">
+                                  {isHedge?"Hedge Cambial":isXeon?"MM Euro":getCompany(r.ticker)||"—"}
+                                </td>
+                                <td className="py-2 text-slate-400">
+                                  {isHedge?"Cambial":getSector(r.ticker)}
+                                </td>
+                                <td className="py-2 text-slate-400">
+                                  {isHedge?"Global":getZone(r.ticker)}
+                                </td>
+                                <td className="py-2 text-right text-slate-300">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
+                                <td className="py-2 text-right text-white font-semibold">
+                                  {isHedge?<span className="text-slate-400 font-normal italic text-[10px]">~{r.cur.toFixed(0)}% hedge</span>:`${r.cur.toFixed(1)}%`}
+                                </td>
+                                <td className={`py-2 text-right font-semibold ${isHedge?"text-slate-500":delta>0?"text-emerald-400":delta<0?"text-red-400":"text-slate-500"}`}>
+                                  {isHedge?"—":delta!==0?`${delta>0?"+":""}${delta.toFixed(1)}pp`:"—"}
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
                       </tbody>
                     </table>
                   </div>
