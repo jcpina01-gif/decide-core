@@ -740,15 +740,19 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
     const prevM=sortedMonths[sortedMonths.length-1-i-1];
     const pm=new Map((prevM?.rows??[]).map(r=>[r.ticker,r.weightPct??0]));
     const cm=new Map(m.rows.map(r=>[r.ticker,r.weightPct??0]));
-    const tickers=[...new Set([...pm.keys(),...cm.keys()])].filter(t=>t!=="TBILL_PROXY"&&!t.startsWith("TBILL")&&!t.startsWith("CASH")&&t!=="XEON");
+    const WMIN=0.5; // only count tickers with meaningful weight in either month
+    const tickers=[...new Set([...pm.keys(),...cm.keys()])].filter(t=>{
+      if(t==="TBILL_PROXY"||t.startsWith("TBILL")||t.startsWith("CASH")||t==="XEON") return false;
+      return Math.max(pm.get(t)??0, cm.get(t)??0)>=WMIN;
+    });
     const compras:string[]=[],aumentos:string[]=[],vendas:string[]=[],reducoes:string[]=[],manter:string[]=[];
     tickers.forEach(t=>{
       const p=pm.get(t)??0,cu=cm.get(t)??0,d=cu-p;
-      if(p===0&&cu>0) compras.push(t);
-      else if(cu===0&&p>0) vendas.push(t);
+      if(p<WMIN&&cu>=WMIN) compras.push(t);
+      else if(cu<WMIN&&p>=WMIN) vendas.push(t);
       else if(d>=DMIN) aumentos.push(t);
       else if(d<=-DMIN) reducoes.push(t);
-      else if(cu>0) manter.push(t);
+      else if(cu>=WMIN) manter.push(t);
     });
     const rebalDate=raw?new Date(raw):null;
     const getMiniPts=():Array<{date:string;v:number}>|null=>{
