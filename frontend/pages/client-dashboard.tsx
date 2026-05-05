@@ -860,12 +860,17 @@ export default function ClientDashboardPage() {
     const benchByYear=new Map<number,number[]>();
     dates.forEach((d,i)=>{ const y=new Date(d).getFullYear(); if(!benchByYear.has(y))benchByYear.set(y,[]); benchByYear.get(y)!.push(benchRaw[i]); });
     const curY=new Date().getFullYear();
-    return [...byYear.entries()].filter(([y])=>y>=curY-5&&y<=curY)
-      .map(([year,vals])=>({
-        year,
-        modelo:+((vals[vals.length-1]/vals[0]-1)*100).toFixed(1),
-        bench:+(((benchByYear.get(year)??[1])[( benchByYear.get(year)??[1]).length-1]/(benchByYear.get(year)??[1])[0]-1)*100).toFixed(1),
-      }));
+    return [...byYear.entries()]
+      .filter(([y])=>y<=curY)
+      .sort((a,b)=>a[0]-b[0])
+      .map(([year,vals])=>{
+        const bVals=benchByYear.get(year)??[1,1];
+        return {
+          year,
+          modelo:+((vals[vals.length-1]/vals[0]-1)*100).toFixed(1),
+          bench:+((bVals[bVals.length-1]/bVals[0]-1)*100).toFixed(1),
+        };
+      });
   },[dates,equityRaw,benchRaw]);
 
   // Geographic exposure from current positions
@@ -1591,16 +1596,21 @@ export default function ClientDashboardPage() {
                   </div>
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                     <div className="font-bold text-slate-200 text-sm mb-4">Retornos anuais</div>
-                    <ResponsiveContainer width="100%" height={200}>
-                      <BarChart data={annualReturns} margin={{top:4,right:8,left:-4,bottom:0}} barGap={2}>
-                        <XAxis dataKey="year" tick={{fontSize:10,fill:"#64748b"}} axisLine={false} tickLine={false}/>
-                        <YAxis tick={{fontSize:9,fill:"#64748b"}} axisLine={false} tickLine={false} tickFormatter={v=>`${v}%`}/>
-                        <Tooltip formatter={(v:number)=>[`${v>0?"+":""}${v}%`]} contentStyle={{background:"#111827",border:"1px solid #252a3a",borderRadius:8,fontSize:11}}/>
-                        <ReferenceLine y={0} stroke="#334155"/>
-                        <Bar dataKey="modelo" name="Modelo" radius={[3,3,0,0]}>
-                          {annualReturns.map((r,i)=><Cell key={i} fill={r.modelo>=0?"#60a5fa":"#f87171"}/>)}
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={annualReturns} margin={{top:4,right:8,left:8,bottom:24}} barCategoryGap="20%" barGap={1}>
+                        <CartesianGrid vertical={false} stroke="#1a1f2e"/>
+                        <XAxis dataKey="year" tick={{fontSize:9,fill:"#64748b"}} axisLine={false} tickLine={false} angle={-45} textAnchor="end" interval={0} height={40}/>
+                        <YAxis tick={{fontSize:9,fill:"#64748b"}} axisLine={false} tickLine={false} tickFormatter={v=>`${v}%`} width={40}/>
+                        <Tooltip
+                          formatter={(v:number,name:string)=>[`${v>0?"+":""}${v}%`, name==="modelo"?"Modelo":"Benchmark"]}
+                          contentStyle={{background:"#111827",border:"1px solid #252a3a",borderRadius:8,fontSize:11}}
+                          cursor={{fill:"rgba(255,255,255,0.03)"}}
+                        />
+                        <ReferenceLine y={0} stroke="#334155" strokeWidth={1}/>
+                        <Bar dataKey="modelo" name="Modelo" radius={[2,2,0,0]} maxBarSize={24}>
+                          {annualReturns.map((r,i)=><Cell key={i} fill={r.modelo>=0?"#3b82f6":"#f87171"}/>)}
                         </Bar>
-                        <Bar dataKey="bench" name="Benchmark" fill="#334155" radius={[3,3,0,0]}/>
+                        <Bar dataKey="bench" name="Benchmark" fill="#1e293b" radius={[2,2,0,0]} maxBarSize={24}/>
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
