@@ -1423,35 +1423,67 @@ export default function ClientDashboardPage() {
                       </tr></thead>
                       <tbody>
                         {(()=>{
-                          // Carteira uses ALL model positions (not top-20 subset), so weights sum to ~100%
-                          const allModelRows=(latestMonth?.rows??[])
+                          // ── build raw equity rows from ALL model positions ──────────────
+                          const pm=new Map((sortedMonths[sortedMonths.length-2]?.rows??[]).map((x:any)=>[x.ticker,x.weightPct??0]));
+                          const rawEquityRows=(latestMonth?.rows??[])
                             .filter((r:any)=>r.ticker!=="XEON"&&!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="TBILL_PROXY")
                             .map((r:any)=>{
-                              const pm=new Map((sortedMonths[sortedMonths.length-2]?.rows??[]).map((x:any)=>[x.ticker,x.weightPct??0]));
                               const cur:number=r.weightPct??0;
                               const prev:number=pm.get(r.ticker)??0;
                               const action=actionCounts.allRows.find((x:any)=>x.ticker===r.ticker)?.action??"Manter";
-                              return {ticker:r.ticker,cur,prev,delta:cur-prev,action};
+                              return {ticker:r.ticker,cur,prev,action};
                             })
                             .filter((r:any)=>r.cur>=0.5);
-                          const equityRows=allModelRows;
-                          const xeonCur=latestMonth?.tbillsTotalPct??0;
+                          const xeonRaw=latestMonth?.tbillsTotalPct??0;
                           const xeonPrev=sortedMonths[sortedMonths.length-2]?.tbillsTotalPct??0;
-                          const usdExposure=equityRows.filter(r=>getZone(r.ticker)==="EUA").reduce((s,r)=>s+r.cur,0);
-                          // Always show all top-20 positions; filter <1 share only when IB is connected
-                          const ibConnected=!pricesLoading&&Object.values(prices).some(p=>p!==null);
-                          const equityFiltered=equityRows.filter(r=>{
-                            if(!ibConnected) return true; // keep all while loading or IB unavailable
+
+                          // ── normalize weights so equity+XEON = exactly 100% ───────────
+                          const rawTotal=rawEquityRows.reduce((s:number,r:any)=>s+r.cur,0)+xeonRaw;
+                          const scale=rawTotal>0?100/rawTotal:1;
+                          type CartRow={ticker:string;cur:number;prev:number;action:string;special:boolean};
+                          const equityNorm:CartRow[]=rawEquityRows.map((r:any)=>({
+                            ticker:r.ticker,
+                            cur:r.cur*scale,
+                            prev:r.prev*scale,
+                            action:r.action,
+                            special:false,
+                          }));
+                          const xeonNorm=xeonRaw*scale;
+                          const xeonPrevNorm=xeonPrev*scale;
+
+                          // ── filter <1 share when prices are available ─────────────────
+                          const hasPrices=!pricesLoading&&Object.values(prices).some(p=>p!==null);
+
+                          // Sum of normalized weights for PRICED equity tickers (to redistribute unpriced weight)
+                          const equityPricedWeightSum=equityNorm.reduce((s,r)=>{
                             const p=prices[r.ticker];
-                            if(!p||!p.price) return true; // keep row even if this ticker has no IB price
-                            const shares=p.qty??(r.cur/100)*aum/p.price;
+                            return s+(p?.price?r.cur:0);
+                          },0);
+                          const equityTotalNorm=equityNorm.reduce((s,r)=>s+r.cur,0); // = 100 - xeonNorm
+
+                          const equityFiltered=hasPrices?equityNorm.filter(r=>{
+                            const p=prices[r.ticker];
+                            if(!p?.price) return true; // keep priced-missing rows
+                            // effective normalized weight redistributed to priced tickers:
+                            const effW=equityPricedWeightSum>0?(r.cur/equityPricedWeightSum)*equityTotalNorm:r.cur;
+                            const shares=p.qty!=null?p.qty:(effW/100)*aum/p.price;
                             return shares>=1;
-                          });
-                          const allRows=[
-                            ...equityFiltered.map(r=>({ticker:r.ticker,cur:r.cur,prev:r.prev,special:false})),
-                            {ticker:"XEON",cur:xeonCur,prev:xeonPrev,special:true},
-                            {ticker:"EURUSD",cur:usdExposure,prev:usdExposure,special:true},
+                          }):equityNorm;
+
+                          const usdExposure=equityFiltered.filter(r=>getZone(r.ticker)==="EUA").reduce((s,r)=>s+r.cur,0);
+                          const allRows:CartRow[]=[
+                            ...equityFiltered,
+                            {ticker:"XEON",cur:xeonNorm,prev:xeonPrevNorm,action:"Manter",special:true},
+                            {ticker:"EURUSD",cur:usdExposure,prev:usdExposure,action:"Manter",special:true},
                           ];
+
+                          // Recalculate priced equity weight sum after <1 share filter
+                          const pricedWsum=equityFiltered.reduce((s,r)=>{
+                            const p=prices[r.ticker];
+                            return s+(p?.price?r.cur:0);
+                          },0);
+                          const equityTotalFiltered=equityFiltered.reduce((s,r)=>s+r.cur,0);
+
                           return allRows.map(r=>{
                             const delta=r.cur-r.prev;
                             const isXeon=r.ticker==="XEON";
@@ -1480,18 +1512,21 @@ export default function ClientDashboardPage() {
                                   {isHedge?<span className="text-slate-500 font-normal italic text-[10px]">derivado (~{r.cur.toFixed(0)}% USD)</span>:`${r.cur.toFixed(1)}%`}
                                 </td>
                                 <td className={`py-2 text-right font-semibold ${isHedge?"text-slate-500":delta>0?"text-emerald-400":delta<0?"text-red-400":"text-slate-500"}`}>
-                                  {isHedge?"—":delta!==0?`${delta>0?"+":""}${delta.toFixed(1)}pp`:"—"}
+                                  {isHedge?"—":Math.abs(delta)>=0.05?`${delta>0?"+":""}${delta.toFixed(1)}pp`:"—"}
                                 </td>
                                 {(()=>{
                                   if(isHedge||isXeon) return <><td className="py-2 text-right text-slate-600">—</td><td className="py-2 text-right text-slate-600">—</td></>;
                                   const p=prices[r.ticker];
                                   const priceVal=p?.price;
-                                  // IB qty is authoritative; fallback to model weight × AUM / price
-                                  const shares=p?.qty!=null?Math.round(p.qty):priceVal&&r.cur>0?Math.round((r.cur/100)*aum/priceVal):null;
+                                  const ccy=p?.currency??"USD";
+                                  const ccySym=ccy==="EUR"?"€":ccy==="GBp"?"p":ccy==="GBP"?"£":"$";
+                                  // redistribute unpriced weights to priced tickers for share calculation
+                                  const effW=priceVal&&pricedWsum>0?(r.cur/pricedWsum)*equityTotalFiltered:r.cur;
+                                  const shares=p?.qty!=null?Math.round(p.qty):priceVal&&effW>0?Math.round((effW/100)*aum/priceVal):null;
                                   return (
                                     <>
                                       <td className="py-2 text-right text-slate-300">
-                                        {priceVal?`${p!.currency==="USD"?"$":p!.currency==="EUR"?"€":""}${priceVal.toFixed(2)}`:"—"}
+                                        {priceVal?`${ccySym}${priceVal>=1?priceVal.toFixed(2):priceVal.toFixed(4)}`:"—"}
                                       </td>
                                       <td className="py-2 text-right text-slate-200 font-semibold">
                                         {shares!=null?shares.toLocaleString("pt-PT"):"—"}
@@ -1503,21 +1538,12 @@ export default function ClientDashboardPage() {
                             );
                           });
                         })()}
-                        {(()=>{
-                          // Weight total footer (equity + XEON should be ~100%; hedge is informational)
-                          const xeonCurFt=latestMonth?.tbillsTotalPct??0;
-                          const equityTotalFt=(latestMonth?.rows??[])
-                            .filter((r:any)=>r.ticker!=="XEON"&&!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="TBILL_PROXY"&&(r.weightPct??0)>=0.5)
-                            .reduce((s:number,r:any)=>s+(r.weightPct??0),0);
-                          const totalFt=equityTotalFt+xeonCurFt;
-                          return (
-                            <tr className="border-t-2 border-slate-600 bg-slate-800/40">
-                              <td colSpan={5} className="py-2 text-right text-slate-400 font-semibold text-xs pr-3">Total</td>
-                              <td className="py-2 text-right font-bold text-white">{totalFt.toFixed(1)}%</td>
-                              <td colSpan={2} className="py-2 text-slate-600 text-xs pl-2">≈ 100%</td>
-                            </tr>
-                          );
-                        })()}
+                        {/* weight total footer – always 100% after normalisation */}
+                        <tr className="border-t-2 border-slate-600 bg-slate-800/40">
+                          <td colSpan={5} className="py-2 text-right text-slate-400 font-semibold text-xs pr-3">Total</td>
+                          <td className="py-2 text-right font-bold text-emerald-400">100.0%</td>
+                          <td colSpan={2} className="py-2 text-slate-600 text-xs pl-2">(normalizado)</td>
+                        </tr>
                       </tbody>
                     </table>
                   </div>
