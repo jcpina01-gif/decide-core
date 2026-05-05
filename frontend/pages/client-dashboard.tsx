@@ -75,7 +75,7 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
             {l:"Ganho total",v:`${gain>=0?"+":""}${fmt(gain)}`,c:gain>=0?"text-emerald-400":"text-red-400"},
             {l:"Valor final",v:fmt(finalVal),c:"text-white"},
             {l:"CAGR hist\u00f3rico",v:`+${cagrHist.toFixed(1)}%/ano`,c:"text-blue-400"},
-            {l:"vs S&P 500",v:fmt(benchFinal),c:"text-slate-400"},
+            {l:"vs MSCI World",v:fmt(benchFinal),c:"text-slate-400"},
           ].map(({l,v,c})=>(
             <div key={l}>
               <div className="text-slate-500 text-[10px] uppercase tracking-wide mb-0.5">{l}</div>
@@ -94,13 +94,13 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
           <Tooltip content={simTooltip}/>
           <ReferenceLine y={capital} stroke="#334155" strokeDasharray="3 3"/>
           <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2.5} dot={false} name="DECIDE"/>
-          <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name="S&P 500" strokeDasharray="4 2"/>
+          <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name="MSCI World" strokeDasharray="4 2"/>
         </LineChart>
       </ResponsiveContainer>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-5 text-xs text-slate-400">
           <span className="flex items-center gap-1.5"><span className="w-5 h-0.5 bg-blue-400 inline-block rounded"/>DECIDE</span>
-          <span className="flex items-center gap-1.5"><span className="w-5 h-px bg-slate-500 inline-block rounded"/>S&amp;P 500</span>
+          <span className="flex items-center gap-1.5"><span className="w-5 h-px bg-slate-500 inline-block rounded"/>MSCI World</span>
         </div>
         {!loggedIn&&(
           <button onClick={onRegister}
@@ -760,13 +760,14 @@ export default function ClientDashboardPage() {
                     </button>
                   )}
                 </div>
-                <NativeSimulator
-                  dates={dates}
-                  equity={equityRaw}
-                  bench={benchRaw}
-                  onRegister={()=>setShowRegModal(true)}
-                  loggedIn={loggedIn}
-                />
+                <div className="px-5 pb-5">
+                  <NativeSimulator
+                    dates={dates}
+                    equity={equityRaw}
+                    bench={benchRaw}
+                    onRegister={()=>setShowRegModal(true)}
+                    loggedIn={loggedIn}
+                  />
                 </div>
               </div>
 
