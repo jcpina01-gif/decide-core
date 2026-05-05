@@ -267,7 +267,6 @@ type RecoMonth={date?:string;rebalance_date?:string;rows:WRow[];tbillsTotalPct?:
 
 /* â”€â”€â”€ sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const NAV=[
-  {id:"dashboard", label:"Dashboard",      Icon:LayoutDashboard},
   {id:"reco",      label:"Recomendações",  Icon:BookOpen},
   {id:"carteira",  label:"Carteira",       Icon:Briefcase},
   {id:"perf",      label:"Performance",    Icon:TrendingUp},
@@ -438,15 +437,20 @@ const PIE_COLORS=["#14b8a6","#3b82f6","#f59e0b","#8b5cf6","#22c55e","#ef4444","#
 function PerfTooltip({active,payload,label}:any) {
   if(!active||!payload?.length) return null;
   return (
-    <div className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-xs">
-      <div className="text-slate-300 mb-1">{label}</div>
+    <div style={{background:"#0f1420",border:"1px solid #2d3748",borderRadius:8,padding:"8px 12px",fontSize:11,boxShadow:"0 4px 20px rgba(0,0,0,0.7)"}}>
+      <div style={{color:"#94a3b8",marginBottom:4,fontWeight:600}}>{label}</div>
       {payload.map((p:any)=>{
         const v=Number(p.value);
-        // equity-index values (≥50 means normalized to 100 at start → show as return %)
-        const display = v >= 50
+        const display = v>=50
           ? `${v>=100?"+":""}${((v/100-1)*100).toFixed(1)}%`
           : `${v.toFixed(1)}%`;
-        return <div key={p.dataKey} style={{color:p.color}}>{p.name}: {display}</div>;
+        return (
+          <div key={p.dataKey} style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
+            <div style={{width:8,height:8,borderRadius:"50%",background:p.color,flexShrink:0}}/>
+            <span style={{color:"#94a3b8"}}>{p.name}:</span>
+            <span style={{color:"#f1f5f9",fontWeight:700}}>{display}</span>
+          </div>
+        );
       })}
     </div>
   );
@@ -462,7 +466,7 @@ export default function ClientDashboardPage() {
   const [showRegModal,setShowRegModal]=useState(false);
   const [period,setPeriod]=useState<Period>("20 Anos");
   const [regSuccess,setRegSuccess]=useState(false);
-  const [activePage,setActivePage]=useState<Page>("reco");
+  const [activePage,setActivePage]=useState<Page>("reco"); // Recomendações is the landing page
   const [contactForm,setContactForm]=useState({nome:"",email:"",assunto:"",msg:""});
   const [contactSent,setContactSent]=useState(false);
 
@@ -562,7 +566,7 @@ export default function ClientDashboardPage() {
     const benchByYear=new Map<number,number[]>();
     dates.forEach((d,i)=>{ const y=new Date(d).getFullYear(); if(!benchByYear.has(y))benchByYear.set(y,[]); benchByYear.get(y)!.push(benchRaw[i]); });
     const curY=new Date().getFullYear();
-    return [...byYear.entries()].filter(([y])=>y>=curY-7&&y<=curY)
+    return [...byYear.entries()].filter(([y])=>y>=curY-5&&y<=curY)
       .map(([year,vals])=>({
         year,
         modelo:+((vals[vals.length-1]/vals[0]-1)*100).toFixed(1),
@@ -653,14 +657,13 @@ export default function ClientDashboardPage() {
             <div className="flex items-center justify-between px-8 py-5 border-b border-[#1a1f2e]">
               <div>
                 <h1 className="text-xl font-black text-white">{
-                  activePage==="dashboard"?"Dashboard":activePage==="reco"?"Recomendações":
+                  activePage==="reco"?"Recomendações":
                   activePage==="carteira"?"Carteira":activePage==="perf"?"Performance":
                   activePage==="risco"?"Risco":activePage==="historico"?"Histórico":
                   activePage==="ajuda"?"Ajuda":"Contactos"
                 }</h1>
                 <p className="text-slate-400 text-xs mt-0.5">{
-                  activePage==="dashboard"?"Visão geral da carteira e recomendações":
-                  activePage==="reco"?"Recomendação mensal do modelo":
+                  activePage==="reco"?"Recomendação mensal do modelo — "+recoLabel:
                   activePage==="carteira"?"Composição e alocação da carteira":
                   activePage==="perf"?"Análise de performance histórica":
                   activePage==="risco"?"Métricas e análise de risco":
@@ -670,7 +673,7 @@ export default function ClientDashboardPage() {
                 }</p>
               </div>
               <div className="flex items-center gap-3">
-                <button onClick={()=>document.querySelector('[data-section="reco"]')?.scrollIntoView({behavior:"smooth"})} className="flex items-center gap-2 bg-[#111827] border border-[#252a3a] rounded-lg px-4 py-2 text-sm text-slate-300 hover:bg-[#151929] transition-colors">
+                <button onClick={()=>setActivePage("reco")} className="flex items-center gap-2 bg-[#111827] border border-[#252a3a] rounded-lg px-4 py-2 text-sm text-slate-300 hover:bg-[#151929] transition-colors">
                   📅 Recomendação de {recoLabel}
                   <ChevronDown size={14} className="text-slate-400"/>
                 </button>
@@ -689,54 +692,6 @@ export default function ClientDashboardPage() {
             </div>
 
             <div className="px-8 py-6 space-y-5">
-
-              {/* ── DASHBOARD OVERVIEW ── */}
-              {activePage==="dashboard"&&(
-                <div className="space-y-5">
-                  <div className="grid grid-cols-4 gap-4">
-                    {[
-                      {label:"CAGR histórico (20a)",val:perfData?`+${perfData.m.ann.toFixed(1)}%`:"—",sub:"Retorno anualizado",c:"text-emerald-400"},
-                      {label:"Sharpe",val:perfData?perfData.m.shp.toFixed(2):"—",sub:"Risco-retorno",c:"text-blue-400"},
-                      {label:"Drawdown máx.",val:perfData?`${perfData.curDD.toFixed(1)}%`:"—",sub:"Actual (3 anos)",c:"text-amber-400"},
-                      {label:"Posições",val:actionCounts.comprar+actionCounts.aumentar+actionCounts.reduzir+actionCounts.vender+actionCounts.manter||"—",sub:"Carteira actual",c:"text-white"},
-                    ].map(({label,val,sub,c})=>(
-                      <div key={label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                        <div className="text-slate-400 text-xs mb-2">{label}</div>
-                        <div className={`text-3xl font-black ${c}`}>{val}</div>
-                        <div className="text-slate-500 text-xs mt-1">{sub}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-4 gap-4">
-                    {[
-                      {id:"reco",label:"Recomendações",desc:"Ver recomendação de "+recoLabel,Icon:BookOpen,c:"text-emerald-400"},
-                      {id:"carteira",label:"Carteira",desc:"Posições e alocação sectorial",Icon:Briefcase,c:"text-blue-400"},
-                      {id:"perf",label:"Performance",desc:"Gráficos e retornos anuais",Icon:TrendingUp,c:"text-cyan-400"},
-                      {id:"risco",label:"Risco",desc:"VaR, volatilidade e drawdown",Icon:ShieldCheck,c:"text-amber-400"},
-                    ].map(({id,label,desc,Icon,c})=>(
-                      <button key={id} onClick={()=>setActivePage(id as Page)}
-                        className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 text-left hover:border-blue-500/40 transition-colors group">
-                        <Icon size={20} className={`${c} mb-3`}/>
-                        <div className="text-slate-200 font-semibold text-sm">{label}</div>
-                        <div className="text-slate-500 text-xs mt-1">{desc}</div>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                    <div className="text-slate-200 font-bold text-sm mb-4">Performance (20 Anos)</div>
-                    <ResponsiveContainer width="100%" height={160}>
-                      <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
-                        <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}/>
-                        <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}}/>
-                        <Tooltip content={<PerfTooltip/>}/>
-                        <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
-                        <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2} dot={false} name="Modelo"/>
-                        <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name="Benchmark" strokeDasharray="4 2"/>
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              )}
 
               {/* ── RECOMENDAÇÕES ── */}
               {activePage==="reco"&&(
