@@ -1353,7 +1353,7 @@ export default function ClientDashboardPage() {
                       <tbody>
                         {(()=>{
                           const equity=(latestMonth?.rows??[])
-                            .filter(r=>r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH")&&!r.ticker.startsWith("TBILL")&&r.ticker!=="XEON"&&r.weightPct>0)
+                            .filter(r=>r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH")&&!r.ticker.startsWith("TBILL")&&r.ticker!=="XEON"&&r.weightPct>=0.5)
                             .sort((a,b)=>b.weightPct-a.weightPct);
                           const prevRows=sortedMonths[sortedMonths.length-2]?.rows??[];
                           const pm=new Map(prevRows.map(r=>[r.ticker,r.weightPct]));
