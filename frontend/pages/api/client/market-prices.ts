@@ -4,6 +4,9 @@
  * Fallback: Yahoo Finance v8 chart API se o IB não estiver ligado.
  */
 import type { NextApiRequest, NextApiResponse } from "next";
+
+// Extend Vercel serverless timeout for this route (batched YF fetches need ~5-8 s)
+export const config = { api: { responseLimit: false }, maxDuration: 30 };
 import { getBackendBase } from "../../../lib/apiProxy";
 
 export type PriceEntry = { price: number; currency: string; qty?: number; value?: number; source?: "ibkr" | "yf" } | null;
@@ -71,34 +74,46 @@ const YF_ALIAS: Record<string, string> = {
 
 async function fetchYahooPrice(ticker: string): Promise<{ price: number; currency: string } | null> {
   const yfTicker = YF_ALIAS[ticker] ?? ticker;
-  try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yfTicker)}?interval=1d&range=5d&includePrePost=false`;
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" },
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json() as any;
-    const result = data?.chart?.result?.[0];
-    if (!result) return null;
-    const closes: number[] = result.indicators?.quote?.[0]?.close ?? [];
-    const valid = closes.filter((c: number) => c != null && !isNaN(c));
-    const price = valid[valid.length - 1];
-    const currency: string = result.meta?.currency ?? "USD";
-    if (!price) return null;
-    return { price, currency };
-  } catch {
-    return null;
+  // Try query1 first, fallback to query2 if blocked
+  const hosts = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"];
+  for (const host of hosts) {
+    try {
+      const url = `https://${host}/v8/finance/chart/${encodeURIComponent(yfTicker)}?interval=1d&range=5d&includePrePost=false`;
+      const res = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json" },
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!res.ok) continue;
+      const data = await res.json() as any;
+      const result = data?.chart?.result?.[0];
+      if (!result) continue;
+      // Prefer regularMarketPrice from meta (most current), fallback to last close
+      const metaPrice: number | undefined = result.meta?.regularMarketPrice;
+      const closes: number[] = result.indicators?.quote?.[0]?.close ?? [];
+      const valid = closes.filter((c: number) => c != null && !isNaN(c));
+      const price = (metaPrice && metaPrice > 0) ? metaPrice : valid[valid.length - 1];
+      const currency: string = result.meta?.currency ?? "USD";
+      if (!price) continue;
+      return { price, currency };
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 async function fetchYahooPrices(tickers: string[]): Promise<PriceResult> {
-  const results = await Promise.all(tickers.map(t => fetchYahooPrice(t)));
   const out: PriceResult = {};
-  tickers.forEach((t, i) => {
-    const r = results[i];
-    out[t] = r ? { ...r, source: "yf" } : null;
-  });
+  // Batch requests to avoid Yahoo Finance rate-limiting (groups of 5, 200ms apart)
+  const BATCH = 5;
+  for (let i = 0; i < tickers.length; i += BATCH) {
+    const batch = tickers.slice(i, i + BATCH);
+    const results = await Promise.all(batch.map(t => fetchYahooPrice(t)));
+    batch.forEach((t, j) => { out[t] = results[j] ? { ...results[j]!, source: "yf" } : null; });
+    if (i + BATCH < tickers.length) await sleep(200);
+  }
   return out;
 }
 
