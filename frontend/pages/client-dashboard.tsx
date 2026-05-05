@@ -176,22 +176,28 @@ const SECTOR: Record<string, string> = {
   KLAC:"Tecnologia",LRCX:"Tecnologia",SNPS:"Tecnologia",CDNS:"Tecnologia",
   CTSH:"Tecnologia",NOW:"Tecnologia",ADBE:"Tecnologia",INTU:"Tecnologia",
   INTC:"Tecnologia",MU:"Tecnologia",MRVL:"Tecnologia",ON:"Tecnologia",NOK:"Tecnologia",SQ:"Tecnologia",
+  ADI:"Tecnologia",MSI:"Tecnologia",PANW:"Tecnologia",DDOG:"Tecnologia",ASML:"Tecnologia",
+  SFTBY:"Tecnologia",MRAAY:"Tecnologia",IFNNY:"Tecnologia",APH:"Tecnologia",PLTR:"Tecnologia",
   JPM:"Financeiro",GS:"Financeiro",MS:"Financeiro",BAC:"Financeiro",
   V:"Financeiro",MA:"Financeiro",AXP:"Financeiro",BLK:"Financeiro",
   SPGI:"Financeiro",ICE:"Financeiro",MCO:"Financeiro",COF:"Financeiro",
+  CM:"Financeiro",SMFG:"Financeiro",NMR:"Financeiro",ALL:"Financeiro",
   BKNG:"Cons. Discr.",AMZN:"Cons. Discr.",TSLA:"Cons. Discr.",
   NKE:"Cons. Discr.",MCD:"Cons. Discr.",SBUX:"Cons. Discr.",
   TJX:"Cons. Discr.",LOW:"Cons. Discr.",HD:"Cons. Discr.",WBD:"Comunicação",
+  UBER:"Cons. Discr.",CMG:"Cons. Discr.",PDD:"Cons. Discr.",DHI:"Cons. Discr.",
   CAT:"Industrial",HON:"Industrial",MMM:"Industrial",GE:"Industrial",
   LMT:"Industrial",RTX:"Industrial",UNP:"Industrial",CSX:"Industrial",
   DE:"Industrial",EMR:"Industrial",ETN:"Industrial",MARUY:"Industrial",
+  CTAS:"Industrial",TM:"Industrial",MSBHF:"Industrial",PH:"Industrial",PCAR:"Industrial",
   UNH:"Saúde",JNJ:"Saúde",LLY:"Saúde",ABBV:"Saúde",
-  MRK:"Saúde",PFE:"Saúde",TMO:"Saúde",ABT:"Saúde",BAYRY:"Saúde",
+  MRK:"Saúde",PFE:"Saúde",TMO:"Saúde",ABT:"Saúde",BAYRY:"Saúde",NVO:"Saúde",
   XOM:"Energia",CVX:"Energia",COP:"Energia",EOG:"Energia",E:"Energia",
   PXD:"Energia",SLB:"Energia",PSX:"Energia",VLO:"Energia",
+  EQNR:"Energia",SU:"Energia",JXHLY:"Energia",FANG:"Energia",
   WMT:"Cons. Básico",PG:"Cons. Básico",KO:"Cons. Básico",BATS:"Cons. Básico",
   PEP:"Cons. Básico",COST:"Cons. Básico",MDLZ:"Cons. Básico",
-  NEM:"Mat. Básicos",GOLD:"Mat. Básicos",
+  NEM:"Mat. Básicos",GOLD:"Mat. Básicos",AEM:"Mat. Básicos",WPM:"Mat. Básicos",
   XEON:"Liquidez",
 };
 const getSector = (t: string) => SECTOR[t.toUpperCase()] ?? "Outros";
@@ -202,6 +208,9 @@ const COUNTRY:Record<string,string>={
   AVGO:"EUA",AMD:"EUA",CRM:"EUA",ORCL:"EUA",QCOM:"EUA",TXN:"EUA",
   AMAT:"EUA",MRVL:"EUA",KLAC:"EUA",ON:"EUA",MU:"EUA",INTC:"EUA",
   LRCX:"EUA",SQ:"EUA",CAT:"EUA",NEM:"EUA",GOLD:"Canadá",WBD:"EUA",
+  ADI:"EUA",MSI:"EUA",PANW:"EUA",DDOG:"EUA",PLTR:"EUA",APH:"EUA",
+  DHI:"EUA",UBER:"EUA",CMG:"EUA",CTAS:"EUA",PH:"EUA",PCAR:"EUA",
+  ALL:"EUA",FANG:"EUA",
   JPM:"EUA",GS:"EUA",MS:"EUA",BAC:"EUA",V:"EUA",MA:"EUA",AXP:"EUA",
   BLK:"EUA",SPGI:"EUA",ICE:"EUA",MCO:"EUA",COF:"EUA",
   BKNG:"EUA",AMZN:"EUA",TSLA:"EUA",NKE:"EUA",MCD:"EUA",SBUX:"EUA",
@@ -213,7 +222,14 @@ const COUNTRY:Record<string,string>={
   WMT:"EUA",PG:"EUA",KO:"EUA",PEP:"EUA",COST:"EUA",MDLZ:"EUA",
   HON:"EUA",MMM:"EUA",GE:"EUA",LMT:"EUA",RTX:"EUA",UNP:"EUA",
   CSX:"EUA",DE:"EUA",EMR:"EUA",ETN:"EUA",
+  AEM:"Canadá",WPM:"Canadá",CM:"Canadá",SU:"Canadá",
   NOK:"Finlândia",BATS:"Reino Unido",E:"Itália",BAYRY:"Alemanha",MARUY:"Japão",
+  ASML:"Países Baixos",IFNNY:"Alemanha",
+  EQNR:"Noruega",
+  SFTBY:"Japão",MRAAY:"Japão",TM:"Japão",MSBHF:"Japão",JXHLY:"Japão",
+  SMFG:"Japão",NMR:"Japão",
+  NVO:"Dinamarca",
+  PDD:"China",
   XEON:"Eurozona",
 };
 const getZone=(t:string)=>COUNTRY[t.toUpperCase()]??"EUA";
@@ -225,21 +241,32 @@ const COMPANY:Record<string,string>={
   QCOM:"Qualcomm",TXN:"Texas Instruments",AMAT:"Applied Materials",
   MRVL:"Marvell",KLAC:"KLA Corp",ON:"ON Semi",MU:"Micron",INTC:"Intel",
   LRCX:"Lam Research",SQ:"Block",NOK:"Nokia",
+  ADI:"Analog Devices",MSI:"Motorola Solutions",PANW:"Palo Alto Networks",
+  DDOG:"Datadog",ASML:"ASML",PLTR:"Palantir",APH:"Amphenol",
+  SFTBY:"SoftBank",MRAAY:"Murata Mfg",IFNNY:"Infineon",
   CAT:"Caterpillar",NEM:"Newmont",GOLD:"Barrick Gold",WBD:"Warner Bros.",
   BATS:"BAT",E:"ENI",BAYRY:"Bayer",MARUY:"Marubeni",
+  TM:"Toyota",MSBHF:"Mitsubishi Corp",JXHLY:"ENEOS Holdings",
+  SMFG:"Sumitomo Mitsui",NMR:"Nomura",
+  NVO:"Novo Nordisk",
   JPM:"JPMorgan",GS:"Goldman Sachs",MS:"Morgan Stanley",BAC:"Bank of America",
   V:"Visa",MA:"Mastercard",AXP:"Amex",BLK:"BlackRock",
   SPGI:"S&P Global",ICE:"ICE",MCO:"Moody's",COF:"Capital One",
+  CM:"CIBC",ALL:"Allstate",
   BKNG:"Booking",AMZN:"Amazon",TSLA:"Tesla",NKE:"Nike",MCD:"McDonald's",
   SBUX:"Starbucks",TJX:"TJX",LOW:"Lowe's",HD:"Home Depot",
+  UBER:"Uber",CMG:"Chipotle",PDD:"PDD Holdings",DHI:"D.R. Horton",
   UNH:"UnitedHealth",JNJ:"J&J",LLY:"Eli Lilly",ABBV:"AbbVie",
   MRK:"Merck",PFE:"Pfizer",TMO:"Thermo Fisher",ABT:"Abbott",
   XOM:"ExxonMobil",CVX:"Chevron",COP:"ConocoPhillips",EOG:"EOG Resources",
   PXD:"Pioneer Natural",SLB:"SLB",PSX:"Phillips 66",VLO:"Valero",
+  EQNR:"Equinor",SU:"Suncor Energy",FANG:"Diamondback Energy",
   WMT:"Walmart",PG:"P&G",KO:"Coca-Cola",PEP:"PepsiCo",
   COST:"Costco",MDLZ:"Mondelez",
   HON:"Honeywell",MMM:"3M",GE:"GE",LMT:"Lockheed Martin",RTX:"RTX",
   UNP:"Union Pacific",CSX:"CSX",DE:"Deere",EMR:"Emerson",ETN:"Eaton",
+  CTAS:"Cintas",PCAR:"PACCAR",PH:"Parker Hannifin",
+  AEM:"Agnico Eagle",WPM:"Wheaton Precious",
   XEON:"MM Euro",
 };
 const getCompany=(t:string)=>COMPANY[t.toUpperCase()]??"";
@@ -690,6 +717,9 @@ export default function ClientDashboardPage() {
   const [activePage,setActivePage]=useState<Page>("dashboard"); // Dashboard is the landing page
   const [contactForm,setContactForm]=useState({nome:"",email:"",assunto:"",msg:""});
   const [contactSent,setContactSent]=useState(false);
+  const [aum,setAum]=useState(100000); // portfolio size in EUR for shares calculation
+  const [prices,setPrices]=useState<Record<string,{price:number;currency:string}|null>>({});
+  const [pricesLoading,setPricesLoading]=useState(false);
 
   // freeze series
   const [dates,setDates]=useState<string[]>([]);
@@ -718,6 +748,8 @@ export default function ClientDashboardPage() {
       .catch(()=>{}).finally(()=>setRecoLoading(false));
   },[]);
 
+  // price fetch effect is placed after latestMonth declaration below
+
   // API devolve meses ordenados do mais antigo para o mais recente — último = mais recente
   const sortedMonths=useMemo(()=>[...recoMonths].sort((a,b)=>{
     const da=a.date??a.rebalance_date??"";
@@ -726,6 +758,19 @@ export default function ClientDashboardPage() {
   }),[recoMonths]);
   const latestMonth=sortedMonths[sortedMonths.length-1];
   const prevMonth=sortedMonths[sortedMonths.length-2];
+
+  useEffect(()=>{
+    if(activePage!=="carteira"||!latestMonth) return;
+    const tickers=(latestMonth.rows??[])
+      .filter((r:any)=>r.weightPct>=0.5&&r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH")&&!r.ticker.startsWith("TBILL")&&r.ticker!=="XEON")
+      .map((r:any)=>r.ticker).join(",");
+    if(!tickers) return;
+    setPricesLoading(true);
+    fetch(`/api/client/market-prices?tickers=${encodeURIComponent(tickers)}`)
+      .then(r=>r.json()).then((d:any)=>setPrices(d)).catch(()=>{})
+      .finally(()=>setPricesLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[activePage,latestMonth?.date]);
 
   const actionCounts=useMemo(()=>{
     const empty:{ticker:string;prev:number;cur:number;delta:number;action:string}[]=[];
@@ -1338,7 +1383,15 @@ export default function ClientDashboardPage() {
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                     <div className="flex items-center justify-between mb-4">
                       <div className="font-bold text-slate-200 text-sm">Posições actuais</div>
-                      <span className="text-slate-500 text-xs">{(latestMonth?.rows??[]).filter(r=>r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH")&&!r.ticker.startsWith("TBILL")).length+2} posições</span>
+                      <div className="flex items-center gap-3">
+                        {pricesLoading&&<span className="text-slate-500 text-[10px]">A carregar preços…</span>}
+                        <label className="flex items-center gap-2 text-xs text-slate-400">
+                          Carteira (€)
+                          <input type="number" value={aum} onChange={e=>setAum(Number(e.target.value)||100000)}
+                            className="w-28 bg-[#111827] border border-[#252a3a] text-slate-200 text-xs rounded-lg px-2 py-1 outline-none focus:border-blue-500"
+                            min={1000} step={1000}/>
+                        </label>
+                      </div>
                     </div>
                     <table className="w-full text-xs">
                       <thead><tr className="text-slate-500 border-b border-[#1a1f2e] font-semibold">
@@ -1349,6 +1402,8 @@ export default function ClientDashboardPage() {
                         <th className="text-right pb-2">Anterior</th>
                         <th className="text-right pb-2">Actual</th>
                         <th className="text-right pb-2">&#916;</th>
+                        <th className="text-right pb-2">Preço</th>
+                        <th className="text-right pb-2">Nº Acções</th>
                       </tr></thead>
                       <tbody>
                         {(()=>{
@@ -1395,6 +1450,22 @@ export default function ClientDashboardPage() {
                                 <td className={`py-2 text-right font-semibold ${isHedge?"text-slate-500":delta>0?"text-emerald-400":delta<0?"text-red-400":"text-slate-500"}`}>
                                   {isHedge?"—":delta!==0?`${delta>0?"+":""}${delta.toFixed(1)}pp`:"—"}
                                 </td>
+                                {(()=>{
+                                  if(isHedge||isXeon) return <><td className="py-2 text-right text-slate-600">—</td><td className="py-2 text-right text-slate-600">—</td></>;
+                                  const p=prices[r.ticker];
+                                  const priceVal=p?.price;
+                                  const shares=priceVal&&r.cur>0?Math.round((r.cur/100)*aum/priceVal):null;
+                                  return (
+                                    <>
+                                      <td className="py-2 text-right text-slate-300">
+                                        {priceVal?`${p!.currency==="USD"?"$":p!.currency==="EUR"?"€":""}${priceVal.toFixed(2)}`:"—"}
+                                      </td>
+                                      <td className="py-2 text-right text-slate-200 font-semibold">
+                                        {shares!=null?shares.toLocaleString("pt-PT"):"—"}
+                                      </td>
+                                    </>
+                                  );
+                                })()}
                               </tr>
                             );
                           });
