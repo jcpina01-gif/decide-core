@@ -5,6 +5,7 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, ReferenceLine,
   BarChart, Bar, CartesianGrid,
+  AreaChart, Area,
 } from "recharts";
 import {
   LayoutDashboard, BookOpen, Briefcase, TrendingUp, TrendingDown,
@@ -886,6 +887,36 @@ export default function ClientDashboardPage() {
     return [...map.entries()].map(([name,pct])=>({name,value:Math.round(pct/total*100)})).sort((a,b)=>b.value-a.value);
   },[latestMonth]);
 
+  // Return distribution histogram (monthly returns)
+  const returnDist=useMemo(()=>{
+    if(equityRaw.length<24) return [];
+    // Use monthly returns (approximate: every ~21 trading days)
+    const step=21;
+    const monthlyRets:number[]=[];
+    for(let i=step;i<equityRaw.length;i+=step){
+      monthlyRets.push((equityRaw[i]!/equityRaw[i-step]!-1)*100);
+    }
+    const BIN_W=2, MIN=-20, MAX=30;
+    const bins:number[]=[];
+    for(let b=MIN;b<MAX;b+=BIN_W) bins.push(b);
+    return bins.map(b=>{
+      const count=monthlyRets.filter(r=>r>=b&&r<b+BIN_W).length;
+      return {bin:`${b>0?"+":""}${b}%`, count, mid:b+BIN_W/2};
+    });
+  },[equityRaw]);
+
+  // Sector allocation for risk factor chart
+  const sectorAlloc=useMemo(()=>{
+    if(!latestMonth) return [];
+    const m=new Map<string,number>();
+    (latestMonth.rows??[]).filter((r:any)=>r.ticker!=="XEON"&&!r.ticker.startsWith("TBILL")&&(r.weightPct??0)>=0.5).forEach((r:any)=>{
+      const s=getSector(r.ticker)||"Outro";
+      m.set(s,(m.get(s)??0)+(r.weightPct??0));
+    });
+    const total=[...m.values()].reduce((a,b)=>a+b,0)||1;
+    return [...m.entries()].sort((a,b)=>b[1]-a[1]).map(([name,v])=>({name,pct:+((v/total)*100).toFixed(1)}));
+  },[latestMonth]);
+
   // Risk metrics: VaR 95%, Beta
   const riskMetrics=useMemo(()=>{
     if(equityRaw.length<252) return {var95:0,beta:0};
@@ -1620,56 +1651,157 @@ export default function ClientDashboardPage() {
               )}
 
               {/* ── RISCO ── */}
-              {activePage==="risco"&&(
-                <div className="space-y-5">
-                  <div className="grid grid-cols-4 gap-4">
-                    {[
-                      {label:"Volatilidade anual",val:perfData?`${perfData.curVol.toFixed(1)}%`:"—",c:"text-amber-400"},
-                      {label:"VaR 95% (diário)",val:riskMetrics?`${riskMetrics.var95.toFixed(2)}%`:"—",c:"text-red-400"},
-                      {label:"Beta",val:riskMetrics?`${riskMetrics.beta}`:"—",c:"text-slate-200"},
-                      {label:"Drawdown actual",val:perfData?`${perfData.curDD.toFixed(1)}%`:"—",c:"text-red-400"},
-                    ].map(({label,val,c})=>(
-                      <div key={label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                        <div className="text-slate-400 text-xs mb-2">{label}</div>
-                        <div className={`text-2xl font-black ${c}`}>{val}</div>
+              {activePage==="risco"&&(()=>{
+                const vol=perfData?.curVol??0;
+                const dd=perfData?.curDD??0;
+                // 20y Sharpe from full data
+                const sharpe20=perfData?.m?.shp??riskMetrics?.beta??0;
+                // Needle position: vol mapped to 0-1 (0%=low, 30%=high)
+                const needlePos=Math.min(Math.max(vol/30,0),1);
+                const riskLabel=needlePos<0.4?"Baixo":needlePos<0.7?"Moderado":"Elevado";
+                const riskColor=needlePos<0.4?"#22c55e":needlePos<0.7?"#f59e0b":"#ef4444";
+                // SVG gauge helpers
+                const CX=110,CY=100,R=80,RI=54;
+                const pt=(pos:number,r:number)=>({
+                  x:CX+r*Math.cos(Math.PI*(1-pos)),
+                  y:CY-r*Math.sin(Math.PI*(1-pos)),
+                });
+                const arc=(s:number,e:number,ro:number,ri:number)=>{
+                  const p1=pt(s,ro),p2=pt(e,ro),p3=pt(e,ri),p4=pt(s,ri);
+                  const lg=e-s>0.5?1:0;
+                  return `M${p1.x},${p1.y} A${ro},${ro} 0 ${lg},0 ${p2.x},${p2.y} L${p3.x},${p3.y} A${ri},${ri} 0 ${lg},1 ${p4.x},${p4.y} Z`;
+                };
+                const np=pt(needlePos,R-6);
+                const nb1=pt(needlePos-0.06,RI+2),nb2=pt(needlePos+0.06,RI+2);
+                const date=latestMonth?.date??latestMonth?.rebalance_date??"";
+                const dateLabel=date?new Date(date).toLocaleDateString("pt-PT",{month:"short",year:"numeric"}):"";
+                return (
+                  <div className="space-y-4">
+                    {/* ── Top: gauge + metrics ── */}
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 flex items-center gap-8">
+                      {/* Gauge */}
+                      <div className="flex-shrink-0 w-56">
+                        <div className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Nível de risco <span className="ml-1 text-slate-600">{dateLabel}</span></div>
+                        <svg viewBox="0 0 220 115" className="w-full">
+                          {/* Background arc */}
+                          <path d={arc(0,1,R,RI)} fill="#1e293b"/>
+                          {/* Coloured segments */}
+                          <path d={arc(0,0.38,R,RI)} fill="#22c55e" opacity={0.85}/>
+                          <path d={arc(0.38,0.67,R,RI)} fill="#f59e0b" opacity={0.85}/>
+                          <path d={arc(0.67,1,R,RI)} fill="#ef4444" opacity={0.85}/>
+                          {/* Needle */}
+                          <polygon points={`${np.x},${np.y} ${nb1.x},${nb1.y} ${nb2.x},${nb2.y}`} fill="white" opacity={0.95}/>
+                          <circle cx={CX} cy={CY} r={5} fill="#0b0f1a" stroke="white" strokeWidth={1.5}/>
+                          {/* Labels */}
+                          <text x={CX-R+4} y={CY+14} fontSize={9} fill="#22c55e" textAnchor="middle">Baixo</text>
+                          <text x={CX} y={CY-R-6} fontSize={9} fill="#f59e0b" textAnchor="middle">Médio</text>
+                          <text x={CX+R-4} y={CY+14} fontSize={9} fill="#ef4444" textAnchor="middle">Alto</text>
+                          {/* Level label */}
+                          <text x={CX} y={CY+32} fontSize={15} fontWeight="bold" fill={riskColor} textAnchor="middle">{riskLabel}</text>
+                        </svg>
                       </div>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-2 gap-5">
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="font-bold text-slate-200 text-sm mb-3">Nível de risco</div>
-                      <div className="text-amber-400 text-2xl font-black mb-4">Moderado</div>
-                      <div className="relative h-3 rounded-full overflow-hidden mb-1" style={{background:"linear-gradient(to right,#22c55e,#f59e0b 50%,#ef4444)"}}>
-                        <div className="absolute top-0 bottom-0 w-0.5 bg-white/90 rounded-full" style={{left:"55%"}}/>
-                      </div>
-                      <div className="flex justify-between text-[9px] mt-0.5">
-                        <span className="text-emerald-400">Baixo</span><span className="text-amber-400">Médio</span><span className="text-red-400">Alto</span>
-                      </div>
-                      <div className="mt-4 space-y-2 text-xs">
-                        {[
-                          {label:"Volatilidade alvo",val:"15-20%"},
-                          {label:"CAP15 activo",val:"Sim"},
-                          {label:"Perfil",val:"Moderado"},
-                        ].map(({label,val})=>(
-                          <div key={label} className="flex justify-between"><span className="text-slate-400">{label}</span><span className="text-slate-200 font-semibold">{val}</span></div>
-                        ))}
+                      {/* Vertical divider */}
+                      <div className="w-px self-stretch bg-[#1a1f2e]"/>
+                      {/* KPIs */}
+                      <div className="flex-1 grid grid-cols-3 gap-6">
+                        <div>
+                          <div className="text-slate-400 text-xs mb-1">Volatilidade anual</div>
+                          <div className="text-3xl font-black text-amber-400">{vol?`${vol.toFixed(1)}%`:"—"}</div>
+                          <div className="text-[10px] text-slate-500 mt-1">Alvo: 15–20%</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-400 text-xs mb-1">Drawdown actual</div>
+                          <div className="text-3xl font-black text-red-400">{dd?`${dd.toFixed(1)}%`:"—"}</div>
+                          <div className="text-[10px] text-slate-500 mt-1">vs pico</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-400 text-xs mb-1">Sharpe (20 anos)</div>
+                          <div className="text-3xl font-black text-white">{perfData?sharpe20.toFixed(2):"—"}</div>
+                          <div className="text-[10px] text-slate-500 mt-1">Rf = 0%</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-400 text-xs mb-1">VaR 95% (diário)</div>
+                          <div className="text-2xl font-black text-red-300">{riskMetrics?`${riskMetrics.var95.toFixed(2)}%`:"—"}</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-400 text-xs mb-1">Beta vs MSCI World</div>
+                          <div className="text-2xl font-black text-slate-200">{riskMetrics?riskMetrics.beta:"—"}</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-400 text-xs mb-1">Perfil</div>
+                          <div className="text-2xl font-black text-amber-400">Moderado</div>
+                        </div>
                       </div>
                     </div>
+
+                    {/* ── Drawdown histórico (full width) ── */}
                     <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="font-bold text-slate-200 text-sm mb-3">Drawdown histórico (20 anos)</div>
-                      <ResponsiveContainer width="100%" height={160}>
-                        <LineChart data={perfData?.ddChart??[]} margin={{top:4,right:4,left:-24,bottom:0}}>
-                          <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={d=>d.slice(0,4)} interval={Math.floor((perfData?.ddChart.length??1)/4)}/>
-                          <YAxis tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>`${Number(v).toFixed(0)}%`} domain={["dataMin",0]}/>
-                          <Tooltip content={<PerfTooltip/>}/>
-                          <ReferenceLine y={0} stroke="#334155" strokeDasharray="3 3"/>
-                          <Line type="monotone" dataKey="dd" stroke="#f87171" strokeWidth={1.5} dot={false} name="Drawdown"/>
-                        </LineChart>
+                      <div className="font-bold text-slate-200 text-sm mb-3">Drawdown histórico</div>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <AreaChart data={perfData?.ddChart??[]} margin={{top:4,right:8,left:0,bottom:0}}>
+                          <defs>
+                            <linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#f87171" stopOpacity={0.3}/>
+                              <stop offset="95%" stopColor="#f87171" stopOpacity={0.0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid vertical={false} stroke="#1a1f2e"/>
+                          <XAxis dataKey="date" tick={{fontSize:10,fill:"#e2e8f0"}} tickLine={false} axisLine={false}
+                            tickFormatter={d=>d.slice(0,4)}
+                            interval={Math.floor((perfData?.ddChart.length??1)/8)}/>
+                          <YAxis tick={{fontSize:10,fill:"#e2e8f0"}} tickLine={false} axisLine={false}
+                            tickFormatter={v=>`${Number(v).toFixed(0)}%`} domain={["dataMin",0]} width={42}/>
+                          <Tooltip
+                            formatter={(v:number)=>[`${Number(v).toFixed(1)}%`,"Drawdown"]}
+                            labelStyle={{color:"#fff",fontWeight:700}}
+                            contentStyle={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,fontSize:12,color:"#f1f5f9"}}
+                            itemStyle={{color:"#fca5a5"}}
+                          />
+                          <ReferenceLine y={0} stroke="#334155"/>
+                          <Area type="monotone" dataKey="dd" stroke="#f87171" strokeWidth={1.5} fill="url(#ddGrad)" dot={false} name="Drawdown"/>
+                        </AreaChart>
                       </ResponsiveContainer>
                     </div>
+
+                    {/* ── Bottom: sector alloc + return distribution ── */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="font-bold text-slate-200 text-sm mb-4">Exposição por sector</div>
+                        <div className="space-y-2">
+                          {sectorAlloc.map(({name,pct})=>(
+                            <div key={name} className="flex items-center gap-3">
+                              <div className="w-24 text-xs text-slate-400 text-right shrink-0">{name}</div>
+                              <div className="flex-1 bg-[#1e293b] rounded-full h-2.5 overflow-hidden">
+                                <div className="h-full rounded-full bg-blue-500" style={{width:`${pct}%`}}/>
+                              </div>
+                              <div className="w-10 text-xs text-white font-semibold text-right shrink-0">{pct}%</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="font-bold text-slate-200 text-sm mb-3">Distribuição de retornos mensais</div>
+                        <ResponsiveContainer width="100%" height={200}>
+                          <BarChart data={returnDist} margin={{top:4,right:4,left:-8,bottom:0}} barCategoryGap="5%">
+                            <CartesianGrid vertical={false} stroke="#1a1f2e"/>
+                            <XAxis dataKey="bin" tick={{fontSize:8,fill:"#e2e8f0"}} axisLine={false} tickLine={false} interval={3}/>
+                            <YAxis tick={{fontSize:9,fill:"#e2e8f0"}} axisLine={false} tickLine={false}/>
+                            <Tooltip
+                              formatter={(v:number)=>[`${v} meses`,"Frequência"]}
+                              labelFormatter={(l:string)=>`Retorno: ${l}`}
+                              labelStyle={{color:"#fff",fontWeight:700}}
+                              contentStyle={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,fontSize:12,color:"#f1f5f9"}}
+                            />
+                            <Bar dataKey="count" name="Frequência" radius={[2,2,0,0]} maxBarSize={20}>
+                              {returnDist.map((r,i)=><Cell key={i} fill={r.mid>=0?"#3b82f6":"#f87171"}/>)}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* ── HISTÓRICO ── */}
               {activePage==="historico"&&(
