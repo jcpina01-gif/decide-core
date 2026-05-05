@@ -467,7 +467,7 @@ export default function ClientDashboardPage() {
   const [showRegModal,setShowRegModal]=useState(false);
   const [period,setPeriod]=useState<Period>("20 Anos");
   const [regSuccess,setRegSuccess]=useState(false);
-  const [activePage,setActivePage]=useState<Page>("reco"); // Recomendações is the landing page
+  const [activePage,setActivePage]=useState<Page>("dashboard"); // Dashboard is the landing page
   const [contactForm,setContactForm]=useState({nome:"",email:"",assunto:"",msg:""});
   const [contactSent,setContactSent]=useState(false);
 
@@ -699,46 +699,197 @@ export default function ClientDashboardPage() {
               {/* ── DASHBOARD ── */}
               {activePage==="dashboard"&&(
                 <div className="space-y-5">
-                  <div className="grid grid-cols-4 gap-4">
-                    {[
-                      {label:"CAGR histórico (20a)",val:perfData?`+${perfData.m.ann.toFixed(1)}%`:"—",sub:"Retorno anualizado",c:"text-emerald-400"},
-                      {label:"Sharpe",val:perfData?perfData.m.shp.toFixed(2):"—",sub:"Risco-retorno",c:"text-blue-400"},
-                      {label:"Drawdown máx.",val:perfData?`${perfData.curDD.toFixed(1)}%`:"—",sub:"Actual (3 anos)",c:"text-amber-400"},
-                      {label:"Posições activas",val:actionCounts.comprar+actionCounts.aumentar+actionCounts.reduzir+actionCounts.vender+actionCounts.manter||"—",sub:"Carteira actual",c:"text-white"},
-                    ].map(({label,val,sub,c})=>(
-                      <div key={label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                        <div className="text-slate-400 text-xs mb-2">{label}</div>
-                        <div className={`text-3xl font-black ${c}`}>{val}</div>
-                        <div className="text-slate-500 text-xs mt-1">{sub}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-4 gap-4">
-                    {([
-                      {id:"reco" as Page,label:"Recomendações",desc:"Recomendação de "+recoLabel,Icon:BookOpen,c:"text-emerald-400"},
-                      {id:"carteira" as Page,label:"Carteira",desc:"Posições e alocação sectorial",Icon:Briefcase,c:"text-blue-400"},
-                      {id:"perf" as Page,label:"Performance",desc:"Gráficos e retornos anuais",Icon:TrendingUp,c:"text-cyan-400"},
-                      {id:"risco" as Page,label:"Risco",desc:"VaR, volatilidade e drawdown",Icon:ShieldCheck,c:"text-amber-400"},
-                    ] as const).map(({id,label,desc,Icon,c})=>(
-                      <button key={id} onClick={()=>setActivePage(id)}
-                        className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 text-left hover:border-blue-500/40 transition-colors">
-                        <Icon size={20} className={`${c} mb-3`}/>
-                        <div className="text-slate-200 font-semibold text-sm">{label}</div>
-                        <div className="text-slate-500 text-xs mt-1">{desc}</div>
-                      </button>
-                    ))}
-                  </div>
+                  {/* 1. badges */}
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="text-slate-200 font-bold text-sm">Performance (20 Anos)</div>
-                      <div className="flex items-center gap-4 text-xs">
-                        <div className="flex items-center gap-2 text-slate-400"><div className="w-4 h-0.5 bg-blue-400 rounded"/>Modelo</div>
-                        <div className="flex items-center gap-2 text-slate-400"><div className="w-4 h-px bg-slate-500 rounded"/>Benchmark</div>
+                    <SH title="Recomendação deste mês"/>
+                    <div className="flex items-start gap-8">
+                      <div className="flex gap-8">
+                        <ActionBadge label="COMPRAR"  count={recoLoading?0:actionCounts.comprar}  color="text-emerald-400"/>
+                        <ActionBadge label="AUMENTAR" count={recoLoading?0:actionCounts.aumentar} color="text-cyan-400"/>
+                        <ActionBadge label="REDUZIR"  count={recoLoading?0:actionCounts.reduzir}  color="text-amber-400"/>
+                        <ActionBadge label="VENDER"   count={recoLoading?0:actionCounts.vender}   color="text-red-400"/>
+                        <ActionBadge label="MANTER"   count={recoLoading?0:actionCounts.manter}   color="text-slate-300"/>
+                      </div>
+                      <div className="ml-auto flex flex-col gap-2 min-w-[200px]">
+                        {loggedIn?(
+                          <button className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors">
+                            ✓ Aprovar recomendações
+                          </button>
+                        ):(
+                          <button onClick={()=>setShowRegModal(true)} className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors">
+                            Criar conta para aplicar →
+                          </button>
+                        )}
+                        <button className="bg-[#111827] border border-[#252a3a] hover:bg-[#151929] text-slate-300 text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors">
+                          Rever alterações
+                        </button>
                       </div>
                     </div>
-                    <ResponsiveContainer width="100%" height={180}>
+                    <div className="mt-4 flex items-center gap-4 text-xs text-slate-400 pt-4 border-t border-[#1a1f2e]">
+                      <span className="font-semibold">Impacto esperado</span>
+                      <span>Risco: <span className="text-emerald-400">↓ Ligeiro</span></span>
+                      <span className="text-slate-600">|</span>
+                      <span>Retorno esperado: <span className="text-blue-400">↑ Moderado</span></span>
+                    </div>
+                  </div>
+                  {/* 2. O que mudou | Risco */}
+                  <div className="grid grid-cols-2 gap-5">
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <SH title="O que mudou"/>
+                      <div className="space-y-4 mt-2">
+                        {whatChanged.map((b,i)=>(
+                          <div key={i} className="flex gap-3">
+                            <div className="mt-0.5 shrink-0">
+                              {b.icon==="up"&&<TrendingUp size={18} className="text-emerald-400"/>}
+                              {b.icon==="down"&&<TrendingDown size={18} className="text-red-400"/>}
+                              {b.icon==="globe"&&<Globe size={18} className="text-blue-400"/>}
+                              {b.icon==="wave"&&<Activity size={18} className="text-slate-400"/>}
+                            </div>
+                            <div><div className="text-slate-200 text-sm font-semibold">{b.title}</div><div className="text-slate-400 text-xs mt-0.5">{b.desc}</div></div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <SH title="O seu nível de risco"/>
+                      <div className="flex gap-6 mt-2">
+                        <div className="space-y-4">
+                          <div>
+                            <div className="text-slate-400 text-xs mb-1">Volatilidade (anual)</div>
+                            <div className="text-2xl font-black text-white">{perfData?`${perfData.curVol.toFixed(1)}%`:"—"}</div>
+                            <div className="text-slate-400 text-xs">Média</div>
+                          </div>
+                          <div>
+                            <div className="text-slate-400 text-xs mb-1">Drawdown actual</div>
+                            <div className="text-2xl font-black text-red-400">{perfData?`${perfData.curDD.toFixed(1)}%`:"—"}</div>
+                          </div>
+                          <div>
+                            <div className="text-slate-400 text-xs mb-1">Nível de risco</div>
+                            <div className="text-amber-400 font-bold text-sm">Moderado</div>
+                            <div className="mt-2 w-32">
+                              <div className="relative h-3 rounded-full overflow-hidden" style={{background:"linear-gradient(to right,#22c55e,#f59e0b 50%,#ef4444)"}}>
+                                <div className="absolute top-0 bottom-0 w-0.5 bg-white/90 rounded-full shadow-sm" style={{left:"55%"}}/>
+                              </div>
+                              <div className="flex justify-between text-[9px] mt-0.5">
+                                <span className="text-emerald-400">Baixo</span><span className="text-amber-400 font-semibold">Médio</span><span className="text-red-400">Alto</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-slate-400 text-xs mb-2">Evolução do drawdown</div>
+                          <ResponsiveContainer width="100%" height={130}>
+                            <LineChart data={perfData?.ddChart??[]} margin={{top:4,right:4,left:-24,bottom:0}}>
+                              <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={d=>d.slice(0,4)} interval={Math.floor((perfData?.ddChart.length??1)/4)}/>
+                              <YAxis tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>`${Number(v).toFixed(0)}%`} domain={["dataMin",0]}/>
+                              <Tooltip content={<PerfTooltip/>}/>
+                              <ReferenceLine y={0} stroke="#334155" strokeDasharray="3 3"/>
+                              <Line type="monotone" dataKey="dd" stroke="#60a5fa" strokeWidth={1.5} dot={false} name="DD"/>
+                            </LineChart>
+                          </ResponsiveContainer>
+                          <div className="flex items-center gap-4 mt-2 text-[10px] text-slate-400">
+                            <div className="flex items-center gap-1.5"><div className="w-3 h-0.5 bg-blue-400"/>Modelo</div>
+                            <div className="flex items-center gap-1.5"><div className="w-3 h-px bg-slate-500"/>Benchmark</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {/* 3. Alterações | Sector */}
+                  <div className="grid grid-cols-2 gap-5">
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <SH title="Alterações na carteira"/>
+                        <button onClick={()=>setActivePage("carteira")} className="text-blue-400 text-xs hover:underline flex items-center gap-1 -mt-4">Ver carteira completa<ArrowUpRight size={12}/></button>
+                      </div>
+                      {recoLoading?(
+                        <div className="text-slate-500 text-sm text-center py-6">A carregar…</div>
+                      ):actionCounts.rows.length===0?(
+                        <div className="text-slate-500 text-sm text-center py-6">Sem alterações este mês</div>
+                      ):(
+                        <table className="w-full text-xs">
+                          <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
+                            <th className="text-left pb-2 font-semibold">Ativo</th>
+                            <th className="text-left pb-2 font-semibold">Setor</th>
+                            <th className="text-right pb-2 font-semibold">Actual</th>
+                            <th className="text-right pb-2 font-semibold">Novo</th>
+                            <th className="text-right pb-2 font-semibold">&#916;</th>
+                            <th className="text-right pb-2 font-semibold">Ação</th>
+                          </tr></thead>
+                          <tbody>
+                            {actionCounts.rows.map(r=>{
+                              const ac=r.action==="Comprar"?"text-emerald-400":r.action==="Aumentar"?"text-cyan-400":r.action==="Vender"?"text-red-400":"text-amber-400";
+                              const dc=r.delta>0?"text-emerald-400":"text-red-400";
+                              return (
+                                <tr key={r.ticker} className="border-b border-[#111520] hover:bg-white/[0.02]">
+                                  <td className="py-2 font-bold text-slate-200">{r.ticker}</td>
+                                  <td className="py-2 text-slate-400">{getSector(r.ticker)}</td>
+                                  <td className="py-2 text-right text-slate-300">{r.prev.toFixed(1)}%</td>
+                                  <td className="py-2 text-right text-slate-300">{r.cur.toFixed(1)}%</td>
+                                  <td className={`py-2 text-right font-semibold ${dc}`}>{r.delta>0?"+":""}{r.delta.toFixed(1)}%</td>
+                                  <td className={`py-2 text-right font-bold ${ac}`}>{r.action}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <SH title="Alocação por setor"/>
+                        <button onClick={()=>setActivePage("carteira")} className="text-blue-400 text-xs hover:underline flex items-center gap-1 -mt-4">Ver alocação completa<ArrowUpRight size={12}/></button>
+                      </div>
+                      {sectorData.length===0?(
+                        <div className="text-slate-500 text-sm text-center py-6">A carregar…</div>
+                      ):(
+                        <div className="flex items-center gap-4">
+                          <ResponsiveContainer width={160} height={160}>
+                            <PieChart>
+                              <Pie data={sectorData} cx="50%" cy="50%" innerRadius={48} outerRadius={72} dataKey="value" strokeWidth={0}>
+                                {sectorData.map((_,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
+                              </Pie>
+                              <Tooltip formatter={(v:number)=>`${v}%`} contentStyle={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,fontSize:11}}/>
+                            </PieChart>
+                          </ResponsiveContainer>
+                          <div className="flex-1 space-y-2">
+                            {sectorData.map((s,i)=>(
+                              <div key={s.name} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{background:PIE_COLORS[i%PIE_COLORS.length]}}/><span className="text-slate-300">{s.name}</span></div>
+                                <span className="text-slate-400 font-semibold">{s.value}%</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {/* 4. Performance */}
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <SH title="Performance"/>
+                      <div className="flex items-center gap-6">
+                        {perfData&&[
+                          {label:`Retorno (${period})`,val:fmt(perfData.m.ret,true),c:perfData.m.ret>=0?"text-emerald-400":"text-red-400"},
+                          {label:"Retorno anualizado",val:fmt(perfData.m.ann,true),c:perfData.m.ann>=0?"text-emerald-400":"text-red-400"},
+                          {label:"Sharpe",val:perfData.m.shp.toFixed(2),c:"text-white"},
+                        ].map(({label,val,c})=>(
+                          <div key={label} className="text-right">
+                            <div className="text-slate-500 text-[10px]">{label}</div>
+                            <div className={`font-black text-lg ${c}`}>{val}</div>
+                          </div>
+                        ))}
+                        <div className="flex gap-1 ml-4">
+                          {PERIODS.map(p=>(
+                            <button key={p} onClick={()=>setPeriod(p)}
+                              className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors ${period===p?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>{p}</button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <ResponsiveContainer width="100%" height={220}>
                       <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
-                        <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}/>
+                        <XAxis dataKey="date" tick={{fontSize:10,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}/>
                         <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}}/>
                         <Tooltip content={<PerfTooltip/>}/>
                         <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
@@ -746,6 +897,10 @@ export default function ClientDashboardPage() {
                         <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name="Benchmark" strokeDasharray="4 2"/>
                       </LineChart>
                     </ResponsiveContainer>
+                    <div className="flex items-center gap-4 mt-3">
+                      <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-0.5 bg-blue-400 rounded"/>Modelo</div>
+                      <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-px bg-slate-400 rounded"/>Benchmark</div>
+                    </div>
                   </div>
                 </div>
               )}
