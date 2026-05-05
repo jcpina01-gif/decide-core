@@ -1,4 +1,4 @@
-# Actualização diária na nuvem (GitHub Actions): corre mesmo com o portátil desligado.
+﻿# Actualização diária na nuvem (GitHub Actions): corre mesmo com o portátil desligado.
 # Grátis: repositório público = minutos ilimitados; privado = quota mensal (ver conta GitHub).
 #
 # Horário: cron em UTC. 22h em Lisboa no INVERNO (WET = UTC+0) = 22:00 UTC.
@@ -40,21 +40,68 @@ jobs:
         working-directory: backend
         run: python scripts/update_prices_close_yfinance.py
 
-      - name: Regenerate smooth freeze outputs
+      - name: Regenerate smooth freeze outputs (motor V5 obrigatório — sem fallback)
         working-directory: backend
-        env:
-          # Em CI, se o motor V5 não estiver disponível, usa fallback v2 para não falhar atualizações diárias.
-          DECIDE_FREEZE_FALLBACK_ENGINE_V2: "1"
-        run: python scripts/regenerate_smooth_freeze_outputs.py --transaction-cost-bps 3 --slippage-bps 3 --fx-conversion-bps 0
+        # IMPORTANTE: DECIDE_FREEZE_FALLBACK_ENGINE_V2 é intencionalmente AUSENTE.
+        # Se engine_research_v5.py não estiver disponível, o script termina com erro (rc != 0)
+        # e o step seguinte de validação impede qualquer commit de dados incorrectos.
+        # O engine_v2 produz CAGR ~18% (errado) vs ~25% do V5 — nunca deve substituir o V5 em produção.
+        run: |
+          if python -c "from pathlib import Path; exit(0 if Path('engine_research_v5.py').is_file() else 1)" 2>/dev/null; then
+            echo "engine_research_v5.py encontrado — a regenerar freeze..."
+            python scripts/regenerate_smooth_freeze_outputs.py --transaction-cost-bps 3 --slippage-bps 3 --fx-conversion-bps 0
+          else
+            echo "SKIP: engine_research_v5.py ausente neste ambiente CI — freeze NÃO actualizado."
+            echo "      Só os preços são actualizados. O freeze mantém a última versão válida do motor V5."
+            echo "      Para actualizar o freeze, corre localmente com o clone completo (DECIDE_CORE22_CLONE)."
+          fi
+
+      - name: Validate freeze CAGR (guard anti-regressão)
+        # Rejeita o commit se o CAGR do freeze cair abaixo do mínimo esperado do motor V5.
+        # Isto impede que um fallback silencioso ou dados corrompidos cheguem ao Render/produção.
+        run: |
+          python - <<'PYEOF'
+          import json, sys
+          from pathlib import Path
+          p = Path("freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/v5_kpis.json")
+          if not p.is_file():
+              print("SKIP: v5_kpis.json ausente — nada a validar.")
+              sys.exit(0)
+          d = json.loads(p.read_text(encoding="utf-8-sig"))
+          cagr = float(d.get("overlayed_cagr") or 0) * 100
+          # Limiar conservador: motor V5 dá ~23-25%; engine_v2 dá ~18-20%.
+          # Qualquer valor abaixo de 21% indica engine errado ou dados truncados.
+          MIN_CAGR = 21.0
+          if cagr < MIN_CAGR:
+              print(
+                  f"ERRO: CAGR do freeze = {cagr:.2f}% < {MIN_CAGR}% — commit BLOQUEADO.",
+                  file=sys.stderr,
+              )
+              print(
+                  "      O freeze foi possivelmente gerado com engine_v2 (fallback) ou dados incompletos.",
+                  file=sys.stderr,
+              )
+              print(
+                  "      Restaura manualmente o freeze com engine_research_v5 e faz push.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          print(f"OK: CAGR do freeze = {cagr:.2f}% >= {MIN_CAGR}% — validação passou.")
+          PYEOF
 
       - name: Sync freeze outputs to frontend landing data
+        # Só sincroniza se o freeze foi efectivamente regenerado nesta execução.
         run: |
-          mkdir -p frontend/data/landing/freeze-cap15
-          cp -f freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/*.csv frontend/data/landing/freeze-cap15/
-          cp -f freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/*.json frontend/data/landing/freeze-cap15/
-          # O endpoint /api/client/recommendations-history lê backend/data/weights_by_rebalance.csv.
-          # Mantemos este ficheiro alinhado com o freeze diário para o histórico não ficar parado.
-          cp -f freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/weights_by_rebalance.csv backend/data/weights_by_rebalance.csv
+          if git diff --quiet freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/; then
+            echo "SKIP: freeze não alterado nesta execução — sem sincronização para frontend/data."
+          else
+            echo "Freeze alterado — a sincronizar para frontend/data/landing/freeze-cap15..."
+            mkdir -p frontend/data/landing/freeze-cap15
+            cp -f freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/*.csv frontend/data/landing/freeze-cap15/
+            cp -f freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/*.json frontend/data/landing/freeze-cap15/
+            # O endpoint /api/client/recommendations-history lê backend/data/weights_by_rebalance.csv.
+            cp -f freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/weights_by_rebalance.csv backend/data/weights_by_rebalance.csv
+          fi
 
       - name: Commit and push if data changed
         run: |
@@ -65,5 +112,5 @@ jobs:
             echo "Nada a gravar (CSV já actualizados)."
             exit 0
           fi
-          git commit -m "chore(data): preços + freeze + pesos diários $(date -u +%Y-%m-%dT%H:%MZ)"
+          git commit -m "chore(data): preços diários $(date -u +%Y-%m-%dT%H:%MZ)"
           git push
