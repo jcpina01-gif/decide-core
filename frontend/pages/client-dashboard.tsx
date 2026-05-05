@@ -17,6 +17,104 @@ import {
 import { useSyncedRiskProfileFromOnboarding } from "../hooks/useSyncedRiskProfileFromOnboarding";
 import { KPI_IFRAME_SRC_REV } from "../lib/kpiFlaskBuildGate";
 
+/* ─── native simulator ──────────────────────────────────────── */
+function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
+  dates:string[];equity:number[];bench:number[];onRegister:()=>void;loggedIn:boolean;
+}) {
+  const [capital,setCapital]=React.useState(10000);
+  const [capInput,setCapInput]=React.useState("10000");
+  const histYears=React.useMemo(()=>equity.length>1?equity.length/252:20,[equity]);
+  const cagrHist=React.useMemo(()=>equity.length>1?cagrFn(equity[0],equity[equity.length-1],histYears)*100:0,[equity,histYears]);
+
+  const simData=React.useMemo(()=>{
+    if(!equity.length||!dates.length) return [];
+    const step=Math.max(1,Math.floor(equity.length/300));
+    const base=equity[0];
+    return dates.filter((_,i)=>i%step===0).map((d,i)=>({
+      date:d.slice(0,4),
+      modelo:Math.round((equity[i*step]/base)*capital),
+      bench: Math.round(((bench[i*step]||base))/base*capital),
+    }));
+  },[equity,bench,dates,capital]);
+
+  const finalVal=simData[simData.length-1]?.modelo??capital;
+  const benchFinal=simData[simData.length-1]?.bench??capital;
+  const gain=finalVal-capital;
+  const fmt=(n:number)=>n>=1e6?`\u20AC${(n/1e6).toFixed(2)}M`:`\u20AC${n.toLocaleString("pt-PT")}`;
+
+  const simTooltip=({active,payload,label}:any)=>{
+    if(!active||!payload?.length) return null;
+    return (
+      <div className="bg-[#111827] border border-[#252a3a] rounded-lg px-3 py-2 text-xs">
+        <div className="text-slate-400 mb-1">{label}</div>
+        {payload.map((p:any)=>(
+          <div key={p.dataKey} style={{color:p.color}} className="font-semibold">
+            {p.name}: {fmt(p.value)}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-6">
+        <label className="flex flex-col gap-1.5 text-xs text-slate-400 font-semibold">
+          Capital inicial
+          <div className="flex items-center gap-2">
+            <input
+              type="number" min={1000} step={1000} value={capInput}
+              onChange={e=>{setCapInput(e.target.value);const n=Number(e.target.value);if(n>=100)setCapital(n);}}
+              className="bg-[#0d1118] border border-[#252a3a] text-slate-200 text-sm rounded-lg px-3 py-2.5 w-36 outline-none focus:border-blue-500 transition-colors"
+            />
+            <span className="text-slate-500 text-sm">&euro;</span>
+          </div>
+        </label>
+        <div className="flex gap-6 pb-1 flex-wrap">
+          {[
+            {l:"Ganho total",v:`${gain>=0?"+":""}${fmt(gain)}`,c:gain>=0?"text-emerald-400":"text-red-400"},
+            {l:"Valor final",v:fmt(finalVal),c:"text-white"},
+            {l:"CAGR hist\u00f3rico",v:`+${cagrHist.toFixed(1)}%/ano`,c:"text-blue-400"},
+            {l:"vs S&P 500",v:fmt(benchFinal),c:"text-slate-400"},
+          ].map(({l,v,c})=>(
+            <div key={l}>
+              <div className="text-slate-500 text-[10px] uppercase tracking-wide mb-0.5">{l}</div>
+              <div className={`text-lg font-black ${c}`}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={220}>
+        <LineChart data={simData} margin={{top:4,right:8,left:8,bottom:0}}>
+          <XAxis dataKey="date" tick={{fontSize:10,fill:"#64748b"}} tickLine={false} axisLine={false}
+            interval={Math.floor(simData.length/8)}/>
+          <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow
+            tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false}
+            tickFormatter={v=>v>=1e6?`\u20AC${(v/1e6).toFixed(1)}M`:v>=1000?`\u20AC${(v/1000).toFixed(0)}k`:`\u20AC${v}`}/>
+          <Tooltip content={simTooltip}/>
+          <ReferenceLine y={capital} stroke="#334155" strokeDasharray="3 3"/>
+          <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2.5} dot={false} name="DECIDE"/>
+          <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name="S&P 500" strokeDasharray="4 2"/>
+        </LineChart>
+      </ResponsiveContainer>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-5 text-xs text-slate-400">
+          <span className="flex items-center gap-1.5"><span className="w-5 h-0.5 bg-blue-400 inline-block rounded"/>DECIDE</span>
+          <span className="flex items-center gap-1.5"><span className="w-5 h-px bg-slate-500 inline-block rounded"/>S&amp;P 500</span>
+        </div>
+        {!loggedIn&&(
+          <button onClick={onRegister}
+            className="text-xs px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors">
+            Guardar e executar esta estrat\u00e9gia &rarr;
+          </button>
+        )}
+      </div>
+      <p className="text-slate-600 text-[10px]">Simula\u00e7\u00e3o baseada em dados hist\u00f3ricos reais (2006&ndash;hoje). Rendimentos passados n\u00e3o garantem resultados futuros.</p>
+    </div>
+  );
+}
+
+
 /* â”€â”€â”€ iframe base (same logic as getKpiEmbedBase) â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const _TS = typeof window !== "undefined" ? Math.floor(Date.now() / 60000) : 0;
 function buildSimulatorSrc(profile: string): string {
@@ -134,9 +232,9 @@ function Sidebar({user,profile,loggedIn,onRegister}:{user:string|null;profile:st
   const profilePt=profile==="conservador"?"Conservador":profile==="dinamico"?"Dinâmico":"Moderado";
   return (
     <aside className="flex flex-col w-56 min-h-screen bg-[#07090f] border-r border-[#1a1f2e] shrink-0">
-      <div className="px-5 py-4 border-b border-[#1a1f2e] flex items-center">
+      <div className="border-b border-[#1a1f2e]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/images/logo-decide.png" alt="DECIDE" className="h-14 w-auto object-contain" />
+        <img src="/images/logo-decide.png" alt="DECIDE" className="w-full h-16 object-cover object-left" />
       </div>
       <nav className="flex-1 px-3 py-4 space-y-0.5">
         {NAV.map(({id,label,Icon})=>(
@@ -357,22 +455,29 @@ export default function ClientDashboardPage() {
 
   const actionCounts=useMemo(()=>{
     if(!latestMonth||!prevMonth) return {comprar:0,reduzir:0,vender:0,manter:0,rows:[] as {ticker:string;prev:number;cur:number;delta:number;action:string}[]};
+    const WMIN=0.5; // peso mínimo para considerar posição real (%)
+    const DMIN=1.0; // variação mínima para Comprar/Reduzir (pp)
     const pm=new Map(prevMonth.rows.map(r=>[r.ticker,r.weightPct]));
     const cm=new Map(latestMonth.rows.map(r=>[r.ticker,r.weightPct]));
-    const all=new Set([...pm.keys(),...cm.keys()].filter(t=>t!=="TBILL_PROXY"));
+    // Apenas tickers com presença significativa em algum dos meses
+    const all=new Set([
+      ...[...pm.entries()].filter(([,v])=>v>=WMIN).map(([k])=>k),
+      ...[...cm.entries()].filter(([,v])=>v>=WMIN).map(([k])=>k),
+    ].filter(t=>t!=="TBILL_PROXY"&&!t.startsWith("CASH")));
     let c=0,rd=0,v=0,m=0;
     const rows:{ticker:string;prev:number;cur:number;delta:number;action:string}[]=[];
     all.forEach(t=>{
       const p=pm.get(t)??0,cur=cm.get(t)??0,delta=cur-p;
       let action="Manter";
-      if(p===0&&cur>0){action="Comprar";c++;}
-      else if(cur===0&&p>0){action="Vender";v++;}
-      else if(delta>0.3){action="Comprar";c++;}
-      else if(delta<-0.3){action="Reduzir";rd++;}
-      else m++;
-      if(action!=="Manter") rows.push({ticker:t,prev:p,cur,delta,action});
+      if(p<WMIN&&cur>=WMIN){action="Comprar";c++;}
+      else if(cur<WMIN&&p>=WMIN){action="Vender";v++;}
+      else if(delta>=DMIN){action="Comprar";c++;}
+      else if(delta<=-DMIN){action="Reduzir";rd++;}
+      else{action="Manter";m++;}
+      rows.push({ticker:t,prev:p,cur,delta,action});
     });
-    return {comprar:c,reduzir:rd,vender:v,manter:m,rows:rows.sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta)).slice(0,6)};
+    return {comprar:c,reduzir:rd,vender:v,manter:m,
+      rows:rows.filter(r=>r.action!=="Manter").sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta)).slice(0,8)};
   },[latestMonth,prevMonth]);
 
   const sectorData=useMemo(()=>{
@@ -655,28 +760,13 @@ export default function ClientDashboardPage() {
                     </button>
                   )}
                 </div>
-                {/* iframe simulator */}
-                <div className="relative">
-                  {simulatorSrc ? (
-                    <iframe
-                      src={simulatorSrc}
-                      className="w-full border-0"
-                      style={{height:480}}
-                      title="Simulador DECIDE"
-                      sandbox="allow-scripts allow-same-origin allow-forms"
-                    />
-                  ) : (
-                    <div className="h-48 flex items-center justify-center text-slate-500 text-sm">A carregar simulador…</div>
-                  )}
-                  {/* gate overlay for guests — only after a delay */}
-                  {!loggedIn&&(
-                    <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-[#0b0f1a] to-transparent flex items-end justify-center pb-4 pointer-events-none">
-                      <button onClick={()=>setShowRegModal(true)}
-                        className="pointer-events-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg shadow-xl transition-colors">
-                        Quer guardar esta simulação? Criar conta grátis →
-                      </button>
-                    </div>
-                  )}
+                <NativeSimulator
+                  dates={dates}
+                  equity={equityRaw}
+                  bench={benchRaw}
+                  onRegister={()=>setShowRegModal(true)}
+                  loggedIn={loggedIn}
+                />
                 </div>
               </div>
 
