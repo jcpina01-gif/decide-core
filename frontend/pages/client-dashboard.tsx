@@ -267,6 +267,7 @@ type RecoMonth={date?:string;rebalance_date?:string;rows:WRow[];tbillsTotalPct?:
 
 /* â”€â”€â”€ sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const NAV=[
+  {id:"dashboard", label:"Dashboard",      Icon:LayoutDashboard},
   {id:"reco",      label:"Recomendações",  Icon:BookOpen},
   {id:"carteira",  label:"Carteira",       Icon:Briefcase},
   {id:"perf",      label:"Performance",    Icon:TrendingUp},
@@ -657,12 +658,14 @@ export default function ClientDashboardPage() {
             <div className="flex items-center justify-between px-8 py-5 border-b border-[#1a1f2e]">
               <div>
                 <h1 className="text-xl font-black text-white">{
+                  activePage==="dashboard"?"Dashboard":
                   activePage==="reco"?"Recomendações":
                   activePage==="carteira"?"Carteira":activePage==="perf"?"Performance":
                   activePage==="risco"?"Risco":activePage==="historico"?"Histórico":
                   activePage==="ajuda"?"Ajuda":"Contactos"
                 }</h1>
                 <p className="text-slate-400 text-xs mt-0.5">{
+                  activePage==="dashboard"?"Visão geral — "+recoLabel:
                   activePage==="reco"?"Recomendação mensal do modelo — "+recoLabel:
                   activePage==="carteira"?"Composição e alocação da carteira":
                   activePage==="perf"?"Análise de performance histórica":
@@ -692,6 +695,60 @@ export default function ClientDashboardPage() {
             </div>
 
             <div className="px-8 py-6 space-y-5">
+
+              {/* ── DASHBOARD ── */}
+              {activePage==="dashboard"&&(
+                <div className="space-y-5">
+                  <div className="grid grid-cols-4 gap-4">
+                    {[
+                      {label:"CAGR histórico (20a)",val:perfData?`+${perfData.m.ann.toFixed(1)}%`:"—",sub:"Retorno anualizado",c:"text-emerald-400"},
+                      {label:"Sharpe",val:perfData?perfData.m.shp.toFixed(2):"—",sub:"Risco-retorno",c:"text-blue-400"},
+                      {label:"Drawdown máx.",val:perfData?`${perfData.curDD.toFixed(1)}%`:"—",sub:"Actual (3 anos)",c:"text-amber-400"},
+                      {label:"Posições activas",val:actionCounts.comprar+actionCounts.aumentar+actionCounts.reduzir+actionCounts.vender+actionCounts.manter||"—",sub:"Carteira actual",c:"text-white"},
+                    ].map(({label,val,sub,c})=>(
+                      <div key={label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="text-slate-400 text-xs mb-2">{label}</div>
+                        <div className={`text-3xl font-black ${c}`}>{val}</div>
+                        <div className="text-slate-500 text-xs mt-1">{sub}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-4 gap-4">
+                    {([
+                      {id:"reco" as Page,label:"Recomendações",desc:"Recomendação de "+recoLabel,Icon:BookOpen,c:"text-emerald-400"},
+                      {id:"carteira" as Page,label:"Carteira",desc:"Posições e alocação sectorial",Icon:Briefcase,c:"text-blue-400"},
+                      {id:"perf" as Page,label:"Performance",desc:"Gráficos e retornos anuais",Icon:TrendingUp,c:"text-cyan-400"},
+                      {id:"risco" as Page,label:"Risco",desc:"VaR, volatilidade e drawdown",Icon:ShieldCheck,c:"text-amber-400"},
+                    ] as const).map(({id,label,desc,Icon,c})=>(
+                      <button key={id} onClick={()=>setActivePage(id)}
+                        className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 text-left hover:border-blue-500/40 transition-colors">
+                        <Icon size={20} className={`${c} mb-3`}/>
+                        <div className="text-slate-200 font-semibold text-sm">{label}</div>
+                        <div className="text-slate-500 text-xs mt-1">{desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="text-slate-200 font-bold text-sm">Performance (20 Anos)</div>
+                      <div className="flex items-center gap-4 text-xs">
+                        <div className="flex items-center gap-2 text-slate-400"><div className="w-4 h-0.5 bg-blue-400 rounded"/>Modelo</div>
+                        <div className="flex items-center gap-2 text-slate-400"><div className="w-4 h-px bg-slate-500 rounded"/>Benchmark</div>
+                      </div>
+                    </div>
+                    <ResponsiveContainer width="100%" height={180}>
+                      <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
+                        <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}/>
+                        <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}}/>
+                        <Tooltip content={<PerfTooltip/>}/>
+                        <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
+                        <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2} dot={false} name="Modelo"/>
+                        <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name="Benchmark" strokeDasharray="4 2"/>
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
 
               {/* ── RECOMENDAÇÕES ── */}
               {activePage==="reco"&&(
@@ -730,7 +787,7 @@ export default function ClientDashboardPage() {
                 </div>
               </div>
 
-              {/* 2+3 */}
+              {/* O que mudou | Simulador */}
               <div className="grid grid-cols-2 gap-5">
                 <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                   <SH title="O que mudou"/>
@@ -748,62 +805,32 @@ export default function ClientDashboardPage() {
                     ))}
                   </div>
                 </div>
-                <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                  <SH title="O seu nível de risco"/>
-                  <div className="flex gap-6">
-                    <div className="space-y-4">
-                      <div>
-                        <div className="text-slate-400 text-xs mb-1">Volatilidade (anual)</div>
-                        <div className="text-2xl font-black text-white">{perfData?`${perfData.curVol.toFixed(1)}%`:"—"}</div>
-                        <div className="text-slate-400 text-xs">Média</div>
-                      </div>
-                      <div>
-                        <div className="text-slate-400 text-xs mb-1">Drawdown actual</div>
-                        <div className="text-2xl font-black text-red-400">{perfData?`${perfData.curDD.toFixed(1)}%`:"—"}</div>
-                      </div>
-                      <div>
-                        <div className="text-slate-400 text-xs mb-1">Nível de risco</div>
-                        <div className="text-amber-400 font-bold text-sm">Moderado</div>
-                        {/* gauge: verde → amarelo → encarnado */}
-                        <div className="mt-2 w-32">
-                          <div className="relative h-3 rounded-full overflow-hidden"
-                            style={{background:"linear-gradient(to right,#22c55e,#f59e0b 50%,#ef4444)"}}>
-                            {/* pointer at 55% (Moderado) */}
-                            <div className="absolute top-0 bottom-0 w-0.5 bg-white/90 rounded-full shadow-sm" style={{left:"55%"}}/>
-                          </div>
-                          <div className="flex justify-between text-[9px] mt-0.5">
-                            <span className="text-emerald-400">Baixo</span>
-                            <span className="text-amber-400 font-semibold">Médio</span>
-                            <span className="text-red-400">Alto</span>
-                          </div>
-                        </div>
-                      </div>
+                <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+                  <div className="flex items-center justify-between px-5 pt-5 pb-3">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-slate-200 text-sm font-bold tracking-wide uppercase">Simulador</h2>
+                      <Info size={13} className="text-slate-500"/>
                     </div>
-                    <div className="flex-1">
-                      <div className="text-slate-400 text-xs mb-2">Evolução do drawdown</div>
-                      <ResponsiveContainer width="100%" height={130}>
-                        <LineChart data={perfData?.ddChart??[]} margin={{top:4,right:4,left:-24,bottom:0}}>
-                          <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false}
-                            tickFormatter={d=>d.slice(0,4)} interval={Math.floor((perfData?.ddChart.length??1)/4)}/>
-                          <YAxis tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false}
-                            tickFormatter={v=>`${Number(v).toFixed(0)}%`} domain={["dataMin",0]}/>
-                          <Tooltip content={<PerfTooltip/>}/>
-                          <ReferenceLine y={0} stroke="#334155" strokeDasharray="3 3"/>
-                          <Line type="monotone" dataKey="dd" stroke="#60a5fa" strokeWidth={1.5} dot={false} name="DD"/>
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
+                    {!loggedIn&&(
+                      <button onClick={()=>setShowRegModal(true)}
+                        className="text-xs px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 rounded-lg font-semibold transition-colors">
+                        Guardar →
+                      </button>
+                    )}
+                  </div>
+                  <div className="px-5 pb-5">
+                    <NativeSimulator dates={dates} equity={equityRaw} bench={benchRaw}
+                      onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}/>
                   </div>
                 </div>
               </div>
 
-              {/* 4+5 */}
-              <div className="grid grid-cols-2 gap-5">
-                <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <SH title="Alterações na carteira"/>
-                    <button className="text-blue-400 text-xs hover:underline flex items-center gap-1 -mt-4">Ver carteira completa<ArrowUpRight size={12}/></button>
-                  </div>
+              {/* Alterações na carteira (full width) */}
+              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <SH title="Alterações na carteira"/>
+                  <button onClick={()=>setActivePage("carteira")} className="text-blue-400 text-xs hover:underline flex items-center gap-1 -mt-4">Ver carteira completa<ArrowUpRight size={12}/></button>
+                </div>
                   {recoLoading?(
                     <div className="text-slate-500 text-sm text-center py-6">A carregar…</div>
                   ):actionCounts.rows.length===0?(
@@ -836,100 +863,6 @@ export default function ClientDashboardPage() {
                       </tbody>
                     </table>
                   )}
-                </div>
-                <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <SH title="Alocação por setor"/>
-                    <button className="text-blue-400 text-xs hover:underline flex items-center gap-1 -mt-4">Ver alocação completa<ArrowUpRight size={12}/></button>
-                  </div>
-                  {sectorData.length===0?(
-                    <div className="text-slate-500 text-sm text-center py-6">A carregar…</div>
-                  ):(
-                    <div className="flex items-center gap-4">
-                      <ResponsiveContainer width={160} height={160}>
-                        <PieChart>
-                          <Pie data={sectorData} cx="50%" cy="50%" innerRadius={48} outerRadius={72} dataKey="value" strokeWidth={0}>
-                            {sectorData.map((_,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
-                          </Pie>
-                          <Tooltip formatter={(v:number)=>`${v}%`} contentStyle={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,fontSize:11}}/>
-                        </PieChart>
-                      </ResponsiveContainer>
-                      <div className="flex-1 space-y-2">
-                        {sectorData.map((s,i)=>(
-                          <div key={s.name} className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{background:PIE_COLORS[i%PIE_COLORS.length]}}/><span className="text-slate-300">{s.name}</span></div>
-                            <span className="text-slate-400 font-semibold">{s.value}%</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* 6. simulador (substituiu gráfico estático) */}
-              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
-                <div className="flex items-center justify-between px-5 pt-5 pb-3">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-slate-200 text-sm font-bold tracking-wide uppercase">Simulação de Capital</h2>
-                    <Info size={13} className="text-slate-500"/>
-                  </div>
-                  {!loggedIn&&(
-                    <button onClick={()=>setShowRegModal(true)}
-                      className="text-xs px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 rounded-lg font-semibold transition-colors">
-                      Guardar simulação →
-                    </button>
-                  )}
-                </div>
-                <div className="px-5 pb-5">
-                  <NativeSimulator
-                    dates={dates}
-                    equity={equityRaw}
-                    bench={benchRaw}
-                    onRegister={()=>setShowRegModal(true)}
-                    loggedIn={loggedIn}
-                  />
-                </div>
-              </div>
-
-              {/* historical performance (compact, below simulator) */}
-              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <SH title="Performance histórica"/>
-                  <div className="flex gap-1 -mt-4">
-                    {PERIODS.map(p=>(
-                      <button key={p} onClick={()=>setPeriod(p)}
-                        className={["px-3 py-1 rounded text-xs font-semibold transition-colors",
-                          period===p?"bg-blue-500/20 text-blue-400 border border-blue-500/30":"text-slate-400 hover:text-slate-200"].join(" ")}>
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {perfData&&(
-                  <div className="flex gap-8 mb-4">
-                    <div><div className="text-slate-400 text-xs mb-0.5">Retorno ({period})</div><div className={`text-2xl font-black ${perfData.m.ret>=0?"text-emerald-400":"text-red-400"}`}>{fmt(perfData.m.ret,true)}</div></div>
-                    <div><div className="text-slate-400 text-xs mb-0.5">Retorno anualizado</div><div className={`text-2xl font-black ${perfData.m.ann>=0?"text-emerald-400":"text-red-400"}`}>{fmt(perfData.m.ann,true)}</div></div>
-                    <div><div className="text-slate-400 text-xs mb-0.5">Sharpe</div><div className="text-2xl font-black text-white">{perfData.m.shp.toFixed(2)}</div></div>
-                  </div>
-                )}
-                <ResponsiveContainer width="100%" height={180}>
-                  <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
-                    <XAxis dataKey="date" tick={{fontSize:10,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}/>
-                    <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow
-                      tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false}
-                      tickFormatter={v=>{const r=(Number(v)/100-1)*100; return `${r>=0?"+":""}${r.toFixed(0)}%`;}}/>
-                    <Tooltip content={<PerfTooltip/>}/>
-                    <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
-                    <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2} dot={false} name="Modelo"/>
-                    <Line type="monotone" dataKey="bench"  stroke="#64748b" strokeWidth={1.5} dot={false} name="Benchmark" strokeDasharray="4 2"/>
-                  </LineChart>
-                </ResponsiveContainer>
-                <div className="flex items-center gap-4 mt-3">
-                  <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-0.5 bg-blue-400 rounded"/>Modelo</div>
-                  <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-px bg-slate-400 rounded"/>Benchmark</div>
-                </div>
-                <p className="text-slate-600 text-[10px] mt-3 text-center">As recomendações não constituem aconselhamento personalizado de investimento.</p>
               </div>
             </>
             )}
