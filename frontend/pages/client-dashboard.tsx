@@ -902,6 +902,25 @@ export default function ClientDashboardPage() {
                       <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-px bg-slate-400 rounded"/>Benchmark</div>
                     </div>
                   </div>
+                  {/* 5. Simulator */}
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+                    <div className="flex items-center justify-between px-5 pt-5 pb-3">
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-slate-200 text-sm font-bold tracking-wide uppercase">Simulação de Capital</h2>
+                        <Info size={13} className="text-slate-500"/>
+                      </div>
+                      {!loggedIn&&(
+                        <button onClick={()=>setShowRegModal(true)}
+                          className="text-xs px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 rounded-lg font-semibold transition-colors">
+                          Guardar simulação →
+                        </button>
+                      )}
+                    </div>
+                    <div className="px-5 pb-5">
+                      <NativeSimulator dates={dates} equity={equityRaw} bench={benchRaw}
+                        onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}/>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -942,41 +961,21 @@ export default function ClientDashboardPage() {
                 </div>
               </div>
 
-              {/* O que mudou | Simulador */}
-              <div className="grid grid-cols-2 gap-5">
-                <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                  <SH title="O que mudou"/>
-                  <div className="space-y-4">
-                    {whatChanged.map((b,i)=>(
-                      <div key={i} className="flex gap-3">
-                        <div className="mt-0.5 shrink-0">
-                          {b.icon==="up"&&<TrendingUp size={18} className="text-emerald-400"/>}
-                          {b.icon==="down"&&<TrendingDown size={18} className="text-red-400"/>}
-                          {b.icon==="globe"&&<Globe size={18} className="text-blue-400"/>}
-                          {b.icon==="wave"&&<Activity size={18} className="text-slate-400"/>}
-                        </div>
-                        <div><div className="text-slate-200 text-sm font-semibold">{b.title}</div><div className="text-slate-400 text-xs mt-0.5">{b.desc}</div></div>
+              {/* O que mudou (full width) */}
+              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                <SH title="O que mudou"/>
+                <div className="grid grid-cols-2 gap-6 mt-3">
+                  {whatChanged.map((b,i)=>(
+                    <div key={i} className="flex gap-3">
+                      <div className="mt-0.5 shrink-0">
+                        {b.icon==="up"&&<TrendingUp size={18} className="text-emerald-400"/>}
+                        {b.icon==="down"&&<TrendingDown size={18} className="text-red-400"/>}
+                        {b.icon==="globe"&&<Globe size={18} className="text-blue-400"/>}
+                        {b.icon==="wave"&&<Activity size={18} className="text-slate-400"/>}
                       </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
-                  <div className="flex items-center justify-between px-5 pt-5 pb-3">
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-slate-200 text-sm font-bold tracking-wide uppercase">Simulador</h2>
-                      <Info size={13} className="text-slate-500"/>
+                      <div><div className="text-slate-200 text-sm font-semibold">{b.title}</div><div className="text-slate-400 text-xs mt-0.5">{b.desc}</div></div>
                     </div>
-                    {!loggedIn&&(
-                      <button onClick={()=>setShowRegModal(true)}
-                        className="text-xs px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 rounded-lg font-semibold transition-colors">
-                        Guardar →
-                      </button>
-                    )}
-                  </div>
-                  <div className="px-5 pb-5">
-                    <NativeSimulator dates={dates} equity={equityRaw} bench={benchRaw}
-                      onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}/>
-                  </div>
+                  ))}
                 </div>
               </div>
 
