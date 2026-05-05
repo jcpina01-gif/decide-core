@@ -646,9 +646,9 @@ export default function ClientDashboardPage() {
                 </div>
                 <div className="mt-4 flex items-center gap-4 text-xs text-slate-400 pt-4 border-t border-[#1a1f2e]">
                   <span className="font-semibold">Impacto esperado</span>
-                  <span>Risco: <span className="text-emerald-400">â†“ Ligeiro</span></span>
+                  <span>Risco: <span className="text-emerald-400">↓ Ligeiro</span></span>
                   <span className="text-slate-600">|</span>
-                  <span>Retorno esperado: <span className="text-blue-400">â†‘ Moderado</span></span>
+                  <span>Retorno esperado: <span className="text-blue-400">↑ Moderado</span></span>
                 </div>
               </div>
 
