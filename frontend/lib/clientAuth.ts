@@ -363,8 +363,9 @@ export function registerClientUser(
   const pw = password || "";
   const pwc = passwordConfirm || "";
   const emailTrim = (email || "").trim();
+  const requirePhone = opts?.requirePhoneSms !== false;
   const ph = normalizeClientPhone(phone);
-  if (!ph.ok) return { ok: false, error: ph.error, field: "phone" };
+  if (requirePhone && !ph.ok) return { ok: false, error: ph.error, field: "phone" };
 
   if (!u) return { ok: false, error: "User é obrigatório.", field: "username" };
   if (!emailTrim || !emailTrim.includes("@")) {
@@ -411,12 +412,12 @@ export function registerClientUser(
   db[u] = {
     passwordHash: hashPassword(pw),
     email: emailTrim,
-    phone: ph.e164,
+    phone: ph.ok ? ph.e164 : "",
     emailVerified: keepVerified || preVerified,
     updatedAt: Date.now(),
   };
   writeDb(db);
-  setNotifyPhone(u, ph.e164);
+  if (ph.ok) setNotifyPhone(u, ph.e164);
   clearSignupEmailVerifiedFlag();
   clearSignupPhoneVerifiedFlag();
   return { ok: true };

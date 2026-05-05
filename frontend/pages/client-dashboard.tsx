@@ -433,7 +433,7 @@ function RegisterModal({onClose,onSuccess}:{onClose:()=>void;onSuccess:(user:str
             <label className="block text-xs text-slate-400 mb-1.5 font-semibold">Password</label>
             <div className="relative">
               <input type={showPw?"text":"password"} value={pw} onChange={e=>setPw(e.target.value)}
-                placeholder="Mínimo 8 caracteres" required minLength={8}
+                placeholder="Mínimo 10 caracteres" required minLength={10}
                 className="w-full bg-[#111827] border border-[#252a3a] text-slate-200 text-sm rounded-lg px-3 py-2.5 pr-10 outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600"/>
               <button type="button" onClick={()=>setShowPw(v=>!v)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
