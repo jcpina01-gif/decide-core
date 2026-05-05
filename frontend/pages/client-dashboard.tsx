@@ -4,12 +4,14 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, ReferenceLine,
+  BarChart, Bar, CartesianGrid,
 } from "recharts";
 import {
   LayoutDashboard, BookOpen, Briefcase, TrendingUp, TrendingDown,
   ShieldCheck, Clock, Settings, LogOut, ChevronDown, Info,
   ArrowUpRight, ArrowDownRight, Minus, X, Eye, EyeOff,
-  Globe, Activity,
+  Globe, Activity, HelpCircle, Mail, Phone, MapPin, Send,
+  CheckCircle2,
 } from "lucide-react";
 import {
   isClientLoggedIn, getCurrentSessionUser,
@@ -184,6 +186,17 @@ const SECTOR: Record<string, string> = {
 };
 const getSector = (t: string) => SECTOR[t.toUpperCase()] ?? "Outros";
 
+const ZONE:Record<string,string>={
+  AAPL:"EUA",NVDA:"EUA",MSFT:"EUA",GOOGL:"EUA",META:"EUA",AVGO:"EUA",
+  AMD:"EUA",CRM:"EUA",ORCL:"EUA",QCOM:"EUA",TXN:"EUA",AMAT:"EUA",
+  MRVL:"EUA",KLAC:"EUA",ON:"EUA",MU:"EUA",INTC:"EUA",LRCX:"EUA",
+  SQ:"EUA",CAT:"EUA",NEM:"EUA",GOLD:"EUA",WBD:"EUA",GOOG:"EUA",
+  BATS:"Europa",NOK:"Europa",E:"Europa",BAYRY:"Europa",MARUY:"Asia",
+};
+const getZone=(t:string)=>ZONE[t.toUpperCase()]??"Outros";
+
+type Page="dashboard"|"reco"|"carteira"|"perf"|"risco"|"historico"|"ajuda"|"contactos";
+
 /* â”€â”€â”€ maths â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function cagrFn(s: number, e: number, y: number) { return s > 0 && y > 0 ? Math.pow(e/s,1/y)-1 : 0; }
 function annualVol(r: number[]) {
@@ -254,15 +267,19 @@ type RecoMonth={date?:string;rebalance_date?:string;rows:WRow[];tbillsTotalPct?:
 
 /* â”€â”€â”€ sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const NAV=[
-  {id:"dashboard",label:"Dashboard",     Icon:LayoutDashboard},
-  {id:"reco",     label:"Recomendações", Icon:BookOpen},
-  {id:"carteira", label:"Carteira",      Icon:Briefcase},
-  {id:"perf",     label:"Performance",   Icon:TrendingUp},
-  {id:"risco",    label:"Risco",         Icon:ShieldCheck},
-  {id:"historico",label:"Histórico",     Icon:Clock},
-  {id:"defs",     label:"Definições",    Icon:Settings},
+  {id:"dashboard", label:"Dashboard",      Icon:LayoutDashboard},
+  {id:"reco",      label:"Recomendações",  Icon:BookOpen},
+  {id:"carteira",  label:"Carteira",       Icon:Briefcase},
+  {id:"perf",      label:"Performance",    Icon:TrendingUp},
+  {id:"risco",     label:"Risco",          Icon:ShieldCheck},
+  {id:"historico", label:"Histórico",      Icon:Clock},
+  {id:"ajuda",     label:"Ajuda",          Icon:HelpCircle},
+  {id:"contactos", label:"Contactos",      Icon:Mail},
 ];
-function Sidebar({user,profile,loggedIn,onRegister}:{user:string|null;profile:string;loggedIn:boolean;onRegister:()=>void}) {
+function Sidebar({user,profile,loggedIn,onRegister,activePage,onNavigate}:{
+  user:string|null;profile:string;loggedIn:boolean;onRegister:()=>void;
+  activePage:Page;onNavigate:(p:Page)=>void;
+}) {
   const router=useRouter();
   const initials=(user??"JC").slice(0,2).toUpperCase();
   const profilePt=profile==="conservador"?"Conservador":profile==="dinamico"?"Dinâmico":"Moderado";
@@ -274,16 +291,9 @@ function Sidebar({user,profile,loggedIn,onRegister}:{user:string|null;profile:st
       </div>
       <nav className="flex-1 px-3 py-4 space-y-0.5">
         {NAV.map(({id,label,Icon})=>(
-          <button key={id}
-            onClick={()=>{
-              if(id==="dashboard") void router.push("/client-dashboard");
-              else if(id==="reco") document.querySelector("[data-section=reco]")?.scrollIntoView({behavior:"smooth"});
-              else if(id==="carteira") document.querySelector("[data-section=carteira]")?.scrollIntoView({behavior:"smooth"});
-              else if(id==="perf") document.querySelector("[data-section=perf]")?.scrollIntoView({behavior:"smooth"});
-              else if(id==="risco") document.querySelector("[data-section=risco]")?.scrollIntoView({behavior:"smooth"});
-            }}
+          <button key={id} onClick={()=>onNavigate(id as Page)}
             className={["w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-              id==="dashboard"?"bg-blue-600/15 text-blue-400 border border-blue-500/25":"text-slate-400 hover:text-slate-200 hover:bg-white/5"].join(" ")}>
+              activePage===id?"bg-blue-600/15 text-blue-400 border border-blue-500/25":"text-slate-400 hover:text-slate-200 hover:bg-white/5"].join(" ")}>
             <Icon size={16}/>{label}
           </button>
         ))}
@@ -452,6 +462,9 @@ export default function ClientDashboardPage() {
   const [showRegModal,setShowRegModal]=useState(false);
   const [period,setPeriod]=useState<Period>("20 Anos");
   const [regSuccess,setRegSuccess]=useState(false);
+  const [activePage,setActivePage]=useState<Page>("reco");
+  const [contactForm,setContactForm]=useState({nome:"",email:"",assunto:"",msg:""});
+  const [contactSent,setContactSent]=useState(false);
 
   // freeze series
   const [dates,setDates]=useState<string[]>([]);
@@ -540,6 +553,49 @@ export default function ClientDashboardPage() {
     return {chart,m,curVol,curDD,ddChart:dd5};
   },[dates,equityRaw,benchRaw,period]);
 
+  // Annual returns from equity series
+  const annualReturns=useMemo(()=>{
+    if(!dates.length||!equityRaw.length) return [];
+    const byYear=new Map<number,number[]>();
+    dates.forEach((d,i)=>{ const y=new Date(d).getFullYear(); if(!byYear.has(y))byYear.set(y,[]); byYear.get(y)!.push(equityRaw[i]); });
+    const benchByYear=new Map<number,number[]>();
+    dates.forEach((d,i)=>{ const y=new Date(d).getFullYear(); if(!benchByYear.has(y))benchByYear.set(y,[]); benchByYear.get(y)!.push(benchRaw[i]); });
+    const curY=new Date().getFullYear();
+    return [...byYear.entries()].filter(([y])=>y>=curY-7&&y<=curY)
+      .map(([year,vals])=>({
+        year,
+        modelo:+((vals[vals.length-1]/vals[0]-1)*100).toFixed(1),
+        bench:+(((benchByYear.get(year)??[1])[( benchByYear.get(year)??[1]).length-1]/(benchByYear.get(year)??[1])[0]-1)*100).toFixed(1),
+      }));
+  },[dates,equityRaw,benchRaw]);
+
+  // Geographic exposure from current positions
+  const geoData=useMemo(()=>{
+    if(!latestMonth) return [];
+    const map=new Map<string,number>();
+    latestMonth.rows.forEach(r=>{
+      if(r.ticker==="TBILL_PROXY") return;
+      const z=getZone(r.ticker);
+      map.set(z,(map.get(z)??0)+r.weightPct);
+    });
+    const total=[...map.values()].reduce((a,b)=>a+b,0)||1;
+    return [...map.entries()].map(([name,pct])=>({name,value:Math.round(pct/total*100)})).sort((a,b)=>b.value-a.value);
+  },[latestMonth]);
+
+  // Risk metrics: VaR 95%, Beta
+  const riskMetrics=useMemo(()=>{
+    if(equityRaw.length<252) return {var95:0,beta:0};
+    const mRets=equityRaw.slice(1).map((v,i)=>v/equityRaw[i]-1);
+    const bRets=benchRaw.slice(1).map((v,i)=>v/(benchRaw[i]||1)-1);
+    const sorted=[...mRets].sort((a,b)=>a-b);
+    const var95=sorted[Math.floor(sorted.length*0.05)]??0;
+    const n=Math.min(mRets.length,bRets.length);
+    const bMean=bRets.slice(0,n).reduce((a,b)=>a+b,0)/n;
+    const bVar=bRets.slice(0,n).reduce((a,b)=>a+(b-bMean)**2,0)/n;
+    const cov=mRets.slice(0,n).reduce((a,m,i)=>a+(m-mRets.slice(0,n).reduce((x,y)=>x+y,0)/n)*(bRets[i]!-bMean),0)/n;
+    return {var95:var95*100,beta:bVar>0?+(cov/bVar).toFixed(2):0};
+  },[equityRaw,benchRaw]);
+
   const recoLabel=useMemo(()=>{
     const raw=latestMonth?.date??latestMonth?.rebalance_date??"";
     if(!raw) return "Última recomendação";
@@ -576,7 +632,8 @@ export default function ClientDashboardPage() {
       {showRegModal&&<RegisterModal onClose={()=>setShowRegModal(false)} onSuccess={handleRegisterSuccess}/>}
 
       <div className="flex min-h-screen bg-[#080c14] text-slate-200" style={{fontFamily:"'Nunito',system-ui,sans-serif"}}>
-        <Sidebar user={sessionUser} profile={profile} loggedIn={loggedIn} onRegister={()=>setShowRegModal(true)}/>
+        <Sidebar user={sessionUser} profile={profile} loggedIn={loggedIn} onRegister={()=>setShowRegModal(true)}
+          activePage={activePage} onNavigate={p=>{setActivePage(p);}}/>
 
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* discrete top bar for guests */}
@@ -594,8 +651,22 @@ export default function ClientDashboardPage() {
             {/* top bar */}
             <div className="flex items-center justify-between px-8 py-5 border-b border-[#1a1f2e]">
               <div>
-                <h1 className="text-xl font-black text-white">Dashboard</h1>
-                <p className="text-slate-400 text-xs mt-0.5">Visão geral da sua carteira e recomendações</p>
+                <h1 className="text-xl font-black text-white">{
+                  activePage==="dashboard"?"Dashboard":activePage==="reco"?"Recomendações":
+                  activePage==="carteira"?"Carteira":activePage==="perf"?"Performance":
+                  activePage==="risco"?"Risco":activePage==="historico"?"Histórico":
+                  activePage==="ajuda"?"Ajuda":"Contactos"
+                }</h1>
+                <p className="text-slate-400 text-xs mt-0.5">{
+                  activePage==="dashboard"?"Visão geral da carteira e recomendações":
+                  activePage==="reco"?"Recomendação mensal do modelo":
+                  activePage==="carteira"?"Composição e alocação da carteira":
+                  activePage==="perf"?"Análise de performance histórica":
+                  activePage==="risco"?"Métricas e análise de risco":
+                  activePage==="historico"?"Histórico de recomendações":
+                  activePage==="ajuda"?"Perguntas frequentes e recursos":
+                  "Fale connosco"
+                }</p>
               </div>
               <div className="flex items-center gap-3">
                 <button onClick={()=>document.querySelector('[data-section="reco"]')?.scrollIntoView({behavior:"smooth"})} className="flex items-center gap-2 bg-[#111827] border border-[#252a3a] rounded-lg px-4 py-2 text-sm text-slate-300 hover:bg-[#151929] transition-colors">
@@ -618,7 +689,57 @@ export default function ClientDashboardPage() {
 
             <div className="px-8 py-6 space-y-5">
 
-              {/* 1. recomendação */}
+              {/* ── DASHBOARD OVERVIEW ── */}
+              {activePage==="dashboard"&&(
+                <div className="space-y-5">
+                  <div className="grid grid-cols-4 gap-4">
+                    {[
+                      {label:"CAGR histórico (20a)",val:perfData?`+${perfData.m.ann.toFixed(1)}%`:"—",sub:"Retorno anualizado",c:"text-emerald-400"},
+                      {label:"Sharpe",val:perfData?perfData.m.shp.toFixed(2):"—",sub:"Risco-retorno",c:"text-blue-400"},
+                      {label:"Drawdown máx.",val:perfData?`${perfData.curDD.toFixed(1)}%`:"—",sub:"Actual (3 anos)",c:"text-amber-400"},
+                      {label:"Posições",val:actionCounts.comprar+actionCounts.aumentar+actionCounts.reduzir+actionCounts.vender+actionCounts.manter||"—",sub:"Carteira actual",c:"text-white"},
+                    ].map(({label,val,sub,c})=>(
+                      <div key={label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="text-slate-400 text-xs mb-2">{label}</div>
+                        <div className={`text-3xl font-black ${c}`}>{val}</div>
+                        <div className="text-slate-500 text-xs mt-1">{sub}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-4 gap-4">
+                    {[
+                      {id:"reco",label:"Recomendações",desc:"Ver recomendação de "+recoLabel,Icon:BookOpen,c:"text-emerald-400"},
+                      {id:"carteira",label:"Carteira",desc:"Posições e alocação sectorial",Icon:Briefcase,c:"text-blue-400"},
+                      {id:"perf",label:"Performance",desc:"Gráficos e retornos anuais",Icon:TrendingUp,c:"text-cyan-400"},
+                      {id:"risco",label:"Risco",desc:"VaR, volatilidade e drawdown",Icon:ShieldCheck,c:"text-amber-400"},
+                    ].map(({id,label,desc,Icon,c})=>(
+                      <button key={id} onClick={()=>setActivePage(id as Page)}
+                        className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 text-left hover:border-blue-500/40 transition-colors group">
+                        <Icon size={20} className={`${c} mb-3`}/>
+                        <div className="text-slate-200 font-semibold text-sm">{label}</div>
+                        <div className="text-slate-500 text-xs mt-1">{desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                    <div className="text-slate-200 font-bold text-sm mb-4">Performance (20 Anos)</div>
+                    <ResponsiveContainer width="100%" height={160}>
+                      <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
+                        <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}/>
+                        <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}}/>
+                        <Tooltip content={<PerfTooltip/>}/>
+                        <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
+                        <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2} dot={false} name="Modelo"/>
+                        <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name="Benchmark" strokeDasharray="4 2"/>
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {/* ── RECOMENDAÇÕES ── */}
+              {activePage==="reco"&&(
+              <>{/* 1. recomendação */}
               <div data-section="reco" className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                 <SH title="Recomendação deste mês"/>
                 <div className="flex items-start gap-8">
@@ -854,6 +975,362 @@ export default function ClientDashboardPage() {
                 </div>
                 <p className="text-slate-600 text-[10px] mt-3 text-center">As recomendações não constituem aconselhamento personalizado de investimento.</p>
               </div>
+            </>
+            )}
+
+              {/* ── CARTEIRA ── */}
+              {activePage==="carteira"&&(
+                <div className="space-y-5">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="text-slate-400 text-xs mb-2">Nº de posições</div>
+                      <div className="text-3xl font-black text-white">{actionCounts.comprar+actionCounts.aumentar+actionCounts.reduzir+actionCounts.vender+actionCounts.manter||20}</div>
+                    </div>
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="text-slate-400 text-xs mb-2">Alocação em acções</div>
+                      <div className="text-3xl font-black text-emerald-400">{latestMonth?`${(100-(latestMonth.tbillsTotalPct??0)).toFixed(0)}%`:"—"}</div>
+                    </div>
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="text-slate-400 text-xs mb-2">Rebalanceamento</div>
+                      <div className="text-3xl font-black text-blue-400">{recoLabel}</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-5">
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="font-bold text-slate-200 text-sm mb-4">Alocação por setor</div>
+                      <div className="flex gap-4">
+                        <ResponsiveContainer width={140} height={140}>
+                          <PieChart><Pie data={sectorData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" paddingAngle={2}>
+                            {sectorData.map((_,i)=><Cell key={i} fill={["#60a5fa","#34d399","#f59e0b","#f87171","#a78bfa","#22d3ee"][i%6]!}/>)}
+                          </Pie></PieChart>
+                        </ResponsiveContainer>
+                        <div className="space-y-2 flex-1">
+                          {sectorData.slice(0,6).map((s,i)=>(
+                            <div key={s.name} className="flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-2">
+                                <div className="w-2.5 h-2.5 rounded-sm" style={{background:["#60a5fa","#34d399","#f59e0b","#f87171","#a78bfa","#22d3ee"][i%6]}}/>
+                                <span className="text-slate-300">{s.name}</span>
+                              </div>
+                              <span className="text-slate-400 font-semibold">{s.value}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="font-bold text-slate-200 text-sm mb-4">Exposição geográfica</div>
+                      <div className="space-y-3">
+                        {geoData.map(g=>(
+                          <div key={g.name}>
+                            <div className="flex justify-between text-xs mb-1">
+                              <span className="text-slate-300">{g.name}</span>
+                              <span className="text-slate-400 font-semibold">{g.value}%</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-[#1a1f2e]">
+                              <div className="h-full rounded-full bg-blue-500" style={{width:`${g.value}%`}}/>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                    <div className="font-bold text-slate-200 text-sm mb-4">Principais posições</div>
+                    <table className="w-full text-xs">
+                      <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
+                        <th className="text-left pb-2">Ativo</th><th className="text-left pb-2">Setor</th>
+                        <th className="text-right pb-2">Peso actual</th><th className="text-right pb-2">Novo peso</th>
+                        <th className="text-right pb-2">Variação</th>
+                      </tr></thead>
+                      <tbody>
+                        {(latestMonth?.rows??[]).filter(r=>r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH"))
+                          .sort((a,b)=>b.weightPct-a.weightPct).slice(0,15).map(r=>{
+                          const prev=(sortedMonths[sortedMonths.length-2]?.rows??[]).find(x=>x.ticker===r.ticker)?.weightPct??0;
+                          const delta=r.weightPct-prev;
+                          return (
+                            <tr key={r.ticker} className="border-b border-[#0f1420] hover:bg-white/2">
+                              <td className="py-2.5 text-slate-200 font-semibold">{r.ticker}</td>
+                              <td className="py-2.5 text-slate-400">{getSector(r.ticker)}</td>
+                              <td className="py-2.5 text-right text-slate-300">{prev.toFixed(1)}%</td>
+                              <td className="py-2.5 text-right text-white font-semibold">{r.weightPct.toFixed(1)}%</td>
+                              <td className={`py-2.5 text-right font-semibold ${delta>=0?"text-emerald-400":"text-red-400"}`}>{delta>=0?"+":""}{delta.toFixed(1)}pp</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* ── PERFORMANCE ── */}
+              {activePage==="perf"&&(
+                <div className="space-y-5">
+                  <div className="grid grid-cols-4 gap-4">
+                    {perfData&&[
+                      {label:"Retorno ("+period+")",val:fmt(perfData.m.ret,true),c:perfData.m.ret>=0?"text-emerald-400":"text-red-400"},
+                      {label:"CAGR",val:fmt(perfData.m.ann,true),c:perfData.m.ann>=0?"text-emerald-400":"text-red-400"},
+                      {label:"Sharpe",val:perfData.m.shp.toFixed(2),c:"text-white"},
+                      {label:"Volatilidade anual",val:`${perfData.curVol.toFixed(1)}%`,c:"text-amber-400"},
+                    ].map(({label,val,c})=>(
+                      <div key={label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="text-slate-400 text-xs mb-2">{label}</div>
+                        <div className={`text-2xl font-black ${c}`}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="font-bold text-slate-200 text-sm">Evolução do investimento</div>
+                      <div className="flex gap-1">{PERIODS.map(p=>(
+                        <button key={p} onClick={()=>setPeriod(p)}
+                          className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${period===p?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>{p}</button>
+                      ))}</div>
+                    </div>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
+                        <XAxis dataKey="date" tick={{fontSize:10,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}/>
+                        <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}}/>
+                        <Tooltip content={<PerfTooltip/>}/>
+                        <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
+                        <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2} dot={false} name="Modelo"/>
+                        <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name="Benchmark" strokeDasharray="4 2"/>
+                      </LineChart>
+                    </ResponsiveContainer>
+                    <div className="flex items-center gap-4 mt-3">
+                      <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-0.5 bg-blue-400 rounded"/>Modelo</div>
+                      <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-px bg-slate-400 rounded"/>Benchmark</div>
+                    </div>
+                  </div>
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                    <div className="font-bold text-slate-200 text-sm mb-4">Retornos anuais</div>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={annualReturns} margin={{top:4,right:8,left:-4,bottom:0}} barGap={2}>
+                        <XAxis dataKey="year" tick={{fontSize:10,fill:"#64748b"}} axisLine={false} tickLine={false}/>
+                        <YAxis tick={{fontSize:9,fill:"#64748b"}} axisLine={false} tickLine={false} tickFormatter={v=>`${v}%`}/>
+                        <Tooltip formatter={(v:number)=>[`${v>0?"+":""}${v}%`]} contentStyle={{background:"#111827",border:"1px solid #252a3a",borderRadius:8,fontSize:11}}/>
+                        <ReferenceLine y={0} stroke="#334155"/>
+                        <Bar dataKey="modelo" name="Modelo" radius={[3,3,0,0]}>
+                          {annualReturns.map((r,i)=><Cell key={i} fill={r.modelo>=0?"#60a5fa":"#f87171"}/>)}
+                        </Bar>
+                        <Bar dataKey="bench" name="Benchmark" fill="#334155" radius={[3,3,0,0]}/>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {/* ── RISCO ── */}
+              {activePage==="risco"&&(
+                <div className="space-y-5">
+                  <div className="grid grid-cols-4 gap-4">
+                    {[
+                      {label:"Volatilidade anual",val:perfData?`${perfData.curVol.toFixed(1)}%`:"—",c:"text-amber-400"},
+                      {label:"VaR 95% (diário)",val:riskMetrics?`${riskMetrics.var95.toFixed(2)}%`:"—",c:"text-red-400"},
+                      {label:"Beta",val:riskMetrics?`${riskMetrics.beta}`:"—",c:"text-slate-200"},
+                      {label:"Drawdown actual",val:perfData?`${perfData.curDD.toFixed(1)}%`:"—",c:"text-red-400"},
+                    ].map(({label,val,c})=>(
+                      <div key={label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="text-slate-400 text-xs mb-2">{label}</div>
+                        <div className={`text-2xl font-black ${c}`}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-5">
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="font-bold text-slate-200 text-sm mb-3">Nível de risco</div>
+                      <div className="text-amber-400 text-2xl font-black mb-4">Moderado</div>
+                      <div className="relative h-3 rounded-full overflow-hidden mb-1" style={{background:"linear-gradient(to right,#22c55e,#f59e0b 50%,#ef4444)"}}>
+                        <div className="absolute top-0 bottom-0 w-0.5 bg-white/90 rounded-full" style={{left:"55%"}}/>
+                      </div>
+                      <div className="flex justify-between text-[9px] mt-0.5">
+                        <span className="text-emerald-400">Baixo</span><span className="text-amber-400">Médio</span><span className="text-red-400">Alto</span>
+                      </div>
+                      <div className="mt-4 space-y-2 text-xs">
+                        {[
+                          {label:"Volatilidade alvo",val:"15-20%"},
+                          {label:"CAP15 activo",val:"Sim"},
+                          {label:"Perfil",val:"Moderado"},
+                        ].map(({label,val})=>(
+                          <div key={label} className="flex justify-between"><span className="text-slate-400">{label}</span><span className="text-slate-200 font-semibold">{val}</span></div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="font-bold text-slate-200 text-sm mb-3">Drawdown histórico (20 anos)</div>
+                      <ResponsiveContainer width="100%" height={160}>
+                        <LineChart data={perfData?.ddChart??[]} margin={{top:4,right:4,left:-24,bottom:0}}>
+                          <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={d=>d.slice(0,4)} interval={Math.floor((perfData?.ddChart.length??1)/4)}/>
+                          <YAxis tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>`${Number(v).toFixed(0)}%`} domain={["dataMin",0]}/>
+                          <Tooltip content={<PerfTooltip/>}/>
+                          <ReferenceLine y={0} stroke="#334155" strokeDasharray="3 3"/>
+                          <Line type="monotone" dataKey="dd" stroke="#f87171" strokeWidth={1.5} dot={false} name="Drawdown"/>
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── HISTÓRICO ── */}
+              {activePage==="historico"&&(
+                <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                  <div className="font-bold text-slate-200 text-sm mb-5">Histórico de recomendações</div>
+                  <table className="w-full text-xs">
+                    <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
+                      <th className="pb-3 font-semibold">Data</th>
+                      <th className="pb-3 font-semibold">Comprar</th>
+                      <th className="pb-3 font-semibold">Vender</th>
+                      <th className="pb-3 font-semibold">Manter</th>
+                      <th className="pb-3 font-semibold">Resumo</th>
+                      <th className="pb-3 font-semibold">Estado</th>
+                    </tr></thead>
+                    <tbody>
+                      {[...sortedMonths].reverse().map((m,i)=>{
+                        const raw=m.date??m.rebalance_date??"";
+                        const label=raw?new Date(raw).toLocaleDateString("pt-PT",{month:"long",year:"numeric"}):raw;
+                        const prev=sortedMonths[sortedMonths.length-1-i-1];
+                        const pm=new Map((prev?.rows??[]).map(r=>[r.ticker,r.weightPct]));
+                        const cm=new Map(m.rows.map(r=>[r.ticker,r.weightPct]));
+                        let c2=0,v2=0,mt=0;
+                        const N2=20,DMIN2=1;
+                        const cands=[...new Set([...pm.keys(),...cm.keys()])].filter(t=>t!=="TBILL_PROXY"&&!t.startsWith("TBILL")).slice(0,N2);
+                        cands.forEach(t=>{const p=pm.get(t)??0,cu=cm.get(t)??0,d=cu-p;if(p===0&&cu>0||d>=DMIN2)c2++;else if(cu===0&&p>0||d<=-DMIN2)v2++;else mt++;});
+                        const isLatest=i===0;
+                        return (
+                          <tr key={i} className="border-b border-[#0f1420] hover:bg-white/2">
+                            <td className="py-3 text-slate-200 font-semibold capitalize">{label}</td>
+                            <td className="py-3 text-emerald-400 font-bold">{c2}</td>
+                            <td className="py-3 text-red-400 font-bold">{v2}</td>
+                            <td className="py-3 text-slate-400">{mt}</td>
+                            <td className="py-3 text-slate-400">Rebalanceamento mensal</td>
+                            <td className="py-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isLatest?"bg-amber-500/20 text-amber-400":"bg-emerald-500/15 text-emerald-400"}`}>
+                                {isLatest?"Pendente":"Aprovado"}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* ── AJUDA ── */}
+              {activePage==="ajuda"&&(
+                <div className="space-y-5">
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                    <div className="font-bold text-slate-200 text-sm mb-4">Tópicos frequentes</div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        {q:"Como funcionam as recomendações?",a:"O DECIDE analisa mensalmente o universo de activos com modelos quantitativos de momentum e qualidade. O resultado é uma lista de comprar, vender e manter para rebalancear a carteira."},
+                        {q:"Como aprovar as recomendações?",a:"Na página Recomendações, clica em 'Aprovar recomendações'. O sistema gera as ordens e envia para a tua corretora (Interactive Brokers). Precisas de conta na corretora ligada."},
+                        {q:"Como é calculado o risco?",a:"O risco é medido pela volatilidade anualizada da carteira e pelo VaR 95% diário. O modelo usa o mecanismo CAP15 para limitar a volatilidade ao nível Moderado (12-20% aa)."},
+                        {q:"O que é o CAGR histórico?",a:"Compound Annual Growth Rate — taxa de crescimento anual composta ao longo do período histórico. Com 25.04% ao ano durante 20 anos, €10.000 tornam-se em mais de €700.000."},
+                        {q:"Com que frequência rebalancear?",a:"O modelo gera recomendações mensalmente. Rebalanceamentos muito frequentes aumentam custos. Podes aprovar mensalmente ou seguir sinais fortes (Comprar/Vender) apenas."},
+                        {q:"Como ligar a corretora?",a:"No onboarding, seleccionas Interactive Brokers como corretora. Precisas de API Key e Account ID. O DECIDE envia ordens via IBKR API com aprovação prévia do utilizador."},
+                      ].map(({q,a},i)=>(
+                        <div key={i} className="bg-[#080c14] border border-[#1a1f2e] rounded-lg p-4">
+                          <div className="text-slate-200 font-semibold text-xs mb-2">{q}</div>
+                          <div className="text-slate-400 text-xs leading-relaxed">{a}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                    <div className="font-bold text-slate-200 text-sm mb-4">Guias e recursos</div>
+                    <div className="grid grid-cols-3 gap-3">
+                      {[
+                        {label:"Guia rápido da plataforma",desc:"Passos essenciais para começar"},
+                        {label:"Glossário de termos",desc:"Definição dos principais termos"},
+                        {label:"Vídeos tutoriais",desc:"Tutoriais em vídeo passo a passo"},
+                        {label:"Política de risco",desc:"Como o modelo gere o risco"},
+                        {label:"FAQ completo",desc:"Todas as perguntas e respostas"},
+                        {label:"Contactar suporte",desc:"Fala directamente com a equipa"},
+                      ].map(({label,desc})=>(
+                        <button key={label} onClick={()=>label==="Contactar suporte"&&setActivePage("contactos")}
+                          className="bg-[#080c14] border border-[#1a1f2e] rounded-lg p-4 text-left hover:border-blue-500/40 transition-colors">
+                          <HelpCircle size={16} className="text-blue-400 mb-2"/>
+                          <div className="text-slate-200 text-xs font-semibold">{label}</div>
+                          <div className="text-slate-500 text-[10px] mt-0.5">{desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── CONTACTOS ── */}
+              {activePage==="contactos"&&(
+                <div className="grid grid-cols-2 gap-5">
+                  <div className="space-y-4">
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="font-bold text-slate-200 text-sm mb-4">Fale connosco</div>
+                      <div className="space-y-3">
+                        {[
+                          {Icon:Phone,label:"Telefone",val:"+351 21 302 34 48"},
+                          {Icon:Mail,label:"Email",val:"geral@decide.pt"},
+                          {Icon:MapPin,label:"Morada",val:"Av. da Liberdade, 123\n1250-140 Lisboa, Portugal"},
+                        ].map(({Icon,label,val})=>(
+                          <div key={label} className="flex items-start gap-3 p-3 bg-[#080c14] rounded-lg">
+                            <Icon size={16} className="text-blue-400 mt-0.5 shrink-0"/>
+                            <div>
+                              <div className="text-slate-500 text-[10px]">{label}</div>
+                              <div className="text-slate-200 text-xs font-semibold whitespace-pre-line">{val}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="font-bold text-slate-200 text-sm mb-3">Horário de atendimento</div>
+                      <div className="space-y-2 text-xs">
+                        {[["Segunda a Sexta","9h - 18h"],["Sábado","10h - 13h"],["Domingo","Encerrado"]].map(([d,h])=>(
+                          <div key={d} className="flex justify-between"><span className="text-slate-400">{d}</span><span className="text-slate-200">{h}</span></div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                    <div className="font-bold text-slate-200 text-sm mb-4">Envie-nos uma mensagem</div>
+                    {contactSent?(
+                      <div className="flex flex-col items-center justify-center h-64 gap-3">
+                        <CheckCircle2 size={40} className="text-emerald-400"/>
+                        <div className="text-emerald-400 font-bold">Mensagem enviada!</div>
+                        <div className="text-slate-400 text-xs text-center">Respondemos em 1 dia útil.</div>
+                        <button onClick={()=>{setContactSent(false);setContactForm({nome:"",email:"",assunto:"",msg:""}); }}
+                          className="mt-2 text-xs text-blue-400 underline">Enviar outra mensagem</button>
+                      </div>
+                    ):(
+                      <form onSubmit={e=>{e.preventDefault();setContactSent(true);}} className="space-y-3">
+                        {[
+                          {k:"nome",label:"Nome",type:"text",ph:"O seu nome"},
+                          {k:"email",label:"Email",type:"email",ph:"email@exemplo.com"},
+                          {k:"assunto",label:"Assunto",type:"text",ph:"Seleccione o assunto"},
+                        ].map(({k,label,type,ph})=>(
+                          <div key={k}>
+                            <label className="text-xs text-slate-400 mb-1 block">{label}</label>
+                            <input type={type} placeholder={ph} value={(contactForm as any)[k]} required
+                              onChange={e=>setContactForm(f=>({...f,[k]:e.target.value}))}
+                              className="w-full bg-[#080c14] border border-[#252a3a] text-slate-200 text-xs rounded-lg px-3 py-2.5 outline-none focus:border-blue-500 transition-colors"/>
+                          </div>
+                        ))}
+                        <div>
+                          <label className="text-xs text-slate-400 mb-1 block">Mensagem</label>
+                          <textarea rows={4} placeholder="Descreva a sua questão..." required value={contactForm.msg}
+                            onChange={e=>setContactForm(f=>({...f,msg:e.target.value}))}
+                            className="w-full bg-[#080c14] border border-[#252a3a] text-slate-200 text-xs rounded-lg px-3 py-2.5 outline-none focus:border-blue-500 transition-colors resize-none"/>
+                        </div>
+                        <button type="submit"
+                          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg py-2.5 transition-colors">
+                          <Send size={13}/>Enviar mensagem
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              )}
 
             </div>
           </main>
