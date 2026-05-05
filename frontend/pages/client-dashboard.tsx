@@ -18,7 +18,7 @@ import { useSyncedRiskProfileFromOnboarding } from "../hooks/useSyncedRiskProfil
 import { KPI_IFRAME_SRC_REV } from "../lib/kpiFlaskBuildGate";
 
 /* ─── native simulator ──────────────────────────────────────── */
-const PRAZO_OPTS=[1,3,5,10,15,20] as const;
+const PRAZO_OPTS=[1,3,5,10,15,20] as const; // v2
 function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
   dates:string[];equity:number[];bench:number[];onRegister:()=>void;loggedIn:boolean;
 }) {
