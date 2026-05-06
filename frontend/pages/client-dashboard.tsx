@@ -1,6 +1,7 @@
 ﻿import Head from "next/head";
 import { useRouter } from "next/router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { displayTicker } from "../lib/tickerDisplay";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, ReferenceLine,
@@ -1952,7 +1953,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                     <tr key={r.ticker} className={`border-b border-[#111520] hover:bg-white/[0.02] ${isManter&&execMode==="delta"?"opacity-40":""}`}>
                       <td className="py-2.5">
                         <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
-                          className={`font-bold hover:underline ${inExec?"text-blue-400":"text-slate-500"}`}>{r.ticker}</a>
+                          className={`font-bold hover:underline ${inExec?"text-blue-400":"text-slate-500"}`}>{displayTicker(r.ticker)}</a>
                         {!inExec&&execMode==="delta"&&<span className="ml-1 text-[9px] text-slate-600">(não enviada)</span>}
                       </td>
                       <td className="py-2.5">
@@ -2037,7 +2038,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                         {orphanPositions.map(p=>(
                           <tr key={p.ticker} className="border-b border-[#111520]">
                             <td className="py-1.5 font-bold text-amber-400">
-                              <a href={`https://finance.yahoo.com/quote/${p.ticker}`} target="_blank" rel="noopener noreferrer" className="hover:underline">{p.ticker}</a>
+                              <a href={`https://finance.yahoo.com/quote/${p.ticker}`} target="_blank" rel="noopener noreferrer" className="hover:underline">{displayTicker(p.ticker)}</a>
                             </td>
                             <td className="py-1.5 text-right text-slate-300">{p.qty.toFixed(0)}</td>
                             <td className="py-1.5 text-right text-slate-300">€ {fmtE(Math.abs(p.value))}</td>
@@ -2311,7 +2312,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                     const est=Math.abs(r.delta)/100*aum;
                     return (
                       <tr key={r.ticker} className="border-b border-[#0d1017]">
-                        <td className="py-1.5 font-bold text-slate-200">{r.ticker}</td>
+                        <td className="py-1.5 font-bold text-slate-200">{displayTicker(r.ticker)}</td>
                         <td className="py-1.5">
                           <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${isBuy?"bg-emerald-500/15 text-emerald-300":"bg-amber-500/15 text-amber-300"}`}>{r.action}</span>
                         </td>
@@ -3052,7 +3053,7 @@ export default function ClientDashboardPage() {
                               return (
                                 <tr key={r.ticker} className="border-b border-[#111520] hover:bg-white/[0.02]">
                                   <td className="py-2">
-                                    <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer" className="font-bold text-blue-400 hover:underline">{r.ticker}</a>
+                                    <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer" className="font-bold text-blue-400 hover:underline">{displayTicker(r.ticker)}</a>
                                     {getCompany(r.ticker)&&<span className="ml-1 text-slate-500 text-[10px]">{getCompany(r.ticker)}</span>}
                                   </td>
                                   <td className="py-2">
@@ -3425,7 +3426,7 @@ export default function ClientDashboardPage() {
                             <tbody>
                               {cartIbPos.map((p,i)=>(
                                 <tr key={p.ticker} className={`border-b border-[#1a1f2e] hover:bg-[#111827] transition-colors ${i%2===0?"":"bg-[#080c14]"}`}>
-                                  <td className="px-4 py-2.5 font-bold text-blue-400">{p.ticker}</td>
+                                  <td className="px-4 py-2.5 font-bold text-blue-400">{displayTicker(p.ticker)}</td>
                                   <td className="px-2 py-2.5 text-slate-300">{(p as any).name||"—"}</td>
                                   <td className="px-2 py-2.5 text-slate-400">{(p as any).sector||"—"}</td>
                                   <td className="px-2 py-2.5 text-slate-400">{(p as any).country||"—"}</td>
@@ -3601,7 +3602,7 @@ export default function ClientDashboardPage() {
                                     <span className="text-slate-300">{isHedge?"EUR/USD":r.ticker}</span>
                                   ):(
                                     <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
-                                      className="text-blue-400 hover:text-blue-300 hover:underline">{r.ticker}</a>
+                                      className="text-blue-400 hover:text-blue-300 hover:underline">{displayTicker(r.ticker)}</a>
                                   )}
                                 </td>
                                 <td className="py-2 text-slate-400">
