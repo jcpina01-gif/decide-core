@@ -947,15 +947,15 @@ export default function MifidTestPage() {
   }
 
   const btnPrimary: React.CSSProperties = {
-    background: "linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)",
+    background: DECIDE_CLIENT.buttonPrimaryGradient,
     color: "#fff",
-    border: "1px solid rgba(14,165,233,0.4)",
+    border: DECIDE_CLIENT.buttonPrimaryBorder,
     borderRadius: 12,
     padding: "13px 24px",
     fontSize: 15,
     fontWeight: 700,
     cursor: "pointer",
-    boxShadow: "0 4px 20px rgba(14,165,233,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
+    boxShadow: DECIDE_CLIENT.buttonPrimaryGlow,
   };
   const btnPrimaryCta: React.CSSProperties = {
     ...btnPrimary,
