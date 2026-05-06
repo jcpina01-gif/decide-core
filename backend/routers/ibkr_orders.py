@@ -121,7 +121,7 @@ def ibkr_orders_post(body: IbkrOrdersBody) -> dict[str, Any]:
     fills: List[dict[str, Any]] = []
 
     try:
-        ib.connect(TWS_HOST, TWS_PORT, clientId=_CLIENT_ID, timeout=15)
+        ib.connect(TWS_HOST, TWS_PORT, clientId=_CLIENT_ID, timeout=8)
         ib.reqMarketDataType(3)  # Frozen/delayed se real-time não disponível
 
         is_paper, accounts = is_paper_account(ib)
@@ -183,18 +183,18 @@ def ibkr_orders_post(body: IbkrOrdersBody) -> dict[str, Any]:
 
             fills.append(row)
 
-    except ConnectionRefusedError:
+    except (ConnectionRefusedError, TimeoutError, OSError) as exc:
         return {
             "status": "error",
             "error": (
-                f"Não foi possível ligar ao IB Gateway em {TWS_HOST}:{TWS_PORT}. "
-                "Confirme que está a correr e autenticado."
+                f"Não foi possível ligar ao IB Gateway em {TWS_HOST}:{TWS_PORT} — {type(exc).__name__}. "
+                "Confirme que o IB Gateway está aberto, autenticado e com API socket activa (porta 4002)."
             ),
             "fills": fills,
         }
     except Exception as exc:  # noqa: BLE001
         traceback.print_exc()
-        return {"status": "error", "error": str(exc), "fills": fills}
+        return {"status": "error", "error": f"{type(exc).__name__}: {exc}", "fills": fills}
     finally:
         try:
             if ib.isConnected():
