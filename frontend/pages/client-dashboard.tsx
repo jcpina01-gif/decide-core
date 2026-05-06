@@ -1659,11 +1659,44 @@ export default function ClientDashboardPage() {
   const [period,setPeriod]=useState<Period>("20 Anos");
   const [regSuccess,setRegSuccess]=useState(false);
   const [activePage,setActivePage]=useState<Page>("dashboard");
-  const [riskProfileLocal,setRiskProfileLocal]=useState<RiskProfile>("moderado");
-  const [fxExposure,setFxExposure]=useState<FxExposure>("protegida");
-  const [marginEnabled,setMarginEnabled]=useState(false);
-  const [kpiMode,setKpiMode]=useState<KpiMode>("base");
+  const [riskProfileLocal,setRiskProfileLocalRaw]=useState<RiskProfile>("moderado");
+  const [fxExposure,setFxExposureRaw]=useState<FxExposure>("protegida");
+  const [marginEnabled,setMarginEnabledRaw]=useState(false);
+  const [kpiMode,setKpiModeRaw]=useState<KpiMode>("base");
   const [configPanelOpen,setConfigPanelOpen]=useState(false);
+
+  // Persist preferences in localStorage
+  const LS_KEY="decide_prefs_v1";
+  useEffect(()=>{
+    try{
+      const raw=localStorage.getItem(LS_KEY);
+      if(raw){
+        const p=JSON.parse(raw);
+        if(p.riskProfile) setRiskProfileLocalRaw(p.riskProfile);
+        if(p.fxExposure)  setFxExposureRaw(p.fxExposure);
+        if(typeof p.marginEnabled==="boolean") setMarginEnabledRaw(p.marginEnabled);
+        if(p.kpiMode)     setKpiModeRaw(p.kpiMode);
+      }
+    }catch{}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
+  const savePrefs=(patch:Partial<{riskProfile:RiskProfile;fxExposure:FxExposure;marginEnabled:boolean;kpiMode:KpiMode}>)=>{
+    try{
+      const existing=JSON.parse(localStorage.getItem(LS_KEY)??"{}");
+      localStorage.setItem(LS_KEY,JSON.stringify({...existing,...patch}));
+    }catch{}
+  };
+  const setRiskProfileLocal=(v:RiskProfile)=>{setRiskProfileLocalRaw(v);savePrefs({riskProfile:v});};
+  const setFxExposure=(v:FxExposure)=>{setFxExposureRaw(v);savePrefs({fxExposure:v});};
+  const setMarginEnabled=(v:boolean|((prev:boolean)=>boolean))=>{
+    setMarginEnabledRaw(prev=>{
+      const next=typeof v==="function"?v(prev):v;
+      savePrefs({marginEnabled:next});
+      return next;
+    });
+  };
+  const setKpiMode=(v:KpiMode)=>{setKpiModeRaw(v);savePrefs({kpiMode:v});};
   const [contactForm,setContactForm]=useState({nome:"",email:"",assunto:"",msg:""});
   const [contactSent,setContactSent]=useState(false);
   const [aum,setAum]=useState(100000); // portfolio size in EUR for shares calculation
