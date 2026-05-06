@@ -20,6 +20,7 @@ from routers.cancel_open_orders_paper import (
     run_cancel_open_orders_paper,
 )
 from routers.sync_paper_exec_lines import router as sync_paper_exec_lines_router, sync_paper_exec_lines_probe
+from routers.ibkr_orders import router as ibkr_orders_router
 
 app = FastAPI()
 
@@ -67,6 +68,7 @@ app.add_api_route(
 
 app.include_router(run_model_router)
 app.include_router(send_orders_router)
+app.include_router(ibkr_orders_router)
 app.include_router(sync_paper_exec_lines_router)
 app.include_router(ibkr_snapshot_router)
 app.include_router(performance_router)

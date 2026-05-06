@@ -8,16 +8,12 @@ import json
 import os
 import re
 import sys
-import time
 import traceback
 import unicodedata
 from urllib.parse import urlparse
 
 import numpy as np
 import pandas as pd
-import requests as _req
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from flask import Flask, Response, jsonify, make_response, render_template_string, request
 
 TRADING_DAYS_PER_YEAR = 252
@@ -11167,134 +11163,6 @@ def api_diagnostics_rolling():
     r.headers["Access-Control-Allow-Origin"] = "*"
     return r
 
-
-# ─── IB Client Portal Gateway helpers ──────────────────────────────────────
-_IB_BASE = os.environ.get("IB_GATEWAY_URL", "https://localhost:4002").rstrip("/")
-_IB_TIMEOUT = 15
-
-def _ib_get(path: str):
-    return _req.get(f"{_IB_BASE}{path}", verify=False, timeout=_IB_TIMEOUT)
-
-def _ib_post(path: str, body: dict):
-    return _req.post(f"{_IB_BASE}{path}", json=body, verify=False, timeout=_IB_TIMEOUT)
-
-def _ib_cors(r):
-    r.headers["Access-Control-Allow-Origin"] = "*"
-    return r
-
-def _ib_err(msg: str, code: int = 500):
-    return _ib_cors(make_response(jsonify({"error": msg}), code))
-
-
-@app.route("/api/ibkr-orders", methods=["POST", "OPTIONS"])
-def api_ibkr_orders():
-    if request.method == "OPTIONS":
-        r = make_response("", 204)
-        r.headers.update({"Access-Control-Allow-Origin": "*",
-                           "Access-Control-Allow-Headers": "Content-Type",
-                           "Access-Control-Allow-Methods": "POST, OPTIONS"})
-        return r
-
-    body = request.get_json(force=True) or {}
-    orders = body.get("orders", [])
-    aum    = float(body.get("aum", 0))
-
-    if not orders:
-        return _ib_err("Nenhuma ordem recebida.", 400)
-
-    try:
-        # 1. Get account ID (also warms up the Gateway session)
-        acc_resp = _ib_get("/v1/api/iserver/accounts")
-        if not acc_resp.ok:
-            return _ib_err(f"Não foi possível obter contas IB ({acc_resp.status_code}). "
-                           "Confirme que o Gateway está autenticado.", 502)
-        accounts = acc_resp.json().get("accounts", [])
-        if not accounts:
-            return _ib_err("Nenhuma conta encontrada. Autentique-se no IB Gateway.", 400)
-        account_id = accounts[0]
-
-        results, errors = [], []
-        # Rough EUR→USD rate (used only for qty estimation; adjust via IB_EURUSD env)
-        fx = float(os.environ.get("IB_EURUSD", "1.09"))
-
-        for order in orders:
-            ticker  = order.get("ticker", "")
-            action  = order.get("action", "")
-            est_eur = float(order.get("est_eur", 0))
-            side    = "BUY" if action in ("Comprar", "Aumentar") else "SELL"
-
-            # 2. Find contract ID
-            s = _ib_get(f"/v1/api/iserver/secdef/search?symbol={ticker}&name=false&secType=STK")
-            if not s.ok or not s.json():
-                errors.append({"ticker": ticker, "error": "Contrato não encontrado"})
-                continue
-            conid = s.json()[0].get("conid")
-            if not conid:
-                errors.append({"ticker": ticker, "error": "conid em falta"})
-                continue
-
-            # 3. Get last price for quantity estimation
-            mp = _ib_get(f"/v1/api/iserver/marketdata/snapshot?conids={conid}&fields=31")
-            price = None
-            if mp.ok:
-                snap = mp.json()
-                raw_p = snap[0].get("31") if snap else None
-                try:
-                    price = float(raw_p) if raw_p else None
-                except (ValueError, TypeError):
-                    price = None
-
-            if price and price > 0:
-                quantity = max(1, round(est_eur * fx / price))
-            else:
-                # Fallback: 1 share (better than nothing for paper trading)
-                quantity = 1
-
-            # 4. Place order
-            ib_order = {
-                "conid": int(conid),
-                "secType": f"{conid}:STK",
-                "orderType": "MKT",
-                "side": side,
-                "quantity": quantity,
-                "tif": "DAY",
-                "outsideRth": False,
-            }
-            place = _ib_post(f"/v1/api/iserver/account/{account_id}/orders",
-                             {"orders": [ib_order]})
-            place_data = place.json() if place.ok else {"error": place.status_code}
-
-            # 5. Auto-confirm if Gateway returns a confirmation question
-            if isinstance(place_data, list) and place_data and "id" in place_data[0]:
-                confirm_id = place_data[0]["id"]
-                conf = _ib_post(f"/v1/api/iserver/reply/{confirm_id}", {"confirmed": True})
-                place_data = conf.json() if conf.ok else place_data
-
-            results.append({
-                "ticker": ticker, "side": side,
-                "conid": conid, "quantity": quantity,
-                "price_est": price, "status": "submitted",
-                "ib_response": place_data,
-            })
-
-        order_ref = "ORD-" + hex(int(time.time() * 1000))[2:].upper()
-        r = make_response(jsonify({
-            "ok": True,
-            "order_ref": order_ref,
-            "account": account_id,
-            "submitted": len(results),
-            "errors": errors,
-            "results": results,
-        }), 200)
-        return _ib_cors(r)
-
-    except _req.exceptions.ConnectionError:
-        return _ib_err(
-            f"Não foi possível ligar ao IB Gateway em {_IB_BASE}. "
-            "Confirme que está a correr na porta correcta e autenticado.", 503)
-    except Exception as exc:  # noqa: BLE001
-        traceback.print_exc()
-        return _ib_err(str(exc), 500)
 
 
 if __name__ == "__main__":
