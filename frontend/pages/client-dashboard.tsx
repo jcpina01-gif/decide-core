@@ -335,6 +335,19 @@ function periodStart(dates:string[], period:Period) {
   const i=dates.findIndex(d=>new Date(d)>=cut);
   return i<0?0:i;
 }
+/** Rescale daily returns by factor, recompute compounded curve */
+function scaleEquityCurve(equity:number[], factor:number):number[] {
+  if(!equity.length) return equity;
+  if(factor===1)     return equity;
+  const out=new Array(equity.length);
+  out[0]=equity[0];
+  for(let i=1;i<equity.length;i++){
+    const r=equity[i]/equity[i-1]-1;
+    out[i]=out[i-1]*(1+r*factor);
+  }
+  return out;
+}
+
 function skipWarmup(eq:number[], from:number) {
   const v0=eq[from]; let i=from;
   while(i<eq.length-1&&eq[i]===v0) i++;
@@ -1803,50 +1816,53 @@ export default function ClientDashboardPage() {
     return [...map.entries()].map(([name,pct])=>({name,value:Math.round(pct/total*100)})).sort((a,b)=>b.value-a.value);
   },[latestMonth]);
 
-  const perfData=useMemo(()=>{
-    if(!dates.length) return null;
-    // Apply skipWarmup so the start is identical to what NativeSimulator uses
-    const s=skipWarmup(equityRaw,periodStart(dates,period));
-    const chart=makeChartData(dates,equityRaw,benchRaw,period);
-    const m=periodMetrics(equityRaw.slice(s),benchRaw.slice(s),period);
-    const allRets=equityRaw.slice(1).map((v,i)=>v/equityRaw[i]-1);
-    const curVol=annualVol(allRets.slice(-252))*100;
-    const curDD=currentDD(equityRaw.slice(-252*3))*100;
-    const dd5Start=skipWarmup(equityRaw,periodStart(dates,"20 Anos"));
-    const modelDD=rollingDD(dates.slice(dd5Start),equityRaw.slice(dd5Start),10);
-    // Benchmark DD merged into same array
-    let bpk=benchRaw[dd5Start]??1;
-    const dd5=modelDD.map((pt,j)=>{
-      const bv=benchRaw[dd5Start+j*10]??benchRaw[benchRaw.length-1];
-      if(bv>bpk)bpk=bv;
-      return {...pt, bench:+((( bv-bpk)/bpk)*100).toFixed(2)};
-    });
-    // YTD return: from Jan 1 to latest
-    const now=new Date(); const ytdStartStr=`${now.getFullYear()}-01-01`;
-    const ytdIdx=dates.findIndex(d=>d>=ytdStartStr);
-    const ytdRet=ytdIdx>=0&&equityRaw.length>ytdIdx
-      ? (equityRaw[equityRaw.length-1]/equityRaw[ytdIdx]-1)*100 : 0;
-    return {chart,m,curVol,curDD,ddChart:dd5,ytdRet};
-  },[dates,equityRaw,benchRaw,period]);
-
-  // Profile scaling — useMemo with explicit deps so React always re-evaluates
+  // ── Profile factor (must be before scaledEquity / perfData) ─────────────
   const profileFactor=useMemo(()=>
     riskProfileLocal==="conservador"?0.75:riskProfileLocal==="dinamico"?1.25:1.0
   ,[riskProfileLocal]);
   const profileLabel=useMemo(()=>
     riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado"
   ,[riskProfileLocal]);
-  const scaledVol  =useMemo(()=>(perfData?.curVol??0)*profileFactor,   [perfData,profileFactor]);
-  const scaledDD   =useMemo(()=>(perfData?.curDD ??0)*profileFactor,   [perfData,profileFactor]);
-  const scaledYtd  =useMemo(()=>(perfData?.ytdRet??0)*profileFactor,   [perfData,profileFactor]);
-  const scaledTotal=useMemo(()=>(perfData?.m.ret ??0)*profileFactor,   [perfData,profileFactor]);
-  const scaledAnn  =useMemo(()=>(perfData?.m.ann ??0)*profileFactor,   [perfData,profileFactor]);
+
+  // ── Scaled equity curve: apply profile factor to every daily return ───────
+  const scaledEquity=useMemo(()=>scaleEquityCurve(equityRaw,profileFactor),[equityRaw,profileFactor]);
+
+  // ── Recompute all KPIs from scaled curve ──────────────────────────────────
+  const perfData=useMemo(()=>{
+    if(!dates.length||!scaledEquity.length) return null;
+    const s=skipWarmup(scaledEquity,periodStart(dates,period));
+    const chart=makeChartData(dates,scaledEquity,benchRaw,period);
+    const m=periodMetrics(scaledEquity.slice(s),benchRaw.slice(s),period);
+    const allRets=scaledEquity.slice(1).map((v,i)=>v/scaledEquity[i]-1);
+    const curVol=annualVol(allRets.slice(-252))*100;
+    const curDD=currentDD(scaledEquity.slice(-252*3))*100;
+    const dd5Start=skipWarmup(scaledEquity,periodStart(dates,"20 Anos"));
+    const modelDD=rollingDD(dates.slice(dd5Start),scaledEquity.slice(dd5Start),10);
+    let bpk=benchRaw[dd5Start]??1;
+    const dd5=modelDD.map((pt,j)=>{
+      const bv=benchRaw[dd5Start+j*10]??benchRaw[benchRaw.length-1];
+      if(bv>bpk)bpk=bv;
+      return {...pt,bench:+(((bv-bpk)/bpk)*100).toFixed(2)};
+    });
+    const now=new Date(); const ytdStartStr=`${now.getFullYear()}-01-01`;
+    const ytdIdx=dates.findIndex(d=>d>=ytdStartStr);
+    const ytdRet=ytdIdx>=0&&scaledEquity.length>ytdIdx
+      ? (scaledEquity[scaledEquity.length-1]/scaledEquity[ytdIdx]-1)*100 : 0;
+    return {chart,m,curVol,curDD,ddChart:dd5,ytdRet};
+  },[dates,scaledEquity,benchRaw,period]);
+
+  // Convenience aliases — direct from recomputed curve (no post-hoc multiply)
+  const scaledVol  =perfData?.curVol??0;
+  const scaledDD   =perfData?.curDD ??0;
+  const scaledYtd  =perfData?.ytdRet??0;
+  const scaledTotal=perfData?.m.ret ??0;
+  const scaledAnn  =perfData?.m.ann ??0;
 
   // Annual returns from equity series
   const annualReturns=useMemo(()=>{
-    if(!dates.length||!equityRaw.length) return [];
+    if(!dates.length||!scaledEquity.length) return [];
     const byYear=new Map<number,number[]>();
-    dates.forEach((d,i)=>{ const y=new Date(d).getFullYear(); if(!byYear.has(y))byYear.set(y,[]); byYear.get(y)!.push(equityRaw[i]); });
+    dates.forEach((d,i)=>{ const y=new Date(d).getFullYear(); if(!byYear.has(y))byYear.set(y,[]); byYear.get(y)!.push(scaledEquity[i]); });
     const benchByYear=new Map<number,number[]>();
     dates.forEach((d,i)=>{ const y=new Date(d).getFullYear(); if(!benchByYear.has(y))benchByYear.set(y,[]); benchByYear.get(y)!.push(benchRaw[i]); });
     const curY=new Date().getFullYear();
@@ -1861,7 +1877,7 @@ export default function ClientDashboardPage() {
           bench:+((bVals[bVals.length-1]/bVals[0]-1)*100).toFixed(1),
         };
       });
-  },[dates,equityRaw,benchRaw]);
+  },[dates,scaledEquity,benchRaw]);
 
   // Geographic exposure from current positions
   const geoData=useMemo(()=>{
@@ -1878,21 +1894,20 @@ export default function ClientDashboardPage() {
 
   // Return distribution histogram (monthly returns)
   const returnDist=useMemo(()=>{
-    if(equityRaw.length<24) return [];
-    // Use monthly returns (approximate: every ~21 trading days)
+    if(scaledEquity.length<24) return [];
     const step=21;
     const monthlyRets:number[]=[];
-    for(let i=step;i<equityRaw.length;i+=step){
-      monthlyRets.push((equityRaw[i]!/equityRaw[i-step]!-1)*100);
+    for(let i=step;i<scaledEquity.length;i+=step){
+      monthlyRets.push((scaledEquity[i]!/scaledEquity[i-step]!-1)*100);
     }
-    const BIN_W=2, MIN=-20, MAX=30;
+    const BIN_W=2,MIN=-20,MAX=30;
     const bins:number[]=[];
     for(let b=MIN;b<MAX;b+=BIN_W) bins.push(b);
     return bins.map(b=>{
       const count=monthlyRets.filter(r=>r>=b&&r<b+BIN_W).length;
       return {bin:`${b>0?"+":""}${b}%`, count, mid:b+BIN_W/2};
     });
-  },[equityRaw]);
+  },[scaledEquity]);
 
   // Sector allocation + risk contribution
   const SECTOR_BETA:Record<string,number>={
@@ -1917,8 +1932,8 @@ export default function ClientDashboardPage() {
 
   // Risk metrics: VaR 95%, Beta
   const riskMetrics=useMemo(()=>{
-    if(equityRaw.length<252) return {var95:0,beta:0};
-    const mRets=equityRaw.slice(1).map((v,i)=>v/equityRaw[i]-1);
+    if(scaledEquity.length<252) return {var95:0,beta:0};
+    const mRets=scaledEquity.slice(1).map((v,i)=>v/scaledEquity[i]-1);
     const bRets=benchRaw.slice(1).map((v,i)=>v/(benchRaw[i]||1)-1);
     const sorted=[...mRets].sort((a,b)=>a-b);
     const var95=sorted[Math.floor(sorted.length*0.05)]??0;
@@ -1927,7 +1942,7 @@ export default function ClientDashboardPage() {
     const bVar=bRets.slice(0,n).reduce((a,b)=>a+(b-bMean)**2,0)/n;
     const cov=mRets.slice(0,n).reduce((a,m,i)=>a+(m-mRets.slice(0,n).reduce((x,y)=>x+y,0)/n)*(bRets[i]!-bMean),0)/n;
     return {var95:var95*100,beta:bVar>0?+(cov/bVar).toFixed(2):0};
-  },[equityRaw,benchRaw]);
+  },[scaledEquity,benchRaw]);
 
   const recoLabel=useMemo(()=>{
     const raw=latestMonth?.date??latestMonth?.rebalance_date??"";
