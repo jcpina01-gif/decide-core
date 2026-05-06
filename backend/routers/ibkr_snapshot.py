@@ -497,11 +497,16 @@ def ibkr_snapshot(request: Request, req: IbkrSnapshotRequest) -> dict:
         ib_host, ib_port, ib_client_id = ib_socket_host(), ib_socket_port(), IBKR_CLIENT_ID
 
     # Corre em thread isolada — evita conflito com event loop AnyIO/FastAPI (Python 3.13)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-        future = ex.submit(_run_snapshot, ib_host, ib_port, ib_client_id)
-        try:
-            return future.result(timeout=int(IBKR_CONNECT_TIMEOUT) + 15)
-        except concurrent.futures.TimeoutError:
-            return _snapshot_rejected(
-                f"Timeout ao conectar ao IB Gateway {ib_host}:{ib_port} — verifique que está aberto e com API activa."
-            )
+    # NÃO usar 'with' (shutdown(wait=True) bloquearia mesmo após future.result timeout)
+    _snap_timeout = int(IBKR_CONNECT_TIMEOUT) + 15
+    _ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = _ex.submit(_run_snapshot, ib_host, ib_port, ib_client_id)
+    try:
+        result = future.result(timeout=_snap_timeout)
+        _ex.shutdown(wait=False)
+        return result
+    except concurrent.futures.TimeoutError:
+        _ex.shutdown(wait=False)
+        return _snapshot_rejected(
+            f"Timeout ({_snap_timeout}s) ao conectar ao IB Gateway {ib_host}:{ib_port} — verifique que está aberto e com API activa."
+        )

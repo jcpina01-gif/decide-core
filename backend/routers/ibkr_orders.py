@@ -191,14 +191,18 @@ def ibkr_orders_post(body: IbkrOrdersBody) -> dict[str, Any]:
     sell_cap_disabled = os.environ.get("DECIDE_DISABLE_SELL_LONG_CAP", "").strip().lower() in ("1", "true", "yes")
 
     # Corre em thread isolada — evita conflito de event loop Python 3.13 + AnyIO/FastAPI
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-        future = ex.submit(_execute_ib_orders, orders, sell_cap_disabled, TWS_HOST, TWS_PORT, _CLIENT_ID)
-        try:
-            return future.result(timeout=30)
-        except concurrent.futures.TimeoutError:
-            return {"status": "error",
-                    "error": f"Timeout (30s) ao executar ordens na IB Gateway {TWS_HOST}:{TWS_PORT}.",
-                    "fills": []}
+    # NÃO usar 'with' (shutdown(wait=True) bloquearia mesmo após future.result timeout)
+    _ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = _ex.submit(_execute_ib_orders, orders, sell_cap_disabled, TWS_HOST, TWS_PORT, _CLIENT_ID)
+    try:
+        result = future.result(timeout=90)
+        _ex.shutdown(wait=False)
+        return result
+    except concurrent.futures.TimeoutError:
+        _ex.shutdown(wait=False)
+        return {"status": "error",
+                "error": f"Timeout (90s) ao executar ordens na IB Gateway {TWS_HOST}:{TWS_PORT}.",
+                "fills": []}
 
 
 @router.get("/api/ibkr-orders")
