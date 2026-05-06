@@ -1686,10 +1686,11 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
 }
 
 /* ─── Página: Confirmar e enviar ordens para IB ────────────── */
-function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,profileLabel,fxExposure,marginEnabled}:{
+function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onShowRegister,profileLabel,fxExposure,marginEnabled}:{
   actionCounts:{comprar:number;aumentar:number;reduzir:number;vender:number;manter:number;
     rows:{ticker:string;prev:number;cur:number;delta:number;action:string}[];
     allRows:{ticker:string;prev:number;cur:number;delta:number;action:string}[];};
+  latestMonth:{rows:{ticker:string;weightPct:number}[];tbillsTotalPct?:number}|null;
   recoLabel:string;aum:number;loggedIn:boolean;onBack:()=>void;onShowRegister:()=>void;
   profileLabel:string;fxExposure:string;marginEnabled:boolean;
 }) {
@@ -1713,9 +1714,22 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
   // Full plan: ALL positions (for display and "full" execution mode)
   const allPlanRows=actionCounts.allRows; // includes Manter
 
-  // Plan tickers that have a target weight > 0
-  const planTickerSet=new Set(allPlanRows.filter(r=>r.cur>0).map(r=>r.ticker));
-  // IB positions not in the current plan (or with cur=0) → "orphan"
+  // Plan tickers from the FULL model data (all rows, not just top-20)
+  // This prevents model positions ranked 21+ being wrongly flagged as orphans
+  const planTickerSet=React.useMemo(()=>{
+    const s=new Set<string>();
+    // All rows from the full monthly data with weight > 0
+    (latestMonth?.rows??[]).forEach(r=>{
+      if(r.weightPct>0&&r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH")&&!r.ticker.startsWith("TBILL"))
+        s.add(r.ticker);
+    });
+    // Also add XEON (money market, always in plan if tbillsTotalPct > 0)
+    if((latestMonth?.tbillsTotalPct??0)>0) s.add("XEON");
+    // Fallback: also include anything from top-20 with cur>0 (in case latestMonth is null)
+    allPlanRows.filter(r=>r.cur>0).forEach(r=>s.add(r.ticker));
+    return s;
+  },[latestMonth,allPlanRows]);
+  // IB positions not in the current plan → "orphan"
   const orphanPositions=ibkrPos?ibkrPos.filter(p=>!planTickerSet.has(p.ticker)&&p.qty>0):[];
 
   async function fetchIbkrPositions(){
@@ -3801,6 +3815,7 @@ export default function ClientDashboardPage() {
               {activePage==="ordens"&&(
                 <OrdensPage
                   actionCounts={actionCounts}
+                  latestMonth={latestMonth}
                   recoLabel={recoLabel}
                   aum={aum}
                   loggedIn={loggedIn}
