@@ -2112,9 +2112,9 @@ export default function ClientDashboardPage() {
                       <div className="text-[10px] text-slate-500 mb-3">Define o nível de risco da sua carteira. A alocação e as recomendações são ajustadas automaticamente.</div>
                       <div className="grid grid-cols-3 gap-2">
                         {([
-                          {id:"conservador" as RiskProfile, label:"Conservador", icon:"🛡️", desc:"Menor risco\nMenor volatilidade\nMais obrigações", range:"Vol. alvo: 5–10%"},
-                          {id:"moderado"    as RiskProfile, label:"Moderado",    icon:"⚖️", desc:"Equilíbrio entre risco\ne retorno\nDiversificação global", range:"Vol. alvo: 10–16%"},
-                          {id:"dinamico"    as RiskProfile, label:"Dinâmico",    icon:"🚀", desc:"Maior potencial\nde retorno\nMais exposição a ações", range:"Vol. alvo: 16–25%"},
+                          {id:"conservador" as RiskProfile, label:"Conservador", icon:"🛡️", desc:"Menor volatilidade\nMesma carteira\nEscalada a 0,75×", range:`~${((perfData?.curVol??14)*0.75).toFixed(1)}% vol aa`},
+                          {id:"moderado"    as RiskProfile, label:"Moderado",    icon:"⚖️", desc:"Vol do modelo base\nAções globais + XEON\nSem ajuste", range:`~${(perfData?.curVol??14).toFixed(1)}% vol aa`},
+                          {id:"dinamico"    as RiskProfile, label:"Dinâmico",    icon:"🚀", desc:"Maior exposição\nMesma carteira\nEscalada a 1,25×", range:`~${((perfData?.curVol??14)*1.25).toFixed(1)}% vol aa`},
                         ]).map(p=>(
                           <button key={p.id} onClick={()=>setRiskProfileLocal(p.id)}
                             className={`relative rounded-xl p-3 border-2 text-left transition-all ${riskProfileLocal===p.id?"border-blue-500 bg-blue-500/[0.08]":"border-[#1a1f2e] bg-[#0b0f1a] hover:border-blue-500/30"}`}>
@@ -2234,10 +2234,13 @@ export default function ClientDashboardPage() {
                 <div className="space-y-4">
                   {/* ── 5 KPI cards ── */}
                   {(()=>{
+                    // Profile scaling: Conservador 0.75×, Moderado 1×, Dinâmico 1.25×
+                    const pf=riskProfileLocal==="conservador"?0.75:riskProfileLocal==="dinamico"?1.25:1.0;
+                    const profLabel=riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado";
                     const ytdPct=perfData?.ytdRet??0;
                     const totalPct=perfData?.m.ret??0;
-                    const vol=perfData?.curVol??0;
-                    const dd=perfData?.curDD??0;
+                    const vol=(perfData?.curVol??0)*pf;
+                    const dd=(perfData?.curDD??0)*pf;
                     const fmtP=(v:number,s=false)=>`${s&&v>=0?"+":""}${v.toFixed(2)}%`;
                     const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
                     return (
@@ -2249,9 +2252,10 @@ export default function ClientDashboardPage() {
                            icon:<TrendingUp size={16} className="text-emerald-400"/>,c:ytdPct>=0?"text-emerald-400":"text-red-400"},
                           {label:"Retorno desde início",val:fmtP(totalPct,true),sub:`+ € ${fmtE(aum*(totalPct/100))} `,
                            icon:<Activity size={16} className="text-blue-400"/>,c:totalPct>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Risco (Volatilidade anual)",val:vol>0?`${vol.toFixed(1)}%`:"—",sub:"Alinhado com o perfil "+( riskProfileLocal==="conservador"?"conservador":riskProfileLocal==="dinamico"?"dinâmico":"moderado"),
+                          {label:"Risco (Volatilidade anual)",val:vol>0?`${vol.toFixed(1)}%`:"—",
+                           sub:`Perfil ${profLabel} · ${pf<1?"0,75× vol base":pf>1?"1,25× vol base":"1× vol base"}`,
                            icon:<ShieldCheck size={16} className="text-amber-400"/>,c:"text-amber-400"},
-                          {label:"Máximo drawdown",val:dd!==0?fmtP(dd):"—",sub:"Desde início",
+                          {label:"Máximo drawdown",val:dd!==0?fmtP(dd):"—",sub:`Perfil ${profLabel}`,
                            icon:<TrendingDown size={16} className="text-red-400"/>,c:"text-red-400"},
                         ].map(k=>(
                           <div key={k.label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
@@ -2429,10 +2433,10 @@ export default function ClientDashboardPage() {
                           <Info size={12} className="text-slate-600"/>
                         </div>
                         {[
-                          {icon:"🎯",label:"Objetivo",val:riskProfileLocal==="conservador"?"Preservação de capital com crescimento moderado":riskProfileLocal==="dinamico"?"Crescimento agressivo do capital":"Crescimento do capital com risco moderado"},
-                          {icon:"📊",label:"Volatilidade alvo",val:riskProfileLocal==="conservador"?"5% – 10% ao ano":riskProfileLocal==="dinamico"?"16% – 25% ao ano":"10% – 16% ao ano"},
+                          {icon:"🎯",label:"Objetivo",val:riskProfileLocal==="conservador"?"Crescimento com menor volatilidade (0,75× vol base)":riskProfileLocal==="dinamico"?"Máximo potencial de retorno (1,25× vol base)":"Equilíbrio risco/retorno (vol base do modelo)"},
+                          {icon:"📊",label:"Volatilidade alvo",val:riskProfileLocal==="conservador"?`~${((perfData?.curVol??14)*0.75).toFixed(1)}% aa (0,75× vol do modelo)`:riskProfileLocal==="dinamico"?`~${((perfData?.curVol??14)*1.25).toFixed(1)}% aa (1,25× vol do modelo)`:`~${(perfData?.curVol??14).toFixed(1)}% aa (vol do modelo)`},
                           {icon:"⏳",label:"Horizonte temporal",val:"Médio / Longo prazo (3+ anos)"},
-                          {icon:"🌍",label:"Exposição típica",val:riskProfileLocal==="conservador"?"40% Ações | 50% Obrigações | 10% Alt.":riskProfileLocal==="dinamico"?"85% Ações | 5% Obrigações | 10% Alt.":"60% Ações | 30% Obrigações | 10% Alt."},
+                          {icon:"🌍",label:"Composição",val:"Ações globais + XEON (MM Euro) — sem obrigações nem alternativos"},
                         ].map(x=>(
                           <div key={x.label} className="flex items-start gap-2 mb-3 last:mb-0">
                             <span className="text-sm shrink-0 mt-0.5">{x.icon}</span>
