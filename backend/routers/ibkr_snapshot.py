@@ -10,6 +10,7 @@ from ib_insync import IB, ContractDetails, Stock
 from pydantic import BaseModel
 
 from ib_socket_env import ib_socket_host, ib_socket_port
+from ib_insync_thread_loop import ensure_ib_insync_loop, teardown_ib_insync_loop
 from ibkr_internal_routing import (
     ibkr_per_request_routing_enabled,
     ibkr_routing_secret_configured,
@@ -364,9 +365,11 @@ def _snapshot_rejected(msg: str) -> dict:
 
 def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
     """Lógica completa do snapshot — corre numa thread isolada (sem event loop AnyIO activo)."""
+    created_loop, _loop = ensure_ib_insync_loop()
     try:
         ib = _connect_ib(ib_host, ib_port, ib_client_id)
     except Exception as e:
+        teardown_ib_insync_loop(created_loop, _loop)
         loc = f"{ib_host}:{ib_port} (clientId={ib_client_id})"
         detail = (str(e) or "").strip() or repr(e) or type(e).__name__
         return {
@@ -469,8 +472,12 @@ def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
             },
         }
     finally:
-        if ib.isConnected():
-            ib.disconnect()
+        try:
+            if ib.isConnected():
+                ib.disconnect()
+        except Exception:
+            pass
+        teardown_ib_insync_loop(created_loop, _loop)
 
 
 @router.post("/api/ibkr-snapshot")
