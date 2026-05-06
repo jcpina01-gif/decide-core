@@ -1749,37 +1749,6 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
         <ArrowUpRight size={12} className="rotate-[225deg]"/>Voltar ao plano
       </button>
 
-      {/* Done banner */}
-      {done&&(
-        <div className="flex items-center justify-between gap-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-5 py-4">
-          <div className="flex items-center gap-3">
-            <CheckCircle2 size={20} className="text-emerald-400 shrink-0"/>
-            <div>
-              <div className="text-sm font-bold text-emerald-300">Ordens enviadas com sucesso!</div>
-              {orderRef&&<div className="text-[10px] text-slate-500 mt-0.5">Referência: <span className="font-mono text-slate-300">{orderRef}</span></div>}
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={onBack} className="px-4 py-2 text-xs font-semibold text-slate-300 border border-[#1a1f2e] bg-[#0b0f1a] rounded-lg hover:bg-[#111827] transition-colors">Ver Recomendações</button>
-            <button onClick={()=>{setDone(false);setOrderRef("");}} className="px-4 py-2 text-xs font-semibold text-blue-400 border border-blue-500/30 bg-blue-600/10 rounded-lg hover:bg-blue-600/20 transition-colors">Nova submissão</button>
-          </div>
-        </div>
-      )}
-
-      {/* Error banner — shown inline, page stays visible */}
-      {errMsg&&!done&&(
-        <div className="flex items-start justify-between gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
-          <div className="flex items-start gap-2">
-            <AlertTriangle size={15} className="text-red-400 shrink-0 mt-0.5"/>
-            <div>
-              <div className="text-xs font-bold text-red-300 mb-0.5">Erro ao enviar ordens</div>
-              <div className="text-[10px] text-slate-400">{errMsg}</div>
-            </div>
-          </div>
-          <button onClick={()=>setErrMsg("")} className="text-slate-500 hover:text-slate-300 shrink-0 mt-0.5"><X size={14}/></button>
-        </div>
-      )}
-
       {/* Step progress */}
       <div className="flex items-center gap-0 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-6 py-4">
         {stepsDef.map((s,i)=>(
@@ -1859,7 +1828,7 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
                     return (
                       <tr key={r.ticker} className="border-b border-[#111520] hover:bg-white/[0.02]">
                         <td className="py-2.5">
-                          <a href={`https://finance.yahoo.com/quote/${r.ticker}`} target="_blank" rel="noopener noreferrer"
+                          <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
                             className="font-bold text-blue-400 hover:underline">{r.ticker}</a>
                         </td>
                         <td className="py-2.5">
@@ -1903,6 +1872,82 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
             </button>
           </div>
 
+          {/* Error banner */}
+          {errMsg&&!done&&(
+            <div className="flex items-start justify-between gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5"/>
+                <div>
+                  <div className="text-xs font-bold text-red-300 mb-0.5">Erro ao enviar ordens</div>
+                  <div className="text-[10px] text-slate-400 leading-snug">{errMsg}</div>
+                </div>
+              </div>
+              <button onClick={()=>setErrMsg("")} className="text-slate-500 hover:text-slate-300 shrink-0 mt-0.5"><X size={14}/></button>
+            </div>
+          )}
+
+          {/* Sending progress bar */}
+          {sending&&(
+            <div className="bg-[#0b0f1a] border border-blue-500/30 rounded-xl px-5 py-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="inline-block animate-spin text-blue-400 text-lg">⟳</span>
+                <div>
+                  <div className="text-sm font-bold text-slate-200">A enviar ordens para a Interactive Brokers…</div>
+                  <div className="text-[10px] text-slate-500">Aguarde, não feche esta janela.</div>
+                </div>
+              </div>
+              <div className="w-full bg-[#1a1f2e] rounded-full h-1.5 overflow-hidden">
+                <div className="h-full bg-blue-500 rounded-full animate-pulse" style={{width:"60%"}}/>
+              </div>
+              <div className="grid grid-cols-4 gap-2 text-center">
+                {["Validação","Envio","Execução","Confirmação"].map((s,i)=>(
+                  <div key={s} className="flex flex-col items-center gap-1">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border ${i===0?"bg-blue-600 border-blue-500 text-white animate-pulse":"bg-[#111827] border-[#252a3a] text-slate-600"}`}>{i+1}</div>
+                    <span className={`text-[9px] ${i===0?"text-blue-400":"text-slate-600"}`}>{s}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Results panel — shown after successful send */}
+          {done&&(
+            <div className="bg-[#0b0f1a] border border-emerald-500/30 rounded-xl p-5 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                  <CheckCircle2 size={18} className="text-emerald-400"/>
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-emerald-300">Ordens submetidas com sucesso</div>
+                  <div className="text-[10px] text-slate-500">A IB irá executar ao melhor preço disponível no mercado.</div>
+                </div>
+                {orderRef&&<span className="ml-auto text-[10px] font-mono text-slate-400 border border-[#252a3a] px-2 py-1 rounded">{orderRef}</span>}
+              </div>
+              <div className="grid grid-cols-3 gap-3 border-t border-[#1a1f2e] pt-4">
+                <div className="text-center">
+                  <div className="text-[9px] text-slate-500 mb-1">Ordens enviadas</div>
+                  <div className="text-lg font-black text-slate-100">{nOrdens}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-[9px] text-slate-500 mb-1">Modo</div>
+                  <div className={`text-sm font-bold ${paperMode?"text-blue-400":"text-emerald-400"}`}>{paperMode?"Paper":"Real"}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-[9px] text-slate-500 mb-1">Estado</div>
+                  <div className="text-sm font-bold text-emerald-400">Pendente execução</div>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={onBack} className="flex-1 py-2 text-xs font-semibold text-slate-300 border border-[#1a1f2e] bg-[#080c14] rounded-lg hover:bg-[#111827] transition-colors">
+                  Ver Recomendações
+                </button>
+                <button onClick={()=>{setDone(false);setOrderRef("");setErrMsg("");}} className="flex-1 py-2 text-xs font-semibold text-blue-400 border border-blue-500/30 bg-blue-600/10 rounded-lg hover:bg-blue-600/20 transition-colors">
+                  Nova submissão
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Action buttons */}
           <div className="flex gap-3">
             <button onClick={onBack} className="px-6 py-3 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">
@@ -1910,11 +1955,7 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
             </button>
             <button onClick={submitOrders} disabled={sending||nOrdens===0||done}
               className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all shadow-lg shadow-emerald-900/30">
-              {sending?(
-                <><span className="inline-block animate-spin">⟳</span> A enviar ordens…</>
-              ):(
-                <><Send size={15}/>{paperMode?"Simular envio para IB →":"Confirmar e enviar ordens para IB →"}</>
-              )}
+              <Send size={15}/>{paperMode?"Simular envio para IB →":"Confirmar e enviar ordens para IB →"}
             </button>
           </div>
           <p className="text-center text-[10px] text-slate-600 flex items-center justify-center gap-1">
