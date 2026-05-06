@@ -3571,6 +3571,7 @@ export default function ClientDashboardPage() {
                       </tbody>
                     </table>
                   </div>
+                  </div>}{/* end cartTab==="plano" */}
                 </div>
               )}
 
@@ -3833,9 +3834,6 @@ export default function ClientDashboardPage() {
                   </div>
                 );
               })()}
-                  </div>}{/* end cartTab==="plano" */}
-                </div>
-              )}{/* end activePage==="carteira" */}
 
               {/* ── HISTÓRICO ── */}
               {activePage==="historico"&&<HistoricoPage sortedMonths={sortedMonths} dates={dates} equityRaw={equityRaw}/>}
