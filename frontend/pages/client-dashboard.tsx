@@ -1698,6 +1698,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [done,setDone]=React.useState(false);
   const [errMsg,setErrMsg]=React.useState("");
   const [orderRef,setOrderRef]=React.useState("");
+  const [fills,setFills]=React.useState<{ticker:string;action:string;requested_qty:number;filled:number;avg_fill_price?:number;status:string;message?:string}[]>([]);
   const [paperMode,setPaperMode]=React.useState(true);
   // "full" = send entire plan (all positions); "delta" = send only this month's changes
   const [execMode,setExecMode]=React.useState<"full"|"delta">("full");
@@ -1818,6 +1819,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
       if(resp.ok){
         const j=await resp.json().catch(()=>({}));
         setOrderRef(j.order_ref??"ORD-"+Date.now().toString(36).toUpperCase());
+        setFills(j.fills??[]);
         setDone(true);
       } else {
         const j=await resp.json().catch(()=>({}));
@@ -2130,22 +2132,64 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
               <div className="grid grid-cols-3 gap-3 border-t border-[#1a1f2e] pt-4">
                 <div className="text-center">
                   <div className="text-[9px] text-slate-500 mb-1">Ordens enviadas</div>
-                  <div className="text-lg font-black text-slate-100">{nOrdens}</div>
+                  <div className="text-lg font-black text-slate-100">{fills.length>0?fills.filter(f=>!["skip_zero","skip_sell_no_long","contract_not_qualified"].includes(f.status)).length:nOrdens}</div>
                 </div>
                 <div className="text-center">
                   <div className="text-[9px] text-slate-500 mb-1">Modo</div>
                   <div className={`text-sm font-bold ${paperMode?"text-amber-400":"text-emerald-400"}`}>{paperMode?"Simulação local":"Envia à IB"}</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-[9px] text-slate-500 mb-1">Estado</div>
-                  <div className="text-sm font-bold text-emerald-400">Pendente execução</div>
+                  <div className="text-[9px] text-slate-500 mb-1">Preenchidas</div>
+                  <div className="text-sm font-bold text-emerald-400">{fills.length>0?fills.filter(f=>f.status==="Filled").length+" / "+fills.length:"Pendente"}</div>
                 </div>
               </div>
+
+              {/* Execution table */}
+              {fills.length>0&&(
+                <div className="border-t border-[#1a1f2e] pt-3">
+                  <div className="font-semibold text-slate-300 text-xs mb-2">Detalhe de execução</div>
+                  <div className="overflow-auto max-h-72 rounded-lg border border-[#1a1f2e]">
+                    <table className="w-full text-[11px]">
+                      <thead className="sticky top-0 bg-[#0b0f1a]">
+                        <tr className="text-slate-500 border-b border-[#1a1f2e]">
+                          <th className="text-left px-3 py-2">Ticker</th>
+                          <th className="text-left px-2 py-2">Acção</th>
+                          <th className="text-right px-2 py-2">Qtd pedida</th>
+                          <th className="text-right px-2 py-2">Qtd exec.</th>
+                          <th className="text-right px-2 py-2">Preço médio</th>
+                          <th className="text-left px-3 py-2">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fills.map((f,i)=>{
+                          const skipped=["skip_zero","skip_sell_no_long","contract_not_qualified"].includes(f.status);
+                          const filled=f.status==="Filled";
+                          return(
+                            <tr key={i} className={`border-b border-[#1a1f2e] ${skipped?"opacity-40":""} ${i%2===0?"":"bg-[#080c14]"}`}>
+                              <td className="px-3 py-1.5 font-bold text-blue-400">{f.ticker}</td>
+                              <td className={`px-2 py-1.5 font-semibold ${f.action==="BUY"?"text-emerald-400":"text-red-400"}`}>{f.action==="BUY"?"Comprar":"Vender"}</td>
+                              <td className="px-2 py-1.5 text-right text-slate-400">{f.requested_qty}</td>
+                              <td className="px-2 py-1.5 text-right text-slate-200 font-semibold">{f.filled||"—"}</td>
+                              <td className="px-2 py-1.5 text-right text-slate-300">{f.avg_fill_price?f.avg_fill_price.toFixed(2):"—"}</td>
+                              <td className="px-3 py-1.5">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${filled?"bg-emerald-900/40 text-emerald-300":skipped?"bg-slate-800 text-slate-500":"bg-amber-900/40 text-amber-300"}`}>
+                                  {filled?"Preenchida":skipped?"Ignorada":f.status}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-2 pt-1">
                 <button onClick={onBack} className="flex-1 py-2 text-xs font-semibold text-slate-300 border border-[#1a1f2e] bg-[#080c14] rounded-lg hover:bg-[#111827] transition-colors">
                   Ver Recomendações
                 </button>
-                <button onClick={()=>{setDone(false);setOrderRef("");setErrMsg("");}} className="flex-1 py-2 text-xs font-semibold text-blue-400 border border-blue-500/30 bg-blue-600/10 rounded-lg hover:bg-blue-600/20 transition-colors">
+                <button onClick={()=>{setDone(false);setOrderRef("");setErrMsg("");setFills([]);}} className="flex-1 py-2 text-xs font-semibold text-blue-400 border border-blue-500/30 bg-blue-600/10 rounded-lg hover:bg-blue-600/20 transition-colors">
                   Nova submissão
                 </button>
               </div>
