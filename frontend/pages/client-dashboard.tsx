@@ -2290,183 +2290,217 @@ export default function ClientDashboardPage() {
                     );
                   })()}
 
-                  {/* ── Main 2-col layout ── */}
+                  {/* ── Row 2: action-count badges + últimas recomendações ── */}
                   <div className="grid grid-cols-3 gap-4">
 
-                    {/* LEFT col (2/3): chart + recs */}
-                    <div className="col-span-2 space-y-4">
+                    {/* Últimas recomendações (2/3) */}
+                    <div className="col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="font-bold text-slate-200 text-sm flex items-center gap-2">Últimas recomendações<Info size={12} className="text-slate-600"/></div>
+                        <button onClick={()=>setActivePage("reco")} className="text-[10px] text-blue-400 hover:underline flex items-center gap-1">Ver todas<ArrowUpRight size={11}/></button>
+                      </div>
+                      {recoLoading?(
+                        <div className="text-slate-500 text-sm text-center py-4">A carregar…</div>
+                      ):(
+                        <table className="w-full text-xs">
+                          <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
+                            <th className="pb-2 font-semibold">Ativo</th>
+                            <th className="pb-2 font-semibold">Ação</th>
+                            <th className="pb-2 font-semibold text-right">Δ Peso</th>
+                            <th className="pb-2 font-semibold text-right">Estado</th>
+                          </tr></thead>
+                          <tbody>
+                            {actionCounts.rows.slice(0,7).map(r=>{
+                              const isBuy=r.action==="Comprar"; const isUp=r.action==="Aumentar";
+                              const isSell=r.action==="Vender"; const isDown=r.action==="Reduzir";
+                              const acColor=isBuy?"bg-emerald-500/20 text-emerald-300 border border-emerald-500/30":isUp?"bg-cyan-500/20 text-cyan-300 border border-cyan-500/30":isSell?"bg-red-500/20 text-red-300 border border-red-500/30":isDown?"bg-amber-500/20 text-amber-300 border border-amber-500/30":"bg-slate-700/40 text-slate-400";
+                              const acIcon=isBuy?"↑":isUp?"↗":isSell?"↓":isDown?"↙":"→";
+                              return (
+                                <tr key={r.ticker} className="border-b border-[#111520] hover:bg-white/[0.02]">
+                                  <td className="py-2">
+                                    <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer" className="font-bold text-blue-400 hover:underline">{r.ticker}</a>
+                                    {getCompany(r.ticker)&&<span className="ml-1 text-slate-500 text-[10px]">{getCompany(r.ticker)}</span>}
+                                  </td>
+                                  <td className="py-2">
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${acColor}`}>
+                                      <span className="font-black">{acIcon}</span>{r.action}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 text-right text-slate-400">{r.delta>0?"+":""}{r.delta.toFixed(2)}%</td>
+                                  <td className="py-2 text-right"><span className={`px-2 py-0.5 rounded-full text-[10px] ${loggedIn?"bg-emerald-500/20 text-emerald-300":"bg-amber-500/20 text-amber-300"}`}>{loggedIn?"Aplicada":"Pendente"}</span></td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
 
-                      {/* Evolução da carteira */}
-                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="font-bold text-slate-200 text-sm flex items-center gap-2">Evolução da carteira<Info size={12} className="text-slate-600"/></div>
+                    {/* Action count badges (1/3) */}
+                    <div className="space-y-3">
+                      {(()=>{
+                        const buy =actionCounts.rows.filter(r=>r.action==="Comprar").length;
+                        const up  =actionCounts.rows.filter(r=>r.action==="Aumentar").length;
+                        const down=actionCounts.rows.filter(r=>r.action==="Reduzir").length;
+                        const sell=actionCounts.rows.filter(r=>r.action==="Vender").length;
+                        const hold=actionCounts.rows.filter(r=>r.action==="Manter").length;
+                        return [
+                          {label:"Comprar",  n:buy,  icon:"↑",  bg:"bg-emerald-500/10", border:"border-emerald-500/25", tc:"text-emerald-300", nc:"text-emerald-400"},
+                          {label:"Aumentar", n:up,   icon:"↗",  bg:"bg-cyan-500/10",    border:"border-cyan-500/25",    tc:"text-cyan-300",    nc:"text-cyan-400"},
+                          {label:"Reduzir",  n:down, icon:"↙",  bg:"bg-amber-500/10",   border:"border-amber-500/25",   tc:"text-amber-300",   nc:"text-amber-400"},
+                          {label:"Vender",   n:sell, icon:"↓",  bg:"bg-red-500/10",     border:"border-red-500/25",     tc:"text-red-300",     nc:"text-red-400"},
+                          {label:"Manter",   n:hold, icon:"→",  bg:"bg-slate-700/30",   border:"border-slate-600/30",   tc:"text-slate-400",   nc:"text-slate-300"},
+                        ].map(x=>(
+                          <div key={x.label} className={`flex items-center justify-between rounded-xl px-4 py-3 ${x.bg} border ${x.border}`}>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-lg font-black leading-none ${x.nc}`}>{x.icon}</span>
+                              <span className={`text-xs font-semibold ${x.tc}`}>{x.label}</span>
+                            </div>
+                            <span className={`text-2xl font-black ${x.nc}`}>{x.n}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* ── Row 3: charts side by side ── */}
+                  <div className="grid grid-cols-3 gap-4">
+
+                    {/* Performance chart (2/3) */}
+                    <div className="col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="font-bold text-slate-200 text-sm flex items-center gap-2">Evolução da carteira<Info size={12} className="text-slate-600"/></div>
+                        <div className="flex items-center gap-3">
+                          {perfData&&(
+                            <div className="flex gap-4 mr-2">
+                              <div className="text-right">
+                                <div className="text-[9px] text-slate-500">YTD</div>
+                                <div className={`font-black text-sm ${scaledYtd>=0?"text-emerald-400":"text-red-400"}`}>{scaledYtd>=0?"+":""}{scaledYtd.toFixed(2)}%</div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-[9px] text-slate-500">CAGR</div>
+                                <div className={`font-black text-sm ${scaledAnn>=0?"text-emerald-400":"text-red-400"}`}>{scaledAnn>=0?"+":""}{scaledAnn.toFixed(2)}%</div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-[9px] text-slate-500">Sharpe</div>
+                                <div className="font-black text-sm text-slate-100">{perfData.m.shp.toFixed(2)}</div>
+                              </div>
+                            </div>
+                          )}
                           <div className="flex gap-1">
                             {(["YTD","1 Ano","3 Anos","20 Anos"] as Period[]).map(p=>(
                               <button key={p} onClick={()=>setPeriod(p)}
-                                className={`px-2.5 py-1 text-[10px] font-semibold rounded transition-colors ${period===p?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>{p==="20 Anos"?"Desde início":p}</button>
+                                className={`px-2 py-1 text-[10px] font-semibold rounded transition-colors ${period===p?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>{p==="20 Anos"?"Início":p}</button>
                             ))}
                           </div>
                         </div>
-                        {perfData&&(
-                          <div className="flex gap-6 mb-3">
-                            <div className="text-right">
-                              <div className="text-[10px] text-slate-500">Variação YTD</div>
-                              <div className={`font-black text-lg ${scaledYtd>=0?"text-emerald-400":"text-red-400"}`}>{scaledYtd>=0?"+":""}{scaledYtd.toFixed(2)}%</div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-[10px] text-slate-500">Retorno anualizado</div>
-                              <div className={`font-black text-lg ${scaledAnn>=0?"text-emerald-400":"text-red-400"}`}>{scaledAnn>=0?"+":""}{scaledAnn.toFixed(2)}%</div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-[10px] text-slate-500">Sharpe</div>
-                              <div className="font-black text-lg text-slate-100">{perfData.m.shp.toFixed(2)}</div>
-                            </div>
-                          </div>
-                        )}
-                        <ResponsiveContainer width="100%" height={200}>
-                          <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
-                            <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}/>
-                            <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}} width={44}/>
-                            <Tooltip content={<PerfTooltip/>}/>
-                            <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
-                            <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2} dot={false} name="A sua carteira"/>
-                            <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name={BENCH_SHORT} strokeDasharray="4 2"/>
-                          </LineChart>
-                        </ResponsiveContainer>
-                        <div className="flex items-center gap-4 mt-2">
-                          <div className="flex items-center gap-2 text-[10px] text-slate-400"><div className="w-4 h-0.5 bg-blue-400 rounded"/>A sua carteira</div>
-                          <div className="flex items-center gap-2 text-[10px] text-slate-400"><div className="w-4 h-px bg-slate-500 rounded"/>Benchmark (60/40)</div>
-                        </div>
-                        <div className="mt-3 flex items-start gap-2 bg-blue-500/[0.05] border border-blue-500/15 rounded-lg px-3 py-2">
-                          <Info size={11} className="text-blue-400 shrink-0 mt-0.5"/>
-                          <div className="text-[10px] text-slate-400">
-                            O desempenho da sua carteira está em linha com o objetivo do perfil <span className="font-bold text-blue-300">{riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado"}</span>.{" "}
-                            <button onClick={()=>setConfigPanelOpen(true)} className="text-blue-400 hover:underline">Saiba mais sobre o seu perfil →</button>
-                          </div>
-                        </div>
                       </div>
-
-                      {/* Últimas recomendações */}
-                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="font-bold text-slate-200 text-sm flex items-center gap-2">Últimas recomendações<Info size={12} className="text-slate-600"/></div>
-                          <button onClick={()=>setActivePage("reco")} className="text-[10px] text-blue-400 hover:underline flex items-center gap-1">Ver todas as recomendações<ArrowUpRight size={11}/></button>
-                        </div>
-                        {recoLoading?(
-                          <div className="text-slate-500 text-sm text-center py-4">A carregar…</div>
-                        ):(
-                          <table className="w-full text-xs">
-                            <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
-                              <th className="pb-2 font-semibold">Data</th>
-                              <th className="pb-2 font-semibold">Ativo</th>
-                              <th className="pb-2 font-semibold">Ação</th>
-                              <th className="pb-2 font-semibold text-right">Impacto esperado</th>
-                              <th className="pb-2 font-semibold text-right">Estado</th>
-                            </tr></thead>
-                            <tbody>
-                              {actionCounts.rows.slice(0,5).map(r=>{
-                                const acColor=r.action==="Comprar"?"bg-emerald-500/20 text-emerald-300":r.action==="Aumentar"?"bg-cyan-500/20 text-cyan-300":r.action==="Vender"?"bg-red-500/20 text-red-300":"bg-amber-500/20 text-amber-300";
-                                return (
-                                  <tr key={r.ticker} className="border-b border-[#111520] hover:bg-white/[0.02]">
-                                    <td className="py-2 text-slate-500">{recoLabel}</td>
-                                    <td className="py-2">
-                                      <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer" className="font-bold text-blue-400 hover:underline">{r.ticker}</a>
-                                      {getCompany(r.ticker)&&<span className="ml-1 text-slate-500 text-[10px]">{getCompany(r.ticker)}</span>}
-                                    </td>
-                                    <td className="py-2"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${acColor}`}>{r.action}</span></td>
-                                    <td className="py-2 text-right text-slate-400">{r.delta>0?"+":""}{r.delta.toFixed(2)}%</td>
-                                    <td className="py-2 text-right"><span className={`px-2 py-0.5 rounded-full text-[10px] ${loggedIn?"bg-emerald-500/20 text-emerald-300":"bg-amber-500/20 text-amber-300"}`}>{loggedIn?"Aplicada":"Pendente"}</span></td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        )}
+                      <ResponsiveContainer width="100%" height={190}>
+                        <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
+                          <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}/>
+                          <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}} width={44}/>
+                          <Tooltip content={<PerfTooltip/>}/>
+                          <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
+                          <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2} dot={false} name="A sua carteira"/>
+                          <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name={BENCH_SHORT} strokeDasharray="4 2"/>
+                        </LineChart>
+                      </ResponsiveContainer>
+                      <div className="flex items-center gap-4 mt-2">
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400"><div className="w-4 h-0.5 bg-blue-400 rounded"/>A sua carteira</div>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400"><div className="w-4 h-px bg-slate-500 rounded"/>Benchmark (60/40)</div>
                       </div>
                     </div>
 
-                    {/* RIGHT col (1/3): allocation + positions + profile summary */}
-                    <div className="space-y-4">
-
-                      {/* Alocação da carteira donut */}
-                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                        <div className="font-bold text-slate-200 text-sm mb-4 flex items-center gap-2">Alocação da carteira<Info size={12} className="text-slate-600"/></div>
-                        {sectorData.length>0?(
-                          <div className="flex flex-col items-center gap-3">
-                            <div className="relative">
-                              <ResponsiveContainer width={140} height={140}>
-                                <PieChart>
-                                  <Pie data={sectorData.slice(0,6)} cx="50%" cy="50%" innerRadius={42} outerRadius={65} dataKey="value" strokeWidth={0} paddingAngle={2}>
-                                    {sectorData.slice(0,6).map((_,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
-                                  </Pie>
-                                  <Tooltip formatter={(v:number)=>`${v}%`} contentStyle={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,fontSize:11}}/>
-                                </PieChart>
-                              </ResponsiveContainer>
-                              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                <div className="text-xs font-bold text-slate-200">{aum.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-                                <div className="text-[8px] text-slate-500">Total</div>
-                              </div>
-                            </div>
-                            <div className="w-full space-y-1.5">
-                              {sectorData.slice(0,6).map((s,i)=>(
-                                <div key={s.name} className="flex items-center justify-between text-[10px]">
-                                  <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-sm shrink-0" style={{background:PIE_COLORS[i%PIE_COLORS.length]}}/><span className="text-slate-400">{s.name}</span></div>
-                                  <span className="text-slate-300 font-semibold">{s.value}%</span>
-                                </div>
-                              ))}
+                    {/* Allocation donut (1/3) */}
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="font-bold text-slate-200 text-sm mb-3 flex items-center gap-2">Alocação da carteira<Info size={12} className="text-slate-600"/></div>
+                      {sectorData.length>0?(
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="relative">
+                            <ResponsiveContainer width={130} height={130}>
+                              <PieChart>
+                                <Pie data={sectorData.slice(0,6)} cx="50%" cy="50%" innerRadius={38} outerRadius={60} dataKey="value" strokeWidth={0} paddingAngle={2}>
+                                  {sectorData.slice(0,6).map((_,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
+                                </Pie>
+                                <Tooltip formatter={(v:number)=>`${v}%`} contentStyle={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,fontSize:11}}/>
+                              </PieChart>
+                            </ResponsiveContainer>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                              <div className="text-[10px] font-bold text-slate-200">{aum.toLocaleString("pt-PT",{maximumFractionDigits:0})}</div>
+                              <div className="text-[8px] text-slate-500">Total</div>
                             </div>
                           </div>
-                        ):(
-                          <div className="text-slate-500 text-xs text-center py-8">A carregar…</div>
-                        )}
-                      </div>
-
-                      {/* Principais posições */}
-                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="font-bold text-slate-200 text-sm">Principais posições</div>
-                          <button onClick={()=>setActivePage("carteira")} className="text-[10px] text-blue-400 hover:underline">Ver todas</button>
-                        </div>
-                        <div className="space-y-2">
-                          {(latestMonth?.rows??[])
-                            .filter(r=>r.weightPct>=1&&r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH")&&!r.ticker.startsWith("TBILL"))
-                            .sort((a,b)=>b.weightPct-a.weightPct).slice(0,4).map((r,i)=>(
-                            <div key={r.ticker} className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full shrink-0" style={{background:PIE_COLORS[i%PIE_COLORS.length]}}/>
-                                <div>
-                                  <div className="text-[11px] font-bold text-slate-200">{getCompany(r.ticker)||r.ticker}</div>
-                                  <div className="text-[9px] text-slate-500">{r.ticker} · {getSector(r.ticker)}</div>
-                                </div>
+                          <div className="w-full space-y-1.5">
+                            {sectorData.slice(0,6).map((s,i)=>(
+                              <div key={s.name} className="flex items-center justify-between text-[10px]">
+                                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-sm shrink-0" style={{background:PIE_COLORS[i%PIE_COLORS.length]}}/><span className="text-slate-400">{s.name}</span></div>
+                                <span className="text-slate-300 font-semibold">{s.value}%</span>
                               </div>
-                              <span className="text-[11px] font-bold text-slate-300">{r.weightPct.toFixed(1)}%</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Resumo do perfil */}
-                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                        <div className="font-bold text-slate-200 text-sm mb-3 flex items-center gap-2">
-                          Resumo do perfil {riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado"}
-                          <Info size={12} className="text-slate-600"/>
-                        </div>
-                        {[
-                          {icon:"🎯",label:"Objetivo",val:riskProfileLocal==="conservador"?"Crescimento com menor volatilidade (0,75× vol base)":riskProfileLocal==="dinamico"?"Máximo potencial de retorno (1,25× vol base)":"Equilíbrio risco/retorno (vol base do modelo)"},
-                          {icon:"📊",label:"Volatilidade alvo",val:`~${scaledVol.toFixed(1)}% aa (${profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×"} vol do modelo)`},
-                          {icon:"⏳",label:"Horizonte temporal",val:"Médio / Longo prazo (3+ anos)"},
-                          {icon:"🌍",label:"Composição",val:"Ações globais + XEON (MM Euro) — sem obrigações nem alternativos"},
-                        ].map(x=>(
-                          <div key={x.label} className="flex items-start gap-2 mb-3 last:mb-0">
-                            <span className="text-sm shrink-0 mt-0.5">{x.icon}</span>
-                            <div>
-                              <div className="text-[10px] text-slate-500 font-semibold">{x.label}</div>
-                              <div className="text-[11px] text-slate-300 leading-snug">{x.val}</div>
-                            </div>
+                            ))}
                           </div>
-                        ))}
-                        <button onClick={()=>setConfigPanelOpen(true)} className="mt-2 text-[10px] text-blue-400 hover:underline">Saiba mais sobre os perfis →</button>
+                        </div>
+                      ):(
+                        <div className="text-slate-500 text-xs text-center py-8">A carregar…</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ── Row 4: positions + profile summary ── */}
+                  <div className="grid grid-cols-3 gap-4">
+
+                    {/* Principais posições (2/3) */}
+                    <div className="col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="font-bold text-slate-200 text-sm">Principais posições</div>
+                        <button onClick={()=>setActivePage("carteira")} className="text-[10px] text-blue-400 hover:underline">Ver carteira completa</button>
                       </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(latestMonth?.rows??[])
+                          .filter(r=>r.weightPct>=1&&r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH")&&!r.ticker.startsWith("TBILL"))
+                          .sort((a,b)=>b.weightPct-a.weightPct).slice(0,6).map((r,i)=>{
+                            const acRow=actionCounts.rows.find(x=>x.ticker===r.ticker);
+                            const acIcon=acRow?.action==="Comprar"?"↑":acRow?.action==="Aumentar"?"↗":acRow?.action==="Vender"?"↓":acRow?.action==="Reduzir"?"↙":null;
+                            const acClr=acRow?.action==="Comprar"?"text-emerald-400":acRow?.action==="Aumentar"?"text-cyan-400":acRow?.action==="Vender"?"text-red-400":acRow?.action==="Reduzir"?"text-amber-400":"";
+                            return (
+                              <div key={r.ticker} className="flex items-center justify-between bg-[#111827] rounded-lg px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 rounded-full shrink-0" style={{background:PIE_COLORS[i%PIE_COLORS.length]}}/>
+                                  <div>
+                                    <div className="text-[11px] font-bold text-slate-200 flex items-center gap-1">
+                                      {getCompany(r.ticker)||r.ticker}
+                                      {acIcon&&<span className={`text-[11px] font-black ${acClr}`}>{acIcon}</span>}
+                                    </div>
+                                    <div className="text-[9px] text-slate-500">{r.ticker} · {getSector(r.ticker)}</div>
+                                  </div>
+                                </div>
+                                <span className="text-[11px] font-bold text-slate-300">{r.weightPct.toFixed(1)}%</span>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+
+                    {/* Resumo do perfil (1/3) */}
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="font-bold text-slate-200 text-sm mb-3 flex items-center gap-2">
+                        Perfil {riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado"}
+                        <Info size={12} className="text-slate-600"/>
+                      </div>
+                      {[
+                        {icon:"🎯",label:"Objetivo",val:riskProfileLocal==="conservador"?"Crescimento com menor volatilidade (0,75× vol base)":riskProfileLocal==="dinamico"?"Máximo potencial de retorno (1,25× vol base)":"Equilíbrio risco/retorno (vol base do modelo)"},
+                        {icon:"📊",label:"Volatilidade alvo",val:`~${scaledVol.toFixed(1)}% aa (${profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×"} vol do modelo)`},
+                        {icon:"⏳",label:"Horizonte",val:"Médio / Longo prazo (3+ anos)"},
+                        {icon:"🌍",label:"Composição",val:"Ações globais + XEON (MM Euro)"},
+                      ].map(x=>(
+                        <div key={x.label} className="flex items-start gap-2 mb-3 last:mb-0">
+                          <span className="text-sm shrink-0 mt-0.5">{x.icon}</span>
+                          <div>
+                            <div className="text-[10px] text-slate-500 font-semibold">{x.label}</div>
+                            <div className="text-[11px] text-slate-300 leading-snug">{x.val}</div>
+                          </div>
+                        </div>
+                      ))}
+                      <button onClick={()=>setConfigPanelOpen(true)} className="mt-2 text-[10px] text-blue-400 hover:underline">Saiba mais sobre os perfis →</button>
                     </div>
                   </div>
 
@@ -2491,7 +2525,7 @@ export default function ClientDashboardPage() {
                     </div>
                   </div>
 
-                </div>
+              </div>
               )}
 
               {/* ── RECOMENDAÇÕES ── */}
