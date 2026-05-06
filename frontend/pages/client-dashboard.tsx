@@ -1984,8 +1984,8 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
           {/* Paper mode toggle */}
           <div className="flex items-center justify-between bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-4 py-3">
             <div>
-              <div className="text-xs font-semibold text-slate-300">Modo paper trading</div>
-              <div className="text-[10px] text-slate-500">Simula o envio sem executar ordens reais na IB</div>
+              <div className="text-xs font-semibold text-slate-300">Simulação local (não envia à IB)</div>
+              <div className="text-[10px] text-slate-500">Ligado = apenas animação local, sem ordens reais · Desligado = envia ordens ao IB Gateway (paper ou real)</div>
             </div>
             <button onClick={()=>setPaperMode(v=>!v)}
               className={`w-11 h-6 rounded-full transition-colors relative ${paperMode?"bg-blue-600":"bg-slate-700"}`}>
@@ -2055,7 +2055,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                     className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 rounded-xl disabled:opacity-50 transition-colors">
                     {sellAllSending?<span className="animate-spin text-sm">⟳</span>:<Trash2 size={13}/>}
                     {sellAllSending?"A enviar ordens de venda…":
-                      paperMode?`Simular venda total (${ibkrPos.length} posições, TEST)`
+                      paperMode?`⚠ Desliga "Simulação local" para enviar ordens reais à IB`
                                :`⚠ Vender toda a carteira IB (${ibkrPos.length} posições) — TESTE`}
                   </button>
                 ):(
@@ -2136,7 +2136,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                 </div>
                 <div className="text-center">
                   <div className="text-[9px] text-slate-500 mb-1">Modo</div>
-                  <div className={`text-sm font-bold ${paperMode?"text-blue-400":"text-emerald-400"}`}>{paperMode?"Paper":"Real"}</div>
+                  <div className={`text-sm font-bold ${paperMode?"text-amber-400":"text-emerald-400"}`}>{paperMode?"Simulação local":"Envia à IB"}</div>
                 </div>
                 <div className="text-center">
                   <div className="text-[9px] text-slate-500 mb-1">Estado</div>
@@ -2159,9 +2159,9 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             <button onClick={onBack} className="px-6 py-3 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">
               Cancelar
             </button>
-            <button onClick={submitOrders} disabled={sending||nOrdens===0||done||aum<=0}
-              className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all shadow-lg shadow-emerald-900/30">
-              <Send size={15}/>{paperMode?"Simular envio para IB →":"Confirmar e enviar ordens para IB →"}
+            <button onClick={submitOrders} disabled={sending||nOrdens===0||done||aum<=0||paperMode}
+              className={`flex-1 flex items-center justify-center gap-2 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all ${paperMode?"bg-slate-700 cursor-not-allowed":"bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30"}`}>
+              <Send size={15}/>{paperMode?"Desliga 'Simulação local' para enviar à IB →":"Confirmar e enviar ordens para IB →"}
             </button>
           </div>
           <p className="text-center text-[10px] text-slate-600 flex items-center justify-center gap-1">
@@ -2276,7 +2276,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
               <div className="flex justify-between"><span>Perfil</span><span className="text-slate-300 font-semibold">{profileLabel}</span></div>
               <div className="flex justify-between"><span>Exposição FX</span><span className="text-slate-300 font-semibold capitalize">{fxExposure}</span></div>
               <div className="flex justify-between"><span>Margem</span><span className={`font-semibold ${marginEnabled?"text-amber-400":"text-slate-400"}`}>{marginEnabled?"Activa":"Desactivada"}</span></div>
-              <div className="flex justify-between"><span>Modo</span><span className={`font-semibold ${paperMode?"text-blue-400":"text-emerald-400"}`}>{paperMode?"Paper trading":"Real"}</span></div>
+              <div className="flex justify-between"><span>Modo</span><span className={`font-semibold ${paperMode?"text-amber-400":"text-emerald-400"}`}>{paperMode?"Simulação local":"Envia à IB"}</span></div>
             </div>
           </div>
         </div>
