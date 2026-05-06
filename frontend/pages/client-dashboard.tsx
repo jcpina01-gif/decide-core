@@ -2094,7 +2094,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                                   <td className="px-2 py-1 text-right text-slate-400">{f.avg_fill_price?f.avg_fill_price.toFixed(2):"—"}</td>
                                   <td className="px-3 py-1">
                                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${filled?"bg-emerald-900/40 text-emerald-300":skipped?"bg-slate-800 text-slate-500":"bg-amber-900/40 text-amber-300"}`}>
-                                      {filled?"Vendida":skipped?"Ignorada":f.status}
+                                      {filled?"Vendida":skipped?"Ignorada":f.status==="Submitted"?"Em curso":f.status}
                                     </span>
                                   </td>
                                 </tr>
@@ -2211,7 +2211,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                               <td className="px-2 py-1.5 text-right text-slate-300">{f.avg_fill_price?f.avg_fill_price.toFixed(2):"—"}</td>
                               <td className="px-3 py-1.5">
                                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${filled?"bg-emerald-900/40 text-emerald-300":skipped?"bg-slate-800 text-slate-500":"bg-amber-900/40 text-amber-300"}`}>
-                                  {filled?"Preenchida":skipped?"Ignorada":f.status}
+                                  {filled?"Preenchida":skipped?"Ignorada":f.status==="Submitted"?"Em curso":f.status}
                                 </span>
                               </td>
                             </tr>
