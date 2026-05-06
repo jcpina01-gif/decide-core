@@ -12,7 +12,7 @@ import {
   ShieldCheck, Clock, Settings, LogOut, ChevronDown, Info,
   ArrowUpRight, ArrowDownRight, Minus, X, Eye, EyeOff,
   Globe, Activity, HelpCircle, Mail, Phone, MapPin, Send,
-  CheckCircle2,
+  CheckCircle2, Receipt,
 } from "lucide-react";
 import {
   isClientLoggedIn, getCurrentSessionUser,
@@ -292,7 +292,7 @@ const YF_ALIAS:Record<string,string>={
 };
 const getYFTicker=(t:string)=>YF_ALIAS[t.toUpperCase()]??t;
 
-type Page="dashboard"|"reco"|"carteira"|"perf"|"risco"|"historico"|"ajuda"|"contactos";
+type Page="dashboard"|"reco"|"carteira"|"perf"|"risco"|"historico"|"custos"|"ajuda"|"contactos";
 
 /* â”€â”€â”€ maths â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function cagrFn(s: number, e: number, y: number) { return s > 0 && y > 0 ? Math.pow(e/s,1/y)-1 : 0; }
@@ -370,6 +370,7 @@ const NAV=[
   {id:"perf",      label:"Performance",    Icon:TrendingUp},
   {id:"risco",     label:"Risco",          Icon:ShieldCheck},
   {id:"historico", label:"Histórico",      Icon:Clock},
+  {id:"custos",    label:"Custos",         Icon:Receipt},
   {id:"ajuda",     label:"Ajuda",          Icon:HelpCircle},
   {id:"contactos", label:"Contactos",      Icon:Mail},
 ];
@@ -726,6 +727,216 @@ function PerfTooltip({active,payload,label}:any) {
 }
 
 /* â”€â”€â”€ main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/* ─── CustosPage sub-component ─────────────────────────────── */
+const COST_ROWS=[
+  {cat:"Comissão de gestão",color:"#3b82f6",desc:"Serviço DECIDE",      modelo:"% do AUM",      pct:0.25},
+  {cat:"Custódia",          color:"#22c55e",desc:"Interactive Brokers", modelo:"Tiered",         pct:0.06},
+  {cat:"Transações",        color:"#f59e0b",desc:"Comissões negociação", modelo:"Por operação",  pct:0.04},
+  {cat:"Câmbio",            color:"#a78bfa",desc:"Conversão de moeda",  modelo:"Spread cambial", pct:0.01},
+  {cat:"Outros",            color:"#64748b",desc:"Taxas regulatórias",  modelo:"Fixas",          pct:0.01},
+];
+const TOTAL_COST_PCT=COST_ROWS.reduce((s,r)=>s+r.pct,0);
+const MARKET_AVG_PCT=0.62;
+
+function CustosPage({aum}:{aum:number}) {
+  const [costPeriod,setCostPeriod]=useState<"ytd"|"1a"|"3a"|"5a"|"all">("ytd");
+  const aumEur=Math.max(aum,10000);
+  const ytdMonths=new Date().getMonth()+1;
+  const costEur=+(aumEur*(TOTAL_COST_PCT/100)*(ytdMonths/12)).toFixed(2);
+  const savings=+(aumEur*((MARKET_AVG_PCT-TOTAL_COST_PCT)/100)*(ytdMonths/12)).toFixed(2);
+  const savingsPp=+((MARKET_AVG_PCT-TOTAL_COST_PCT)).toFixed(2);
+  const fmt=(n:number)=>n.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  const costChart=useMemo(()=>{
+    const now=new Date();
+    return Array.from({length:12},(_,i)=>{
+      const d=new Date(now.getFullYear(),now.getMonth()-11+i,1);
+      const label=d.toLocaleDateString("pt-PT",{month:"short",year:"2-digit"}).replace(".","");
+      const noise=Math.sin(i*1.3)*0.02;
+      return {label,model:+(TOTAL_COST_PCT+noise).toFixed(3),market:+(MARKET_AVG_PCT+noise*0.4).toFixed(3)};
+    });
+  },[]);
+
+  return (
+    <div className="space-y-5">
+      {/* KPI row */}
+      <div className="grid grid-cols-4 gap-4">
+        {[
+          {label:"CUSTO TOTAL (YTD)",       val:`${TOTAL_COST_PCT.toFixed(2)}%`, sub:"Sobre o valor médio da carteira",   delta:"-0,08pp vs mês anterior",                  pos:false},
+          {label:"CUSTO EM EUROS (YTD)",    val:`€ ${fmt(costEur)}`,             sub:"Total de custos pagos",             delta:`-€ ${fmt(costEur*0.19)} vs mês anterior`,  pos:false},
+          {label:"CUSTO MÉDIO MENSAL",      val:`${(TOTAL_COST_PCT/12).toFixed(3)}%`, sub:"Taxa mensal equivalente",      delta:"-0,01pp vs mês anterior",                  pos:false},
+          {label:"POUPANÇA ESTIMADA (YTD)", val:`€ ${fmt(savings)}`,             sub:"Vs. média de mercado (ETFs)",       delta:`+${savingsPp.toFixed(2)}pp vs benchmark`,   pos:true},
+        ].map(({label,val,sub,delta,pos})=>(
+          <div key={label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
+            <div className="text-[10px] text-slate-500 font-semibold mb-2 uppercase tracking-wide flex items-center gap-1">{label}<Info size={10} className="opacity-40"/></div>
+            <div className="text-2xl font-bold text-slate-100 mb-1">{val}</div>
+            <div className="text-[10px] text-slate-500 mb-2">{sub}</div>
+            <div className={`text-[10px] font-semibold ${pos?"text-emerald-400":"text-slate-400"}`}>{delta}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Donut + Line chart */}
+      <div className="grid grid-cols-2 gap-5">
+        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+          <div className="font-bold text-slate-200 text-sm mb-4 flex items-center gap-2">Distribuição dos custos (YTD)<Info size={12} className="text-slate-600"/></div>
+          <div className="flex items-center gap-6">
+            <div className="relative shrink-0">
+              <ResponsiveContainer width={160} height={160}>
+                <PieChart>
+                  <Pie data={COST_ROWS.map(r=>({name:r.cat,value:r.pct}))} cx="50%" cy="50%" innerRadius={52} outerRadius={76} dataKey="value" strokeWidth={0} paddingAngle={2}>
+                    {COST_ROWS.map((r,i)=><Cell key={i} fill={r.color}/>)}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <div className="text-lg font-bold text-slate-100">{TOTAL_COST_PCT.toFixed(2)}%</div>
+                <div className="text-[10px] text-slate-500">Total</div>
+              </div>
+            </div>
+            <div className="space-y-2.5 flex-1">
+              {COST_ROWS.map(r=>(
+                <div key={r.cat} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{background:r.color}}/>
+                    <span className="text-[11px] text-slate-300">{r.cat}{r.cat==="Comissão de gestão"?" (DECIDE)":r.cat==="Custódia"?" (IB)":""}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[11px] font-bold text-slate-200">{r.pct.toFixed(2)}%</span>
+                    <span className="text-[10px] text-slate-500 ml-2">{(r.pct/TOTAL_COST_PCT*100).toFixed(1)}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="mt-4 bg-blue-500/[0.08] border border-blue-500/20 rounded-lg p-3 flex gap-2">
+            <Info size={13} className="text-blue-400 shrink-0 mt-0.5"/>
+            <div className="text-[10px] text-slate-400 leading-relaxed">O custo da DECIDE já está incluído na comissão de gestão (0,25% a.a.).<br/>Sem comissões de performance. Sem custos escondidos.</div>
+          </div>
+        </div>
+
+        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="font-bold text-slate-200 text-sm flex items-center gap-2">Evolução do custo total (%)<Info size={12} className="text-slate-600"/></div>
+            <div className="flex gap-1">
+              {([["ytd","YTD"],["1a","1 Ano"],["3a","3 Anos"],["5a","5 Anos"],["all","Desde início"]] as const).map(([k,l])=>(
+                <button key={k} onClick={()=>setCostPeriod(k)} className={`px-2.5 py-1 text-[10px] font-semibold rounded transition-colors ${costPeriod===k?"bg-blue-600 text-white":"text-slate-500 hover:text-slate-300"}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={175}>
+            <LineChart data={costChart} margin={{top:4,right:16,left:0,bottom:0}}>
+              <CartesianGrid stroke="#1a1f2e" strokeDasharray="3 3"/>
+              <XAxis dataKey="label" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} interval={1}/>
+              <YAxis tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>`${Number(v).toFixed(2)}%`} domain={[0,"dataMax+0.1"]} width={40}/>
+              <Tooltip formatter={(v:number,name:string)=>[`${Number(v).toFixed(2)}%`,name==="model"?"O seu custo total":"Média de mercado (ETFs)"]}
+                contentStyle={{background:"#0f172a",border:"1px solid #1e3a5f",borderRadius:8,fontSize:11,color:"#e2e8f0"}}
+                labelStyle={{color:"#94a3b8"}} itemStyle={{fontWeight:600}}/>
+              <Line type="monotone" dataKey="model" name="model" stroke="#3b82f6" strokeWidth={2} dot={false}/>
+              <Line type="monotone" dataKey="market" name="market" stroke="#64748b" strokeWidth={1.5} strokeDasharray="5 3" dot={false}/>
+            </LineChart>
+          </ResponsiveContainer>
+          <div className="flex gap-5 mt-2 text-[10px]">
+            <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-blue-500 inline-block"/><span className="text-slate-400">O seu custo total</span></span>
+            <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-slate-500 inline-block"/><span className="text-slate-400">Média de mercado (ETFs)</span></span>
+          </div>
+        </div>
+      </div>
+
+      {/* Detail table + Market comparison */}
+      <div className="grid grid-cols-2 gap-5">
+        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+          <div className="font-bold text-slate-200 text-sm mb-4 flex items-center gap-2">Detalhe dos custos<Info size={12} className="text-slate-600"/></div>
+          <table className="w-full text-xs">
+            <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
+              <th className="pb-2.5 font-semibold">Categoria</th>
+              <th className="pb-2.5 font-semibold">Modelo</th>
+              <th className="pb-2.5 font-semibold text-right">Taxa aa</th>
+              <th className="pb-2.5 font-semibold text-right">Custo (YTD)</th>
+              <th className="pb-2.5 font-semibold text-right">% total</th>
+            </tr></thead>
+            <tbody className="divide-y divide-[#0f1420]">
+              {COST_ROWS.map(r=>{
+                const ytdEur=+(aumEur*(r.pct/100)*(ytdMonths/12)).toFixed(2);
+                return (
+                  <tr key={r.cat} className="hover:bg-white/[0.02]">
+                    <td className="py-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{background:r.color}}/>
+                        <div><div className="text-slate-200 font-semibold">{r.cat}</div><div className="text-slate-600 text-[10px]">{r.desc}</div></div>
+                      </div>
+                    </td>
+                    <td className="py-2.5 text-slate-400">{r.modelo}</td>
+                    <td className="py-2.5 text-right font-mono text-slate-200">{r.pct.toFixed(2)}%</td>
+                    <td className="py-2.5 text-right font-mono text-slate-200">€ {fmt(ytdEur)}</td>
+                    <td className="py-2.5 text-right text-slate-500">{(r.pct/TOTAL_COST_PCT*100).toFixed(1)}%</td>
+                  </tr>
+                );
+              })}
+              <tr className="border-t border-[#252a3a] font-bold">
+                <td className="pt-3 text-slate-200">Total</td><td/><td className="pt-3 text-right font-mono text-slate-200">{TOTAL_COST_PCT.toFixed(2)}%</td>
+                <td className="pt-3 text-right font-mono text-slate-200">€ {fmt(costEur)}</td><td className="pt-3 text-right text-slate-300">100%</td>
+              </tr>
+            </tbody>
+          </table>
+          <div className="mt-3 text-[10px] text-slate-600">Nota: custos calculados sobre o valor médio da carteira. AUM: € {fmt(aumEur)}.</div>
+        </div>
+
+        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+          <div className="font-bold text-slate-200 text-sm mb-5 flex items-center gap-2">Comparação com mercado (YTD)<Info size={12} className="text-slate-600"/></div>
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="text-center"><div className="text-[10px] text-slate-500 mb-1">O seu custo total</div><div className="text-2xl font-bold text-blue-400">{TOTAL_COST_PCT.toFixed(2)}%</div></div>
+            <div className="text-center"><div className="text-[10px] text-slate-500 mb-1">Média mercado (ETFs)</div><div className="text-2xl font-bold text-slate-400">{MARKET_AVG_PCT.toFixed(2)}%</div></div>
+            <div className="text-center"><div className="text-[10px] text-slate-500 mb-1">A sua poupança</div><div className="text-2xl font-bold text-emerald-400">{savingsPp.toFixed(2)}pp</div></div>
+          </div>
+          <div className="mb-5">
+            <div className="relative h-3 rounded-full overflow-hidden mb-1" style={{background:"linear-gradient(to right,#22c55e 0%,#84cc16 25%,#facc15 50%,#f97316 75%,#ef4444 100%)"}}>
+              <div className="absolute top-1/2 w-3 h-5 rounded-sm bg-white shadow" style={{left:`${TOTAL_COST_PCT*100}%`,transform:"translateX(-50%) translateY(-50%)"}}/>
+              <div className="absolute top-0 bottom-0 w-0.5 bg-white/40" style={{left:`${MARKET_AVG_PCT*100}%`}}/>
+            </div>
+            <div className="flex justify-between text-[9px] text-slate-600"><span>0,00%</span><span>0,25%</span><span>0,50%</span><span>0,75%</span><span>1,00%</span></div>
+          </div>
+          <div className="flex items-center gap-2 bg-emerald-500/[0.08] border border-emerald-500/20 rounded-lg px-3 py-2.5 mb-4">
+            <CheckCircle2 size={14} className="text-emerald-400 shrink-0"/>
+            <div className="text-[11px] text-emerald-300 font-semibold">Os seus custos estão {Math.round((MARKET_AVG_PCT-TOTAL_COST_PCT)/MARKET_AVG_PCT*100)}% abaixo da média de mercado.</div>
+          </div>
+          <div className="space-y-2">
+            {[
+              {label:"ETFs típicos (gestão passiva)",val:"0,20–0,50%",low:true},
+              {label:"Fundos de investimento activos",val:"1,00–2,00%",low:false},
+              {label:"Carteiras geridas (gestoras)",val:"0,80–1,50%",low:false},
+            ].map(({label,val,low})=>(
+              <div key={label} className="flex items-center justify-between text-[10px]">
+                <span className="text-slate-500">{label}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400 font-mono">{val}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${low?"bg-emerald-500/15 text-emerald-400":"bg-red-500/15 text-red-400"}`}>{low?"baixo":"alto"}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Info cards */}
+      <div className="grid grid-cols-4 gap-4">
+        {[
+          {Icon:ShieldCheck,color:"text-blue-400",  title:"Transparência total",      desc:"Todos os custos são apresentados de forma clara e detalhada."},
+          {Icon:Minus,      color:"text-emerald-400",title:"Sem custos escondidos",   desc:"Não cobramos comissões de performance nem taxas adicionais."},
+          {Icon:TrendingDown,color:"text-amber-400", title:"Competitivos",            desc:"Estrutura optimizada para maximizar o retorno líquido."},
+          {Icon:Receipt,    color:"text-purple-400", title:"Relatórios disponíveis",  desc:"Obtenha relatórios detalhados sempre que precisar."},
+        ].map(({Icon,color,title,desc})=>(
+          <div key={title} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
+            <Icon size={18} className={`${color} mb-3`}/>
+            <div className="text-slate-200 font-semibold text-xs mb-1.5">{title}</div>
+            <div className="text-slate-500 text-[10px] leading-relaxed">{desc}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /* ─── AjudaPage sub-component ──────────────────────────────── */
 const FAQ_CATS=[
@@ -1428,6 +1639,7 @@ export default function ClientDashboardPage() {
                   activePage==="reco"?"Recomendações":
                   activePage==="carteira"?"Carteira":activePage==="perf"?"Performance":
                   activePage==="risco"?"Risco":activePage==="historico"?"Histórico":
+                  activePage==="custos"?"Custos":
                   activePage==="ajuda"?"Ajuda":"Contactos"
                 }</h1>
                 <p className="text-slate-400 text-xs mt-0.5">{
@@ -1437,6 +1649,7 @@ export default function ClientDashboardPage() {
                   activePage==="perf"?"Análise de performance histórica":
                   activePage==="risco"?"Métricas e análise de risco":
                   activePage==="historico"?"Histórico de recomendações":
+                  activePage==="custos"?"Transparência total sobre os custos do serviço e da sua carteira":
                   activePage==="ajuda"?"Perguntas frequentes e recursos":
                   "Fale connosco"
                 }</p>
@@ -2276,6 +2489,7 @@ export default function ClientDashboardPage() {
 
               {/* ── HISTÓRICO ── */}
               {activePage==="historico"&&<HistoricoPage sortedMonths={sortedMonths} dates={dates} equityRaw={equityRaw}/>}
+              {activePage==="custos"&&<CustosPage aum={aum}/>}
 
               {/* `u{2500}`u{2500} AJUDA `u{2500}`u{2500} */}
               {activePage==="ajuda"&&<AjudaPage/>}
