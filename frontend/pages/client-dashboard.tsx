@@ -1698,22 +1698,36 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
   const [errMsg,setErrMsg]=React.useState("");
   const [orderRef,setOrderRef]=React.useState("");
   const [paperMode,setPaperMode]=React.useState(true);
+  // "full" = send entire plan (all positions); "delta" = send only this month's changes
+  const [execMode,setExecMode]=React.useState<"full"|"delta">("full");
 
   const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtEm=(v:number)=>Math.abs(v).toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
 
-  // Compute order list from actionCounts.allRows (excluding Manter)
-  const orderRows=actionCounts.allRows.filter(r=>r.action!=="Manter");
-  const nOrdens=orderRows.length;
-  const totalInvest=orderRows.filter(r=>r.delta>0).reduce((s,r)=>s+r.delta,0);
-  const totalReduce=orderRows.filter(r=>r.delta<0).reduce((s,r)=>s+r.delta,0);
-  const netChange=totalInvest+totalReduce;
+  // Full plan: ALL positions (for display and "full" execution mode)
+  const allPlanRows=actionCounts.allRows; // includes Manter
 
-  // Est. values based on AUM
-  const investEur=totalInvest/100*aum;
-  const reduceEur=Math.abs(totalReduce)/100*aum;
-  const netEur=netChange/100*aum;
-  const tradeCost=Math.max(2.0,nOrdens*0.7); // rough estimate €0.70/order, min €2
+  // Delta rows: only changed positions (Comprar/Aumentar/Reduzir/Vender)
+  const deltaRows=actionCounts.allRows.filter(r=>r.action!=="Manter");
+
+  // Orders actually sent depend on execMode
+  // In "full" mode: BUY all positions with cur>0, SELL positions with cur===0 (Vender)
+  // In "delta" mode: only changed positions
+  const orderRows=execMode==="full"
+    ? allPlanRows.filter(r=>r.cur>0||r.action==="Vender")
+    : deltaRows;
+  const nOrdens=orderRows.length;
+
+  // For summary financials
+  const totalBuyPct=execMode==="full"
+    ? orderRows.filter(r=>r.action!=="Vender").reduce((s,r)=>s+r.cur,0)
+    : orderRows.filter(r=>r.delta>0).reduce((s,r)=>s+r.delta,0);
+  const totalSellPct=execMode==="full"
+    ? orderRows.filter(r=>r.action==="Vender").reduce((s,r)=>s+r.prev,0)
+    : Math.abs(orderRows.filter(r=>r.delta<0).reduce((s,r)=>s+r.delta,0));
+  const investEur=totalBuyPct/100*aum;
+  const reduceEur=totalSellPct/100*aum;
+  const tradeCost=Math.max(2.0,nOrdens*0.7);
 
   async function submitOrders() {
     if(!loggedIn){onShowRegister();return;}
@@ -1727,10 +1741,17 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
         setDone(true);
         return;
       }
+      // Build payload: full mode uses cur weight for est_eur; delta mode uses |delta|
       const body={
         orders:orderRows.map(r=>({
-          ticker:r.ticker,action:r.action,
-          delta_pct:r.delta,est_eur:Math.abs(r.delta)/100*aum,
+          ticker:r.ticker,
+          action:r.action==="Vender"?"Vender":
+                 r.action==="Reduzir"&&execMode==="delta"?"Reduzir":
+                 r.action==="Manter"||r.action==="Aumentar"||r.action==="Comprar"?"Comprar":"Vender",
+          delta_pct:execMode==="full"?r.cur:r.delta,
+          est_eur:execMode==="full"
+            ? (r.action==="Vender"?r.prev/100*aum:r.cur/100*aum)
+            : Math.abs(r.delta)/100*aum,
         })),
         paper_mode:false,profile:profileLabel,
         fx_exposure:fxExposure,margin_enabled:marginEnabled,aum,
@@ -1815,52 +1836,79 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
             </div>
           </div>
 
-          {/* Order list */}
+          {/* Exec mode toggle + Order list */}
           <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="font-bold text-slate-200 text-sm">Ordens a executar</div>
-              <span className="text-xs text-slate-500">{nOrdens} ordens · {recoLabel}</span>
+            <div className="flex items-center justify-between mb-3">
+              <div className="font-bold text-slate-200 text-sm">Lista de ordens</div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-500">{allPlanRows.length} posições no plano</span>
+                {/* execMode toggle */}
+                <div className="flex rounded-lg border border-[#252a3a] overflow-hidden text-[10px] font-semibold">
+                  <button onClick={()=>setExecMode("full")}
+                    className={`px-3 py-1.5 transition-colors ${execMode==="full"?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>
+                    Plano completo
+                  </button>
+                  <button onClick={()=>setExecMode("delta")}
+                    className={`px-3 py-1.5 transition-colors border-l border-[#252a3a] ${execMode==="delta"?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>
+                    Só alterações
+                  </button>
+                </div>
+              </div>
             </div>
-            {nOrdens===0?(
-              <div className="text-slate-500 text-sm text-center py-8">Sem ordens a executar este mês.</div>
-            ):(
-              <table className="w-full text-xs">
-                <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
-                  <th className="pb-2 font-semibold">Ativo</th>
-                  <th className="pb-2 font-semibold">Ação</th>
-                  <th className="pb-2 font-semibold text-right">Peso actual</th>
-                  <th className="pb-2 font-semibold text-right">Peso novo</th>
-                  <th className="pb-2 font-semibold text-right">Δ Peso</th>
-                  <th className="pb-2 font-semibold text-right">Val. estimado</th>
-                </tr></thead>
-                <tbody>
-                  {orderRows.map(r=>{
-                    const isBuy=r.action==="Comprar";const isUp=r.action==="Aumentar";
-                    const isSell=r.action==="Vender";const isDown=r.action==="Reduzir";
-                    const acBg=isBuy?"bg-emerald-500/15 text-emerald-300 border-emerald-500/30":isUp?"bg-cyan-500/15 text-cyan-300 border-cyan-500/30":isSell?"bg-red-500/15 text-red-300 border-red-500/30":"bg-amber-500/15 text-amber-300 border-amber-500/30";
-                    const acIcon=isBuy?"↑":isUp?"↗":isSell?"↓":"↙";
-                    const estVal=Math.abs(r.delta)/100*aum;
-                    return (
-                      <tr key={r.ticker} className="border-b border-[#111520] hover:bg-white/[0.02]">
-                        <td className="py-2.5">
-                          <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
-                            className="font-bold text-blue-400 hover:underline">{r.ticker}</a>
-                        </td>
-                        <td className="py-2.5">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${acBg}`}>
-                            <span className="font-black">{acIcon}</span>{r.action}
-                          </span>
-                        </td>
-                        <td className="py-2.5 text-right text-slate-400">{r.prev.toFixed(1)}%</td>
-                        <td className="py-2.5 text-right text-slate-300">{r.cur.toFixed(1)}%</td>
-                        <td className={`py-2.5 text-right font-semibold ${r.delta>0?"text-emerald-400":"text-red-400"}`}>{r.delta>0?"+":""}{r.delta.toFixed(2)}%</td>
-                        <td className={`py-2.5 text-right font-semibold ${r.delta>0?"text-emerald-400":"text-amber-400"}`}>{r.delta>0?"":"-"}€ {fmtEm(estVal)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
+            <div className="text-[10px] text-slate-500 mb-3">
+              {execMode==="full"
+                ? `Plano completo: ${nOrdens} ordens serão enviadas (todas as posições com peso > 0)`
+                : `Rebalancing: ${nOrdens} ordens com alterações este mês (Δ ≥ 1 pp)`}
+            </div>
+            <table className="w-full text-xs">
+              <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
+                <th className="pb-2 font-semibold">Ativo</th>
+                <th className="pb-2 font-semibold">Ação</th>
+                <th className="pb-2 font-semibold text-right">Peso actual</th>
+                <th className="pb-2 font-semibold text-right">Peso alvo</th>
+                <th className="pb-2 font-semibold text-right">Δ Peso</th>
+                <th className="pb-2 font-semibold text-right">Val. estimado</th>
+              </tr></thead>
+              <tbody>
+                {allPlanRows.map(r=>{
+                  const isManter=r.action==="Manter";
+                  const isBuy=r.action==="Comprar";const isUp=r.action==="Aumentar";
+                  const isSell=r.action==="Vender";const isDown=r.action==="Reduzir";
+                  const inExec=orderRows.some(x=>x.ticker===r.ticker);
+                  const acBg=isManter?"bg-slate-700/30 text-slate-500 border-slate-700/50":
+                             isBuy?"bg-emerald-500/15 text-emerald-300 border-emerald-500/30":
+                             isUp?"bg-cyan-500/15 text-cyan-300 border-cyan-500/30":
+                             isSell?"bg-red-500/15 text-red-300 border-red-500/30":
+                             "bg-amber-500/15 text-amber-300 border-amber-500/30";
+                  const acIcon=isManter?"=":isBuy?"↑":isUp?"↗":isSell?"↓":"↙";
+                  const estVal=execMode==="full"
+                    ? (isSell?r.prev/100*aum:r.cur/100*aum)
+                    : Math.abs(r.delta)/100*aum;
+                  return (
+                    <tr key={r.ticker} className={`border-b border-[#111520] hover:bg-white/[0.02] ${isManter&&execMode==="delta"?"opacity-40":""}`}>
+                      <td className="py-2.5">
+                        <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
+                          className={`font-bold hover:underline ${inExec?"text-blue-400":"text-slate-500"}`}>{r.ticker}</a>
+                        {!inExec&&execMode==="delta"&&<span className="ml-1 text-[9px] text-slate-600">(não enviada)</span>}
+                      </td>
+                      <td className="py-2.5">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${acBg}`}>
+                          <span className="font-black">{acIcon}</span>{r.action}
+                        </span>
+                      </td>
+                      <td className="py-2.5 text-right text-slate-400">{r.prev.toFixed(1)}%</td>
+                      <td className="py-2.5 text-right text-slate-300">{r.cur.toFixed(1)}%</td>
+                      <td className={`py-2.5 text-right font-semibold ${r.delta>0?"text-emerald-400":r.delta<0?"text-red-400":"text-slate-500"}`}>
+                        {r.delta>0?"+":""}{r.delta.toFixed(2)}%
+                      </td>
+                      <td className={`py-2.5 text-right font-semibold ${inExec?(r.action==="Vender"||r.action==="Reduzir"?"text-amber-400":"text-emerald-400"):"text-slate-600"}`}>
+                        {inExec?`€ ${fmtEm(estVal)}`:"—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
 
           {/* Important note */}
@@ -1968,7 +2016,7 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
             <button onClick={onBack} className="px-6 py-3 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">
               Cancelar
             </button>
-            <button onClick={submitOrders} disabled={sending||nOrdens===0||done}
+            <button onClick={submitOrders} disabled={sending||nOrdens===0||done||aum<=0}
               className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all shadow-lg shadow-emerald-900/30">
               <Send size={15}/>{paperMode?"Simular envio para IB →":"Confirmar e enviar ordens para IB →"}
             </button>
@@ -1983,13 +2031,15 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
           <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="font-bold text-slate-200 text-sm">Resumo do plano</div>
-              <span className="text-xs text-slate-500">{nOrdens} ordens</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-bold border ${execMode==="full"?"bg-blue-600/15 text-blue-300 border-blue-500/30":"bg-slate-700/30 text-slate-400 border-slate-600/30"}`}>
+                {execMode==="full"?"Plano completo":"Só alterações"}
+              </span>
             </div>
             <div className="grid grid-cols-3 gap-3 mb-5">
               {[
+                {label:"Ordens a enviar",val:`${nOrdens}`,c:"text-blue-300"},
                 {label:"Valor a investir",val:`€ ${fmtE(investEur)}`,c:"text-emerald-400"},
                 {label:"Custo estimado",val:`€ ${fmtE(tradeCost)}`,c:"text-slate-300"},
-                {label:"Trade esperado",val:`${(nOrdens/aum*100).toFixed(2)}%`,c:"text-slate-300"},
               ].map(k=>(
                 <div key={k.label} className="text-center">
                   <div className="text-[9px] text-slate-500 mb-1">{k.label}</div>
@@ -1999,21 +2049,26 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
             </div>
 
             <div className="border-t border-[#1a1f2e] pt-4 mb-4">
-              <div className="text-xs font-semibold text-slate-400 mb-3">Alterações na carteira</div>
+              <div className="text-xs font-semibold text-slate-400 mb-3">
+                {execMode==="full"?"Composição do plano":"Alterações na carteira"}
+              </div>
               <div className="space-y-2">
-                {[
+                {(execMode==="full"?[
+                  {label:`Comprar / Manter (${orderRows.filter(r=>r.action!=="Vender").length})`,val:`€ ${fmtE(investEur)}`,c:"text-emerald-400",dot:"bg-emerald-500"},
+                  {label:`Vender (${orderRows.filter(r=>r.action==="Vender").length})`,val:`-€ ${fmtE(reduceEur)}`,c:"text-red-400",dot:"bg-red-500"},
+                ]:[
                   {label:`A aumentar / comprar (${actionCounts.comprar+actionCounts.aumentar})`,val:`€ ${fmtE(investEur)}`,c:"text-emerald-400",dot:"bg-emerald-500"},
                   {label:`A reduzir / vender (${actionCounts.reduzir+actionCounts.vender})`,val:`-€ ${fmtE(reduceEur)}`,c:"text-red-400",dot:"bg-red-500"},
                   {label:`Manter (${actionCounts.manter})`,val:"0,00 €",c:"text-slate-400",dot:"bg-slate-500"},
-                ].map(x=>(
+                ]).map(x=>(
                   <div key={x.label} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full shrink-0 ${x.dot}`}/><span className="text-slate-400">{x.label}</span></div>
                     <span className={`font-semibold ${x.c}`}>{x.val}</span>
                   </div>
                 ))}
                 <div className="flex items-center justify-between text-xs border-t border-[#1a1f2e] pt-2 mt-2">
-                  <span className="text-slate-300 font-semibold">Total</span>
-                  <span className={`font-bold ${netEur>=0?"text-emerald-400":"text-amber-400"}`}>{netEur>=0?"+":"-"}€ {fmtEm(netEur)}</span>
+                  <span className="text-slate-300 font-semibold">Total ordens</span>
+                  <span className="font-bold text-blue-300">€ {fmtE(investEur+reduceEur)}</span>
                 </div>
               </div>
             </div>
