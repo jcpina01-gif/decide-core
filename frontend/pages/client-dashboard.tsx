@@ -748,142 +748,178 @@ const BASE_COST_ROWS=[
 
 
 
+
 function CustosPage({aum}:{aum:number}) {
   const [costPeriod,setCostPeriod]=useState<"ytd"|"1a"|"3a"|"5a"|"all">("ytd");
+  const [faqOpen,setFaqOpen]=useState<number|null>(null);
+
   const aumEur=Math.max(aum,5000);
   const ytdMonths=new Date().getMonth()+1;
-  const fmt=(n:number)=>n.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
-
-  // Segment detection
   const isPrivate=aumEur>=50000;
-  const isPremium=aumEur>=5000&&aumEur<50000;
-  const segLabel=isPrivate?"Private (>50k€)":isPremium?"Premium (5k–50k€)":"—";
-  const segColor=isPrivate?"text-amber-400":"text-blue-400";
 
-  // DECIDE management fee
-  const decideMgmtEurYear=isPrivate
-    ? aumEur*(DECIDE_MGMT_PCT_PRIVATE/100)
-    : DECIDE_MONTHLY_PREMIUM*12;
-  const decideMgmtPct=decideMgmtEurYear/aumEur*100;
+  // ── Fee constants ──────────────────────────────────────────────
+  const MGMT_PCT_AA   = 0.60;   // Private: 0,6% aa = 0,05%/mês
+  const MGMT_MONTHLY  = 0.0005; // 0,05%/mês
+  const PERF_RATE     = 0.15;   // 15% sobre ganhos acima HWM
+  const HIST_CAGR     = 0.25;   // retorno histórico estimado
+  const MARKET_ETF    = 0.62;   // média ETFs passivos
+  const ACTIVE_FUND   = 2.00;   // fundos activos tradicionais
 
-  // Performance fee (Private only) — estimate at 25% historical CAGR
-  const HIST_CAGR=0.25;
-  const perfFeeEurYear=isPrivate ? aumEur*HIST_CAGR*(DECIDE_PERF_PCT_PRIVATE/100) : 0;
-  const perfFeePct=perfFeeEurYear/aumEur*100;
+  // ── Management fee ─────────────────────────────────────────────
+  const mgmtAnnual = isPrivate ? aumEur*(MGMT_PCT_AA/100) : 25*12;
+  const mgmtPct    = mgmtAnnual/aumEur*100;
+  const mgmtYtd    = isPrivate ? aumEur*MGMT_MONTHLY*ytdMonths : 25*ytdMonths;
 
-  // Build cost rows for this client
-  const decideMgmtRow={cat:"Gestão DECIDE",color:"#3b82f6",
-    desc:isPrivate?"0,6% aa sobre AUM":`€25/mês (fixo)`,
-    modelo:isPrivate?"% do AUM":"Mensalidade fixa",pct:decideMgmtPct};
-  const perfFeeRow=isPrivate?{cat:"Performance fee",color:"#60a5fa",
-    desc:"15% sobre ganhos acima HWM",modelo:"HWM anual",pct:perfFeePct}:null;
-  const allRows=[decideMgmtRow,...(perfFeeRow?[perfFeeRow]:[]),...BASE_COST_ROWS];
-  const totalFixedPct=decideMgmtPct+BASE_COST_ROWS.reduce((s,r)=>s+r.pct,0);
-  const totalPct=totalFixedPct+(isPrivate?perfFeePct:0);
+  // ── Performance fee (Private, annual, estimated) ────────────────
+  const perfAnnual = isPrivate ? aumEur*HIST_CAGR*PERF_RATE : 0;
+  const perfYtd    = perfAnnual*ytdMonths/12;
+  const perfMonthly= perfAnnual/12;
 
-  // YTD amounts
-  const costEurYtd=aumEur*(totalFixedPct/100)*(ytdMonths/12)+(isPrivate?aumEur*(perfFeePct/100)*(ytdMonths/12):0);
-  const savingsVsActive=aumEur*((ACTIVE_FUND_PCT-totalPct)/100)*(ytdMonths/12);
+  // ── Fixed operational rows ──────────────────────────────────────
+  const FIXED_ROWS=[
+    {cat:"Custódia",   desc:"Custódia e clearing",        modelo:"Valor fixo",      pct:0.06,color:"#22c55e"},
+    {cat:"Transações", desc:"Comissões de negociação",    modelo:"Por operação",    pct:0.04,color:"#f59e0b"},
+    {cat:"Câmbio",     desc:"Conversão de moeda",         modelo:"Spread cambial",  pct:0.01,color:"#a78bfa"},
+    {cat:"Outros",     desc:"Taxas regulatórias",         modelo:"Fixas",           pct:0.01,color:"#64748b"},
+  ];
+  const fixedPct=FIXED_ROWS.reduce((s,r)=>s+r.pct,0); // 0.12%
+  const fixedYtd=aumEur*(fixedPct/100)*ytdMonths/12;
 
-  // Long-term compound: 50k example, 8% gross
-  const EXAMPLE_CAPITAL=50000;
-  const GROSS=0.08;
-  const YEARS=10;
-  const decideNet=GROSS-totalFixedPct/100; // fixed costs only for projection
-  const activeNet=GROSS-ACTIVE_FUND_PCT/100;
-  const decideValue=Math.round(EXAMPLE_CAPITAL*Math.pow(1+decideNet,YEARS));
-  const activeValue=Math.round(EXAMPLE_CAPITAL*Math.pow(1+activeNet,YEARS));
-  const diffValue=decideValue-activeValue;
+  const totalFixedPct=mgmtPct+fixedPct;
+  const totalFixedYtd=mgmtYtd+fixedYtd;
+  const totalYtd=totalFixedYtd+perfYtd;
 
-  const growthChart=useMemo(()=>
-    Array.from({length:YEARS+1},(_,i)=>({
-      year:`Ano ${i}`,
-      decide:Math.round(EXAMPLE_CAPITAL*Math.pow(1+decideNet,i)),
-      market:Math.round(EXAMPLE_CAPITAL*Math.pow(1+activeNet,i)),
-    }))
-  ,[decideNet,activeNet]);
+  // ── All rows for donut ──────────────────────────────────────────
+  const allRows=[
+    {cat:"Gestão DECIDE", desc:"Serviço de gestão",            modelo:isPrivate?"% do AUM":"Mensalidade fixa",
+     pct:mgmtPct,   color:"#3b82f6", ytd:mgmtYtd,   txa:MGMT_PCT_AA.toFixed(2)+"%"},
+    ...(isPrivate?[{cat:"Performance fee",desc:"15% sobre ganhos acima HWM",modelo:"Variável",
+     pct:null as number|null, color:"#60a5fa", ytd:perfYtd, txa:"—"}]:[]),
+    ...FIXED_ROWS.map(r=>({...r, ytd:aumEur*(r.pct/100)*ytdMonths/12, txa:r.pct.toFixed(2)+"%"})),
+  ];
+
+  // ── Savings vs active funds ─────────────────────────────────────
+  const savingsPpFix=(ACTIVE_FUND-totalFixedPct);
+  const savingsPerYearFix=aumEur*(savingsPpFix/100);
+
+  // ── Long-term projection (€50k example) ────────────────────────
+  const EX_CAP=50000; const GROSS=0.08; const YRS=10;
+  const dNet=GROSS-totalFixedPct/100; const aNet=GROSS-ACTIVE_FUND/100;
+  const dVal=Math.round(EX_CAP*Math.pow(1+dNet,YRS));
+  const mVal=Math.round(EX_CAP*Math.pow(1+aNet,YRS));
+  const diff=dVal-mVal;
+
+  const fmt=(n:number)=>n.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fmtInt=(n:number)=>Math.round(n).toLocaleString("pt-PT");
+
+  const growthChart=useMemo(()=>Array.from({length:YRS+1},(_,i)=>({
+    year:i===0?"Hoje":`Ano ${i}`,
+    decide:Math.round(EX_CAP*Math.pow(1+dNet,i)),
+    market:Math.round(EX_CAP*Math.pow(1+aNet,i)),
+  })),[dNet,aNet]);
 
   const costChart=useMemo(()=>{
     const now=new Date();
     return Array.from({length:12},(_,i)=>{
       const d=new Date(now.getFullYear(),now.getMonth()-11+i,1);
-      const label=d.toLocaleDateString("pt-PT",{month:"short",year:"2-digit"}).replace(".","");
-      const noise=Math.sin(i*1.3)*0.01;
-      return {label,model:+(totalFixedPct+noise).toFixed(3),market:+(MARKET_AVG_PCT+noise*0.3).toFixed(3)};
+      const lbl=d.toLocaleDateString("pt-PT",{month:"short",year:"2-digit"}).replace(".","");
+      const n=Math.sin(i*1.3)*0.008;
+      return {label:lbl,model:+(totalFixedPct+n).toFixed(3),market:+(MARKET_ETF+n*0.3).toFixed(3)};
     });
   },[totalFixedPct]);
 
+  const FAQS=[
+    {q:"O que está incluído na comissão de gestão?",
+     a:"A comissão de gestão cobre o serviço DECIDE: recomendações mensais, monitorização da carteira, dashboard completo e suporte. Não inclui custódia, transações ou câmbio."},
+    {q:"Como funciona a performance fee?",
+     a:"A performance fee é de 15% sobre os ganhos acima do high watermark, cobrada anualmente. Só é paga quando a carteira supera o máximo histórico anterior — alinhando os nossos interesses com os seus."},
+    {q:"O que é o high watermark?",
+     a:"O high watermark é o valor máximo histórico da sua carteira. A performance fee só se aplica a ganhos acima desse nível. Se a carteira descer e depois recuperar, só pagará quando superar o máximo anterior."},
+    {q:"Existem custos adicionais?",
+     a:"Além da comissão de gestão, existem custos operacionais: custódia (0,06%), transações (0,04%), câmbio (0,01%) e outros (0,01%). Todos detalhados nesta página."},
+    {q:"Posso cancelar o meu plano quando quiser?",
+     a:"Sim. O plano Premium (€25/mês) pode ser cancelado a qualquer momento sem penalização. O plano Private está sujeito a aviso prévio de 30 dias."},
+  ];
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-8">
 
-      {/* ── Segment badge ── */}
-      <div className="flex items-center gap-3">
-        <span className={`text-[11px] font-bold px-3 py-1 rounded-full border ${isPrivate?"bg-amber-500/10 border-amber-500/30 text-amber-400":"bg-blue-500/10 border-blue-500/30 text-blue-400"}`}>
-          Segmento: {segLabel}
-        </span>
-        {isPrivate&&<span className="text-[10px] text-slate-500">Gestão: 0,6% aa · Performance: 15% acima do high watermark</span>}
-        {isPremium&&<span className="text-[10px] text-slate-500">Gestão: €25/mês (€300/ano) · Sem comissão de performance</span>}
-      </div>
-
-      {/* ── KPI row ── */}
+      {/* ── KPI row ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-4 gap-4">
+        {/* 1 – Custo total fixo aa */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
-          <div className="text-[9px] text-slate-500 font-semibold uppercase tracking-wide mb-2 flex items-center gap-1">Custo total fixo (aa)<Info size={9} className="opacity-40"/></div>
-          <div className="text-2xl font-bold text-slate-100 mb-1">{totalFixedPct.toFixed(2)}%</div>
-          <div className="text-[10px] text-slate-500 mb-2">Sobre o valor médio da carteira</div>
-          <div className="text-[10px] text-slate-400">= € {fmt(aumEur*totalFixedPct/100)} / ano</div>
+          <div className="flex items-center gap-1 text-[9px] text-slate-500 font-semibold uppercase tracking-wide mb-3">
+            CUSTO TOTAL (AA)<Info size={9} className="opacity-40"/>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-3xl font-bold text-slate-100">{totalFixedPct.toFixed(2)}%</div>
+            <div className="w-10 h-10 rounded-full border-[3px] border-blue-500 flex items-center justify-center">
+              <div className="text-[8px] font-bold text-blue-400 text-center leading-none">{totalFixedPct.toFixed(2)}%</div>
+            </div>
+          </div>
+          <div className="text-[10px] text-slate-500 mt-1">Sobre o valor médio da carteira</div>
+          <div className="text-[10px] text-slate-400 mt-2">= € {fmt(aumEur*totalFixedPct/100)} / ano</div>
         </div>
+        {/* 2 – Custo YTD */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
-          <div className="text-[9px] text-slate-500 font-semibold uppercase tracking-wide mb-2 flex items-center gap-1">Custo em euros (YTD)<Info size={9} className="opacity-40"/></div>
-          <div className="text-2xl font-bold text-slate-100 mb-1">€ {fmt(costEurYtd)}</div>
-          <div className="text-[10px] text-slate-500 mb-2">Total de custos pagos</div>
-          <div className="text-[10px] text-slate-400">{ytdMonths} meses do ano corrente</div>
+          <div className="flex items-center gap-1 text-[9px] text-slate-500 font-semibold uppercase tracking-wide mb-3">
+            CUSTO EM EUROS (YTD)<Info size={9} className="opacity-40"/>
+          </div>
+          <div className="text-3xl font-bold text-slate-100 mb-1">€ {fmt(totalYtd)}</div>
+          <div className="text-[10px] text-slate-500">Total de custos pagos</div>
+          <div className="text-[10px] text-slate-400 mt-2">{ytdMonths} meses do ano corrente</div>
         </div>
+        {/* 3 – Performance fee / mensalidade */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
-          <div className="text-[9px] text-slate-500 font-semibold uppercase tracking-wide mb-2 flex items-center gap-1">
-            {isPrivate?"Performance fee (estimativa)":"Custo mensal fixo"}<Info size={9} className="opacity-40"/>
+          <div className="flex items-center gap-1 text-[9px] text-slate-500 font-semibold uppercase tracking-wide mb-3">
+            {isPrivate?"PERFORMANCE FEE (ESTIMATIVA)":"CUSTO MENSAL FIXO"}<Info size={9} className="opacity-40"/>
           </div>
           {isPrivate?(
             <>
-              <div className="text-2xl font-bold text-slate-100 mb-1">15%</div>
-              <div className="text-[10px] text-slate-500 mb-2">Sobre ganhos acima do high watermark</div>
-              <div className="text-[10px] text-amber-400">≈ € {fmt(perfFeeEurYear/12)}/mês ao ritmo histórico</div>
+              <div className="text-3xl font-bold text-slate-100 mb-1">15%</div>
+              <div className="text-[10px] text-slate-500">Sobre ganhos acima do high watermark</div>
+              <div className="text-[10px] text-amber-400 mt-2">+€ {fmt(perfMonthly)}/mês ao ritmo histórico</div>
             </>
           ):(
             <>
-              <div className="text-2xl font-bold text-slate-100 mb-1">€ 25,00</div>
-              <div className="text-[10px] text-slate-500 mb-2">Mensalidade fixa DECIDE</div>
-              <div className="text-[10px] text-blue-400">= {decideMgmtPct.toFixed(2)}% aa ao nível actual do AUM</div>
+              <div className="text-3xl font-bold text-slate-100 mb-1">€ 25,00</div>
+              <div className="text-[10px] text-slate-500">Mensalidade fixa DECIDE Premium</div>
+              <div className="text-[10px] text-blue-400 mt-2">= {mgmtPct.toFixed(2)}% aa ao nível actual do AUM</div>
             </>
           )}
         </div>
+        {/* 4 – Poupança vs fundos activos */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
-          <div className="text-[9px] text-slate-500 font-semibold uppercase tracking-wide mb-2 flex items-center gap-1">Poupança vs fundos activos<Info size={9} className="opacity-40"/></div>
-          <div className="text-2xl font-bold text-emerald-400 mb-1">€ {fmt(Math.max(savingsVsActive,0))}</div>
-          <div className="text-[10px] text-slate-500 mb-2">Vs. gestão activa tradicional (≈2% aa)</div>
-          <div className="text-[10px] text-emerald-400">+{((ACTIVE_FUND_PCT-totalFixedPct)).toFixed(2)}pp menos custos fixos</div>
+          <div className="flex items-center gap-1 text-[9px] text-slate-500 font-semibold uppercase tracking-wide mb-3">
+            POUPANÇA VS FUNDOS ATIVOS<Info size={9} className="opacity-40"/>
+          </div>
+          <div className="text-3xl font-bold text-emerald-400 mb-1">€ {fmtInt(diff)}</div>
+          <div className="text-[10px] text-slate-500">Em seu benefício estimado em {YRS} anos</div>
+          <div className="text-[10px] text-emerald-400 mt-2">+{savingsPpFix.toFixed(2)}pp menos custos fixos/ano</div>
         </div>
       </div>
 
-      {/* ── Middle row: Distribution | Market comparison | Long-term impact ── */}
+      {/* ── Middle row ──────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-4">
 
-        {/* Donut + table */}
+        {/* Estrutura de custos */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-          <div className="font-bold text-slate-200 text-sm mb-3 flex items-center gap-2">Estrutura de custos<Info size={12} className="text-slate-600"/></div>
-          <div className="flex items-center gap-4 mb-3">
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+            ESTRUTURA DE CUSTOS (YTD)<Info size={11} className="text-slate-600"/>
+          </div>
+          <div className="flex items-center gap-4 mb-4">
             <div className="relative shrink-0">
-              <ResponsiveContainer width={120} height={120}>
+              <ResponsiveContainer width={110} height={110}>
                 <PieChart>
-                  <Pie data={allRows.map(r=>({name:r.cat,value:Math.max(r.pct,0.01)}))}
-                    cx="50%" cy="50%" innerRadius={38} outerRadius={58} dataKey="value" strokeWidth={0} paddingAngle={2}>
+                  <Pie data={allRows.map(r=>({name:r.cat,value:Math.max(r.pct??0.03,0.03)}))}
+                    cx="50%" cy="50%" innerRadius={34} outerRadius={52} dataKey="value" strokeWidth={0} paddingAngle={2}>
                     {allRows.map((r,i)=><Cell key={i} fill={r.color}/>)}
                   </Pie>
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                 <div className="text-sm font-bold text-slate-100">{totalFixedPct.toFixed(2)}%</div>
-                <div className="text-[8px] text-slate-500">fixo aa</div>
+                <div className="text-[8px] text-slate-500">Total</div>
               </div>
             </div>
             <div className="space-y-2 flex-1 min-w-0">
@@ -894,164 +930,174 @@ function CustosPage({aum}:{aum:number}) {
                     <span className="text-[10px] text-slate-400 truncate">{r.cat}</span>
                   </div>
                   <span className="text-[10px] font-bold text-slate-200 shrink-0">
-                    {r.cat==="Performance fee"?"variável":r.pct.toFixed(2)+"%"}
+                    {r.pct==null?"variável":(r.pct.toFixed(2)+"%")}
                   </span>
                 </div>
               ))}
             </div>
           </div>
-          <div className="mt-2 bg-blue-500/[0.06] border border-blue-500/15 rounded-lg p-2.5 flex gap-2">
+          <div className="bg-blue-500/[0.07] border border-blue-500/20 rounded-lg p-3 flex gap-2">
             <Info size={11} className="text-blue-400 shrink-0 mt-0.5"/>
             <div className="text-[9px] text-slate-400 leading-relaxed">
               {isPrivate
-                ?"Gestão 0,6% aa + 15% de performance fee sobre ganhos acima do high watermark anual. Sem dupla cobrança."
-                :"€25/mês fixo. Sem comissão de performance. Sem custos escondidos."}
+                ?"A gestão é 0,6% ao ano e a performance fee é 15% apenas sobre ganhos acima do high watermark anual. Sem dupla cobrança."
+                :"Mensalidade fixa de €25/mês. Sem comissão de performance. Sem custos escondidos."}
             </div>
           </div>
         </div>
 
-        {/* Market comparison */}
+        {/* Comparação com mercado */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-          <div className="font-bold text-slate-200 text-sm mb-3 flex items-center gap-2">Comparação com mercado<Info size={12} className="text-slate-600"/></div>
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+            COMPARAÇÃO COM MERCADO<Info size={11} className="text-slate-600"/>
+          </div>
           <div className="grid grid-cols-3 gap-2 mb-4">
-            <div className="text-center bg-[#080c14] rounded-lg p-2 border border-[#1a1f2e]">
-              <div className="text-[9px] text-slate-500 mb-1">DECIDE (fixo)</div>
-              <div className="text-lg font-bold text-blue-400">{totalFixedPct.toFixed(2)}%</div>
-            </div>
-            <div className="text-center bg-[#080c14] rounded-lg p-2 border border-[#1a1f2e]">
-              <div className="text-[9px] text-slate-500 mb-1">ETFs passivos</div>
-              <div className="text-lg font-bold text-slate-400">{MARKET_AVG_PCT.toFixed(2)}%</div>
-            </div>
-            <div className="text-center bg-[#080c14] rounded-lg p-2 border border-[#1a1f2e]">
-              <div className="text-[9px] text-slate-500 mb-1">Fundos activos</div>
-              <div className="text-lg font-bold text-red-400">{ACTIVE_FUND_PCT.toFixed(1)}%</div>
-            </div>
+            {[
+              {label:"DECIDE (fixo)",    val:totalFixedPct, color:"text-blue-400"},
+              {label:"ETFs passivos",    val:MARKET_ETF,    color:"text-slate-400"},
+              {label:"Fundos ativos",    val:ACTIVE_FUND,   color:"text-red-400"},
+            ].map(c=>(
+              <div key={c.label} className="text-center bg-[#080c14] rounded-lg p-2 border border-[#1a1f2e]">
+                <div className="text-[8px] text-slate-500 mb-1 leading-tight">{c.label}</div>
+                <div className={`text-base font-bold ${c.color}`}>{c.val.toFixed(2)}%</div>
+              </div>
+            ))}
           </div>
           {[
-            {label:"DECIDE (custos fixos)",val:totalFixedPct,color:"#3b82f6",max:2},
-            {label:"ETFs passivos",val:MARKET_AVG_PCT,color:"#475569",max:2},
-            {label:"Fundos activos",val:ACTIVE_FUND_PCT,color:"#ef4444",max:2},
-          ].map(({label,val,color,max})=>(
-            <div key={label} className="mb-2">
-              <div className="flex justify-between text-[9px] text-slate-500 mb-0.5"><span>{label}</span><span className="text-slate-300 font-bold">{val.toFixed(2)}%</span></div>
+            {label:"DECIDE (custos fixos)", val:totalFixedPct, color:"#3b82f6", max:2.2},
+            {label:"ETFs passivos",          val:MARKET_ETF,    color:"#475569", max:2.2},
+            {label:"Fundos ativos",          val:ACTIVE_FUND,   color:"#ef4444", max:2.2},
+          ].map(b=>(
+            <div key={b.label} className="mb-2.5">
+              <div className="flex justify-between text-[9px] text-slate-500 mb-1">
+                <span>{b.label}</span>
+                <span className="text-slate-300 font-bold">{b.val.toFixed(2)}%</span>
+              </div>
               <div className="h-4 bg-[#0f1420] rounded-md overflow-hidden">
-                <div className="h-full rounded-md" style={{width:`${(val/max)*100}%`,background:color}}/>
+                <div className="h-full rounded-md" style={{width:`${(b.val/b.max)*100}%`,background:b.color}}/>
               </div>
             </div>
           ))}
           <div className="mt-3 flex items-center gap-2 bg-emerald-500/[0.08] border border-emerald-500/20 rounded-lg px-3 py-2">
             <CheckCircle2 size={12} className="text-emerald-400 shrink-0"/>
             <div className="text-[10px] text-emerald-300 font-semibold">
-              {Math.round((ACTIVE_FUND_PCT-totalFixedPct)/ACTIVE_FUND_PCT*100)}% menos custos fixos que fundos activos.
+              {Math.round((ACTIVE_FUND-totalFixedPct)/ACTIVE_FUND*100)}% menos custos fixos que fundos ativos.
             </div>
           </div>
           {isPrivate&&(
             <div className="mt-2 flex items-start gap-2 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-3 py-2">
               <Info size={11} className="text-amber-400 shrink-0 mt-0.5"/>
-              <div className="text-[9px] text-amber-300">A performance fee alinha os interesses: só pagamos quando ganhas acima do high watermark.</div>
+              <div className="text-[9px] text-amber-300">A performance fee alinha os interesses: só pagamos quando ganha acima do high watermark.</div>
             </div>
           )}
         </div>
 
-        {/* Long-term impact */}
+        {/* Impacto a longo prazo */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-          <div className="font-bold text-slate-200 text-sm mb-1 flex items-center gap-2">Impacto a longo prazo<Info size={12} className="text-slate-600"/></div>
-          <div className="text-[9px] text-slate-500 mb-3">Exemplo: €50.000 iniciais · 8% retorno bruto · {YEARS} anos</div>
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            <div className="bg-[#080c14] rounded-lg p-3 border border-emerald-500/20">
-              <div className="text-[9px] text-slate-500 mb-1">Com DECIDE</div>
-              <div className="text-base font-bold text-emerald-400">€ {fmt(decideValue)}</div>
-              <div className="text-[9px] text-slate-600 mt-0.5">retorno líquido: {(decideNet*100).toFixed(2)}% aa</div>
-            </div>
-            <div className="bg-[#080c14] rounded-lg p-3 border border-[#1a1f2e]">
-              <div className="text-[9px] text-slate-500 mb-1">Fundos activos (2%)</div>
-              <div className="text-base font-bold text-slate-400">€ {fmt(activeValue)}</div>
-              <div className="text-[9px] text-slate-600 mt-0.5">retorno líquido: {(activeNet*100).toFixed(2)}% aa</div>
-            </div>
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2">
+            IMPACTO A LONGO PRAZO<Info size={11} className="text-slate-600"/>
           </div>
-          <div className="bg-emerald-500/[0.08] border border-emerald-500/20 rounded-lg px-3 py-2 mb-3 flex items-center justify-between">
+          <div className="text-[9px] text-slate-500 mb-4">Exemplo: €50.000 iniciais · {(GROSS*100).toFixed(0)}% retorno bruto · {YRS} anos</div>
+          <div className="bg-[#080c14] rounded-lg p-3 border border-emerald-500/20 mb-2">
+            <div className="text-[9px] text-slate-500 mb-1">Com DECIDE</div>
+            <div className="text-lg font-bold text-emerald-400">€ {fmtInt(dVal)}</div>
+            <div className="text-[9px] text-slate-500 mt-0.5">retorno líquido: {(dNet*100).toFixed(2)}% aa</div>
+          </div>
+          <div className="bg-[#080c14] rounded-lg p-3 border border-[#1a1f2e] mb-3">
+            <div className="text-[9px] text-slate-500 mb-1">Com fundos ativos (2%)</div>
+            <div className="text-lg font-bold text-slate-400">€ {fmtInt(mVal)}</div>
+            <div className="text-[9px] text-slate-500 mt-0.5">retorno líquido: {(aNet*100).toFixed(2)}% aa</div>
+          </div>
+          <div className="flex items-center justify-between bg-emerald-500/[0.08] border border-emerald-500/20 rounded-lg px-3 py-2 mb-3">
             <span className="text-[9px] text-slate-400">A diferença é de</span>
-            <span className="text-emerald-400 font-bold">€ {fmt(diffValue)} <span className="text-[9px] text-emerald-600">a seu favor</span></span>
+            <span className="text-emerald-400 font-bold text-sm">€ {fmtInt(diff)}<span className="text-[9px] text-emerald-600 ml-1">a seu favor</span></span>
           </div>
-          <ResponsiveContainer width="100%" height={70}>
+          <ResponsiveContainer width="100%" height={60}>
             <AreaChart data={growthChart} margin={{top:2,right:4,left:0,bottom:0}}>
               <defs>
-                <linearGradient id="gDecide2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/><stop offset="95%" stopColor="#22c55e" stopOpacity={0}/></linearGradient>
-                <linearGradient id="gActive2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#475569" stopOpacity={0.2}/><stop offset="95%" stopColor="#475569" stopOpacity={0}/></linearGradient>
+                <linearGradient id="gD3" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/><stop offset="95%" stopColor="#22c55e" stopOpacity={0}/></linearGradient>
+                <linearGradient id="gA3" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#475569" stopOpacity={0.2}/><stop offset="95%" stopColor="#475569" stopOpacity={0}/></linearGradient>
               </defs>
-              <Area type="monotone" dataKey="decide" stroke="#22c55e" strokeWidth={1.5} fill="url(#gDecide2)" dot={false}/>
-              <Area type="monotone" dataKey="market" stroke="#475569" strokeWidth={1} fill="url(#gActive2)" dot={false}/>
+              <Area type="monotone" dataKey="decide" stroke="#22c55e" strokeWidth={1.5} fill="url(#gD3)" dot={false}/>
+              <Area type="monotone" dataKey="market" stroke="#475569" strokeWidth={1} fill="url(#gA3)" dot={false}/>
             </AreaChart>
           </ResponsiveContainer>
+          <div className="flex gap-4 mt-1 text-[8px]">
+            <span className="flex items-center gap-1"><span className="w-3 h-px bg-emerald-400 inline-block"/><span className="text-slate-500">Com DECIDE</span></span>
+            <span className="flex items-center gap-1"><span className="w-3 h-px bg-slate-500 inline-block"/><span className="text-slate-500">Fundos ativos (2%)</span></span>
+          </div>
         </div>
       </div>
 
-      {/* ── Detail table | Chart | Sabia que? ── */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* ── Detail table + Evolution chart ──────────────────────── */}
+      <div className="grid grid-cols-2 gap-4">
 
         {/* Detail table */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-          <div className="font-bold text-slate-200 text-sm mb-3 flex items-center gap-2">Detalhe dos custos (YTD)<Info size={12} className="text-slate-600"/></div>
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+            DETALHE DOS CUSTOS (YTD)<Info size={11} className="text-slate-600"/>
+          </div>
           <table className="w-full">
-            <thead><tr className="text-slate-600 border-b border-[#1a1f2e] text-left">
-              <th className="pb-2 text-[9px] font-semibold uppercase tracking-wide">Categoria</th>
-              <th className="pb-2 text-[9px] font-semibold uppercase tracking-wide">Modelo</th>
-              <th className="pb-2 text-[9px] font-semibold uppercase tracking-wide text-right">Taxa aa</th>
-              <th className="pb-2 text-[9px] font-semibold uppercase tracking-wide text-right">YTD (€)</th>
-            </tr></thead>
+            <thead>
+              <tr className="border-b border-[#1a1f2e]">
+                {["Categoria","Descrição","Modelo de cobrança","Taxa anual","YTD (€)","% do total"].map(h=>(
+                  <th key={h} className="pb-2 text-[8px] font-semibold text-slate-600 uppercase tracking-wide text-left whitespace-nowrap pr-2">{h}</th>
+                ))}
+              </tr>
+            </thead>
             <tbody className="divide-y divide-[#0a0d15]">
               {allRows.map(r=>{
-                const ytdEur=r.cat==="Performance fee"
-                  ? aumEur*(r.pct/100)*(ytdMonths/12)
-                  : r.cat==="Gestão DECIDE"&&!isPrivate
-                    ? DECIDE_MONTHLY_PREMIUM*ytdMonths
-                    : aumEur*(r.pct/100)*(ytdMonths/12);
+                const ytdAmt=r.cat==="Gestão DECIDE"&&!isPrivate ? 25*ytdMonths : r.ytd;
+                const sharePct=totalYtd>0 ? ytdAmt/totalYtd*100 : 0;
                 return (
                   <tr key={r.cat} className="hover:bg-white/[0.02]">
-                    <td className="py-2">
+                    <td className="py-2 pr-2">
                       <div className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{background:r.color}}/>
-                        <span className="text-[10px] text-slate-300 font-medium">{r.cat}</span>
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{background:r.color}}/>
+                        <span className="text-[10px] text-slate-300 font-medium whitespace-nowrap">{r.cat}</span>
                       </div>
-                      <div className="text-[9px] text-slate-600 ml-3">{r.desc}</div>
                     </td>
-                    <td className="py-2 text-[9px] text-slate-500">{r.modelo}</td>
-                    <td className="py-2 text-right font-mono text-[10px] text-slate-300">
-                      {r.cat==="Performance fee"?"variável":r.pct.toFixed(2)+"%"}
+                    <td className="py-2 pr-2 text-[9px] text-slate-500 whitespace-nowrap">{r.desc}</td>
+                    <td className="py-2 pr-2 text-[9px] text-slate-500 whitespace-nowrap">{r.modelo}</td>
+                    <td className="py-2 pr-2 text-right font-mono text-[10px] text-slate-300 whitespace-nowrap">{r.txa}</td>
+                    <td className="py-2 pr-2 text-right font-mono text-[10px] text-slate-300 whitespace-nowrap">
+                      {r.cat==="Performance fee"?"*":"€ "+fmt(ytdAmt)}
                     </td>
-                    <td className="py-2 text-right font-mono text-[10px] text-slate-300">
-                      {r.cat==="Performance fee"?"*":("€ "+fmt(ytdEur))}
+                    <td className="py-2 text-right font-mono text-[10px] text-slate-400 whitespace-nowrap">
+                      {r.cat==="Performance fee"?"16,8%*":sharePct.toFixed(1)+"%"}
                     </td>
                   </tr>
                 );
               })}
               <tr className="border-t-2 border-[#1a1f2e]">
-                <td className="pt-2 pb-1 text-[10px] font-bold text-slate-200" colSpan={2}>TOTAL fixo</td>
+                <td className="pt-2 text-[10px] font-bold text-slate-200" colSpan={3}>TOTAL</td>
+                <td className="pt-2 text-right font-mono text-[10px] font-bold text-slate-200">—</td>
                 <td className="pt-2 text-right font-mono text-[10px] font-bold text-slate-200">{totalFixedPct.toFixed(2)}%</td>
-                <td className="pt-2 text-right font-mono text-[10px] font-bold text-slate-200">€ {fmt(costEurYtd)}</td>
+                <td className="pt-2 text-right font-mono text-[10px] font-bold text-slate-200">€ {fmt(totalFixedYtd)}</td>
               </tr>
             </tbody>
           </table>
-          {isPrivate&&<div className="mt-2 text-[9px] text-amber-500">* Performance fee calculada no final do ano. HWM = máximo histórico da carteira.</div>}
-          <div className="mt-1 text-[9px] text-slate-600">Nota: custos sobre o valor médio da carteira. AUM: €{fmt(aumEur)}.</div>
+          {isPrivate&&<div className="mt-2 text-[9px] text-amber-500">* Performance fee calculada anualmente sobre ganhos acima do high watermark anual.</div>}
+          <div className="mt-1 text-[9px] text-slate-600">Nota: custos calculados sobre o valor médio da carteira no período.</div>
         </div>
 
         {/* Evolution chart */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-          <div className="flex items-center justify-between mb-2">
-            <div className="font-bold text-slate-200 text-sm flex items-center gap-2">Evolução do custo total (%)<Info size={12} className="text-slate-600"/></div>
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+            EVOLUÇÃO DO CUSTO TOTAL (%)<Info size={11} className="text-slate-600"/>
           </div>
           <div className="flex gap-1 mb-4 flex-wrap">
-            {([["ytd","YTD"],["1a","1 Ano"],["3a","3 Anos"],["5a","5 Anos"],["all","Desde início"]] as const).map(([k,l])=>(
-              <button key={k} onClick={()=>setCostPeriod(k)} className={`px-2.5 py-1 text-[10px] font-semibold rounded transition-colors ${costPeriod===k?"bg-blue-600 text-white":"text-slate-500 hover:text-slate-300"}`}>{l}</button>
+            {([["ytd","YTD"],["1a","1 Ano"],["3a","3 Anos"],["5a","5 Anos"],["all","Desde início"]] as [string,string][]).map(([k,l])=>(
+              <button key={k} onClick={()=>setCostPeriod(k as typeof costPeriod)} className={`px-2.5 py-1 text-[10px] font-semibold rounded transition-colors ${costPeriod===k?"bg-blue-600 text-white":"text-slate-500 hover:text-slate-300"}`}>{l}</button>
             ))}
           </div>
-          <ResponsiveContainer width="100%" height={175}>
+          <ResponsiveContainer width="100%" height={220}>
             <LineChart data={costChart} margin={{top:4,right:12,left:0,bottom:0}}>
               <CartesianGrid stroke="#1a1f2e" strokeDasharray="3 3"/>
               <XAxis dataKey="label" tick={{fontSize:8,fill:"#64748b"}} tickLine={false} axisLine={false} interval={1}/>
-              <YAxis tick={{fontSize:8,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>`${Number(v).toFixed(2)}%`} domain={[0,"dataMax+0.1"]} width={38}/>
-              <Tooltip formatter={(v:number,name:string)=>[`${Number(v).toFixed(2)}%`,name==="model"?"Custos fixos DECIDE":"Média de mercado (ETFs)"]}
+              <YAxis tick={{fontSize:8,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>`${Number(v).toFixed(2)}%`} domain={["dataMin-0.1","dataMax+0.2"]} width={42}/>
+              <Tooltip
+                formatter={(v:number,name:string)=>[`${Number(v).toFixed(2)}%`,name==="model"?"O seu custo total":"Média de mercado (ETFs + Fundos ativos)"]}
                 contentStyle={{background:"#0f172a",border:"1px solid #1e3a5f",borderRadius:8,fontSize:10,color:"#e2e8f0"}}
                 labelStyle={{color:"#94a3b8"}} itemStyle={{fontWeight:600}}/>
               <Line type="monotone" dataKey="model" name="model" stroke="#3b82f6" strokeWidth={2} dot={false}/>
@@ -1059,39 +1105,133 @@ function CustosPage({aum}:{aum:number}) {
             </LineChart>
           </ResponsiveContainer>
           <div className="flex gap-5 mt-2 text-[9px]">
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-blue-500 inline-block"/><span className="text-slate-400">DECIDE (fixo)</span></span>
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-slate-500 inline-block"/><span className="text-slate-400">Média ETFs</span></span>
+            <span className="flex items-center gap-1.5"><span className="w-5 h-0.5 bg-blue-500 inline-block"/><span className="text-slate-400">O seu custo total</span></span>
+            <span className="flex items-center gap-1.5"><span className="w-5 h-0.5 bg-slate-500 inline-block"/><span className="text-slate-400">Média de mercado (ETFs + Fundos ativos)</span></span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── OS NOSSOS PLANOS + FAQ ───────────────────────────────── */}
+      <div className="grid grid-cols-3 gap-4">
+
+        {/* Planos (2/3 width) */}
+        <div className="col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-6">
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">OS NOSSOS PLANOS</div>
+          <div className="text-[10px] text-slate-600 mb-5">Escolha o plano ideal para o seu nível de investimento.</div>
+          <div className="grid grid-cols-2 gap-4">
+            {/* Premium */}
+            <div className={`rounded-xl p-5 border-2 ${!isPrivate?"border-blue-500 bg-blue-500/[0.06]":"border-[#1a1f2e] bg-[#080c14]"}`}>
+              <div className="flex items-center gap-2 mb-1">
+                <div className="text-xl">🚀</div>
+                <div>
+                  <div className="font-bold text-slate-100 text-sm">PREMIUM</div>
+                  <div className="text-[9px] text-slate-500">Para investimentos até €50.000</div>
+                </div>
+              </div>
+              <div className="mt-4 mb-4">
+                <span className="text-3xl font-bold text-slate-100">€25</span>
+                <span className="text-slate-400 text-sm"> / mês</span>
+              </div>
+              <div className="space-y-2 mb-5">
+                {["Recomendações mensais","Carteira otimizada","Dashboard completo","Suporte por email"].map(f=>(
+                  <div key={f} className="flex items-center gap-2 text-[11px] text-slate-300">
+                    <CheckCircle2 size={12} className="text-blue-400 shrink-0"/>{f}
+                  </div>
+                ))}
+              </div>
+              <button className={`w-full py-2 rounded-lg text-[11px] font-bold transition-colors ${!isPrivate?"bg-blue-600 hover:bg-blue-700 text-white":"bg-[#1a1f2e] text-slate-500 cursor-default"}`}>
+                {!isPrivate?"O seu plano actual":"Plano anterior"}
+              </button>
+            </div>
+            {/* Private */}
+            <div className={`rounded-xl p-5 border-2 ${isPrivate?"border-amber-500 bg-amber-500/[0.06]":"border-[#1a1f2e] bg-[#080c14]"}`}>
+              <div className="flex items-center gap-2 mb-1">
+                <div className="text-xl">👑</div>
+                <div>
+                  <div className="font-bold text-amber-400 text-sm">PRIVATE</div>
+                  <div className="text-[9px] text-slate-500">Para investimentos acima de €50.000</div>
+                </div>
+              </div>
+              <div className="mt-4 mb-1">
+                <span className="text-3xl font-bold text-slate-100">0,6%</span>
+                <span className="text-slate-400 text-sm"> / ano</span>
+              </div>
+              <div className="text-[10px] text-amber-400 mb-4">+ 15% performance fee</div>
+              <div className="space-y-2 mb-5">
+                {["Tudo do plano Premium","Gestão personalizada","Performance fee apenas sobre ganhos acima do high watermark","Relatórios avançados","Suporte prioritário"].map(f=>(
+                  <div key={f} className="flex items-center gap-2 text-[11px] text-slate-300">
+                    <CheckCircle2 size={12} className="text-amber-400 shrink-0"/>{f}
+                  </div>
+                ))}
+              </div>
+              <button className={`w-full py-2 rounded-lg text-[11px] font-bold transition-colors ${isPrivate?"bg-amber-600 hover:bg-amber-700 text-white":"bg-[#1a1f2e] text-slate-400 hover:bg-[#242936] hover:text-slate-200"}`}>
+                {isPrivate?"O seu plano actual":"Fale connosco"}
+              </button>
+            </div>
+          </div>
+          {/* Transparency bar */}
+          <div className="mt-5 flex items-center justify-between bg-blue-500/[0.05] border border-blue-500/15 rounded-lg px-4 py-3">
+            <div className="flex items-start gap-2">
+              <Info size={12} className="text-blue-400 shrink-0 mt-0.5"/>
+              <div className="text-[9px] text-slate-400 leading-relaxed">
+                Transparência total: não cobramos comissões escondidas.<br/>
+                Todos os custos são apresentados de forma clara e detalhada.
+              </div>
+            </div>
+            <button className="text-[9px] text-blue-400 hover:text-blue-300 whitespace-nowrap ml-4">Saber mais sobre os planos →</button>
           </div>
         </div>
 
-        {/* Sabia que? */}
+        {/* FAQ (1/3 width) */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-          <div className="font-bold text-slate-200 text-sm mb-4">Sabia que?</div>
-          <div className="bg-blue-500/[0.06] border border-blue-500/15 rounded-lg p-4 mb-4">
-            <div className="text-slate-300 text-xs leading-relaxed mb-3">
-              Uma diferença de <span className="text-blue-400 font-bold">{((ACTIVE_FUND_PCT-totalFixedPct)).toFixed(2)}pp</span> nos custos fixos anuais representa <span className="text-emerald-400 font-bold">€ {fmt(diffValue)}</span> a seu favor em {YEARS} anos, num investimento de €50.000.
-            </div>
-            <div className="space-y-1.5">
-              {["Pequenas diferenças hoje,","grandes resultados amanhã."].map((t,i)=>(
-                <div key={i} className="flex items-start gap-2 text-[10px] text-slate-400">
-                  <span className="text-blue-400 font-bold mt-0.5">▶</span>{t}
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-3">
-            {([
-              {title:"Sem conflito de interesses",desc:"Gestão fixa ou alinhada: só ganhamos mais quando tu ganhas mais (Private).",color:"text-blue-400",Icon:ShieldCheck},
-              {title:"High watermark",desc:"A performance fee só é cobrada quando a carteira supera o máximo histórico anterior.",color:"text-emerald-400",Icon:TrendingUp},
-              {title:"Transparência total",desc:"Todos os custos detalhados em tempo real. Sem taxas escondidas.",color:"text-amber-400",Icon:Receipt},
-            ] as const).map(({title,desc,color,Icon})=>(
-              <div key={title} className="flex items-start gap-3">
-                <div className="p-1.5 rounded-lg bg-[#080c14] border border-[#1a1f2e] shrink-0"><Icon size={12} className={color}/></div>
-                <div><div className="text-slate-200 text-[11px] font-semibold mb-0.5">{title}</div><div className="text-slate-500 text-[10px] leading-relaxed">{desc}</div></div>
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">PERGUNTAS FREQUENTES</div>
+          <div className="space-y-1">
+            {FAQS.map((f,i)=>(
+              <div key={i} className="border-b border-[#1a1f2e] last:border-0">
+                <button className="w-full flex items-center justify-between py-3 text-left gap-2"
+                  onClick={()=>setFaqOpen(faqOpen===i?null:i)}>
+                  <span className="text-[11px] text-slate-300 font-medium leading-snug">{f.q}</span>
+                  <ChevronDown size={14} className={`text-slate-500 shrink-0 transition-transform ${faqOpen===i?"rotate-180":""}`}/>
+                </button>
+                {faqOpen===i&&(
+                  <div className="pb-3 text-[10px] text-slate-500 leading-relaxed">{f.a}</div>
+                )}
               </div>
             ))}
           </div>
+          {/* Precisa de ajuda? */}
+          <div className="mt-4 pt-4 border-t border-[#1a1f2e]">
+            <div className="text-[10px] font-bold text-slate-300 mb-3">PRECISA DE AJUDA?</div>
+            <div className="text-[9px] text-slate-500 mb-3">Fale com a nossa equipa.</div>
+            <div className="grid grid-cols-2 gap-2">
+              <a href="mailto:geral@decide.pt" className="flex items-center gap-2 bg-[#080c14] border border-[#1a1f2e] rounded-lg px-3 py-2 hover:border-blue-500/40 transition-colors">
+                <Mail size={12} className="text-blue-400 shrink-0"/>
+                <div>
+                  <div className="text-[8px] text-slate-500">Email</div>
+                  <div className="text-[9px] text-slate-300 font-medium">geral@decide.pt</div>
+                </div>
+              </a>
+              <a href="tel:+351210123456" className="flex items-center gap-2 bg-[#080c14] border border-[#1a1f2e] rounded-lg px-3 py-2 hover:border-blue-500/40 transition-colors">
+                <Phone size={12} className="text-blue-400 shrink-0"/>
+                <div>
+                  <div className="text-[8px] text-slate-500">Telefone</div>
+                  <div className="text-[9px] text-slate-300 font-medium">+351 210 123 456</div>
+                </div>
+              </a>
+            </div>
+          </div>
         </div>
+      </div>
+
+      {/* ── Footer / legal ────────────────────────────────────────── */}
+      <div className="flex items-center justify-between bg-[#080c14] border border-[#1a1f2e] rounded-xl px-5 py-3">
+        <div className="flex items-start gap-2">
+          <ShieldCheck size={13} className="text-slate-500 shrink-0 mt-0.5"/>
+          <div className="text-[9px] text-slate-500 leading-relaxed">
+            O DECIDE está registado na CMVM como intermediário financeiro. A sua confiança é a nossa prioridade.
+          </div>
+        </div>
+        <button className="text-[9px] text-blue-500 hover:text-blue-400 whitespace-nowrap ml-4">Ver documentação legal →</button>
       </div>
     </div>
   );
