@@ -2339,11 +2339,11 @@ export default function ClientDashboardPage() {
                     {/* Action count badges (1/3) */}
                     <div className="space-y-3">
                       {(()=>{
-                        const buy =actionCounts.rows.filter(r=>r.action==="Comprar").length;
-                        const up  =actionCounts.rows.filter(r=>r.action==="Aumentar").length;
-                        const down=actionCounts.rows.filter(r=>r.action==="Reduzir").length;
-                        const sell=actionCounts.rows.filter(r=>r.action==="Vender").length;
-                        const hold=actionCounts.rows.filter(r=>r.action==="Manter").length;
+                        const buy =actionCounts.comprar;
+                        const up  =actionCounts.aumentar;
+                        const down=actionCounts.reduzir;
+                        const sell=actionCounts.vender;
+                        const hold=actionCounts.manter;
                         return [
                           {label:"Comprar",  n:buy,  icon:"↑",  bg:"bg-emerald-500/10", border:"border-emerald-500/25", tc:"text-emerald-300", nc:"text-emerald-400"},
                           {label:"Aumentar", n:up,   icon:"↗",  bg:"bg-cyan-500/10",    border:"border-cyan-500/25",    tc:"text-cyan-300",    nc:"text-cyan-400"},
