@@ -1744,7 +1744,6 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   }
 
   async function sellAllPositions(){
-    if(!loggedIn){onShowRegister();return;}
     if(!ibkrPos||ibkrPos.length===0) return;
     setSellAllSending(true);setIbkrErr("");
     try{
@@ -1788,7 +1787,6 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const tradeCost=Math.max(2.0,nOrdens*0.7);
 
   async function submitOrders() {
-    if(!loggedIn){onShowRegister();return;}
     setErrMsg("");
     setSending(true);
     try {
