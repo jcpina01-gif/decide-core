@@ -476,8 +476,8 @@ function RegisterModal({onClose,onSuccess,defaultTab="register"}:{onClose:()=>vo
   /* register state */
   const [email,setEmail]=useState("");
   const [phone,setPhone]=useState("");
-  const [phoneConfirm,setPhoneConfirm]=useState("");
   const [pw,setPw]=useState("");
+  const [pwConfirm,setPwConfirm]=useState("");
   const [showPw,setShowPw]=useState(false);
   const [emailSent,setEmailSent]=useState(false);
   const [emailVerified,setEmailVerified]=useState(false);
@@ -629,32 +629,20 @@ function RegisterModal({onClose,onSuccess,defaultTab="register"}:{onClose:()=>vo
 
             <div>
               <label className="block text-xs text-slate-400 mb-1.5 font-semibold">Telemóvel</label>
-              <input type="tel" value={phone} onChange={e=>{setPhone(e.target.value);setPhoneSent(false);setPhoneVerified(false);setPhoneOtp("");}}
-                placeholder="+351912345678" required disabled={phoneVerified}
-                className={`${inp} ${phoneVerified?"border-emerald-600/50 text-slate-400":""}`}/>
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-400 mb-1.5 font-semibold">Confirmar Telemóvel</label>
               <div className="flex gap-2">
-                <input type="tel" value={phoneConfirm} onChange={e=>setPhoneConfirm(e.target.value)}
+                <input type="tel" value={phone} onChange={e=>{setPhone(e.target.value);setPhoneSent(false);setPhoneVerified(false);setPhoneOtp("");}}
                   placeholder="+351912345678" required disabled={phoneVerified}
-                  className={`${inp} flex-1 ${
-                    phoneVerified?"border-emerald-600/50 text-slate-400":
-                    phoneConfirm.length>0&&phone!==phoneConfirm?"border-red-500/60":"" }`}/>
+                  className={`${inp} flex-1 ${phoneVerified?"border-emerald-600/50 text-slate-400":""}`}/>
                 {phoneVerified?(
                   <span className="flex items-center gap-1 text-emerald-400 text-xs font-bold px-2 shrink-0"><CheckCircle2 size={14}/>Ok</span>
                 ):(
                   <button type="button" onClick={sendPhoneSms}
-                    disabled={phone.length<8||phone!==phoneConfirm||regBusy}
+                    disabled={phone.length<8||regBusy}
                     className="shrink-0 px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 text-xs font-semibold rounded-lg disabled:opacity-40 transition-colors">
                     SMS
                   </button>
                 )}
               </div>
-              {phoneConfirm.length>0&&phone!==phoneConfirm&&(
-                <p className="text-red-400 text-[10px] mt-1">Os números não coincidem.</p>
-              )}
               {phoneSent&&!phoneVerified&&(
                 <div className="mt-2">
                   <input value={phoneOtp} onChange={e=>setPhoneOtp(e.target.value.replace(/\D/g,"").slice(0,6))}
@@ -681,9 +669,21 @@ function RegisterModal({onClose,onSuccess,defaultTab="register"}:{onClose:()=>vo
               </div>
             </div>
 
+            <div>
+              <label className="block text-xs text-slate-400 mb-1.5 font-semibold">Confirmar Password</label>
+              <div className="relative">
+                <input type={showPw?"text":"password"} value={pwConfirm} onChange={e=>setPwConfirm(e.target.value)}
+                  placeholder="Repete a password" required
+                  className={`${inp} pr-10 ${pwConfirm.length>0&&pw!==pwConfirm?"border-red-500/60":""}`}/>
+              </div>
+              {pwConfirm.length>0&&pw!==pwConfirm&&(
+                <p className="text-red-400 text-[10px] mt-1">As passwords não coincidem.</p>
+              )}
+            </div>
+
             {regErr&&<p className="text-red-400 text-xs bg-red-900/20 border border-red-800/40 rounded-lg px-3 py-2">{regErr}</p>}
 
-            <button type="submit" disabled={regBusy||!bothVerified||pw.length<10}
+            <button type="submit" disabled={regBusy||!bothVerified||pw.length<10||pw!==pwConfirm}
               className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-sm py-3 rounded-xl transition-all shadow-lg shadow-emerald-900/30">
               {regBusy?"A criar conta…":"Criar conta →"}
             </button>
@@ -1720,12 +1720,19 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
     setErrMsg("");
     setSending(true);
     try {
+      if(paperMode){
+        // Simulate locally — no backend required for paper trading
+        await new Promise(r=>setTimeout(r,1200));
+        setOrderRef("SIM-"+Date.now().toString(36).toUpperCase());
+        setDone(true);
+        return;
+      }
       const body={
         orders:orderRows.map(r=>({
           ticker:r.ticker,action:r.action,
           delta_pct:r.delta,est_eur:Math.abs(r.delta)/100*aum,
         })),
-        paper_mode:paperMode,profile:profileLabel,
+        paper_mode:false,profile:profileLabel,
         fx_exposure:fxExposure,margin_enabled:marginEnabled,aum,
       };
       const resp=await fetch("/api/ibkr-orders",{
@@ -1737,7 +1744,7 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
         setDone(true);
       } else {
         const j=await resp.json().catch(()=>({}));
-        setErrMsg(j.error||j.detail||`Erro ${resp.status} — verifique se o backend FastAPI e a IB Gateway estão activos.`);
+        setErrMsg(j.error||j.detail||`Erro ${resp.status} — o backend FastAPI e a IB Gateway têm de estar activos para envio real.`);
       }
     } catch(e:unknown){
       setErrMsg((e instanceof Error?e.message:"Falha de ligação")+" — verifique a ligação ao backend.");
