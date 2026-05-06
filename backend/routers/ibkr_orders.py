@@ -201,8 +201,7 @@ def ibkr_orders_post(body: IbkrOrdersBody) -> dict[str, Any]:
                 ib.disconnect()
         except Exception:
             pass
-        if created_loop:
-            teardown_ib_insync_loop()
+        teardown_ib_insync_loop(created_loop, _loop)
 
     order_ref = "ORD-" + hex(int(time.time() * 1000))[2:].upper()
     submitted = sum(1 for f in fills if f.get("status") not in (
