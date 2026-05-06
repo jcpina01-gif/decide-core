@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import os
 from typing import Any
 
@@ -157,14 +158,7 @@ class IbkrSnapshotRequest(BaseModel):
 
 
 def _connect_ib(host: str, port: int, client_id: int) -> IB:
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        try:
-            asyncio.get_event_loop()
-        except RuntimeError:
-            asyncio.set_event_loop(asyncio.new_event_loop())
-
+    """Ligar à IB — chamar SEMPRE numa thread sem event loop activo."""
     ib = IB()
     ib.connect(host, port, clientId=client_id, timeout=IBKR_CONNECT_TIMEOUT)
     ib.reqMarketDataType(IBKR_MARKET_DATA_TYPE)
@@ -368,32 +362,8 @@ def _snapshot_rejected(msg: str) -> dict:
     }
 
 
-@router.post("/api/ibkr-snapshot")
-def ibkr_snapshot(request: Request, req: IbkrSnapshotRequest) -> dict:
-    if not req.paper_mode:
-        return {
-            "status": "rejected",
-            "error": "paper_mode=false is not allowed on this endpoint",
-            "net_liquidation": 0.0,
-            "net_liquidation_ccy": "",
-            "account_code": "",
-            "positions": [],
-        }
-
-    if ibkr_per_request_routing_enabled():
-        if not ibkr_routing_secret_configured():
-            return _snapshot_rejected(
-                "DECIDE_IBKR_PER_REQUEST_ROUTING is enabled but DECIDE_IBKR_INTERNAL_HMAC_SECRET is not set"
-            )
-        routed = verify_signed_ibkr_route(request, paper_mode=req.paper_mode)
-        if not routed:
-            return _snapshot_rejected(
-                "Missing or invalid signed IBKR routing headers (HMAC, timestamp skew, or allowlist)"
-            )
-        ib_host, ib_port, ib_client_id = routed
-    else:
-        ib_host, ib_port, ib_client_id = ib_socket_host(), ib_socket_port(), IBKR_CLIENT_ID
-
+def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
+    """Lógica completa do snapshot — corre numa thread isolada (sem event loop AnyIO activo)."""
     try:
         ib = _connect_ib(ib_host, ib_port, ib_client_id)
     except Exception as e:
@@ -402,10 +372,7 @@ def ibkr_snapshot(request: Request, req: IbkrSnapshotRequest) -> dict:
         return {
             "status": "rejected",
             "error": f"IBKR (Gateway/TWS) connection failed @ {loc}: {detail}",
-            "net_liquidation": 0.0,
-            "net_liquidation_ccy": "",
-            "account_code": "",
-            "positions": [],
+            "net_liquidation": 0.0, "net_liquidation_ccy": "", "account_code": "", "positions": [],
         }
 
     try:
@@ -414,10 +381,7 @@ def ibkr_snapshot(request: Request, req: IbkrSnapshotRequest) -> dict:
             return {
                 "status": "rejected",
                 "error": f"Connected account is not paper ({accounts})",
-                "net_liquidation": 0.0,
-                "net_liquidation_ccy": "",
-                "account_code": "",
-                "positions": [],
+                "net_liquidation": 0.0, "net_liquidation_ccy": "", "account_code": "", "positions": [],
                 "accounts": accounts,
             }
 
@@ -457,12 +421,8 @@ def ibkr_snapshot(request: Request, req: IbkrSnapshotRequest) -> dict:
                 mval = qty * mpx
             weight_pct = (mval / nav * 100.0) if nav else 0.0
             row: dict[str, Any] = {
-                "ticker": display_sym,
-                "qty": qty,
-                "market_price": mpx,
-                "value": mval,
-                "currency": curr,
-                "weight_pct": weight_pct,
+                "ticker": display_sym, "qty": qty, "market_price": mpx,
+                "value": mval, "currency": curr, "weight_pct": weight_pct,
             }
             if IBKR_SNAPSHOT_ENRICH_METADATA:
                 try:
@@ -496,9 +456,7 @@ def ibkr_snapshot(request: Request, req: IbkrSnapshotRequest) -> dict:
 
         return {
             "status": "ok",
-            "net_liquidation": nav,
-            "net_liquidation_ccy": nav_ccy,
-            "account_code": acct_code,
+            "net_liquidation": nav, "net_liquidation_ccy": nav_ccy, "account_code": acct_code,
             "positions": positions,
             "meta": {
                 "ibkr_snapshot_enrich": bool(IBKR_SNAPSHOT_ENRICH_METADATA),
@@ -506,12 +464,44 @@ def ibkr_snapshot(request: Request, req: IbkrSnapshotRequest) -> dict:
                 "enrich_long_name_ok": enrich_named,
             },
             "cash_ledger": {
-                "tag": "TotalCashValue",
-                "value": cash_val,
-                "currency": cash_ccy,
-                "weight_pct": cash_weight_pct,
+                "tag": "TotalCashValue", "value": cash_val,
+                "currency": cash_ccy, "weight_pct": cash_weight_pct,
             },
         }
     finally:
         if ib.isConnected():
             ib.disconnect()
+
+
+@router.post("/api/ibkr-snapshot")
+def ibkr_snapshot(request: Request, req: IbkrSnapshotRequest) -> dict:
+    if not req.paper_mode:
+        return {
+            "status": "rejected",
+            "error": "paper_mode=false is not allowed on this endpoint",
+            "net_liquidation": 0.0, "net_liquidation_ccy": "", "account_code": "", "positions": [],
+        }
+
+    if ibkr_per_request_routing_enabled():
+        if not ibkr_routing_secret_configured():
+            return _snapshot_rejected(
+                "DECIDE_IBKR_PER_REQUEST_ROUTING is enabled but DECIDE_IBKR_INTERNAL_HMAC_SECRET is not set"
+            )
+        routed = verify_signed_ibkr_route(request, paper_mode=req.paper_mode)
+        if not routed:
+            return _snapshot_rejected(
+                "Missing or invalid signed IBKR routing headers (HMAC, timestamp skew, or allowlist)"
+            )
+        ib_host, ib_port, ib_client_id = routed
+    else:
+        ib_host, ib_port, ib_client_id = ib_socket_host(), ib_socket_port(), IBKR_CLIENT_ID
+
+    # Corre em thread isolada — evita conflito com event loop AnyIO/FastAPI (Python 3.13)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        future = ex.submit(_run_snapshot, ib_host, ib_port, ib_client_id)
+        try:
+            return future.result(timeout=int(IBKR_CONNECT_TIMEOUT) + 15)
+        except concurrent.futures.TimeoutError:
+            return _snapshot_rejected(
+                f"Timeout ao conectar ao IB Gateway {ib_host}:{ib_port} — verifique que está aberto e com API activa."
+            )

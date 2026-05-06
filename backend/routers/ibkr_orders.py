@@ -9,6 +9,7 @@ a lógica de execução existente em send_orders.py.
 """
 from __future__ import annotations
 
+import concurrent.futures
 import math
 import os
 import time
@@ -100,96 +101,65 @@ def _est_qty(ib: IB, ticker: str, est_eur: float) -> int:
     return 1
 
 
-@router.post("/api/ibkr-orders")
-def ibkr_orders_post(body: IbkrOrdersBody) -> dict[str, Any]:
-    """Recebe ordens do frontend DECIDE e executa-as na IB via ib_insync."""
-
-    # Filtrar acções sem valor e Manter
-    orders = [
-        o for o in body.orders
-        if abs(o.est_eur) > 0 and o.action not in ("Manter",)
-    ]
-    if not orders:
-        return {"status": "rejected", "error": "Sem ordens a executar.", "fills": []}
-
-    sell_cap_disabled = os.environ.get(
-        "DECIDE_DISABLE_SELL_LONG_CAP", ""
-    ).strip().lower() in ("1", "true", "yes")
+def _execute_ib_orders(
+    orders: List[_OrderIn],
+    sell_cap_disabled: bool,
+    host: str,
+    port: int,
+    client_id: int,
+) -> dict[str, Any]:
+    """Corre numa thread isolada para garantir event loop limpo (compat. Python 3.13 + FastAPI)."""
+    from routers.send_orders import OrderIn as _SOrderIn
 
     created_loop, _loop = ensure_ib_insync_loop()
     ib = IB()
     fills: List[dict[str, Any]] = []
 
     try:
-        ib.connect(TWS_HOST, TWS_PORT, clientId=_CLIENT_ID, timeout=8)
-        ib.reqMarketDataType(3)  # Frozen/delayed se real-time não disponível
+        ib.connect(host, port, clientId=client_id, timeout=8)
+        ib.reqMarketDataType(3)
 
         is_paper, accounts = is_paper_account(ib)
         if ibkr_require_paper_env() and not is_paper:
             return {
                 "status": "rejected",
-                "error": (
-                    f"Conta ligada não é paper ({accounts}). "
-                    "Use IB Gateway/TWS em modo paper."
-                ),
+                "error": f"Conta ligada não é paper ({accounts}).",
                 "fills": [],
-                "accounts": accounts,
             }
 
-        # Posições longas actuais (para o cap anti-short)
         rem_long: dict[str, float] = {}
         if not sell_cap_disabled:
             net_map = _ib_portfolio_net_qty_by_key(ib)
             rem_long = {k: max(0.0, v) for k, v in net_map.items()}
 
-        from routers.send_orders import OrderIn as _SOrderIn
-
         for o in orders:
             sym = (o.ticker or "").strip().upper()
             side = "BUY" if o.action in ("Comprar", "Aumentar") else "SELL"
-            est_eur = abs(o.est_eur)
-
-            # Calcular qty
-            qty = _est_qty(ib, sym, est_eur)
+            qty = _est_qty(ib, sym, abs(o.est_eur))
             if qty <= 0:
-                fills.append({
-                    "ticker": sym, "action": side,
-                    "requested_qty": 0, "filled": 0,
-                    "status": "skip_zero", "message": "qty calculada = 0",
-                })
+                fills.append({"ticker": sym, "action": side, "requested_qty": 0,
+                               "filled": 0, "status": "skip_zero", "message": "qty=0"})
                 continue
-
-            # Cap anti-short
             if not sell_cap_disabled and side == "SELL":
                 cap_key = _position_map_key(sym)
                 avail = int(math.floor(rem_long.get(cap_key, 0.0) + 1e-9))
                 if avail < 1:
-                    fills.append({
-                        "ticker": sym, "action": "SELL",
-                        "requested_qty": float(qty), "filled": 0,
-                        "status": "skip_sell_no_long",
-                        "message": "Sem posição longa disponível para vender.",
-                    })
+                    fills.append({"ticker": sym, "action": "SELL", "requested_qty": float(qty),
+                                   "filled": 0, "status": "skip_sell_no_long",
+                                   "message": "Sem posição longa disponível."})
                     continue
                 qty = min(qty, avail)
                 rem_long[cap_key] = max(0.0, avail - qty)
 
             order_in = _SOrderIn(ticker=sym, side=side, qty=float(qty))
-
-            if _is_eur_mm_ucits_symbol(sym):
-                row = _place_eur_mm_ucits(ib, order_in)
-            else:
-                row = _place_stock(ib, order_in)
-
+            row = _place_eur_mm_ucits(ib, order_in) if _is_eur_mm_ucits_symbol(sym) else _place_stock(ib, order_in)
             fills.append(row)
 
     except (ConnectionRefusedError, TimeoutError, OSError) as exc:
         return {
             "status": "error",
-            "error": (
-                f"Não foi possível ligar ao IB Gateway em {TWS_HOST}:{TWS_PORT} — {type(exc).__name__}. "
-                "Confirme que o IB Gateway está aberto, autenticado e com API socket activa (porta 4002)."
-            ),
+            "error": (f"Não foi possível ligar ao IB Gateway em {host}:{port} — {type(exc).__name__}. "
+                      "Confirme que está aberto, autenticado e com API socket activa."),
             "fills": fills,
         }
     except Exception as exc:  # noqa: BLE001
@@ -204,16 +174,31 @@ def ibkr_orders_post(body: IbkrOrdersBody) -> dict[str, Any]:
         teardown_ib_insync_loop(created_loop, _loop)
 
     order_ref = "ORD-" + hex(int(time.time() * 1000))[2:].upper()
-    submitted = sum(1 for f in fills if f.get("status") not in (
-        "skip_zero", "skip_sell_no_long", "contract_not_qualified",
-    ))
-    return {
-        "ok": True,
-        "status": "submitted",
-        "order_ref": order_ref,
-        "submitted": submitted,
-        "fills": fills,
-    }
+    submitted = sum(1 for f in fills if f.get("status") not in
+                    ("skip_zero", "skip_sell_no_long", "contract_not_qualified"))
+    return {"ok": True, "status": "submitted", "order_ref": order_ref,
+            "submitted": submitted, "fills": fills}
+
+
+@router.post("/api/ibkr-orders")
+def ibkr_orders_post(body: IbkrOrdersBody) -> dict[str, Any]:
+    """Recebe ordens do frontend DECIDE e executa-as na IB via ib_insync."""
+
+    orders = [o for o in body.orders if abs(o.est_eur) > 0 and o.action not in ("Manter",)]
+    if not orders:
+        return {"status": "rejected", "error": "Sem ordens a executar.", "fills": []}
+
+    sell_cap_disabled = os.environ.get("DECIDE_DISABLE_SELL_LONG_CAP", "").strip().lower() in ("1", "true", "yes")
+
+    # Corre em thread isolada — evita conflito de event loop Python 3.13 + AnyIO/FastAPI
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        future = ex.submit(_execute_ib_orders, orders, sell_cap_disabled, TWS_HOST, TWS_PORT, _CLIENT_ID)
+        try:
+            return future.result(timeout=30)
+        except concurrent.futures.TimeoutError:
+            return {"status": "error",
+                    "error": f"Timeout (30s) ao executar ordens na IB Gateway {TWS_HOST}:{TWS_PORT}.",
+                    "fills": []}
 
 
 @router.get("/api/ibkr-orders")
