@@ -12,7 +12,7 @@ import {
   ShieldCheck, Clock, Settings, LogOut, ChevronDown, Info,
   ArrowUpRight, ArrowDownRight, Minus, X, Eye, EyeOff,
   Globe, Activity, HelpCircle, Mail, Phone, MapPin, Send,
-  CheckCircle2, Receipt,
+  CheckCircle2, Receipt, Bell, Sliders, AlertTriangle,
 } from "lucide-react";
 import {
   isClientLoggedIn, getCurrentSessionUser,
@@ -292,7 +292,10 @@ const YF_ALIAS:Record<string,string>={
 };
 const getYFTicker=(t:string)=>YF_ALIAS[t.toUpperCase()]??t;
 
-type Page="dashboard"|"reco"|"carteira"|"perf"|"risco"|"historico"|"custos"|"ajuda"|"contactos";
+type Page="dashboard"|"reco"|"carteira"|"perf"|"risco"|"historico"|"custos"|"ajuda"|"contactos"|"simulador"|"relatorios";
+type RiskProfile="conservador"|"moderado"|"dinamico";
+type FxExposure="protegida"|"parcial"|"aberta";
+type KpiMode="base"|"margem";
 
 /* â”€â”€â”€ maths â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function cagrFn(s: number, e: number, y: number) { return s > 0 && y > 0 ? Math.pow(e/s,1/y)-1 : 0; }
@@ -364,15 +367,16 @@ type RecoMonth={date?:string;rebalance_date?:string;rows:WRow[];tbillsTotalPct?:
 
 /* â”€â”€â”€ sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const NAV=[
-  {id:"dashboard", label:"Dashboard",      Icon:LayoutDashboard},
-  {id:"reco",      label:"Recomendações",  Icon:BookOpen},
-  {id:"carteira",  label:"Carteira",       Icon:Briefcase},
-  {id:"perf",      label:"Performance",    Icon:TrendingUp},
-  {id:"risco",     label:"Risco",          Icon:ShieldCheck},
-  {id:"historico", label:"Histórico",      Icon:Clock},
-  {id:"custos",    label:"Custos",         Icon:Receipt},
-  {id:"ajuda",     label:"Ajuda",          Icon:HelpCircle},
-  {id:"contactos", label:"Contactos",      Icon:Mail},
+  {id:"dashboard",  label:"Dashboard",      Icon:LayoutDashboard},
+  {id:"reco",       label:"Recomendações",  Icon:BookOpen},
+  {id:"carteira",   label:"Carteira",       Icon:Briefcase},
+  {id:"perf",       label:"Performance",    Icon:TrendingUp},
+  {id:"risco",      label:"Risco",          Icon:ShieldCheck},
+  {id:"simulador",  label:"Simulador",      Icon:Activity},
+  {id:"relatorios", label:"Relatórios",     Icon:Clock},
+  {id:"custos",     label:"Custos",         Icon:Receipt},
+  {id:"ajuda",      label:"Ajuda",          Icon:HelpCircle},
+  {id:"contactos",  label:"Contactos",      Icon:Mail},
 ];
 function Sidebar({user,profile,loggedIn,onRegister,activePage,onNavigate}:{
   user:string|null;profile:string;loggedIn:boolean;onRegister:()=>void;
@@ -1654,7 +1658,12 @@ export default function ClientDashboardPage() {
   const [showRegModal,setShowRegModal]=useState(false);
   const [period,setPeriod]=useState<Period>("20 Anos");
   const [regSuccess,setRegSuccess]=useState(false);
-  const [activePage,setActivePage]=useState<Page>("dashboard"); // Dashboard is the landing page
+  const [activePage,setActivePage]=useState<Page>("dashboard");
+  const [riskProfileLocal,setRiskProfileLocal]=useState<RiskProfile>("moderado");
+  const [fxExposure,setFxExposure]=useState<FxExposure>("protegida");
+  const [marginEnabled,setMarginEnabled]=useState(false);
+  const [kpiMode,setKpiMode]=useState<KpiMode>("base");
+  const [configPanelOpen,setConfigPanelOpen]=useState(false);
   const [contactForm,setContactForm]=useState({nome:"",email:"",assunto:"",msg:""});
   const [contactSent,setContactSent]=useState(false);
   const [aum,setAum]=useState(100000); // portfolio size in EUR for shares calculation
@@ -1779,7 +1788,12 @@ export default function ClientDashboardPage() {
       if(bv>bpk)bpk=bv;
       return {...pt, bench:+((( bv-bpk)/bpk)*100).toFixed(2)};
     });
-    return {chart,m,curVol,curDD,ddChart:dd5};
+    // YTD return: from Jan 1 to latest
+    const now=new Date(); const ytdStartStr=`${now.getFullYear()}-01-01`;
+    const ytdIdx=dates.findIndex(d=>d>=ytdStartStr);
+    const ytdRet=ytdIdx>=0&&equityRaw.length>ytdIdx
+      ? (equityRaw[equityRaw.length-1]/equityRaw[ytdIdx]-1)*100 : 0;
+    return {chart,m,curVol,curDD,ddChart:dd5,ytdRet};
   },[dates,equityRaw,benchRaw,period]);
 
   // Annual returns from equity series
@@ -1931,33 +1945,106 @@ export default function ClientDashboardPage() {
           )}
 
           <main className="flex-1 overflow-y-auto">
-            {/* top bar */}
-            <div className="flex items-center justify-between px-8 py-5 border-b border-[#1a1f2e]">
+            {/* ── Page title bar ── */}
+            <div className="flex items-center justify-between px-8 py-4 border-b border-[#1a1f2e]">
               <div>
                 <h1 className="text-xl font-black text-white">{
                   activePage==="dashboard"?"Dashboard":
                   activePage==="reco"?"Recomendações":
-                  activePage==="carteira"?"Carteira":activePage==="perf"?"Performance":
-                  activePage==="risco"?"Risco":activePage==="historico"?"Histórico":
+                  activePage==="carteira"?"Carteira":
+                  activePage==="perf"?"Performance":
+                  activePage==="risco"?"Risco":
+                  activePage==="historico"?"Histórico":
+                  activePage==="simulador"?"Simulador":
+                  activePage==="relatorios"?"Relatórios":
                   activePage==="custos"?"Custos":
                   activePage==="ajuda"?"Ajuda":"Contactos"
                 }</h1>
                 <p className="text-slate-400 text-xs mt-0.5">{
-                  activePage==="dashboard"?"Visão geral — "+recoLabel:
+                  activePage==="dashboard"?"Visão geral da sua carteira e recomendações":
                   activePage==="reco"?"Recomendação mensal do modelo — "+recoLabel:
                   activePage==="carteira"?"Composição e alocação da carteira":
                   activePage==="perf"?"Análise de performance histórica":
                   activePage==="risco"?"Métricas e análise de risco":
                   activePage==="historico"?"Histórico de recomendações":
+                  activePage==="simulador"?"Simule diferentes cenários de investimento":
+                  activePage==="relatorios"?"Relatórios detalhados da carteira":
                   activePage==="custos"?"Transparência total sobre os custos do serviço e da sua carteira":
                   activePage==="ajuda"?"Perguntas frequentes e recursos":
                   "Fale connosco"
                 }</p>
               </div>
-              <div className="flex items-center gap-3">
-                <button onClick={()=>setActivePage("reco")} className="flex items-center gap-2 bg-[#111827] border border-[#252a3a] rounded-lg px-4 py-2 text-sm text-slate-300 hover:bg-[#151929] transition-colors">
-                  📅 Recomendação de {recoLabel}
-                  <ChevronDown size={14} className="text-slate-400"/>
+              {/* ── Global config strip ── */}
+              <div className="flex items-center gap-2">
+                {/* Perfil de risco */}
+                <div className="relative group">
+                  <button className="flex items-center gap-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg px-3 py-2 text-xs text-slate-300 hover:border-blue-500/50 transition-colors">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"/>
+                    <span className="text-[10px] text-slate-500 hidden sm:block">Perfil de risco</span>
+                    <span className="font-semibold text-slate-200">{riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado"}</span>
+                    <ChevronDown size={12} className="text-slate-500"/>
+                  </button>
+                  <div className="absolute right-0 top-full mt-1 z-50 hidden group-hover:block bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl shadow-xl min-w-[140px]">
+                    {(["conservador","moderado","dinamico"] as RiskProfile[]).map(p=>(
+                      <button key={p} onClick={()=>setRiskProfileLocal(p)} className={`w-full px-4 py-2.5 text-left text-xs hover:bg-white/5 flex items-center gap-2 first:rounded-t-xl last:rounded-b-xl ${riskProfileLocal===p?"text-blue-400 font-bold":"text-slate-300"}`}>
+                        {riskProfileLocal===p&&<span className="w-1.5 h-1.5 rounded-full bg-blue-400"/>}
+                        {p==="conservador"?"Conservador":p==="dinamico"?"Dinâmico":"Moderado"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Exposição cambial */}
+                <div className="relative group">
+                  <button className="flex items-center gap-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg px-3 py-2 text-xs text-slate-300 hover:border-blue-500/50 transition-colors">
+                    <ShieldCheck size={12} className="text-blue-400 shrink-0"/>
+                    <span className="text-[10px] text-slate-500 hidden sm:block">Exposição cambial</span>
+                    <span className="font-semibold text-slate-200">{fxExposure==="protegida"?"Protegida":fxExposure==="parcial"?"Parcial":"Aberta"}</span>
+                    <ChevronDown size={12} className="text-slate-500"/>
+                  </button>
+                  <div className="absolute right-0 top-full mt-1 z-50 hidden group-hover:block bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl shadow-xl min-w-[140px]">
+                    {(["protegida","parcial","aberta"] as FxExposure[]).map(fx=>(
+                      <button key={fx} onClick={()=>setFxExposure(fx)} className={`w-full px-4 py-2.5 text-left text-xs hover:bg-white/5 flex items-center gap-2 first:rounded-t-xl last:rounded-b-xl ${fxExposure===fx?"text-blue-400 font-bold":"text-slate-300"}`}>
+                        {fxExposure===fx&&<span className="w-1.5 h-1.5 rounded-full bg-blue-400"/>}
+                        {fx==="protegida"?"Protegida (Hedge ~90%)":fx==="parcial"?"Parcial (Hedge ~50%)":"Aberta (Sem hedge)"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Uso de margem */}
+                <div className="relative group">
+                  <button className="flex items-center gap-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg px-3 py-2 text-xs text-slate-300 hover:border-blue-500/50 transition-colors">
+                    <Activity size={12} className={marginEnabled?"text-amber-400":"text-slate-500"} />
+                    <span className="text-[10px] text-slate-500 hidden sm:block">Uso de margem</span>
+                    <span className={`font-semibold ${marginEnabled?"text-amber-400":"text-slate-200"}`}>{marginEnabled?"Ativado":"Desativado"}</span>
+                    <ChevronDown size={12} className="text-slate-500"/>
+                  </button>
+                  <div className="absolute right-0 top-full mt-1 z-50 hidden group-hover:block bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl shadow-xl min-w-[180px] p-3">
+                    <div className="text-[10px] text-slate-500 mb-2">Uso de margem (avançado)</div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-slate-300">{marginEnabled?"Ativado":"Desativado"}</span>
+                      <button onClick={()=>setMarginEnabled(v=>!v)} className={`relative w-10 h-5 rounded-full transition-colors ${marginEnabled?"bg-amber-500":"bg-slate-700"}`}>
+                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${marginEnabled?"translate-x-5":"translate-x-0.5"}`}/>
+                      </button>
+                    </div>
+                    {marginEnabled&&<div className="flex items-start gap-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
+                      <AlertTriangle size={10} className="text-amber-400 mt-0.5 shrink-0"/>
+                      <div className="text-[9px] text-amber-300 leading-relaxed">A utilização de margem aumenta o risco da carteira e pode amplificar perdas.</div>
+                    </div>}
+                  </div>
+                </div>
+                {/* Date */}
+                <div className="flex items-center gap-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg px-3 py-2">
+                  <span className="text-[10px] text-slate-300">📅</span>
+                  <span className="text-xs text-slate-300 font-medium">{new Date().toLocaleDateString("pt-PT",{month:"long",year:"numeric"}).replace(/^\w/,c=>c.toUpperCase())}</span>
+                </div>
+                {/* Config bell/settings */}
+                <button onClick={()=>setConfigPanelOpen(true)}
+                  className="relative p-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg hover:border-blue-500/50 transition-colors">
+                  <Bell size={16} className="text-slate-400"/>
+                </button>
+                <button onClick={()=>setConfigPanelOpen(true)}
+                  className="p-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg hover:border-blue-500/50 transition-colors">
+                  <Sliders size={16} className="text-slate-400"/>
                 </button>
                 {loggedIn ? (
                   <button onClick={()=>void router.push("/client/logout")}
@@ -1967,244 +2054,367 @@ export default function ClientDashboardPage() {
                 ) : (
                   <button onClick={()=>setShowRegModal(true)}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-colors shadow-lg shadow-blue-900/30">
-                    Criar conta grátis
+                    Criar conta
                   </button>
                 )}
               </div>
             </div>
 
+            {/* ── Config side panel overlay ── */}
+            {configPanelOpen&&(
+              <div className="fixed inset-0 z-50 flex" onClick={()=>setConfigPanelOpen(false)}>
+                <div className="flex-1"/>
+                <div className="w-80 bg-[#07090f] border-l border-[#1a1f2e] h-full overflow-y-auto shadow-2xl" onClick={e=>e.stopPropagation()}>
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-[#1a1f2e]">
+                    <span className="font-bold text-slate-100 text-sm">Configurações</span>
+                    <button onClick={()=>setConfigPanelOpen(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400"><X size={16}/></button>
+                  </div>
+                  <div className="p-5 space-y-6">
+                    {/* Perfil de risco */}
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-3">
+                        <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wide">Perfil de risco</span>
+                        <Info size={11} className="text-slate-600"/>
+                      </div>
+                      <div className="text-[10px] text-slate-500 mb-3">Define o nível de risco da sua carteira. A alocação e as recomendações são ajustadas automaticamente.</div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {([
+                          {id:"conservador" as RiskProfile, label:"Conservador", icon:"🛡️", desc:"Menor risco\nMenor volatilidade\nMais obrigações", range:"Vol. alvo: 5–10%"},
+                          {id:"moderado"    as RiskProfile, label:"Moderado",    icon:"⚖️", desc:"Equilíbrio entre risco\ne retorno\nDiversificação global", range:"Vol. alvo: 10–16%"},
+                          {id:"dinamico"    as RiskProfile, label:"Dinâmico",    icon:"🚀", desc:"Maior potencial\nde retorno\nMais exposição a ações", range:"Vol. alvo: 16–25%"},
+                        ]).map(p=>(
+                          <button key={p.id} onClick={()=>setRiskProfileLocal(p.id)}
+                            className={`relative rounded-xl p-3 border-2 text-left transition-all ${riskProfileLocal===p.id?"border-blue-500 bg-blue-500/[0.08]":"border-[#1a1f2e] bg-[#0b0f1a] hover:border-blue-500/30"}`}>
+                            {riskProfileLocal===p.id&&<CheckCircle2 size={12} className="text-blue-400 absolute top-2 right-2"/>}
+                            <div className="text-lg mb-1">{p.icon}</div>
+                            <div className={`text-[11px] font-bold mb-1 ${riskProfileLocal===p.id?"text-blue-300":"text-slate-200"}`}>{p.label}</div>
+                            <div className="text-[8px] text-slate-500 whitespace-pre-line leading-relaxed mb-1">{p.desc}</div>
+                            <div className="text-[8px] text-slate-600">{p.range}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* FX */}
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-3">
+                        <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wide">Exposição cambial</span>
+                        <Info size={11} className="text-slate-600"/>
+                      </div>
+                      <div className="text-[10px] text-slate-500 mb-3">Escolha o nível de protecção cambial da sua carteira.</div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {([
+                          {id:"protegida" as FxExposure, label:"Protegida", sub:"Hedge ~90%"},
+                          {id:"parcial"   as FxExposure, label:"Parcial",   sub:"Hedge ~50%"},
+                          {id:"aberta"    as FxExposure, label:"Aberta",    sub:"Sem hedge"},
+                        ]).map(fx=>(
+                          <button key={fx.id} onClick={()=>setFxExposure(fx.id)}
+                            className={`rounded-xl p-3 border-2 text-center transition-all ${fxExposure===fx.id?"border-blue-500 bg-blue-500/[0.08]":"border-[#1a1f2e] bg-[#0b0f1a] hover:border-blue-500/30"}`}>
+                            <div className={`text-[11px] font-bold mb-0.5 ${fxExposure===fx.id?"text-blue-300":"text-slate-200"}`}>{fx.label}</div>
+                            <div className="text-[9px] text-slate-500">{fx.sub}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Margem */}
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wide">Uso de margem (avançado)</span>
+                        <Info size={11} className="text-slate-600"/>
+                      </div>
+                      <div className="text-[10px] text-slate-500 mb-3">Permite utilizar margem para aumentar a exposição da carteira.</div>
+                      <div className="flex items-center justify-between bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-4 py-3 mb-2">
+                        <span className="text-xs text-slate-300">{marginEnabled?"Margem ativada":"Margem desativada"}</span>
+                        <button onClick={()=>setMarginEnabled(v=>!v)} className={`relative w-11 h-6 rounded-full transition-colors ${marginEnabled?"bg-amber-500":"bg-slate-700"}`}>
+                          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${marginEnabled?"translate-x-5":"translate-x-0.5"}`}/>
+                        </button>
+                      </div>
+                      {marginEnabled&&(
+                        <div className="flex items-start gap-2 bg-amber-500/[0.08] border border-amber-500/20 rounded-xl p-3">
+                          <AlertTriangle size={12} className="text-amber-400 shrink-0 mt-0.5"/>
+                          <div className="text-[10px] text-amber-300 leading-relaxed">A utilização de margem aumenta o risco da carteira e pode amplificar perdas.</div>
+                        </div>
+                      )}
+                    </div>
+                    {/* KPIs e simulações */}
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-3">
+                        <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wide">KPIs e simulações</span>
+                        <Info size={11} className="text-slate-600"/>
+                      </div>
+                      <div className="text-[10px] text-slate-500 mb-3">Escolha como deseja visualizar os indicadores e simulações.</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([
+                          {id:"base"   as KpiMode, label:"Base (sem margem)", sub:"Mais conservador"},
+                          {id:"margem" as KpiMode, label:"Com margem (ilustrativo)", sub:"Maior potencial de retorno"},
+                        ]).map(k=>(
+                          <button key={k.id} onClick={()=>setKpiMode(k.id)}
+                            className={`rounded-xl p-3 border-2 text-left transition-all ${kpiMode===k.id?"border-blue-500 bg-blue-500/[0.08]":"border-[#1a1f2e] bg-[#0b0f1a] hover:border-blue-500/30"}`}>
+                            <div className={`text-[11px] font-bold mb-0.5 ${kpiMode===k.id?"text-blue-300":"text-slate-200"}`}>{k.label}</div>
+                            <div className="text-[9px] text-slate-500">{k.sub}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="border-t border-[#1a1f2e] pt-4">
+                      <div className="flex items-start gap-2 text-[9px] text-slate-500 leading-relaxed">
+                        <Info size={10} className="shrink-0 mt-0.5 text-slate-600"/>
+                        Todas as configurações podem ser alteradas a qualquer momento. As alterações serão aplicadas às próximas recomendações.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="px-8 py-6 space-y-5">
+
+              {/* ── SIMULADOR ── */}
+              {activePage==="simulador"&&(
+                <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+                  <div className="flex items-center gap-2 px-5 pt-5 pb-3">
+                    <h2 className="text-slate-200 text-sm font-bold tracking-wide uppercase">Simulação de Capital</h2>
+                    <Info size={13} className="text-slate-500"/>
+                    {!loggedIn&&(
+                      <button onClick={()=>setShowRegModal(true)} className="ml-auto text-xs px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 rounded-lg font-semibold transition-colors">
+                        Guardar simulação →
+                      </button>
+                    )}
+                  </div>
+                  <div className="px-5 pb-5">
+                    <NativeSimulator dates={dates} equity={equityRaw} bench={benchRaw}
+                      onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}/>
+                  </div>
+                </div>
+              )}
+
+              {/* ── RELATÓRIOS ── */}
+              {activePage==="relatorios"&&(
+                <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-8 text-center">
+                  <div className="text-4xl mb-3">📄</div>
+                  <div className="text-slate-200 font-bold text-lg mb-2">Relatórios</div>
+                  <div className="text-slate-500 text-sm">Em breve: relatórios mensais, anuais e fiscais da sua carteira.</div>
+                </div>
+              )}
 
               {/* ── DASHBOARD ── */}
               {activePage==="dashboard"&&(
-                <div className="space-y-5">
-                  {/* 1. badges */}
-                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                    <SH title="Recomendação deste mês"/>
-                    <div className="flex items-start gap-8">
-                      <div className="flex gap-8">
-                        <ActionBadge label="COMPRAR"  count={recoLoading?0:actionCounts.comprar}  color="text-emerald-400"/>
-                        <ActionBadge label="AUMENTAR" count={recoLoading?0:actionCounts.aumentar} color="text-cyan-400"/>
-                        <ActionBadge label="REDUZIR"  count={recoLoading?0:actionCounts.reduzir}  color="text-amber-400"/>
-                        <ActionBadge label="VENDER"   count={recoLoading?0:actionCounts.vender}   color="text-red-400"/>
-                        <ActionBadge label="MANTER"   count={recoLoading?0:actionCounts.manter}   color="text-slate-300"/>
-                      </div>
-                      <div className="ml-auto flex flex-col gap-2 min-w-[200px]">
-                        {loggedIn?(
-                          <button className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors">
-                            ✓ Aprovar recomendações
-                          </button>
-                        ):(
-                          <button onClick={()=>setShowRegModal(true)} className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors">
-                            Criar conta para aplicar →
-                          </button>
-                        )}
-                        <button className="bg-[#111827] border border-[#252a3a] hover:bg-[#151929] text-slate-300 text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors">
-                          Rever alterações
-                        </button>
-                      </div>
-                    </div>
-                    <div className="mt-4 flex items-center gap-4 text-xs text-slate-400 pt-4 border-t border-[#1a1f2e]">
-                      <span className="font-semibold">Impacto esperado</span>
-                      <span>Risco: <span className="text-emerald-400">↓ Ligeiro</span></span>
-                      <span className="text-slate-600">|</span>
-                      <span>Retorno esperado: <span className="text-blue-400">↑ Moderado</span></span>
-                    </div>
-                  </div>
-                  {/* 2. O que mudou | Risco */}
-                  <div className="grid grid-cols-2 gap-5">
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <SH title="O que mudou"/>
-                      <div className="space-y-4 mt-2">
-                        {whatChanged.map((b,i)=>(
-                          <div key={i} className="flex gap-3">
-                            <div className="mt-0.5 shrink-0">
-                              {b.icon==="up"&&<TrendingUp size={18} className="text-emerald-400"/>}
-                              {b.icon==="down"&&<TrendingDown size={18} className="text-red-400"/>}
-                              {b.icon==="globe"&&<Globe size={18} className="text-blue-400"/>}
-                              {b.icon==="wave"&&<Activity size={18} className="text-slate-400"/>}
+                <div className="space-y-4">
+                  {/* ── 5 KPI cards ── */}
+                  {(()=>{
+                    const ytdPct=perfData?.ytdRet??0;
+                    const totalPct=perfData?.m.ret??0;
+                    const vol=perfData?.curVol??0;
+                    const dd=perfData?.curDD??0;
+                    const fmtP=(v:number,s=false)=>`${s&&v>=0?"+":""}${v.toFixed(2)}%`;
+                    const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
+                    return (
+                      <div className="grid grid-cols-5 gap-3">
+                        {[
+                          {label:"Valor da carteira",val:`€ ${fmtE(aum)}`,sub:"Património total",
+                           icon:<div className="text-blue-400 text-lg">📦</div>,c:"text-slate-100"},
+                          {label:"Variação (YTD)",val:fmtP(ytdPct,true),sub:`+ € ${fmtE(aum*ytdPct/100)} `,
+                           icon:<TrendingUp size={16} className="text-emerald-400"/>,c:ytdPct>=0?"text-emerald-400":"text-red-400"},
+                          {label:"Retorno desde início",val:fmtP(totalPct,true),sub:`+ € ${fmtE(aum*(totalPct/100))} `,
+                           icon:<Activity size={16} className="text-blue-400"/>,c:totalPct>=0?"text-emerald-400":"text-red-400"},
+                          {label:"Risco (Volatilidade anual)",val:vol>0?`${vol.toFixed(1)}%`:"—",sub:"Alinhado com o perfil "+( riskProfileLocal==="conservador"?"conservador":riskProfileLocal==="dinamico"?"dinâmico":"moderado"),
+                           icon:<ShieldCheck size={16} className="text-amber-400"/>,c:"text-amber-400"},
+                          {label:"Máximo drawdown",val:dd!==0?fmtP(dd):"—",sub:"Desde início",
+                           icon:<TrendingDown size={16} className="text-red-400"/>,c:"text-red-400"},
+                        ].map(k=>(
+                          <div key={k.label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="text-[10px] text-slate-500 font-semibold leading-tight">{k.label}</div>
+                              {k.icon}
                             </div>
-                            <div><div className="text-slate-200 text-sm font-semibold">{b.title}</div><div className="text-slate-400 text-xs mt-0.5">{b.desc}</div></div>
+                            <div className={`text-xl font-black mb-0.5 ${k.c}`}>{k.val}</div>
+                            <div className="text-[10px] text-slate-500">{k.sub}</div>
                           </div>
                         ))}
                       </div>
-                    </div>
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <SH title="O seu nível de risco"/>
-                      <div className="flex gap-6 mt-2">
-                        <div className="space-y-4">
-                          <div>
-                            <div className="text-slate-400 text-xs mb-1">Volatilidade (anual)</div>
-                            <div className="text-2xl font-black text-white">{perfData?`${perfData.curVol.toFixed(1)}%`:"—"}</div>
-                            <div className="text-slate-400 text-xs">Média</div>
-                          </div>
-                          <div>
-                            <div className="text-slate-400 text-xs mb-1">Drawdown actual</div>
-                            <div className="text-2xl font-black text-red-400">{perfData?`${perfData.curDD.toFixed(1)}%`:"—"}</div>
-                          </div>
-                          <div>
-                            <div className="text-slate-400 text-xs mb-1">Nível de risco</div>
-                            <div className="text-amber-400 font-bold text-sm">Moderado</div>
-                            <div className="mt-2 w-32">
-                              <div className="relative h-3 rounded-full overflow-hidden" style={{background:"linear-gradient(to right,#22c55e,#f59e0b 50%,#ef4444)"}}>
-                                <div className="absolute top-0 bottom-0 w-0.5 bg-white/90 rounded-full shadow-sm" style={{left:"55%"}}/>
-                              </div>
-                              <div className="flex justify-between text-[9px] mt-0.5">
-                                <span className="text-emerald-400">Baixo</span><span className="text-amber-400 font-semibold">Médio</span><span className="text-red-400">Alto</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex-1">
-                          <div className="text-slate-400 text-xs mb-2">Evolução do drawdown</div>
-                          <ResponsiveContainer width="100%" height={130}>
-                            <LineChart data={perfData?.ddChart??[]} margin={{top:4,right:4,left:-24,bottom:0}}>
-                              <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={d=>d.slice(0,4)} interval={Math.floor((perfData?.ddChart.length??1)/4)}/>
-                              <YAxis tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>`${Number(v).toFixed(0)}%`} domain={["dataMin",0]}/>
-                              <Tooltip content={<PerfTooltip/>}/>
-                              <ReferenceLine y={0} stroke="#334155" strokeDasharray="3 3"/>
-                              <Line type="monotone" dataKey="dd" stroke="#60a5fa" strokeWidth={1.5} dot={false} name="DD"/>
-                            </LineChart>
-                          </ResponsiveContainer>
-                          <div className="flex items-center gap-4 mt-2 text-[10px] text-slate-400">
-                            <div className="flex items-center gap-1.5"><div className="w-3 h-0.5 bg-blue-400"/>Modelo</div>
-                            <div className="flex items-center gap-1.5"><div className="w-3 h-px bg-slate-500"/>Benchmark</div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {/* 3. Alterações | Sector */}
-                  <div className="grid grid-cols-2 gap-5">
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="flex items-center justify-between mb-4">
-                        <SH title="Alterações na carteira"/>
-                        <button onClick={()=>setActivePage("carteira")} className="text-blue-400 text-xs hover:underline flex items-center gap-1 -mt-4">Ver carteira completa<ArrowUpRight size={12}/></button>
-                      </div>
-                      {recoLoading?(
-                        <div className="text-slate-500 text-sm text-center py-6">A carregar…</div>
-                      ):actionCounts.rows.length===0?(
-                        <div className="text-slate-500 text-sm text-center py-6">Sem alterações este mês</div>
-                      ):(
-                        <table className="w-full text-xs">
-                          <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
-                            <th className="text-left pb-2 font-semibold">Ativo</th>
-                            <th className="text-left pb-2 font-semibold">Setor</th>
-                            <th className="text-right pb-2 font-semibold">Actual</th>
-                            <th className="text-right pb-2 font-semibold">Novo</th>
-                            <th className="text-right pb-2 font-semibold">&#916;</th>
-                            <th className="text-right pb-2 font-semibold">Ação</th>
-                          </tr></thead>
-                          <tbody>
-                            {actionCounts.rows.map(r=>{
-                              const ac=r.action==="Comprar"?"text-emerald-400":r.action==="Aumentar"?"text-cyan-400":r.action==="Vender"?"text-red-400":"text-amber-400";
-                              const dc=r.delta>0?"text-emerald-400":"text-red-400";
-                              return (
-                                <tr key={r.ticker} className="border-b border-[#111520] hover:bg-white/[0.02]">
-                                  <td className="py-2">
-                                    <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
-                                      className="font-bold text-blue-400 hover:text-blue-300 hover:underline">{r.ticker}</a>
-                                    {getCompany(r.ticker)&&<span className="ml-1 text-slate-500 font-normal">{getCompany(r.ticker)}</span>}
-                                  </td>
-                                  <td className="py-2 text-slate-400">{getSector(r.ticker)}</td>
-                                  <td className="py-2 text-right text-slate-300">{r.prev.toFixed(1)}%</td>
-                                  <td className="py-2 text-right text-slate-300">{r.cur.toFixed(1)}%</td>
-                                  <td className={`py-2 text-right font-semibold ${dc}`}>{r.delta>0?"+":""}{r.delta.toFixed(1)}%</td>
-                                  <td className={`py-2 text-right font-bold ${ac}`}>{r.action}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      )}
-                    </div>
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="flex items-center justify-between mb-4">
-                        <SH title="Alocação por setor"/>
-                        <button onClick={()=>setActivePage("carteira")} className="text-blue-400 text-xs hover:underline flex items-center gap-1 -mt-4">Ver alocação completa<ArrowUpRight size={12}/></button>
-                      </div>
-                      {sectorData.length===0?(
-                        <div className="text-slate-500 text-sm text-center py-6">A carregar…</div>
-                      ):(
-                        <div className="flex items-center gap-4">
-                          <ResponsiveContainer width={160} height={160}>
-                            <PieChart>
-                              <Pie data={sectorData} cx="50%" cy="50%" innerRadius={48} outerRadius={72} dataKey="value" strokeWidth={0}>
-                                {sectorData.map((_,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
-                              </Pie>
-                              <Tooltip formatter={(v:number)=>`${v}%`} contentStyle={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,fontSize:11}}/>
-                            </PieChart>
-                          </ResponsiveContainer>
-                          <div className="flex-1 space-y-2">
-                            {sectorData.map((s,i)=>(
-                              <div key={s.name} className="flex items-center justify-between text-xs">
-                                <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{background:PIE_COLORS[i%PIE_COLORS.length]}}/><span className="text-slate-300">{s.name}</span></div>
-                                <span className="text-slate-400 font-semibold">{s.value}%</span>
-                              </div>
+                    );
+                  })()}
+
+                  {/* ── Main 2-col layout ── */}
+                  <div className="grid grid-cols-3 gap-4">
+
+                    {/* LEFT col (2/3): chart + recs */}
+                    <div className="col-span-2 space-y-4">
+
+                      {/* Evolução da carteira */}
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="font-bold text-slate-200 text-sm flex items-center gap-2">Evolução da carteira<Info size={12} className="text-slate-600"/></div>
+                          <div className="flex gap-1">
+                            {(["YTD","1 Ano","3 Anos","20 Anos"] as Period[]).map(p=>(
+                              <button key={p} onClick={()=>setPeriod(p)}
+                                className={`px-2.5 py-1 text-[10px] font-semibold rounded transition-colors ${period===p?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>{p==="20 Anos"?"Desde início":p}</button>
                             ))}
                           </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                  {/* 4. Performance */}
-                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                    <div className="flex items-center justify-between mb-4">
-                      <SH title="Performance"/>
-                      <div className="flex items-center gap-6">
-                        {perfData&&[
-                          {label:`Retorno (${period})`,val:fmt(perfData.m.ret,true),c:perfData.m.ret>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Retorno anualizado",val:fmt(perfData.m.ann,true),c:perfData.m.ann>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Sharpe",val:perfData.m.shp.toFixed(2),c:"text-white"},
-                        ].map(({label,val,c})=>(
-                          <div key={label} className="text-right">
-                            <div className="text-slate-500 text-[10px]">{label}</div>
-                            <div className={`font-black text-lg ${c}`}>{val}</div>
+                        {perfData&&(
+                          <div className="flex gap-6 mb-3">
+                            <div className="text-right">
+                              <div className="text-[10px] text-slate-500">Variação YTD</div>
+                              <div className={`font-black text-lg ${(perfData.ytdRet??0)>=0?"text-emerald-400":"text-red-400"}`}>{(perfData.ytdRet??0)>=0?"+":""}{(perfData.ytdRet??0).toFixed(2)}%</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-[10px] text-slate-500">Retorno anualizado</div>
+                              <div className={`font-black text-lg ${perfData.m.ann>=0?"text-emerald-400":"text-red-400"}`}>{perfData.m.ann>=0?"+":""}{perfData.m.ann.toFixed(2)}%</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-[10px] text-slate-500">Sharpe</div>
+                              <div className="font-black text-lg text-slate-100">{perfData.m.shp.toFixed(2)}</div>
+                            </div>
                           </div>
-                        ))}
-                        <div className="flex gap-1 ml-4">
-                          {PERIODS.map(p=>(
-                            <button key={p} onClick={()=>setPeriod(p)}
-                              className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors ${period===p?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>{p}</button>
+                        )}
+                        <ResponsiveContainer width="100%" height={200}>
+                          <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
+                            <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}/>
+                            <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}} width={44}/>
+                            <Tooltip content={<PerfTooltip/>}/>
+                            <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
+                            <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2} dot={false} name="A sua carteira"/>
+                            <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name={BENCH_SHORT} strokeDasharray="4 2"/>
+                          </LineChart>
+                        </ResponsiveContainer>
+                        <div className="flex items-center gap-4 mt-2">
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400"><div className="w-4 h-0.5 bg-blue-400 rounded"/>A sua carteira</div>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400"><div className="w-4 h-px bg-slate-500 rounded"/>Benchmark (60/40)</div>
+                        </div>
+                        <div className="mt-3 flex items-start gap-2 bg-blue-500/[0.05] border border-blue-500/15 rounded-lg px-3 py-2">
+                          <Info size={11} className="text-blue-400 shrink-0 mt-0.5"/>
+                          <div className="text-[10px] text-slate-400">
+                            O desempenho da sua carteira está em linha com o objetivo do perfil <span className="font-bold text-blue-300">{riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado"}</span>.{" "}
+                            <button onClick={()=>setConfigPanelOpen(true)} className="text-blue-400 hover:underline">Saiba mais sobre o seu perfil →</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Últimas recomendações */}
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="font-bold text-slate-200 text-sm flex items-center gap-2">Últimas recomendações<Info size={12} className="text-slate-600"/></div>
+                          <button onClick={()=>setActivePage("reco")} className="text-[10px] text-blue-400 hover:underline flex items-center gap-1">Ver todas as recomendações<ArrowUpRight size={11}/></button>
+                        </div>
+                        {recoLoading?(
+                          <div className="text-slate-500 text-sm text-center py-4">A carregar…</div>
+                        ):(
+                          <table className="w-full text-xs">
+                            <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
+                              <th className="pb-2 font-semibold">Data</th>
+                              <th className="pb-2 font-semibold">Ativo</th>
+                              <th className="pb-2 font-semibold">Ação</th>
+                              <th className="pb-2 font-semibold text-right">Impacto esperado</th>
+                              <th className="pb-2 font-semibold text-right">Estado</th>
+                            </tr></thead>
+                            <tbody>
+                              {actionCounts.rows.slice(0,5).map(r=>{
+                                const acColor=r.action==="Comprar"?"bg-emerald-500/20 text-emerald-300":r.action==="Aumentar"?"bg-cyan-500/20 text-cyan-300":r.action==="Vender"?"bg-red-500/20 text-red-300":"bg-amber-500/20 text-amber-300";
+                                return (
+                                  <tr key={r.ticker} className="border-b border-[#111520] hover:bg-white/[0.02]">
+                                    <td className="py-2 text-slate-500">{recoLabel}</td>
+                                    <td className="py-2">
+                                      <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer" className="font-bold text-blue-400 hover:underline">{r.ticker}</a>
+                                      {getCompany(r.ticker)&&<span className="ml-1 text-slate-500 text-[10px]">{getCompany(r.ticker)}</span>}
+                                    </td>
+                                    <td className="py-2"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${acColor}`}>{r.action}</span></td>
+                                    <td className="py-2 text-right text-slate-400">{r.delta>0?"+":""}{r.delta.toFixed(2)}%</td>
+                                    <td className="py-2 text-right"><span className={`px-2 py-0.5 rounded-full text-[10px] ${loggedIn?"bg-emerald-500/20 text-emerald-300":"bg-amber-500/20 text-amber-300"}`}>{loggedIn?"Aplicada":"Pendente"}</span></td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* RIGHT col (1/3): allocation + positions + profile summary */}
+                    <div className="space-y-4">
+
+                      {/* Alocação da carteira donut */}
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="font-bold text-slate-200 text-sm mb-4 flex items-center gap-2">Alocação da carteira<Info size={12} className="text-slate-600"/></div>
+                        {sectorData.length>0?(
+                          <div className="flex flex-col items-center gap-3">
+                            <div className="relative">
+                              <ResponsiveContainer width={140} height={140}>
+                                <PieChart>
+                                  <Pie data={sectorData.slice(0,6)} cx="50%" cy="50%" innerRadius={42} outerRadius={65} dataKey="value" strokeWidth={0} paddingAngle={2}>
+                                    {sectorData.slice(0,6).map((_,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
+                                  </Pie>
+                                  <Tooltip formatter={(v:number)=>`${v}%`} contentStyle={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,fontSize:11}}/>
+                                </PieChart>
+                              </ResponsiveContainer>
+                              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                <div className="text-xs font-bold text-slate-200">{aum.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+                                <div className="text-[8px] text-slate-500">Total</div>
+                              </div>
+                            </div>
+                            <div className="w-full space-y-1.5">
+                              {sectorData.slice(0,6).map((s,i)=>(
+                                <div key={s.name} className="flex items-center justify-between text-[10px]">
+                                  <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-sm shrink-0" style={{background:PIE_COLORS[i%PIE_COLORS.length]}}/><span className="text-slate-400">{s.name}</span></div>
+                                  <span className="text-slate-300 font-semibold">{s.value}%</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ):(
+                          <div className="text-slate-500 text-xs text-center py-8">A carregar…</div>
+                        )}
+                      </div>
+
+                      {/* Principais posições */}
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="font-bold text-slate-200 text-sm">Principais posições</div>
+                          <button onClick={()=>setActivePage("carteira")} className="text-[10px] text-blue-400 hover:underline">Ver todas</button>
+                        </div>
+                        <div className="space-y-2">
+                          {(latestMonth?.rows??[])
+                            .filter(r=>r.weightPct>=1&&r.ticker!=="TBILL_PROXY"&&!r.ticker.startsWith("CASH")&&!r.ticker.startsWith("TBILL"))
+                            .sort((a,b)=>b.weightPct-a.weightPct).slice(0,4).map((r,i)=>(
+                            <div key={r.ticker} className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full shrink-0" style={{background:PIE_COLORS[i%PIE_COLORS.length]}}/>
+                                <div>
+                                  <div className="text-[11px] font-bold text-slate-200">{getCompany(r.ticker)||r.ticker}</div>
+                                  <div className="text-[9px] text-slate-500">{r.ticker} · {getSector(r.ticker)}</div>
+                                </div>
+                              </div>
+                              <span className="text-[11px] font-bold text-slate-300">{r.weightPct.toFixed(1)}%</span>
+                            </div>
                           ))}
                         </div>
                       </div>
-                    </div>
-                    <ResponsiveContainer width="100%" height={220}>
-                      <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
-                        <XAxis dataKey="date" tick={{fontSize:10,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}/>
-                        <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}}/>
-                        <Tooltip content={<PerfTooltip/>}/>
-                        <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
-                        <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2} dot={false} name="Modelo"/>
-                        <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name="Benchmark" strokeDasharray="4 2"/>
-                      </LineChart>
-                    </ResponsiveContainer>
-                    <div className="flex items-center gap-4 mt-3 flex-wrap">
-                      <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-0.5 bg-blue-400 rounded"/>Modelo</div>
-                      <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-px bg-slate-400 rounded"/>{BENCH_SHORT}</div>
-                      <div className="ml-auto text-[10px] text-slate-600 italic">{BENCH_LABEL}</div>
-                    </div>
-                  </div>
-                  {/* 5. Simulator */}
-                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
-                    <div className="flex items-center justify-between px-5 pt-5 pb-3">
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-slate-200 text-sm font-bold tracking-wide uppercase">Simulação de Capital</h2>
-                        <Info size={13} className="text-slate-500"/>
+
+                      {/* Resumo do perfil */}
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="font-bold text-slate-200 text-sm mb-3 flex items-center gap-2">
+                          Resumo do perfil {riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado"}
+                          <Info size={12} className="text-slate-600"/>
+                        </div>
+                        {[
+                          {icon:"🎯",label:"Objetivo",val:riskProfileLocal==="conservador"?"Preservação de capital com crescimento moderado":riskProfileLocal==="dinamico"?"Crescimento agressivo do capital":"Crescimento do capital com risco moderado"},
+                          {icon:"📊",label:"Volatilidade alvo",val:riskProfileLocal==="conservador"?"5% – 10% ao ano":riskProfileLocal==="dinamico"?"16% – 25% ao ano":"10% – 16% ao ano"},
+                          {icon:"⏳",label:"Horizonte temporal",val:"Médio / Longo prazo (3+ anos)"},
+                          {icon:"🌍",label:"Exposição típica",val:riskProfileLocal==="conservador"?"40% Ações | 50% Obrigações | 10% Alt.":riskProfileLocal==="dinamico"?"85% Ações | 5% Obrigações | 10% Alt.":"60% Ações | 30% Obrigações | 10% Alt."},
+                        ].map(x=>(
+                          <div key={x.label} className="flex items-start gap-2 mb-3 last:mb-0">
+                            <span className="text-sm shrink-0 mt-0.5">{x.icon}</span>
+                            <div>
+                              <div className="text-[10px] text-slate-500 font-semibold">{x.label}</div>
+                              <div className="text-[11px] text-slate-300 leading-snug">{x.val}</div>
+                            </div>
+                          </div>
+                        ))}
+                        <button onClick={()=>setConfigPanelOpen(true)} className="mt-2 text-[10px] text-blue-400 hover:underline">Saiba mais sobre os perfis →</button>
                       </div>
-                      {!loggedIn&&(
-                        <button onClick={()=>setShowRegModal(true)}
-                          className="text-xs px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 rounded-lg font-semibold transition-colors">
-                          Guardar simulação →
-                        </button>
-                      )}
-                    </div>
-                    <div className="px-5 pb-5">
-                      <NativeSimulator dates={dates} equity={equityRaw} bench={benchRaw}
-                        onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}/>
                     </div>
                   </div>
+
+
                 </div>
               )}
 
