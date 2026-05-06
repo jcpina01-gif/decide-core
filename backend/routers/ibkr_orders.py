@@ -49,6 +49,7 @@ class _OrderIn(BaseModel):
     action: str          # Comprar | Aumentar | Reduzir | Vender
     delta_pct: float = 0.0
     est_eur: float = 0.0
+    qty: Optional[float] = None  # se fornecida, usa directamente (ignora price lookup)
 
 
 class IbkrOrdersBody(BaseModel):
@@ -135,7 +136,11 @@ def _execute_ib_orders(
         for o in orders:
             sym = (o.ticker or "").strip().upper()
             side = "BUY" if o.action in ("Comprar", "Aumentar") else "SELL"
-            qty = _est_qty(ib, sym, abs(o.est_eur))
+            # qty explícita tem prioridade (ex: vender toda a carteira com qty real)
+            if o.qty is not None and o.qty > 0:
+                qty = int(math.floor(o.qty + 1e-9)) or 1
+            else:
+                qty = _est_qty(ib, sym, abs(o.est_eur))
             if qty <= 0:
                 fills.append({"ticker": sym, "action": side, "requested_qty": 0,
                                "filled": 0, "status": "skip_zero", "message": "qty=0"})

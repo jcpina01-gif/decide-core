@@ -1708,6 +1708,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [ibkrErr,setIbkrErr]=React.useState("");
   const [sellAllSending,setSellAllSending]=React.useState(false);
   const [sellAllResult,setSellAllResult]=React.useState<{ref:string;fills:number}|null>(null);
+  const [sellAllFills,setSellAllFills]=React.useState<{ticker:string;action:string;requested_qty:number;filled:number;avg_fill_price?:number;status:string}[]>([]);
 
   const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtEm=(v:number)=>Math.abs(v).toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1754,13 +1755,18 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         return;
       }
       const body={
-        orders:ibkrPos.map(p=>({ticker:p.ticker,action:"Vender",delta_pct:0,est_eur:Math.abs(p.value)})),
+        orders:ibkrPos.filter(p=>p.qty>0).map(p=>({
+          ticker:p.ticker,action:"Vender",delta_pct:0,
+          est_eur:Math.abs(p.value),qty:p.qty,  // passa qty real — evita price lookup que pode falhar
+        })),
         paper_mode:false,aum,profile:profileLabel,fx_exposure:fxExposure,margin_enabled:marginEnabled,
       };
       const resp=await fetch("/api/ibkr-orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       const j=await resp.json();
-      if(resp.ok&&j.ok){setSellAllResult({ref:j.order_ref||"ORD-"+Date.now().toString(36).toUpperCase(),fills:j.submitted??ibkrPos.length});}
-      else{setIbkrErr(j.error||j.detail||`Erro ${resp.status}`);}
+      if(resp.ok&&j.ok){
+        setSellAllResult({ref:j.order_ref||"ORD-"+Date.now().toString(36).toUpperCase(),fills:j.submitted??ibkrPos.length});
+        setSellAllFills(j.fills??[]);
+      } else{setIbkrErr(j.error||j.detail||`Erro ${resp.status}`);}
     }catch(e:unknown){setIbkrErr(e instanceof Error?e.message:"Erro de ligação");}
     finally{setSellAllSending(false);}
   }
@@ -2059,13 +2065,45 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                                :`⚠ Vender toda a carteira IB (${ibkrPos.length} posições) — TESTE`}
                   </button>
                 ):(
-                  <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2.5">
-                    <CheckCircle2 size={14} className="text-emerald-400 shrink-0"/>
-                    <div>
-                      <div className="text-[10px] font-bold text-emerald-300">Ordens de venda submetidas</div>
-                      <div className="text-[10px] text-slate-500">{sellAllResult.fills} ordens · ref {sellAllResult.ref}</div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2.5">
+                      <CheckCircle2 size={14} className="text-emerald-400 shrink-0"/>
+                      <div>
+                        <div className="text-[10px] font-bold text-emerald-300">Ordens de venda submetidas</div>
+                        <div className="text-[10px] text-slate-500">{sellAllResult.fills} ordens · ref {sellAllResult.ref}</div>
+                      </div>
+                      <button onClick={()=>{setSellAllResult(null);setSellAllFills([]);setIbkrPos(null);}} className="ml-auto text-slate-500 hover:text-slate-300"><X size={12}/></button>
                     </div>
-                    <button onClick={()=>{setSellAllResult(null);setIbkrPos(null);}} className="ml-auto text-slate-500 hover:text-slate-300"><X size={12}/></button>
+                    {sellAllFills.length>0&&(
+                      <div className="rounded-lg border border-[#1a1f2e] overflow-hidden">
+                        <table className="w-full text-[11px]">
+                          <thead><tr className="text-slate-500 border-b border-[#1a1f2e] bg-[#0b0f1a]">
+                            <th className="text-left px-3 py-1.5">Ticker</th>
+                            <th className="text-right px-2 py-1.5">Qtd</th>
+                            <th className="text-right px-2 py-1.5">Preço médio</th>
+                            <th className="text-left px-3 py-1.5">Estado</th>
+                          </tr></thead>
+                          <tbody>
+                            {sellAllFills.map((f,i)=>{
+                              const skipped=["skip_zero","skip_sell_no_long","contract_not_qualified"].includes(f.status);
+                              const filled=f.status==="Filled";
+                              return(
+                                <tr key={i} className={`border-b border-[#1a1f2e] ${i%2===0?"":"bg-[#080c14]"} ${skipped?"opacity-50":""}`}>
+                                  <td className="px-3 py-1 font-bold text-red-400">{f.ticker}</td>
+                                  <td className="px-2 py-1 text-right text-slate-300">{f.filled||f.requested_qty||"—"}</td>
+                                  <td className="px-2 py-1 text-right text-slate-400">{f.avg_fill_price?f.avg_fill_price.toFixed(2):"—"}</td>
+                                  <td className="px-3 py-1">
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${filled?"bg-emerald-900/40 text-emerald-300":skipped?"bg-slate-800 text-slate-500":"bg-amber-900/40 text-amber-300"}`}>
+                                      {filled?"Vendida":skipped?"Ignorada":f.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 )}
               </>
