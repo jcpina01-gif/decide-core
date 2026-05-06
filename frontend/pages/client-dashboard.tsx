@@ -335,15 +335,23 @@ function periodStart(dates:string[], period:Period) {
   const i=dates.findIndex(d=>new Date(d)>=cut);
   return i<0?0:i;
 }
-/** Rescale daily returns by factor, recompute compounded curve */
+/** Rescale daily returns by factor, recompute compounded curve.
+ *  Guards: zero denominator (warmup flat zeros) → treat as flat (r=0).
+ *  NaN/Inf guard: clamp scaled value to prev to avoid log-chart crash. */
 function scaleEquityCurve(equity:number[], factor:number):number[] {
   if(!equity.length) return equity;
   if(factor===1)     return equity;
   const out=new Array(equity.length);
-  out[0]=equity[0];
+  out[0]=equity[0]||1;
   for(let i=1;i<equity.length;i++){
-    const r=equity[i]/equity[i-1]-1;
-    out[i]=out[i-1]*(1+r*factor);
+    const prev=equity[i-1];
+    if(!prev||!isFinite(prev)){
+      out[i]=out[i-1]; // flat during warmup zeros
+    } else {
+      const r=(equity[i]-prev)/prev;
+      const next=out[i-1]*(1+r*factor);
+      out[i]=isFinite(next)&&next>0 ? next : out[i-1];
+    }
   }
   return out;
 }
