@@ -12,7 +12,7 @@ import {
   ShieldCheck, Clock, Settings, LogOut, ChevronDown, Info,
   ArrowUpRight, ArrowDownRight, Minus, X, Eye, EyeOff,
   Globe, Activity, HelpCircle, Mail, Phone, MapPin, Send,
-  CheckCircle2, Receipt, Bell, Sliders, AlertTriangle,
+  CheckCircle2, Receipt, Bell, Sliders, AlertTriangle, Trash2,
 } from "lucide-react";
 import {
   isClientLoggedIn, getCurrentSessionUser,
@@ -1700,12 +1700,56 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
   const [paperMode,setPaperMode]=React.useState(true);
   // "full" = send entire plan (all positions); "delta" = send only this month's changes
   const [execMode,setExecMode]=React.useState<"full"|"delta">("full");
+  // IB live positions (for orphan detection and "vender tudo")
+  const [ibkrPos,setIbkrPos]=React.useState<{ticker:string;qty:number;value:number;weight_pct:number}[]|null>(null);
+  const [ibkrLoading,setIbkrLoading]=React.useState(false);
+  const [ibkrErr,setIbkrErr]=React.useState("");
+  const [sellAllSending,setSellAllSending]=React.useState(false);
+  const [sellAllResult,setSellAllResult]=React.useState<{ref:string;fills:number}|null>(null);
 
   const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtEm=(v:number)=>Math.abs(v).toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
 
   // Full plan: ALL positions (for display and "full" execution mode)
   const allPlanRows=actionCounts.allRows; // includes Manter
+
+  // Plan tickers that have a target weight > 0
+  const planTickerSet=new Set(allPlanRows.filter(r=>r.cur>0).map(r=>r.ticker));
+  // IB positions not in the current plan (or with cur=0) → "orphan"
+  const orphanPositions=ibkrPos?ibkrPos.filter(p=>!planTickerSet.has(p.ticker)&&p.qty>0):[];
+
+  async function fetchIbkrPositions(){
+    setIbkrLoading(true);setIbkrErr("");
+    try{
+      const resp=await fetch("/api/ibkr-snapshot",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paper_mode:true})});
+      const j=await resp.json();
+      if(j.status==="ok"){setIbkrPos(j.positions);}
+      else{setIbkrErr(j.error||"Erro ao obter posições IB");}
+    }catch(e:unknown){setIbkrErr(e instanceof Error?e.message:"Erro de ligação");}
+    finally{setIbkrLoading(false);}
+  }
+
+  async function sellAllPositions(){
+    if(!loggedIn){onShowRegister();return;}
+    if(!ibkrPos||ibkrPos.length===0) return;
+    setSellAllSending(true);setIbkrErr("");
+    try{
+      if(paperMode){
+        await new Promise(r=>setTimeout(r,1400));
+        setSellAllResult({ref:"SIM-SELLALL-"+Date.now().toString(36).toUpperCase(),fills:ibkrPos.length});
+        return;
+      }
+      const body={
+        orders:ibkrPos.map(p=>({ticker:p.ticker,action:"Vender",delta_pct:0,est_eur:Math.abs(p.value)})),
+        paper_mode:false,aum,profile:profileLabel,fx_exposure:fxExposure,margin_enabled:marginEnabled,
+      };
+      const resp=await fetch("/api/ibkr-orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const j=await resp.json();
+      if(resp.ok&&j.ok){setSellAllResult({ref:j.order_ref||"ORD-"+Date.now().toString(36).toUpperCase(),fills:j.submitted??ibkrPos.length});}
+      else{setIbkrErr(j.error||j.detail||`Erro ${resp.status}`);}
+    }catch(e:unknown){setIbkrErr(e instanceof Error?e.message:"Erro de ligação");}
+    finally{setSellAllSending(false);}
+  }
 
   // Delta rows: only changed positions (Comprar/Aumentar/Reduzir/Vender)
   const deltaRows=actionCounts.allRows.filter(r=>r.action!=="Manter");
@@ -1933,6 +1977,91 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
               className={`w-11 h-6 rounded-full transition-colors relative ${paperMode?"bg-blue-600":"bg-slate-700"}`}>
               <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${paperMode?"translate-x-5":"translate-x-0.5"}`}/>
             </button>
+          </div>
+
+          {/* ── Diagnóstico / Testes ─────────────────────────────────────── */}
+          <div className="bg-[#080c14] border border-amber-500/20 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={13} className="text-amber-400"/>
+                <span className="text-xs font-bold text-amber-300">Diagnóstico de carteira IB</span>
+                <span className="text-[10px] text-slate-500">— ferramentas de teste</span>
+              </div>
+              <button onClick={fetchIbkrPositions} disabled={ibkrLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold bg-[#111827] border border-[#252a3a] text-slate-300 rounded-lg hover:bg-[#1a1f2e] disabled:opacity-50 transition-colors">
+                {ibkrLoading?<span className="animate-spin text-xs">⟳</span>:<Activity size={11}/>}
+                {ibkrLoading?"A carregar…":"Verificar carteira IB"}
+              </button>
+            </div>
+
+            {ibkrErr&&(
+              <div className="text-[10px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mb-3">{ibkrErr}</div>
+            )}
+
+            {ibkrPos&&(
+              <>
+                {/* Orphan positions */}
+                {orphanPositions.length>0&&(
+                  <div className="mb-3">
+                    <div className="text-[10px] font-semibold text-amber-400 mb-1.5">
+                      Posições fora do plano ({orphanPositions.length}) — candidatas a vender
+                    </div>
+                    <table className="w-full text-[10px]">
+                      <thead><tr className="text-slate-600 border-b border-[#1a1f2e]">
+                        <th className="text-left pb-1">Ticker</th>
+                        <th className="text-right pb-1">Qtd</th>
+                        <th className="text-right pb-1">Valor</th>
+                        <th className="text-right pb-1">Peso %</th>
+                      </tr></thead>
+                      <tbody>
+                        {orphanPositions.map(p=>(
+                          <tr key={p.ticker} className="border-b border-[#111520]">
+                            <td className="py-1.5 font-bold text-amber-400">
+                              <a href={`https://finance.yahoo.com/quote/${p.ticker}`} target="_blank" rel="noopener noreferrer" className="hover:underline">{p.ticker}</a>
+                            </td>
+                            <td className="py-1.5 text-right text-slate-300">{p.qty.toFixed(0)}</td>
+                            <td className="py-1.5 text-right text-slate-300">€ {fmtE(Math.abs(p.value))}</td>
+                            <td className="py-1.5 text-right text-amber-300">{p.weight_pct.toFixed(2)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* All IB positions summary */}
+                <div className="text-[10px] text-slate-500 mb-3">
+                  {ibkrPos.length} posições activas na IB
+                  {orphanPositions.length>0?` · ${orphanPositions.length} fora do plano`:` · todas no plano`}
+                </div>
+
+                {/* Vender tudo button */}
+                {!sellAllResult?(
+                  <button onClick={sellAllPositions} disabled={sellAllSending||ibkrPos.length===0}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 rounded-xl disabled:opacity-50 transition-colors">
+                    {sellAllSending?<span className="animate-spin text-sm">⟳</span>:<Trash2 size={13}/>}
+                    {sellAllSending?"A enviar ordens de venda…":
+                      paperMode?`Simular venda total (${ibkrPos.length} posições, TEST)`
+                               :`⚠ Vender toda a carteira IB (${ibkrPos.length} posições) — TESTE`}
+                  </button>
+                ):(
+                  <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2.5">
+                    <CheckCircle2 size={14} className="text-emerald-400 shrink-0"/>
+                    <div>
+                      <div className="text-[10px] font-bold text-emerald-300">Ordens de venda submetidas</div>
+                      <div className="text-[10px] text-slate-500">{sellAllResult.fills} ordens · ref {sellAllResult.ref}</div>
+                    </div>
+                    <button onClick={()=>{setSellAllResult(null);setIbkrPos(null);}} className="ml-auto text-slate-500 hover:text-slate-300"><X size={12}/></button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {!ibkrPos&&!ibkrLoading&&(
+              <div className="text-[10px] text-slate-600 text-center py-2">
+                Clica em "Verificar carteira IB" para carregar posições actuais e activar o botão de venda total.
+              </div>
+            )}
           </div>
 
           {/* Error banner */}
