@@ -1836,8 +1836,11 @@ export default function ClientDashboardPage() {
   const profileLabel=useMemo(()=>
     riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado"
   ,[riskProfileLocal]);
-  const scaledVol=useMemo(()=>(perfData?.curVol??0)*profileFactor,[perfData,profileFactor]);
-  const scaledDD =useMemo(()=>(perfData?.curDD ??0)*profileFactor,[perfData,profileFactor]);
+  const scaledVol  =useMemo(()=>(perfData?.curVol??0)*profileFactor,   [perfData,profileFactor]);
+  const scaledDD   =useMemo(()=>(perfData?.curDD ??0)*profileFactor,   [perfData,profileFactor]);
+  const scaledYtd  =useMemo(()=>(perfData?.ytdRet??0)*profileFactor,   [perfData,profileFactor]);
+  const scaledTotal=useMemo(()=>(perfData?.m.ret ??0)*profileFactor,   [perfData,profileFactor]);
+  const scaledAnn  =useMemo(()=>(perfData?.m.ann ??0)*profileFactor,   [perfData,profileFactor]);
 
   // Annual returns from equity series
   const annualReturns=useMemo(()=>{
@@ -2240,24 +2243,23 @@ export default function ClientDashboardPage() {
 
                   {/* ── 5 KPI cards — profileFactor applied at component level ── */}
                   {(()=>{
-                    const ytdPct=perfData?.ytdRet??0;
-                    const totalPct=perfData?.m.ret??0;
                     const fmtP=(v:number,s=false)=>`${s&&v>=0?"+":""}${v.toFixed(2)}%`;
                     const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
-                    const pfLabel=profileFactor<1?"0,75× vol base":profileFactor>1?"1,25× vol base":"1× vol base";
+                    const pfLabel=profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×";
                     return (
                       <div className="grid grid-cols-5 gap-3">
                         {[
                           {label:"Valor da carteira",val:`€ ${fmtE(aum)}`,sub:"Património total",
                            icon:<div className="text-blue-400 text-lg">📦</div>,c:"text-slate-100"},
-                          {label:"Variação (YTD)",val:fmtP(ytdPct,true),sub:`+ € ${fmtE(aum*ytdPct/100)}`,
-                           icon:<TrendingUp size={16} className="text-emerald-400"/>,c:ytdPct>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Retorno desde início",val:fmtP(totalPct,true),sub:`+ € ${fmtE(aum*(totalPct/100))}`,
-                           icon:<Activity size={16} className="text-blue-400"/>,c:totalPct>=0?"text-emerald-400":"text-red-400"},
+                          {label:"Variação (YTD)",val:fmtP(scaledYtd,true),sub:`${scaledYtd>=0?"+ €":"- €"} ${fmtE(Math.abs(aum*scaledYtd/100))} · ${pfLabel}`,
+                           icon:<TrendingUp size={16} className="text-emerald-400"/>,c:scaledYtd>=0?"text-emerald-400":"text-red-400"},
+                          {label:"Retorno desde início",val:fmtP(scaledTotal,true),sub:`CAGR ${fmtP(scaledAnn,true)} · ${pfLabel}`,
+                           icon:<Activity size={16} className="text-blue-400"/>,c:scaledTotal>=0?"text-emerald-400":"text-red-400"},
                           {label:"Risco (Volatilidade anual)",val:scaledVol>0?`${scaledVol.toFixed(1)}%`:"—",
-                           sub:`Perfil ${profileLabel} · ${pfLabel}`,
+                           sub:`${pfLabel} vol base · Perfil ${profileLabel}`,
                            icon:<ShieldCheck size={16} className="text-amber-400"/>,c:"text-amber-400"},
-                          {label:"Máximo drawdown",val:scaledDD!==0?fmtP(scaledDD):"—",sub:`Perfil ${profileLabel}`,
+                          {label:"Máximo drawdown",val:scaledDD!==0?fmtP(scaledDD):"—",
+                           sub:`${pfLabel} · Perfil ${profileLabel}`,
                            icon:<TrendingDown size={16} className="text-red-400"/>,c:"text-red-400"},
                         ].map(k=>(
                           <div key={k.label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
@@ -2294,11 +2296,11 @@ export default function ClientDashboardPage() {
                           <div className="flex gap-6 mb-3">
                             <div className="text-right">
                               <div className="text-[10px] text-slate-500">Variação YTD</div>
-                              <div className={`font-black text-lg ${(perfData.ytdRet??0)>=0?"text-emerald-400":"text-red-400"}`}>{(perfData.ytdRet??0)>=0?"+":""}{(perfData.ytdRet??0).toFixed(2)}%</div>
+                              <div className={`font-black text-lg ${scaledYtd>=0?"text-emerald-400":"text-red-400"}`}>{scaledYtd>=0?"+":""}{scaledYtd.toFixed(2)}%</div>
                             </div>
                             <div className="text-right">
                               <div className="text-[10px] text-slate-500">Retorno anualizado</div>
-                              <div className={`font-black text-lg ${perfData.m.ann>=0?"text-emerald-400":"text-red-400"}`}>{perfData.m.ann>=0?"+":""}{perfData.m.ann.toFixed(2)}%</div>
+                              <div className={`font-black text-lg ${scaledAnn>=0?"text-emerald-400":"text-red-400"}`}>{scaledAnn>=0?"+":""}{scaledAnn.toFixed(2)}%</div>
                             </div>
                             <div className="text-right">
                               <div className="text-[10px] text-slate-500">Sharpe</div>
