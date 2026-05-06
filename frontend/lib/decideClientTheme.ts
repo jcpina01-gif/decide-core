@@ -99,7 +99,7 @@ export const ONBOARDING_PRIMARY_CTA_MAX_WIDTH_PX = 300;
 export const DECIDE_ONBOARDING = {
   fontFamily: DECIDE_APP_FONT_FAMILY,
   shellMaxWidthPx: ONBOARDING_SHELL_MAX_WIDTH_PX,
-  pageBackground: "var(--page-gradient)",
+  pageBackground: "#080c14",
   text: "var(--text-primary)",
   textMuted: "var(--text-secondary)",
   textLabel: "var(--text-secondary)",

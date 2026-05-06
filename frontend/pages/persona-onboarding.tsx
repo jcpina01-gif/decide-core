@@ -1090,43 +1090,26 @@ export default function PersonaOnboardingPage({
       <Head>
         <title>DECIDE — Verificação de identidade</title>
       </Head>
+      <OnboardingFlowBar currentStepId="kyc" authStepHref="/client/login" />
+
       <div
         style={{
-          minHeight: "100vh",
-          background: DECIDE_ONBOARDING.pageBackground,
+          minHeight: "calc(100vh - 55px)",
+          background: "#080c14",
           color: DECIDE_ONBOARDING.text,
-          padding: "14px max(16px, 3vw) 20px",
+          padding: "36px max(16px, 3vw) 60px",
           fontFamily: DECIDE_ONBOARDING.fontFamily,
           boxSizing: "border-box",
         }}
       >
-        <header
-          style={{
-            maxWidth: ONBOARDING_SHELL_MAX_WIDTH_PX,
-            margin: "0 auto 8px",
-            width: "100%",
-            paddingBottom: 10,
-            borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
-          }}
-        >
-          <div style={{ fontSize: "clamp(20px, 3vw, 28px)", fontWeight: 800, lineHeight: 1.2 }}>
+        {/* Page heading */}
+        <div style={{ maxWidth: 560, margin: "0 auto 24px", textAlign: "center" }}>
+          <h1 style={{ fontSize: "clamp(22px, 3.5vw, 32px)", fontWeight: 800, lineHeight: 1.15, margin: "0 0 8px", color: "#f1f5f9" }}>
             Verificação de identidade
-          </div>
-          <div
-            style={{
-              color: DECIDE_ONBOARDING.textMuted,
-              fontSize: 14,
-              marginTop: 4,
-              maxWidth: 560,
-              lineHeight: 1.4,
-            }}
-          >
-            Confirme a sua identidade para avançar — processo rápido.
-          </div>
-        </header>
-
-        <div style={{ maxWidth: ONBOARDING_SHELL_MAX_WIDTH_PX, margin: "0 auto 8px", width: "100%" }}>
-          <OnboardingFlowBar currentStepId="kyc" authStepHref="/client/login" compact />
+          </h1>
+          <p style={{ margin: 0, fontSize: 14, color: "#64748b", lineHeight: 1.6, fontWeight: 500 }}>
+            Confirme a sua identidade para avançar — processo rápido e seguro.
+          </p>
         </div>
 
         {showPersonaVercelHostnameCallout ? (

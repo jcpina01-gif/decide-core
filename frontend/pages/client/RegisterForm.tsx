@@ -32,7 +32,6 @@ import {
   persistIntendedInvestEur,
   readIntendedInvestEur,
 } from "../../lib/decideInvestPrefill";
-import DecideClientShell from "../../components/DecideClientShell";
 import {
   DECIDE_APP_FONT_FAMILY,
   DECIDE_DASHBOARD,
@@ -256,12 +255,12 @@ function DevCommentHoverIcon({ label, children }: { label: string; children: Rea
 
 const baseInput: React.CSSProperties = {
   width: "100%",
-  background: "#27272a",
-  color: "#fff",
-  border: "1px solid rgba(63,63,70,0.85)",
-  borderRadius: 12,
-  padding: 12,
-  fontSize: 16,
+  background: "#0d1118",
+  color: "#e2e8f0",
+  border: "1px solid #252a3a",
+  borderRadius: 10,
+  padding: "11px 14px",
+  fontSize: 14,
   outline: "none",
 };
 
@@ -355,11 +354,13 @@ const REGISTER_CTA_MAX_PX = 400;
 const REGISTER_STEP1_STACK_GAP_PX = 10;
 
 const REGISTER_CARD_STYLE: React.CSSProperties = {
-  background: "linear-gradient(165deg, rgba(39, 39, 42, 0.96) 0%, rgba(24, 24, 27, 0.99) 100%)",
-  border: "1px solid rgba(63, 63, 70, 0.75)",
+  background: "#0b0f1a",
+  border: "1px solid #1a1f2e",
   borderRadius: 20,
-  padding: "26px 44px 30px",
-  boxShadow: "0 24px 48px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.04) inset",
+  padding: "28px max(20px, 3.5vw) 32px",
+  maxWidth: 560,
+  marginLeft: "auto",
+  marginRight: "auto",
 };
 
 const registerFieldsColumn: React.CSSProperties = {
@@ -387,20 +388,18 @@ const registerResponsiveGrid: React.CSSProperties = {
 /** Passo 2: email = ação principal (destaque teal suave); telemóvel = secundário (cinzento). */
 const REGISTER_STEP2_CARD_EMAIL: React.CSSProperties = {
   minWidth: 0,
-  padding: "20px 22px",
+  padding: "24px 22px",
   borderRadius: 16,
-  background: "linear-gradient(155deg, rgba(13, 148, 136, 0.11) 0%, rgba(15, 23, 42, 0.94) 48%, rgba(9, 9, 11, 0.97) 100%)",
-  border: "1px solid rgba(45, 212, 191, 0.45)",
-  boxShadow: "0 0 0 1px rgba(45, 212, 191, 0.06) inset, 0 8px 28px rgba(13, 148, 136, 0.1), 0 16px 40px rgba(0,0,0,0.22)",
+  background: "#0b0f1a",
+  border: "1px solid #1a1f2e",
 };
 
 const REGISTER_STEP2_CARD_PHONE: React.CSSProperties = {
   minWidth: 0,
-  padding: "20px 22px",
+  padding: "24px 22px",
   borderRadius: 16,
-  background: "rgba(24, 24, 27, 0.97)",
-  border: "1px solid rgba(63, 63, 70, 0.5)",
-  boxShadow: "0 4px 18px rgba(0,0,0,0.18)",
+  background: "#0b0f1a",
+  border: "1px solid #1a1f2e",
 };
 
 function parsePositiveIntFromQuery(raw: string | string[] | undefined): number | null {
@@ -592,6 +591,7 @@ export default function ClientRegisterPage() {
 
   const [signupEmailLinkSentOnce, setSignupEmailLinkSentOnce] = useState(false);
   const [smsResendCooldown, setSmsResendCooldown] = useState(0);
+  const [phoneSent, setPhoneSent] = useState(false);
 
   /**
    * Painéis técnicos / URLs / [DEV]: apenas em desenvolvimento local com opt-in.
@@ -600,11 +600,7 @@ export default function ClientRegisterPage() {
   const registerDevUi =
     process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_DECIDE_REGISTER_DEV_UI === "1";
   /** O painel de código SMS (passo 2) só quando é obrigatório ou (dev) simulação de SMS. Evita textos a prometer SMS que não chega. */
-  const showPhoneSmsInWizardStep2 = useMemo(
-    () =>
-      phoneSmsRequiredForSignup || (registerDevUi && smsVerificationEnabled && phoneVerifyDiag.devSignupSmsSimulate),
-    [phoneSmsRequiredForSignup, registerDevUi, smsVerificationEnabled, phoneVerifyDiag.devSignupSmsSimulate],
-  );
+  const showPhoneSmsInWizardStep2 = true;
   const [wizardStep, setWizardStep] = useState<1 | 2>(1);
   /** Depois de restaurar sessionStorage (ou confirmar que não há rascunho), gravamos alterações sem sobrescrever o draft antes da leitura. */
   const [registerDraftReady, setRegisterDraftReady] = useState(false);
@@ -689,7 +685,12 @@ export default function ClientRegisterPage() {
       setError("As passwords não coincidem.");
       return;
     }
+    // Mostrar verificação inline (sem mudar de passo/página)
     setWizardStep(2);
+    // Enviar email automaticamente se ainda não foi enviado
+    if (!signupEmailLinkSentOnce && !signupEmailOk) {
+      void sendSignupVerification();
+    }
   }
 
   async function goWizardNextFromStep2() {
@@ -970,7 +971,12 @@ export default function ClientRegisterPage() {
             : "Nenhum email foi enviado (modo simulado: o servidor não tem Resend nem Gmail). O Gmail no telemóvel fica vazio até configurar RESEND_API_KEY ou GMAIL_USER + GMAIL_APP_PASSWORD em frontend/.env.local, reiniciar npm run dev e carregar em Reenviar. Para ver o link de confirmação nesta página sem email, defina NEXT_PUBLIC_DECIDE_REGISTER_DEV_UI=1 e reinicie o servidor de desenvolvimento.",
         );
       } else if (!vr.ok) {
-        setError(vr.error || "Não foi possível enviar o email.");
+        const isApiDisabled = vr.error?.includes("api_disabled");
+        setError(
+          isApiDisabled
+            ? "A verificação por email não está ativa neste servidor. Configure ALLOW_CLIENT_NOTIFY_API=1 e VERIFY_EMAIL_SECRET no frontend/.env.local e reinicie o servidor."
+            : (vr.error || "Não foi possível enviar o email."),
+        );
       } else {
         const outboundHint =
           registerDevUi && vr.outboundId
@@ -1108,6 +1114,7 @@ export default function ClientRegisterPage() {
         setPhoneSmsMsg(`Código enviado para ${masked}. Introduza o SMS de 6 dígitos abaixo.`);
       }
       setSmsResendCooldown(30);
+      setPhoneSent(true);
     } catch {
       setError("Erro de rede ao pedir o SMS.");
     } finally {
@@ -1284,63 +1291,34 @@ export default function ClientRegisterPage() {
         <title>Criar conta e começar a investir — DECIDE</title>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <style>{`html,body,#__next{background:#080c14!important;background-attachment:initial!important}`}</style>
       </Head>
-      <DecideClientShell
-        showClientNav={false}
-        maxWidth={REGISTER_PAGE_MAX_WIDTH}
-        padding="14px max(18px, 3.8vw) 44px"
-        pageBackground={DECIDE_ONBOARDING.pageBackground}
-      >
-        <div>
-          <OnboardingFlowBar currentStepId="auth" currentStepAlwaysActive compact />
-          <div style={{ fontSize: 32, fontWeight: 900, marginBottom: 3, letterSpacing: "-0.02em" }}>
-            Criar conta e começar a investir
-          </div>
-          {wizardStep === 1 ? (
-            <>
-              <div
-                style={{
-                  fontSize: 13,
-                  color: "#71717a",
-                  marginBottom: 5,
-                  fontWeight: 600,
-                  lineHeight: 1.45,
-                  letterSpacing: "0.01em",
-                }}
-              >
-                Processo simples e seguro. Sem compromisso. Leva menos de 2 minutos.
-              </div>
-            </>
-          ) : null}
-          <div style={{ color: "#a1a1aa", fontSize: 16, marginBottom: 10, lineHeight: 1.55, maxWidth: "100%" }}>
-            {wizardStep === 1 &&
-              "Indique email, telemóvel e password. No passo seguinte, o contacto será confirmado."}
-            {wizardStep === 2
-              ? smsVerificationEnabled && phoneSmsRequiredForSignup
-                ? "Confirme o email e, em seguida, o telemóvel por SMS — passos obrigatórios para criar a conta."
-                : smsVerificationEnabled
-                  ? "Confirme o email (obrigatório). O SMS é opcional para concluir o registo."
-                  : "Confirme o email para continuar."
-              : null}
-          </div>
+      {/* Sticky header */}
+      <OnboardingFlowBar currentStepId="auth" currentStepAlwaysActive />
 
-          <div style={{ display: "flex", gap: 8, marginBottom: 9 }}>
-            {([1, 2] as const).map((s) => (
-              <div
-                key={s}
-                style={{
-                  flex: 1,
-                  height: 4,
-                  borderRadius: 4,
-                  background: wizardStep >= s ? "#52525b" : "#27272a",
-                  transition: "background 0.2s ease",
-                }}
-              />
-            ))}
-          </div>
-          <div style={{ color: "#71717a", fontSize: 12, fontWeight: 700, marginBottom: 7, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-            Passo {wizardStep} de 2
-          </div>
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "#080c14",
+          color: "#e2e8f0",
+          fontFamily: "'Nunito', 'Segoe UI', system-ui, sans-serif",
+          padding: "40px max(20px, 4vw) 60px",
+          boxSizing: "border-box",
+        }}
+      >
+        {/* Page heading */}
+        <div style={{ maxWidth: 480, margin: "0 auto 32px", textAlign: "center" }}>
+          <h1 style={{ fontSize: "clamp(24px, 4vw, 32px)", fontWeight: 800, lineHeight: 1.2, margin: "0 0 10px", color: "#f1f5f9" }}>
+            Criar conta
+          </h1>
+          <p style={{ margin: 0, fontSize: 15, color: "#64748b", lineHeight: 1.6 }}>
+            {wizardStep === 2
+              ? "Confirme o email e o telemóvel para concluir o registo."
+              : "Vamos começar com os seus dados."}
+          </p>
+        </div>
+
+        <div>
 
           {wizardStep === 2 && privateLanHost ? (
             <div
@@ -1550,7 +1528,7 @@ export default function ClientRegisterPage() {
                     </ul>
                   </div>
 
-                  {signupDevLink && (wizardStep === 2 || postRegisterEmailLinkActive) ? (
+                  {signupDevLink && (wizardStep === 1 || wizardStep === 2 || postRegisterEmailLinkActive) ? (
                     <div
                       style={{
                         background: "rgba(51, 65, 85, 0.5)",
@@ -1654,7 +1632,7 @@ export default function ClientRegisterPage() {
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
             <div style={REGISTER_CARD_STYLE}>
-              {wizardStep === 1 ? (
+              {(
                 <div
                   style={{
                     display: "flex",
@@ -1674,93 +1652,209 @@ export default function ClientRegisterPage() {
                         width: "100%",
                       }}
                     >
+                      {/* ── Email + verificação inline ── */}
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ color: "#cbd5e1", fontSize: 14, marginBottom: 5, fontWeight: 600 }}>Email</div>
-                        <input
-                          ref={registerEmailInputRef}
-                          value={email}
-                          onChange={(e) => {
-                            setEmail(e.target.value);
-                            setRegFieldErr((x) => ({ ...x, email: false, emailNotVerified: false }));
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key !== "Enter") return;
-                            e.preventDefault();
-                            registerPhoneInputRef.current?.focus();
-                          }}
-                          style={regInputStyle(
-                            { ...baseInput, width: "100%" },
-                            !!(regFieldErr.email || regFieldErr.emailNotVerified),
-                          )}
-                          placeholder="nome@exemplo.com"
-                          autoComplete="email"
-                        />
+                        <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 5, fontWeight: 500 }}>Email</div>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <input
+                            ref={registerEmailInputRef}
+                            value={email}
+                            onChange={(e) => {
+                              setEmail(e.target.value);
+                              setRegFieldErr((x) => ({ ...x, email: false, emailNotVerified: false }));
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key !== "Enter") return;
+                              e.preventDefault();
+                              registerPhoneInputRef.current?.focus();
+                            }}
+                            style={regInputStyle(
+                              { ...baseInput, width: "100%", flex: 1 },
+                              !!(regFieldErr.email || regFieldErr.emailNotVerified),
+                            )}
+                            placeholder="nome@exemplo.com"
+                            autoComplete="email"
+                            disabled={signupEmailOk}
+                          />
+                          {signupEmailOk ? (
+                            <span style={{ color: "#22c55e", fontSize: 18, flexShrink: 0 }}>✓</span>
+                          ) : emailLooksValid && !signupEmailLinkSentOnce ? (
+                            <button
+                              type="button"
+                              disabled={signupSendBusy}
+                              onClick={() => void sendSignupVerification()}
+                              style={{
+                                flexShrink: 0,
+                                background: "rgba(59,130,246,0.15)",
+                                border: "1px solid rgba(59,130,246,0.4)",
+                                color: "#60a5fa",
+                                borderRadius: 8,
+                                padding: "8px 10px",
+                                fontSize: 12,
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {signupSendBusy ? "…" : "Verificar"}
+                            </button>
+                          ) : signupEmailLinkSentOnce && !signupEmailOk ? (
+                            <button
+                              type="button"
+                              disabled={signupSendBusy}
+                              onClick={() => void sendSignupVerification()}
+                              style={{
+                                flexShrink: 0,
+                                background: "transparent",
+                                border: "1px solid #252a3a",
+                                color: "#475569",
+                                borderRadius: 8,
+                                padding: "8px 8px",
+                                fontSize: 11,
+                                cursor: "pointer",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {signupSendBusy ? "…" : "Reenviar"}
+                            </button>
+                          ) : null}
+                        </div>
                         {regFieldErr.email ? (
                           <div style={{ color: "#fca5a5", fontSize: 12, marginTop: 6 }}>Email em falta ou formato inválido.</div>
+                        ) : signupEmailOk ? (
+                          <div style={{ color: "#22c55e", fontSize: 11, marginTop: 5 }}>Email confirmado ✓</div>
+                        ) : signupEmailLinkSentOnce && signupDevLink ? (
+                          <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                            <div style={{ color: "#94a3b8", fontSize: 11 }}>
+                              Sem email real configurado — clique no link abaixo para confirmar:
+                            </div>
+                            <a
+                              href={signupDevLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                display: "inline-block",
+                                background: "rgba(37,99,235,0.18)",
+                                border: "1px solid rgba(59,130,246,0.4)",
+                                borderRadius: 8,
+                                padding: "5px 10px",
+                                color: "#60a5fa",
+                                fontSize: 11,
+                                fontWeight: 600,
+                                textDecoration: "none",
+                                wordBreak: "break-all",
+                              }}
+                            >
+                              Confirmar email (link de teste) →
+                            </a>
+                          </div>
+                        ) : signupEmailLinkSentOnce && !signupEmailOk ? (
+                          <div style={{ color: "#fbbf24", fontSize: 11, marginTop: 5 }}>
+                            Link enviado — verifique o email para confirmar.
+                          </div>
                         ) : null}
                       </div>
 
+                      {/* ── Telemóvel + verificação SMS inline ── */}
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ color: "#cbd5e1", fontSize: 14, marginBottom: 5, fontWeight: 600 }}>Telemóvel</div>
-                        <input
-                          ref={registerPhoneInputRef}
-                          value={phone}
-                          onChange={(e) => {
-                            setPhone(e.target.value);
-                            clearSignupPhoneVerifiedFlag();
-                            setPhoneFormatHint(null);
-                            setRegFieldErr((x) => ({ ...x, phone: false, phoneNotVerified: false }));
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key !== "Enter") return;
-                            e.preventDefault();
-                            registerUsernameInputRef.current?.focus();
-                          }}
-                          style={regInputStyle(
-                            { ...baseInput, width: "100%" },
-                            !!(regFieldErr.phone || regFieldErr.phoneNotVerified),
-                          )}
-                          placeholder="+351912345678 ou 912345678"
-                          autoComplete="tel"
-                          inputMode="tel"
-                        />
+                        <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 5, fontWeight: 500 }}>Telemóvel</div>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <input
+                            ref={registerPhoneInputRef}
+                            value={phone}
+                            onChange={(e) => {
+                              setPhone(e.target.value);
+                              clearSignupPhoneVerifiedFlag();
+                              setPhoneFormatHint(null);
+                              setRegFieldErr((x) => ({ ...x, phone: false, phoneNotVerified: false }));
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key !== "Enter") return;
+                              e.preventDefault();
+                              registerUsernameInputRef.current?.focus();
+                            }}
+                            style={regInputStyle(
+                              { ...baseInput, width: "100%", flex: 1 },
+                              !!(regFieldErr.phone || regFieldErr.phoneNotVerified),
+                            )}
+                            placeholder="+351912345678"
+                            autoComplete="tel"
+                            inputMode="tel"
+                            disabled={signupPhoneOk}
+                          />
+                          {signupPhoneOk ? (
+                            <span style={{ color: "#22c55e", fontSize: 18, flexShrink: 0 }}>✓</span>
+                          ) : smsVerificationEnabled && normalizeClientPhone(phone).ok && !signupPhoneOk ? (
+                            <button
+                              type="button"
+                              disabled={phoneSmsBusy || smsResendCooldown > 0}
+                              onClick={() => void sendPhoneVerificationSms()}
+                              style={{
+                                flexShrink: 0,
+                                background: "rgba(59,130,246,0.15)",
+                                border: "1px solid rgba(59,130,246,0.4)",
+                                color: "#60a5fa",
+                                borderRadius: 8,
+                                padding: "8px 10px",
+                                fontSize: 12,
+                                fontWeight: 700,
+                                cursor: phoneSmsBusy || smsResendCooldown > 0 ? "not-allowed" : "pointer",
+                                opacity: phoneSmsBusy || smsResendCooldown > 0 ? 0.5 : 1,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {phoneSmsBusy ? "…" : smsResendCooldown > 0 ? `${smsResendCooldown}s` : "SMS"}
+                            </button>
+                          ) : null}
+                        </div>
+                        {phoneSent && !signupPhoneOk && smsVerificationEnabled ? (
+                          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                            <input
+                              value={phoneOtp}
+                              onChange={(e) => setPhoneOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                              placeholder="Código SMS"
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                              style={{ ...baseInput, flex: 1, fontSize: 13, letterSpacing: 2, textAlign: "center" }}
+                            />
+                            <button
+                              type="button"
+                              disabled={phoneVerifyBusy || phoneOtp.length < 4}
+                              onClick={() => void verifyPhoneOtp()}
+                              style={{
+                                background: "#2563eb",
+                                color: "#fff",
+                                border: "none",
+                                borderRadius: 8,
+                                padding: "8px 12px",
+                                fontSize: 12,
+                                fontWeight: 700,
+                                cursor: phoneVerifyBusy || phoneOtp.length < 4 ? "not-allowed" : "pointer",
+                                opacity: phoneVerifyBusy || phoneOtp.length < 4 ? 0.5 : 1,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {phoneVerifyBusy ? "…" : "Confirmar"}
+                            </button>
+                          </div>
+                        ) : null}
                         {regFieldErr.phone ? (
                           <div style={{ color: "#fca5a5", fontSize: 12, marginTop: 6 }}>
-                            Número inválido. Utilize +351… ou 9XXXXXXXX (Portugal).
+                            Número inválido. Utilize +351… ou 9XXXXXXXX.
                           </div>
-                        ) : (
-                          <div style={{ color: "#71717a", fontSize: 12, marginTop: 6 }}>
-                            Com indicativo do país. Ex.: <code style={{ color: "#a1a1aa" }}>+351912345678</code>
+                        ) : signupPhoneOk ? (
+                          <div style={{ color: "#22c55e", fontSize: 11, marginTop: 5 }}>Telemóvel confirmado ✓</div>
+                        ) : !smsVerificationEnabled ? (
+                          <div style={{ color: "#475569", fontSize: 11, marginTop: 5 }}>
+                            Número associado à conta no registo.
                           </div>
-                        )}
+                        ) : null}
                       </div>
                     </div>
 
-                    <div
-                      style={{
-                        width: "100%",
-                        marginTop: 2,
-                        padding: "12px 14px 14px",
-                        borderRadius: 14,
-                        background: "rgba(234, 179, 8, 0.08)",
-                        border: "1px solid rgba(250, 204, 21, 0.35)",
-                        boxSizing: "border-box",
-                      }}
-                    >
-                      <div
-                        style={{
-                          color: "#fde68a",
-                          fontSize: 12,
-                          fontWeight: 800,
-                          marginBottom: 10,
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        Use este identificador no descritivo da transferência para a Interactive Brokers. Deve coincidir com o{" "}
-                        <strong style={{ color: "#fef3c7" }}>login DECIDE</strong> para podermos associar corretamente o pagamento.
-                      </div>
-                      <div style={{ color: "#cbd5e1", fontSize: 14, marginBottom: 5, fontWeight: 600 }}>
-                        Utilizador (login) <span style={{ color: "#fca5a5" }}>*</span>
+                    <div style={{ width: "100%", marginTop: 2, boxSizing: "border-box" }}>
+                      <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 5, fontWeight: 500 }}>
+                        Utilizador (login) <span style={{ color: "#ef4444" }}>*</span>
                       </div>
                       <input
                         ref={registerUsernameInputRef}
@@ -1780,106 +1874,80 @@ export default function ClientRegisterPage() {
                         spellCheck={false}
                       />
                       {regFieldErr.username ? (
-                        <div style={{ color: "#fca5a5", fontSize: 12, marginTop: 6 }}>
+                        <div style={{ color: "#fca5a5", fontSize: 12, marginTop: 5 }}>
                           {validateRegisterUsernameInput() || "Indique um utilizador válido."}
                         </div>
                       ) : (
-                        <div style={{ color: "#71717a", fontSize: 12, marginTop: 6 }}>
-                          Apenas minúsculas, números, <code style={{ color: "#a1a1aa" }}>.</code>{" "}
-                          <code style={{ color: "#a1a1aa" }}>_</code> e <code style={{ color: "#a1a1aa" }}>-</code>. Sugestão automática a
-                          partir do email (pode editar).
+                        <div style={{ color: "#475569", fontSize: 11, marginTop: 5, lineHeight: 1.4 }}>
+                          Use este id no descritivo da transferência IB. Sugestão automática a partir do email.
                         </div>
                       )}
                     </div>
                   </div>
 
                   <div style={{ width: "100%", boxSizing: "border-box" }}>
-                    <div style={{ color: "#cbd5e1", fontSize: 14, marginBottom: 8, fontWeight: 600 }}>Plano</div>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                        gap: 10,
-                        alignItems: "stretch",
-                        width: "100%",
-                      }}
-                    >
-                      <label
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          alignItems: "flex-start",
-                          cursor: "pointer",
-                          padding: "10px 10px",
-                          borderRadius: 12,
-                          minWidth: 0,
-                          border:
-                            clientSegment === "premium"
-                              ? "1px solid rgba(45,212,191,0.55)"
-                              : "1px solid rgba(51,65,85,0.85)",
-                          background: clientSegment === "premium" ? "rgba(45,212,191,0.08)" : "transparent",
-                        }}
-                      >
-                        <input
-                          type="radio"
-                          name="client_segment"
-                          checked={clientSegment === "premium"}
-                          onChange={() => setClientSegmentState("premium")}
-                          style={{ marginTop: 3 }}
-                        />
-                        <div>
-                          <div style={{ fontWeight: 800, color: "#e2e8f0" }}>{formatSegmentTitleLabel("premium")}</div>
-                          <div style={{ fontSize: 12, color: DECIDE_DASHBOARD.accentSky, marginTop: 4, fontWeight: 700, lineHeight: 1.35 }}>
-                            ✔ Ideal para começar com controlo total
-                          </div>
-                          <div style={{ fontSize: 12, color: "#a1a1aa", marginTop: 6, lineHeight: 1.45 }}>
-                            Comissão fixa mensal e simulador de custos no dashboard; sem passo extra de hedge cambial no
-                            onboarding.
-                          </div>
-                        </div>
-                      </label>
-                      <label
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          alignItems: "flex-start",
-                          cursor: "pointer",
-                          padding: "10px 10px",
-                          borderRadius: 12,
-                          minWidth: 0,
-                          border:
-                            clientSegment === "private"
-                              ? "1px solid rgba(45,212,191,0.55)"
-                              : "1px dashed rgba(82, 82, 91, 0.65)",
-                          background: clientSegment === "private" ? "rgba(45,212,191,0.08)" : "transparent",
-                          boxShadow: "none",
-                        }}
-                      >
-                        <input
-                          type="radio"
-                          name="client_segment"
-                          checked={clientSegment === "private"}
-                          onChange={() => setClientSegmentState("private")}
-                          style={{ marginTop: 3 }}
-                        />
-                        <div>
-                          <div style={{ fontWeight: 800, color: "#e2e8f0" }}>{formatSegmentTitleLabel("private")}</div>
-                          <div
+                    <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 10, fontWeight: 500 }}>Tipo de conta</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, width: "100%" }}>
+                      {(["premium", "private"] as const).map((seg) => {
+                        const selected = clientSegment === seg;
+                        const label = seg === "premium" ? "Essencial" : "Private";
+                        const minLabel = seg === "premium" ? "mín. 5 000 €" : "mín. 50 000 €";
+                        const tagLine = seg === "premium" ? "Ideal para começar com controlo total" : "Para patrimónios mais elevados";
+                        const detail = seg === "premium"
+                          ? "Comissão fixa mensal e simulador de custos no dashboard."
+                          : "Inclui opção de hedge cambial e análise avançada de custos/risco.";
+                        return (
+                          <label
+                            key={seg}
                             style={{
-                              fontSize: 12,
-                              color: DECIDE_DASHBOARD.accentSky,
-                              marginTop: 4,
-                              fontWeight: 700,
-                              lineHeight: 1.35,
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 8,
+                              cursor: "pointer",
+                              padding: "14px 14px",
+                              borderRadius: 14,
+                              border: selected ? "1.5px solid #3b82f6" : "1px solid #1a1f2e",
+                              background: selected ? "rgba(59,130,246,0.10)" : "#0d1118",
+                              transition: "all 0.15s ease",
+                              minWidth: 0,
+                              position: "relative",
                             }}
                           >
-                            ✔ Para patrimónios mais elevados
-                          </div>
-                          <div style={{ fontSize: 12, color: "#a1a1aa", marginTop: 6, lineHeight: 1.45 }}>
-                            Inclui opção de hedge cambial e análise avançada de custos/risco.
-                          </div>
-                        </div>
-                      </label>
+                            {/* Custom radio dot */}
+                            <div style={{
+                              position: "absolute",
+                              top: 12,
+                              right: 12,
+                              width: 18,
+                              height: 18,
+                              borderRadius: "50%",
+                              border: selected ? "2px solid #3b82f6" : "2px solid rgba(255,255,255,0.15)",
+                              background: selected ? "#3b82f6" : "transparent",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}>
+                              {selected && <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff" }} />}
+                            </div>
+                            <input
+                              type="radio"
+                              name="client_segment"
+                              checked={selected}
+                              onChange={() => setClientSegmentState(seg)}
+                              style={{ display: "none" }}
+                            />
+                            <div style={{ fontWeight: 700, fontSize: 14, color: "#e2e8f0", paddingRight: 24 }}>
+                              {label} — <span style={{ color: "#64748b", fontWeight: 500, fontSize: 12 }}>{minLabel}</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: selected ? "#60a5fa" : "#22c55e", fontWeight: 600 }}>
+                              ✔ {tagLine}
+                            </div>
+                            <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.45 }}>
+                              {detail}
+                            </div>
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -2007,49 +2075,59 @@ export default function ClientRegisterPage() {
                       alignItems: "center",
                     }}
                   >
-                    <button
-                      type="button"
-                      onClick={goWizardNextFromStep1}
-                      style={{
-                        width: "100%",
-                        maxWidth: REGISTER_CTA_MAX_PX,
-                        background: DECIDE_DASHBOARD.buttonRegister,
-                        color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
-                        borderRadius: 14,
-                        padding: "14px 22px",
-                        fontSize: 16,
-                        fontWeight: 900,
-                        border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
-                        cursor: "pointer",
-                        boxShadow: `${DECIDE_DASHBOARD.kpiMenuMainButtonShadow}, 0 14px 36px rgba(13, 148, 136, 0.35)`,
-                      }}
-                    >
-                      Continuar → confirmar contactos
-                    </button>
-                    <div
-                      style={{
-                        marginTop: 16,
-                        paddingTop: 14,
-                        borderTop: "1px solid rgba(148, 163, 184, 0.14)",
-                        fontSize: 10,
-                        color: "#a1a1aa",
-                        lineHeight: 1.5,
-                        fontWeight: 500,
-                        letterSpacing: "0.03em",
-                        textAlign: "center",
-                        width: "100%",
-                        maxWidth: 560,
-                        marginLeft: "auto",
-                        marginRight: "auto",
-                        boxSizing: "border-box",
-                      }}
-                    >
-                      As recomendações dependem do perfil do investidor e requerem aprovação explícita antes de qualquer execução.
-                    </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Valida campos e prossegue (verificação é feita inline)
+                          resetMsgs();
+                          setRegFieldErr({});
+                          if (!emailLooksValid) { setRegFieldErr({ email: true }); setError("Indique um email válido."); return; }
+                          const ph = normalizeClientPhone(phone);
+                          if (!ph.ok) { setRegFieldErr({ phone: true }); setError(ph.error); return; }
+                          const userErr = validateRegisterUsernameInput();
+                          if (userErr) { setRegFieldErr({ username: true }); setError(userErr); return; }
+                          if (!strength.ok) { setRegFieldErr({ password: true }); setError(`Password fraca. ${passwordStrengthSummary()}`); return; }
+                          if (!passwordsMatch) { setRegFieldErr({ passwordConfirm: true }); setError("As passwords não coincidem."); return; }
+                          if (!signupEmailOk) {
+                            setError("Confirme o email — clique em «Verificar» ao lado do campo de email.");
+                            if (!signupEmailLinkSentOnce) void sendSignupVerification();
+                            return;
+                          }
+                          void goWizardNextFromStep2();
+                        }}
+                        style={{
+                          width: "100%",
+                          maxWidth: REGISTER_CTA_MAX_PX,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 8,
+                          background: signupEmailOk ? "#3b82f6" : "#1e3a5f",
+                          color: "#fff",
+                          borderRadius: 12,
+                          padding: "15px 24px",
+                          fontSize: 15,
+                          fontWeight: 700,
+                          border: "none",
+                          cursor: "pointer",
+                          boxShadow: signupEmailOk ? "0 4px 20px rgba(59,130,246,0.35)" : "none",
+                          transition: "all 0.2s ease",
+                        }}
+                      >
+                        {signupEmailOk ? "Continuar →" : "Confirme o email para continuar"}
+                      </button>
+                    <p style={{ fontSize: 12, color: "#334155", marginTop: 14, textAlign: "center" }}>
+                      Os seus dados estão protegidos
+                    </p>
                   </div>
                   </div>
                 </div>
-              ) : (
+              )}
+            </div>
+
+            {/* ── Bloco dev: link de confirmação e ferramentas de teste ── */}
+            {wizardStep === 2 && (
+              <div style={{ marginTop: 16 }}>
                 <>
                   {registerDevUi && emailLinkDiag && browserHostIsLoopback && emailLinkPointsAwayFromLocalhost(emailLinkDiag.linkBase) ? (
                     <div
@@ -2729,8 +2807,8 @@ export default function ClientRegisterPage() {
                     ) : null}
                   </div>
                 </>
-              )}
-            </div>
+              </div>
+            )}
 
             <p style={{ textAlign: "center", color: "#475569", fontSize: 13, marginTop: 8 }}>
               <a href="/client-dashboard" style={{ color: "#71717a" }}>
@@ -2745,7 +2823,7 @@ export default function ClientRegisterPage() {
             </p>
           </div>
         </div>
-      </DecideClientShell>
+      </div>
     </>
   );
 }

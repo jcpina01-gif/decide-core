@@ -165,23 +165,23 @@ function profilePracticalOneLinePt(p: RiskProfile): string {
 
 function sectionStyle(): React.CSSProperties {
   return {
-    background: DECIDE_CLIENT.cardGradient,
-    border: DECIDE_CLIENT.cardBorder,
+    background: "linear-gradient(160deg, rgba(15,23,42,0.95) 0%, rgba(11,17,32,0.98) 100%)",
+    border: "1px solid rgba(30,40,65,0.9)",
     borderRadius: 18,
-    padding: 16,
-    boxShadow: DECIDE_CLIENT.cardShadow,
+    padding: "22px 20px",
+    boxShadow: "0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04)",
   };
 }
 
 function inputStyle(): React.CSSProperties {
   return {
     width: "100%",
-    background: DECIDE_CLIENT.inputBg,
-    color: DECIDE_CLIENT.text,
-    border: DECIDE_CLIENT.inputBorder,
+    background: "rgba(9,14,27,0.8)",
+    color: "#e2e8f0",
+    border: "1px solid rgba(30,40,65,0.9)",
     borderRadius: 12,
-    padding: 12,
-    fontSize: 16,
+    padding: "13px 14px",
+    fontSize: 15,
     outline: "none",
   };
 }
@@ -947,15 +947,15 @@ export default function MifidTestPage() {
   }
 
   const btnPrimary: React.CSSProperties = {
-    background: DECIDE_CLIENT.buttonPrimaryGradient,
-    color: DECIDE_CLIENT.text,
-    border: DECIDE_CLIENT.buttonPrimaryBorder,
+    background: "linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)",
+    color: "#fff",
+    border: "1px solid rgba(14,165,233,0.4)",
     borderRadius: 12,
-    padding: "11px 18px",
+    padding: "13px 24px",
     fontSize: 15,
-    fontWeight: 900,
+    fontWeight: 700,
     cursor: "pointer",
-    boxShadow: DECIDE_CLIENT.buttonPrimaryGlow,
+    boxShadow: "0 4px 20px rgba(14,165,233,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
   };
   const btnPrimaryCta: React.CSSProperties = {
     ...btnPrimary,
@@ -1028,77 +1028,74 @@ export default function MifidTestPage() {
       </Head>
       <div
         style={{
-          minHeight: "100vh",
+          minHeight: "calc(100vh - 55px)",
           background: DECIDE_CLIENT.pageGradient,
           color: DECIDE_CLIENT.text,
-          padding: "18px max(12px, 2vw) 22px",
+          padding: "36px max(16px, 3vw) 60px",
           fontFamily: DECIDE_CLIENT.fontFamily,
           fontSize: "clamp(14px, 1.05vw, 15px)",
         }}
       >
         <OnboardingFlowBar currentStepId="mifid" authStepHref="/client/login" shellMaxWidthPx={MIFID_PAGE_MAX_WIDTH_PX} />
 
-        <div style={{ marginBottom: 12, marginTop: 12 }}>
-          <div style={{ fontSize: "clamp(22px, 3.2vw, 34px)", fontWeight: 800, lineHeight: 1.12 }}>Definir o seu perfil de investidor</div>
-          <div style={{ color: "#cbd5e1", fontSize: "max(14px, 0.95em)", marginTop: 6, maxWidth: "min(100%, 960px)", lineHeight: 1.45, fontWeight: 500 }}>
-            Com estas escolhas, definimos o seu perfil de investimento e a estratégia mais adequada.
-          </div>
-          <div style={{ color: "#71717a", fontSize: "max(12px, 0.88em)", marginTop: 6, maxWidth: "min(100%, 960px)", lineHeight: 1.45 }}>
-            Enquadramento MiFID com linguagem clara — ajuste mais tarde se o seu contexto mudar.
-          </div>
-          {mifidPreviouslyConfirmed ? (
-            <div
-              style={{
-                marginTop: 12,
-                padding: "10px 14px",
-                borderRadius: 12,
-                background: "rgba(45, 212, 191, 0.1)",
-                border: "1px solid rgba(45, 212, 191, 0.35)",
-                color: "#99f6e4",
-                fontSize: 14,
-                lineHeight: 1.45,
-                maxWidth: "min(100%, 960px)",
-              }}
-            >
-              <strong style={{ color: "#ecfdf5" }}>Perfil já confirmado.</strong> Se alterar respostas, confirme outra vez no último passo para aplicar.
-            </div>
-          ) : (
-            <div style={{ color: "#71717a", fontSize: 13, marginTop: 10, maxWidth: "min(100%, 960px)", lineHeight: 1.45 }}>
-              Respostas em rascunho neste dispositivo até confirmar no passo final.
-            </div>
-          )}
+        {/* Heading */}
+        <div style={{ maxWidth: 560, margin: "0 auto 20px", textAlign: "center" }}>
+          <h1 style={{ fontSize: "clamp(22px, 3.5vw, 34px)", fontWeight: 800, lineHeight: 1.15, margin: "0 0 10px", color: "#f1f5f9" }}>
+            Perfil de investidor
+          </h1>
+          <p style={{ margin: 0, fontSize: 14, color: "#64748b", lineHeight: 1.6, fontWeight: 500 }}>
+            {mifidPreviouslyConfirmed
+              ? "Perfil já confirmado. Pode rever e confirmar novamente se necessário."
+              : "Enquadramento MiFID com linguagem clara — ajuste mais tarde se o seu contexto mudar."}
+          </p>
         </div>
 
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+        {/* Wizard progress (internal steps) */}
+        <div style={{ maxWidth: MIFID_PAGE_MAX_WIDTH_PX, margin: "0 auto 18px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
             {Array.from({ length: MIFID_WIZARD_TOTAL_STEPS }, (_, idx) => idx + 1).map((i) => {
               const completed = i < wizardStep && i <= wizardMaxDone;
               const active = i === wizardStep;
-              const bg = completed ? "#2d6d66" : active ? "#3f9e93" : "#1a3d39";
               return (
-                <div
-                  key={i}
-                  style={{
-                    flex: 1,
-                    height: 4,
-                    borderRadius: 4,
-                    background: bg,
-                    transition: "background 0.2s ease",
-                  }}
-                />
+                <React.Fragment key={i}>
+                  <div style={{
+                    width: active ? 30 : 24,
+                    height: active ? 30 : 24,
+                    borderRadius: "50%",
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    background: completed
+                      ? "linear-gradient(135deg,#0d9488,#0f766e)"
+                      : active
+                        ? "linear-gradient(135deg,#0ea5e9,#0284c7)"
+                        : "rgba(15,23,42,0.6)",
+                    color: completed || active ? "#fff" : "#334155",
+                    border: active ? "2px solid rgba(14,165,233,0.5)" : completed ? "2px solid rgba(13,148,136,0.4)" : "2px solid #1e2740",
+                    boxShadow: active ? "0 0 12px rgba(14,165,233,0.3)" : "none",
+                    transition: "all 0.25s ease",
+                  }}>
+                    {completed ? (
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    ) : i}
+                  </div>
+                  {i < MIFID_WIZARD_TOTAL_STEPS && (
+                    <div style={{
+                      flex: 1,
+                      height: 2,
+                      background: i < wizardStep ? "linear-gradient(90deg,#0d9488,#0ea5e9)" : "#1e2740",
+                      transition: "background 0.35s ease",
+                    }} />
+                  )}
+                </React.Fragment>
               );
             })}
           </div>
-          <div
-            style={{
-              color: "#f1f5f9",
-              fontSize: "clamp(14px, 2.8vw, 17px)",
-              fontWeight: 800,
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
-            }}
-          >
-            Passo {wizardStep} de {MIFID_WIZARD_TOTAL_STEPS}
+          <div style={{ fontSize: 11, color: "#475569", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+            Questão {wizardStep} de {MIFID_WIZARD_TOTAL_STEPS}
           </div>
         </div>
 
@@ -1171,13 +1168,13 @@ export default function MifidTestPage() {
                       border: err
                         ? "1px solid rgba(248,113,113,0.55)"
                         : selected
-                          ? "2px solid rgba(45, 212, 191, 0.75)"
+                          ? "2px solid rgba(14,165,233,0.65)"
                           : DECIDE_CLIENT.panelBorder,
-                      background: selected ? "rgba(45, 212, 191, 0.12)" : DECIDE_CLIENT.inputBg,
+                      background: selected ? "rgba(14,165,233,0.1)" : DECIDE_CLIENT.inputBg,
                       cursor: "pointer",
                       color: DECIDE_CLIENT.text,
                       boxShadow: selected
-                        ? "0 0 0 3px rgba(45, 212, 191, 0.28), 0 0 28px rgba(45, 212, 191, 0.18)"
+                        ? "0 0 0 4px rgba(14,165,233,0.12), 0 2px 12px rgba(14,165,233,0.25)"
                         : err
                           ? "0 0 0 3px rgba(248,113,113,0.12)"
                           : "none",
@@ -1265,13 +1262,13 @@ export default function MifidTestPage() {
                       border: err
                         ? "1px solid rgba(248,113,113,0.55)"
                         : selected
-                          ? "2px solid rgba(45, 212, 191, 0.75)"
+                          ? "2px solid rgba(14,165,233,0.65)"
                           : DECIDE_CLIENT.panelBorder,
-                      background: selected ? "rgba(45, 212, 191, 0.12)" : DECIDE_CLIENT.inputBg,
+                      background: selected ? "rgba(14,165,233,0.1)" : DECIDE_CLIENT.inputBg,
                       cursor: "pointer",
                       color: DECIDE_CLIENT.text,
                       boxShadow: selected
-                        ? "0 0 0 3px rgba(45, 212, 191, 0.28), 0 0 28px rgba(45, 212, 191, 0.18)"
+                        ? "0 0 0 4px rgba(14,165,233,0.12), 0 2px 12px rgba(14,165,233,0.25)"
                         : err
                           ? "0 0 0 3px rgba(248,113,113,0.12)"
                           : "none",
@@ -1359,13 +1356,13 @@ export default function MifidTestPage() {
                       border: err
                         ? "1px solid rgba(248,113,113,0.55)"
                         : selected
-                          ? "2px solid rgba(45, 212, 191, 0.75)"
+                          ? "2px solid rgba(14,165,233,0.65)"
                           : DECIDE_CLIENT.panelBorder,
-                      background: selected ? "rgba(45, 212, 191, 0.12)" : DECIDE_CLIENT.inputBg,
+                      background: selected ? "rgba(14,165,233,0.1)" : DECIDE_CLIENT.inputBg,
                       cursor: "pointer",
                       color: DECIDE_CLIENT.text,
                       boxShadow: selected
-                        ? "0 0 0 3px rgba(45, 212, 191, 0.28), 0 0 28px rgba(45, 212, 191, 0.18)"
+                        ? "0 0 0 4px rgba(14,165,233,0.12), 0 2px 12px rgba(14,165,233,0.25)"
                         : err
                           ? "0 0 0 3px rgba(248,113,113,0.12)"
                           : "none",

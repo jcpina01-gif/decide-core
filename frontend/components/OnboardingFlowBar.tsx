@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { DECIDE_DASHBOARD, ONBOARDING_SHELL_MAX_WIDTH_PX } from "../lib/decideClientTheme";
+import { DecideBrandImage } from "./DecideLogoHeader";
+import { ONBOARDING_SHELL_MAX_WIDTH_PX } from "../lib/decideClientTheme";
 import { isFxHedgeGateOk } from "../lib/fxHedgePrefs";
 import {
   type OnboardingStepId,
@@ -132,6 +133,18 @@ export default function OnboardingFlowBar({
   }, []);
 
   useEffect(() => {
+    const prev = document.body.style.background;
+    document.body.style.background = "#080c14";
+    document.body.style.backgroundAttachment = "initial";
+    document.documentElement.style.background = "#080c14";
+    document.documentElement.style.backgroundAttachment = "initial";
+    return () => {
+      document.body.style.background = prev;
+      document.documentElement.style.background = "";
+    };
+  }, []);
+
+  useEffect(() => {
     if (!mounted) return;
     void syncSessionMaxWithPage(currentIndex);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -185,21 +198,6 @@ export default function OnboardingFlowBar({
   const allFlowDone = useMemo(() => steps.every((s) => displayDoneMap[s.id]), [steps, displayDoneMap]);
   const totalSteps = steps.length;
 
-  /** ~15–20% mais baixo que antes — CTA fixo no funil depende de menos scroll. */
-  const boxPad = compact ? 8 : 12;
-  const boxMb = compact ? 8 : 14;
-  const boxRadius = compact ? 16 : 20;
-  const navGap = compact ? 6 : 8;
-  const navMb = compact ? 5 : 8;
-  const navPb = compact ? 2 : 3;
-  const stepPad = compact ? "6px 4px" : "8px 6px";
-  const stepNumFs = compact ? 12 : 13;
-  const stepLabelFs = compact ? 10 : 11;
-  const footFs = compact ? 12 : 13;
-  const footLh = compact ? 1.35 : 1.45;
-
-  const boxBg = "#18181b";
-  const border = "rgba(63, 63, 70, 0.75)";
 
   function stepVisualState(idx: number): "completed" | "active" | "upcoming" | "future_locked" {
     const stepId = steps[idx].id;
@@ -233,291 +231,135 @@ export default function OnboardingFlowBar({
   const progressPct =
     totalSteps <= 1 ? 100 : Math.min(100, Math.max(0, ((currentIndex + 1) / totalSteps) * 100));
 
-  if (appearance === "minimal") {
-    return (
-      <div
-        style={{
-          background: boxBg,
-          border: `1px solid ${border}`,
-          borderRadius: 12,
-          padding: "8px 10px 10px",
-          marginBottom: compact ? 10 : 16,
-          maxWidth: shellMaxWidthPx,
-          marginLeft: "auto",
-          marginRight: "auto",
-          width: "100%",
-          boxSizing: "border-box",
-        }}
-      >
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: "#71717a",
-            marginBottom: 6,
-          }}
-        >
-          Onboarding
-        </div>
-        <div
-          style={{
-            height: 4,
-            borderRadius: 4,
-            background: "rgba(39,39,42,0.95)",
-            overflow: "hidden",
-            marginBottom: 8,
-          }}
-        >
-          <div
-            style={{
-              width: `${progressPct}%`,
-              height: "100%",
-              borderRadius: 4,
-              background: "linear-gradient(90deg, #2d7f76 0%, #5eead4 100%)",
-              transition: "width 0.2s ease",
-            }}
-          />
-        </div>
-        <div
-          role="navigation"
-          aria-label="Passos do onboarding"
-          style={{
-            display: "flex",
-            flexWrap: "nowrap",
-            gap: 6,
-            overflowX: "auto",
-            paddingBottom: 2,
-            WebkitOverflowScrolling: "touch",
-          }}
-        >
-          {steps.map((s, idx) => {
-            const vs = stepVisualState(idx);
-            const accent = STEP_ACCENT[s.id];
-            const clickable = idx <= currentIndex || lsPrevAllComplete(steps, idx, mounted);
-            let bg = "#27272a";
-            let bd = "rgba(255,255,255,0.08)";
-            let fg = "#71717a";
-            if (vs === "completed") {
-              bg = "#2d6d66";
-              bd = "rgba(94, 234, 212, 0.35)";
-              fg = "#ecfdf5";
-            } else if (vs === "active") {
-              bg = "rgba(255,255,255,0.06)";
-              bd = accent.ring;
-              fg = "#fafafa";
-            } else if (vs === "upcoming") {
-              bg = "rgba(39,39,42,0.95)";
-              bd = accent.ring;
-              fg = "#d4d4d4";
-            }
-            return (
-              <a
-                key={s.id}
-                href={s.href}
-                aria-current={idx === currentIndex ? "step" : undefined}
-                onClick={() => {
-                  applyOnboardingBackNavigation(idx, currentIndex);
-                  setTick((t) => t + 1);
-                }}
-                title={s.label}
-                style={{
-                  flex: "0 0 auto",
-                  minWidth: 28,
-                  height: 28,
-                  borderRadius: 8,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 10,
-                  fontWeight: 800,
-                  textDecoration: "none",
-                  background: bg,
-                  border: `1px solid ${bd}`,
-                  color: fg,
-                  opacity: clickable ? 1 : 0.45,
-                  pointerEvents: clickable ? "auto" : "none",
-                  cursor: clickable ? "pointer" : "not-allowed",
-                  boxSizing: "border-box",
-                }}
-              >
-                {vs === "completed" ? "✓" : s.n}
-              </a>
-            );
-          })}
-        </div>
-        <div style={{ fontSize: 10, color: "#71717a", marginTop: 6, lineHeight: 1.35 }}>
-          Passo {currentIndex + 1} de {totalSteps}:{" "}
-          <span style={{ color: "#a1a1aa" }}>{steps[currentIndex]?.label ?? "—"}</span>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div
       style={{
-        background: boxBg,
-        border: `1px solid ${border}`,
-        borderRadius: boxRadius,
-        padding: boxPad,
-        marginBottom: boxMb,
-        maxWidth: shellMaxWidthPx,
-        marginLeft: "auto",
-        marginRight: "auto",
-        width: "100%",
-        boxSizing: "border-box",
+        position: "sticky",
+        top: 0,
+        zIndex: 50,
+        background: "#07090f",
+        borderBottom: "1px solid #1a1f2e",
       }}
+      role="banner"
     >
       <div
-        role="navigation"
-        aria-label="Passos do onboarding"
         style={{
+          maxWidth: shellMaxWidthPx,
+          margin: "0 auto",
+          padding: "14px max(20px, 3vw) 16px",
           display: "flex",
-          flexWrap: "nowrap",
-          alignItems: "stretch",
-          justifyContent: "center",
-          gap: navGap,
-          marginBottom: navMb,
-          width: "100%",
-          overflowX: "auto",
-          paddingBottom: navPb,
-          WebkitOverflowScrolling: "touch",
+          alignItems: "center",
+          gap: 24,
         }}
       >
-        {steps.map((s, idx) => {
-          const accent = STEP_ACCENT[s.id];
-          const vs = stepVisualState(idx);
+        {/* Logo oficial */}
+        <a href="/" style={{ flexShrink: 0, textDecoration: "none", lineHeight: 0 }}>
+          <DecideBrandImage
+            priority
+            height={72}
+            maxWidth="220px"
+            sizes="220px"
+            knockoutBackground
+          />
+        </a>
 
-          let background = "rgba(39, 39, 42, 0.65)";
-          let borderColor = "#52525b";
-          let color = "#cbd5e1";
-          let boxShadow = "none";
-          let fontWeight: 800 | 900 = 800;
+        {/* Stepper com círculos numerados */}
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            gap: 0,
+            minWidth: 0,
+            overflowX: "auto",
+          }}
+        >
+          {steps.map((step, idx) => {
+            const state = stepVisualState(idx);
+            const isCompleted = state === "completed";
+            const isActive = state === "active";
+            const isLast = idx === steps.length - 1;
 
-          if (vs === "completed") {
-            /* Concluído: verde acinzentado + rebordo teal. */
-            background = "linear-gradient(180deg, #3f9e93 0%, #2d7f76 52%, #1a524f 100%)";
-            borderColor = "rgba(94, 234, 212, 0.42)";
-            color = "#f4f4f5";
-            fontWeight = 900;
-            boxShadow = "0 2px 12px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06)";
-          } else if (vs === "active") {
-            /* Passo actual: rebordo na cor do passo, texto branco, sem preenchimento cheio. */
-            background = "rgba(15, 15, 18, 0.96)";
-            borderColor = accent.ring;
-            color = "#ffffff";
-            fontWeight = 900;
-            boxShadow = "none";
-          } else if (vs === "upcoming") {
-            /* Acessível mas ainda não concluído: mesmo critério (rebordo + branco). */
-            background = "rgba(15, 15, 18, 0.96)";
-            borderColor = accent.ring;
-            color = "#ffffff";
-            fontWeight = 800;
-            boxShadow = "none";
-          } else {
-            /* Ainda bloqueado: rebordo na cor do passo + texto branco (caixa mais discreta). */
-            background = "rgba(15, 15, 18, 0.88)";
-            borderColor = accent.ring;
-            color = "#ffffff";
-            fontWeight = 800;
-            boxShadow = "none";
-          }
+            const circleBg = isCompleted || isActive ? "#2563eb" : "#111827";
+            const circleBorder = isCompleted || isActive ? "#3b82f6" : "#252a3a";
+            const numColor = isCompleted || isActive ? "#fff" : "#475569";
+            const labelColor = isActive ? "#e2e8f0" : isCompleted ? "#94a3b8" : "#374151";
+            const lineColor = isCompleted ? "#2563eb" : "#1a1f2e";
 
-          const clickable =
-            idx <= currentIndex || lsPrevAllComplete(steps, idx, mounted);
-
-          return (
-            <React.Fragment key={s.id}>
-              <a
-                href={s.href}
-                aria-current={idx === currentIndex ? "step" : undefined}
-                onClick={() => {
-                  applyOnboardingBackNavigation(idx, currentIndex);
-                  setTick((t) => t + 1);
-                }}
-                title={`${accent.label}${
-                  vs === "completed"
-                    ? idx === currentIndex
-                      ? " (concluído — está neste passo)"
-                      : " (concluído)"
-                    : vs === "active"
-                      ? " (passo atual)"
-                      : vs === "upcoming"
-                        ? idx < currentIndex
-                          ? " (voltar para rever ou alterar)"
-                          : " (disponível)"
-                        : " (complete os passos anteriores)"
-                }`}
-                style={{
-                  textDecoration: "none",
-                  background,
-                  border: `2px solid ${borderColor}`,
-                  borderRadius: compact ? 12 : 14,
-                  padding: stepPad,
-                  color,
-                  fontSize: 12,
-                  fontWeight,
-                  lineHeight: 1.25,
-                  boxSizing: "border-box",
-                  flex: "1 1 0",
-                  minWidth: 0,
-                  textAlign: "center",
-                  opacity: clickable ? 1 : 0.72,
-                  pointerEvents: clickable ? "auto" : "none",
-                  cursor: clickable ? "pointer" : "not-allowed",
-                  boxShadow,
-                  transition: "transform 0.12s ease, box-shadow 0.12s ease",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <span
+            return (
+              <React.Fragment key={step.id}>
+                <div
                   style={{
-                    display: "block",
-                    fontSize: stepNumFs,
-                    fontWeight: 900,
-                    letterSpacing: "0.02em",
-                    marginBottom: compact ? 1 : 3,
-                    color: vs === "completed" ? "inherit" : "#ffffff",
-                    opacity: vs === "completed" ? 1 : 0.95,
-                    textAlign: "center",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 4,
+                    flexShrink: 0,
                   }}
                 >
-                  {s.n}/{totalSteps}
-                </span>
-                <span
-                  style={{
-                    display: "block",
-                    textAlign: "center",
-                    wordBreak: "break-word",
-                    fontSize: stepLabelFs,
-                    lineHeight: compact ? 1.25 : 1.3,
-                  }}
-                >
-                  {vs === "completed" ? "✓ " : ""}
-                  {s.label}
-                </span>
-              </a>
-            </React.Fragment>
-          );
-        })}
+                  {/* Círculo */}
+                  <div
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: "50%",
+                      background: circleBg,
+                      border: `2px solid ${circleBorder}`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: numColor,
+                      transition: "all 0.2s ease",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {isCompleted ? "✓" : step.n}
+                  </div>
+                  {/* Label abaixo */}
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: isActive ? 700 : 500,
+                      color: labelColor,
+                      whiteSpace: "nowrap",
+                      letterSpacing: "0.01em",
+                    }}
+                  >
+                    {step.label}
+                  </span>
+                </div>
+
+                {/* Linha de ligação */}
+                {!isLast && (
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 2,
+                      background: lineColor,
+                      minWidth: 16,
+                      marginBottom: 14,
+                      transition: "background 0.2s ease",
+                    }}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+
+        {/* Indicador compacto à direita */}
+        <div style={{ flexShrink: 0 }}>
+          {allFlowDone ? (
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#22c55e" }}>Concluído ✓</span>
+          ) : (
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#475569", whiteSpace: "nowrap" }}>
+              {currentIndex + 1} / {totalSteps}
+            </span>
+          )}
+        </div>
       </div>
-
-      {allFlowDone ? (
-        <div style={{ color: "#a1a1aa", fontSize: footFs, fontWeight: 800, textAlign: "center" }}>
-          Processo de onboarding completo.
-        </div>
-      ) : (
-        <div style={{ color: "#71717a", fontSize: footFs, lineHeight: footLh, textAlign: "center" }}>
-          Os passos anteriores ao atual estão sempre disponíveis para rever ou alterar. Ao retroceder no fluxo, os passos à
-          frente deixam de aparecer como concluídos até voltar a avançar com os dados confirmados.
-        </div>
-      )}
     </div>
   );
 }

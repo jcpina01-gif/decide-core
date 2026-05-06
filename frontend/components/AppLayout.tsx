@@ -16,7 +16,19 @@ export default function AppLayout({
     router.pathname === "/fees-client" && String(router.query.embed ?? "") === "1";
   /** Dashboard v2 tem sidebar própria — sem header global */
   const isDashboardWithOwnNav = router.pathname === "/client-dashboard";
-  const isEmbedChromeless = router.pathname.startsWith("/embed/") || isFeesClientEmbed || isDashboardWithOwnNav;
+  /** Páginas de onboarding têm o OnboardingFlowBar próprio — sem header global */
+  const isOnboardingPage = [
+    "/client/RegisterForm",
+    "/client-montante",
+    "/mifid-test",
+    "/persona-onboarding",
+    "/client/fx-hedge-onboarding",
+    "/client/ibkr-prep",
+    "/onboarding",
+    "/client/login",
+    "/client/verify-email",
+  ].includes(router.pathname);
+  const isEmbedChromeless = router.pathname.startsWith("/embed/") || isFeesClientEmbed || isDashboardWithOwnNav || isOnboardingPage;
 
   return (
     <div

@@ -515,8 +515,8 @@ function RegisterModal({onClose,onSuccess,defaultTab="register"}:{onClose:()=>vo
         method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({email:email.trim(),signupOnly:true}),
       });
-      const j=await r.json() as {ok:boolean;error?:string};
-      if(!j.ok){setRegErr(j.error??"Erro ao enviar email.");}
+      const j=await r.json() as {ok:boolean;error?:string;hint?:string};
+      if(!j.ok){setRegErr(j.error==="api_disabled"?"Verificação de email não configurada no servidor (falta ALLOW_CLIENT_NOTIFY_API=1 em .env.local).":j.error??"Erro ao enviar email.");}
       else{setEmailSent(true);}
     }catch{setRegErr("Erro de rede ao enviar email.");}
     setRegBusy(false);

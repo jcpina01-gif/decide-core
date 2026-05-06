@@ -141,62 +141,53 @@ export default function FxHedgeOnboardingPage() {
         <title>Hedge cambial — DECIDE</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
+      <OnboardingFlowBar currentStepId="hedge" authStepHref="/client/login" />
+
       <DecideClientShell
         showClientNav={false}
         maxWidth={ONBOARDING_SHELL_MAX_WIDTH_PX}
-        padding="12px max(18px, 3.8vw) 16px"
-        pageBackground={DECIDE_ONBOARDING.pageBackground}
+        padding="36px max(20px, 4vw) 60px"
+        pageBackground="#080c14"
         stickyBottomReservePx={140}
         stickyBottomBar={
           <div style={{ width: "100%" }}>
             {msg ? (
-              <div style={{ color: "#fecaca", fontSize: 13, marginBottom: 10, textAlign: "center", lineHeight: 1.45 }}>{msg}</div>
+              <div style={{ color: "#fca5a5", fontSize: 13, marginBottom: 10, textAlign: "center", lineHeight: 1.45 }}>{msg}</div>
             ) : null}
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#d4d4d4",
-                textAlign: "center",
-                marginBottom: 10,
-                letterSpacing: "0.02em",
-              }}
-            >
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", textAlign: "center", marginBottom: 10 }}>
               {hedgeSelectionHint}
             </div>
             <button
               type="button"
               onClick={saveAndContinue}
-              aria-label={
-                pct === 0
-                  ? "Guardar sem hedge nos indicadores e continuar o registo"
-                  : "Guardar preferência de hedge e continuar o registo"
-              }
+              aria-label={pct === 0 ? "Guardar sem hedge e continuar" : "Guardar preferência de hedge e continuar"}
               style={{
                 width: "100%",
                 maxWidth: ONBOARDING_PRIMARY_CTA_MAX_WIDTH_PX,
                 margin: "0 auto",
-                display: "block",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
                 boxSizing: "border-box",
-                textAlign: "center",
-                background: DECIDE_DASHBOARD.buttonRegister,
-                color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
-                border: DECIDE_DASHBOARD.kpiMenuMainButtonBorder,
+                background: "linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)",
+                color: "#fff",
+                border: "1px solid rgba(14,165,233,0.4)",
                 borderRadius: 14,
-                padding: "14px 20px",
-                fontSize: 16,
-                fontWeight: 900,
+                padding: "15px 24px",
+                fontSize: 15,
+                fontWeight: 700,
                 cursor: "pointer",
-                boxShadow: DECIDE_DASHBOARD.kpiMenuMainButtonShadow,
+                boxShadow: "0 4px 20px rgba(14,165,233,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
               }}
             >
               Continuar para plano e pagamento
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
           </div>
         }
       >
         <div>
-          <OnboardingFlowBar currentStepId="hedge" authStepHref="/client/login" compact />
           <p style={{ fontSize: 12, color: "#a1a1aa", marginBottom: 6 }}>
             <Link href={getNextOnboardingHref()} style={{ color: DECIDE_DASHBOARD.link }}>
               ← Voltar ao funil

@@ -693,9 +693,9 @@ export default function IbkrPrepPage() {
       <Head>
         <title>DECIDE — {ONBOARDING_STEP_6_LABEL}</title>
       </Head>
+      <OnboardingFlowBar currentStepId="approve" authStepHref="/client/login" />
       <main className="min-h-screen bg-zinc-950 text-zinc-50">
-        <div className="mx-auto max-w-6xl px-6 py-8">
-          <OnboardingFlowBar currentStepId="approve" authStepHref="/client/login" compact />
+        <div className="mx-auto max-w-6xl px-6 py-10">
 
           {stripeFeedback === "success" ? (
             <div className="mb-4 rounded-xl border border-emerald-500/40 bg-emerald-950/35 px-4 py-3 text-sm text-emerald-100" role="status">
