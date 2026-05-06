@@ -1678,7 +1678,6 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
 }
 
 /* ─── Página: Confirmar e enviar ordens para IB ────────────── */
-type OrdersStep="review"|"confirm"|"sending"|"done"|"error";
 function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,profileLabel,fxExposure,marginEnabled}:{
   actionCounts:{comprar:number;aumentar:number;reduzir:number;vender:number;manter:number;
     rows:{ticker:string;prev:number;cur:number;delta:number;action:string}[];
@@ -1686,7 +1685,8 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
   recoLabel:string;aum:number;loggedIn:boolean;onBack:()=>void;onShowRegister:()=>void;
   profileLabel:string;fxExposure:string;marginEnabled:boolean;
 }) {
-  const [step,setStep]=React.useState<OrdersStep>("confirm");
+  const [sending,setSending]=React.useState(false);
+  const [done,setDone]=React.useState(false);
   const [errMsg,setErrMsg]=React.useState("");
   const [orderRef,setOrderRef]=React.useState("");
   const [paperMode,setPaperMode]=React.useState(true);
@@ -1709,20 +1709,16 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
 
   async function submitOrders() {
     if(!loggedIn){onShowRegister();return;}
-    setStep("sending");
+    setErrMsg("");
+    setSending(true);
     try {
       const body={
         orders:orderRows.map(r=>({
-          ticker:r.ticker,
-          action:r.action,
-          delta_pct:r.delta,
-          est_eur:Math.abs(r.delta)/100*aum,
+          ticker:r.ticker,action:r.action,
+          delta_pct:r.delta,est_eur:Math.abs(r.delta)/100*aum,
         })),
-        paper_mode:paperMode,
-        profile:profileLabel,
-        fx_exposure:fxExposure,
-        margin_enabled:marginEnabled,
-        aum,
+        paper_mode:paperMode,profile:profileLabel,
+        fx_exposure:fxExposure,margin_enabled:marginEnabled,aum,
       };
       const resp=await fetch("/api/ibkr-orders",{
         method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)
@@ -1730,57 +1726,21 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
       if(resp.ok){
         const j=await resp.json().catch(()=>({}));
         setOrderRef(j.order_ref??"ORD-"+Date.now().toString(36).toUpperCase());
-        setStep("done");
+        setDone(true);
       } else {
         const j=await resp.json().catch(()=>({}));
-        setErrMsg(j.error||j.detail||`Erro ${resp.status}`);
-        setStep("error");
+        setErrMsg(j.error||j.detail||`Erro ${resp.status} — verifique se o backend FastAPI e a IB Gateway estão activos.`);
       }
     } catch(e:unknown){
-      setErrMsg(e instanceof Error?e.message:"Falha de ligação");
-      setStep("error");
-    }
+      setErrMsg((e instanceof Error?e.message:"Falha de ligação")+" — verifique a ligação ao backend.");
+    } finally { setSending(false); }
   }
 
-  // Step progress bar
-  const steps=[
+  const stepsDef=[
     {n:1,label:"Revisão do plano",done:true},
-    {n:2,label:"Confirmação",active:step==="confirm"},
-    {n:3,label:"Envio para IB",active:step==="sending"||step==="done"},
+    {n:2,label:"Confirmação",active:!done},
+    {n:3,label:"Envio para IB",active:done},
   ];
-
-  if(step==="done") return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
-      <div className="w-20 h-20 rounded-full bg-emerald-500/15 border-2 border-emerald-500/40 flex items-center justify-center">
-        <CheckCircle2 size={40} className="text-emerald-400"/>
-      </div>
-      <div className="text-center">
-        <div className="text-2xl font-black text-slate-100 mb-1">Ordens enviadas!</div>
-        <div className="text-slate-400 text-sm">As suas ordens foram submetidas à Interactive Brokers.</div>
-        {orderRef&&<div className="mt-2 text-xs text-slate-500">Referência: <span className="font-mono text-slate-300">{orderRef}</span></div>}
-      </div>
-      <div className="flex gap-3">
-        <button onClick={onBack} className="px-5 py-2.5 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">Ver Recomendações</button>
-        <button onClick={()=>setStep("confirm")} className="px-5 py-2.5 bg-blue-600/20 border border-blue-500/30 text-blue-400 text-sm font-semibold rounded-xl hover:bg-blue-600/30 transition-colors">Enviar novas ordens</button>
-      </div>
-    </div>
-  );
-
-  if(step==="error") return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
-      <div className="w-20 h-20 rounded-full bg-red-500/15 border-2 border-red-500/40 flex items-center justify-center">
-        <AlertTriangle size={36} className="text-red-400"/>
-      </div>
-      <div className="text-center">
-        <div className="text-xl font-black text-slate-100 mb-1">Erro ao enviar ordens</div>
-        <div className="text-slate-400 text-sm max-w-md">{errMsg}</div>
-      </div>
-      <div className="flex gap-3">
-        <button onClick={onBack} className="px-5 py-2.5 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">Cancelar</button>
-        <button onClick={()=>setStep("confirm")} className="px-5 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-500 transition-colors">Tentar novamente</button>
-      </div>
-    </div>
-  );
 
   return (
     <div className="space-y-4">
@@ -1789,9 +1749,40 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
         <ArrowUpRight size={12} className="rotate-[225deg]"/>Voltar ao plano
       </button>
 
+      {/* Done banner */}
+      {done&&(
+        <div className="flex items-center justify-between gap-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-5 py-4">
+          <div className="flex items-center gap-3">
+            <CheckCircle2 size={20} className="text-emerald-400 shrink-0"/>
+            <div>
+              <div className="text-sm font-bold text-emerald-300">Ordens enviadas com sucesso!</div>
+              {orderRef&&<div className="text-[10px] text-slate-500 mt-0.5">Referência: <span className="font-mono text-slate-300">{orderRef}</span></div>}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={onBack} className="px-4 py-2 text-xs font-semibold text-slate-300 border border-[#1a1f2e] bg-[#0b0f1a] rounded-lg hover:bg-[#111827] transition-colors">Ver Recomendações</button>
+            <button onClick={()=>{setDone(false);setOrderRef("");}} className="px-4 py-2 text-xs font-semibold text-blue-400 border border-blue-500/30 bg-blue-600/10 rounded-lg hover:bg-blue-600/20 transition-colors">Nova submissão</button>
+          </div>
+        </div>
+      )}
+
+      {/* Error banner — shown inline, page stays visible */}
+      {errMsg&&!done&&(
+        <div className="flex items-start justify-between gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={15} className="text-red-400 shrink-0 mt-0.5"/>
+            <div>
+              <div className="text-xs font-bold text-red-300 mb-0.5">Erro ao enviar ordens</div>
+              <div className="text-[10px] text-slate-400">{errMsg}</div>
+            </div>
+          </div>
+          <button onClick={()=>setErrMsg("")} className="text-slate-500 hover:text-slate-300 shrink-0 mt-0.5"><X size={14}/></button>
+        </div>
+      )}
+
       {/* Step progress */}
       <div className="flex items-center gap-0 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-6 py-4">
-        {steps.map((s,i)=>(
+        {stepsDef.map((s,i)=>(
           <React.Fragment key={s.n}>
             <div className="flex items-center gap-2 shrink-0">
               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black border-2 transition-colors ${
@@ -1917,10 +1908,10 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
             <button onClick={onBack} className="px-6 py-3 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">
               Cancelar
             </button>
-            <button onClick={submitOrders} disabled={step==="sending"||nOrdens===0}
+            <button onClick={submitOrders} disabled={sending||nOrdens===0||done}
               className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all shadow-lg shadow-emerald-900/30">
-              {step==="sending"?(
-                <><span className="animate-spin">⟳</span> A enviar ordens…</>
+              {sending?(
+                <><span className="inline-block animate-spin">⟳</span> A enviar ordens…</>
               ):(
                 <><Send size={15}/>{paperMode?"Simular envio para IB →":"Confirmar e enviar ordens para IB →"}</>
               )}
