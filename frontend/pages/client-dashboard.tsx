@@ -1770,7 +1770,7 @@ function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,p
               </div>
               <span className={`text-xs font-semibold ${s.done?"text-emerald-400":s.active?"text-slate-100":"text-slate-500"}`}>{s.label}</span>
             </div>
-            {i<steps.length-1&&<div className="flex-1 h-px bg-[#1a1f2e] mx-4"/>}
+            {i<stepsDef.length-1&&<div className="flex-1 h-px bg-[#1a1f2e] mx-4"/>}
           </React.Fragment>
         ))}
       </div>
