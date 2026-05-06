@@ -1830,6 +1830,12 @@ export default function ClientDashboardPage() {
     return {chart,m,curVol,curDD,ddChart:dd5,ytdRet};
   },[dates,equityRaw,benchRaw,period]);
 
+  // Profile scaling — recomputed whenever riskProfileLocal changes
+  const profileFactor=riskProfileLocal==="conservador"?0.75:riskProfileLocal==="dinamico"?1.25:1.0;
+  const profileLabel =riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado";
+  const scaledVol    =(perfData?.curVol??0)*profileFactor;
+  const scaledDD     =(perfData?.curDD ??0)*profileFactor;
+
   // Annual returns from equity series
   const annualReturns=useMemo(()=>{
     if(!dates.length||!equityRaw.length) return [];
@@ -2114,7 +2120,7 @@ export default function ClientDashboardPage() {
                       <div className="grid grid-cols-3 gap-2">
                         {([
                           {id:"conservador" as RiskProfile, label:"Conservador", icon:"🛡️", desc:"Menor volatilidade\nMesma carteira\nEscalada a 0,75×", range:`~${((perfData?.curVol??14)*0.75).toFixed(1)}% vol aa`},
-                          {id:"moderado"    as RiskProfile, label:"Moderado",    icon:"⚖️", desc:"Vol do modelo base\nAções globais + XEON\nSem ajuste", range:`~${(perfData?.curVol??14).toFixed(1)}% vol aa`},
+                          {id:"moderado"    as RiskProfile, label:"Moderado",    icon:"⚖️", desc:"Vol base do modelo\nAções globais + XEON\nSem ajuste", range:`~${(perfData?.curVol??14).toFixed(1)}% vol aa`},
                           {id:"dinamico"    as RiskProfile, label:"Dinâmico",    icon:"🚀", desc:"Maior exposição\nMesma carteira\nEscalada a 1,25×", range:`~${((perfData?.curVol??14)*1.25).toFixed(1)}% vol aa`},
                         ]).map(p=>(
                           <button key={p.id} onClick={()=>setRiskProfileLocal(p.id)}
@@ -2233,30 +2239,26 @@ export default function ClientDashboardPage() {
               {/* ── DASHBOARD ── */}
               {activePage==="dashboard"&&(
                 <div className="space-y-4">
-                  {/* ── 5 KPI cards ── */}
+                  {/* ── 5 KPI cards — profileFactor applied at component level ── */}
                   {(()=>{
-                    // Profile scaling: Conservador 0.75×, Moderado 1×, Dinâmico 1.25×
-                    const pf=riskProfileLocal==="conservador"?0.75:riskProfileLocal==="dinamico"?1.25:1.0;
-                    const profLabel=riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado";
                     const ytdPct=perfData?.ytdRet??0;
                     const totalPct=perfData?.m.ret??0;
-                    const vol=(perfData?.curVol??0)*pf;
-                    const dd=(perfData?.curDD??0)*pf;
                     const fmtP=(v:number,s=false)=>`${s&&v>=0?"+":""}${v.toFixed(2)}%`;
                     const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
+                    const pfLabel=profileFactor<1?"0,75× vol base":profileFactor>1?"1,25× vol base":"1× vol base";
                     return (
                       <div className="grid grid-cols-5 gap-3">
                         {[
                           {label:"Valor da carteira",val:`€ ${fmtE(aum)}`,sub:"Património total",
                            icon:<div className="text-blue-400 text-lg">📦</div>,c:"text-slate-100"},
-                          {label:"Variação (YTD)",val:fmtP(ytdPct,true),sub:`+ € ${fmtE(aum*ytdPct/100)} `,
+                          {label:"Variação (YTD)",val:fmtP(ytdPct,true),sub:`+ € ${fmtE(aum*ytdPct/100)}`,
                            icon:<TrendingUp size={16} className="text-emerald-400"/>,c:ytdPct>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Retorno desde início",val:fmtP(totalPct,true),sub:`+ € ${fmtE(aum*(totalPct/100))} `,
+                          {label:"Retorno desde início",val:fmtP(totalPct,true),sub:`+ € ${fmtE(aum*(totalPct/100))}`,
                            icon:<Activity size={16} className="text-blue-400"/>,c:totalPct>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Risco (Volatilidade anual)",val:vol>0?`${vol.toFixed(1)}%`:"—",
-                           sub:`Perfil ${profLabel} · ${pf<1?"0,75× vol base":pf>1?"1,25× vol base":"1× vol base"}`,
+                          {label:"Risco (Volatilidade anual)",val:scaledVol>0?`${scaledVol.toFixed(1)}%`:"—",
+                           sub:`Perfil ${profileLabel} · ${pfLabel}`,
                            icon:<ShieldCheck size={16} className="text-amber-400"/>,c:"text-amber-400"},
-                          {label:"Máximo drawdown",val:dd!==0?fmtP(dd):"—",sub:`Perfil ${profLabel}`,
+                          {label:"Máximo drawdown",val:scaledDD!==0?fmtP(scaledDD):"—",sub:`Perfil ${profileLabel}`,
                            icon:<TrendingDown size={16} className="text-red-400"/>,c:"text-red-400"},
                         ].map(k=>(
                           <div key={k.label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
@@ -2435,7 +2437,7 @@ export default function ClientDashboardPage() {
                         </div>
                         {[
                           {icon:"🎯",label:"Objetivo",val:riskProfileLocal==="conservador"?"Crescimento com menor volatilidade (0,75× vol base)":riskProfileLocal==="dinamico"?"Máximo potencial de retorno (1,25× vol base)":"Equilíbrio risco/retorno (vol base do modelo)"},
-                          {icon:"📊",label:"Volatilidade alvo",val:riskProfileLocal==="conservador"?`~${((perfData?.curVol??14)*0.75).toFixed(1)}% aa (0,75× vol do modelo)`:riskProfileLocal==="dinamico"?`~${((perfData?.curVol??14)*1.25).toFixed(1)}% aa (1,25× vol do modelo)`:`~${(perfData?.curVol??14).toFixed(1)}% aa (vol do modelo)`},
+                          {icon:"📊",label:"Volatilidade alvo",val:`~${scaledVol.toFixed(1)}% aa (${profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×"} vol do modelo)`},
                           {icon:"⏳",label:"Horizonte temporal",val:"Médio / Longo prazo (3+ anos)"},
                           {icon:"🌍",label:"Composição",val:"Ações globais + XEON (MM Euro) — sem obrigações nem alternativos"},
                         ].map(x=>(
