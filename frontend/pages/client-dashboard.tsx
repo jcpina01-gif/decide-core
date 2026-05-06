@@ -373,7 +373,6 @@ const NAV=[
   {id:"perf",       label:"Performance",    Icon:TrendingUp},
   {id:"risco",      label:"Risco",          Icon:ShieldCheck},
   {id:"historico",  label:"Histórico",      Icon:Clock},
-  {id:"simulador",  label:"Simulador",      Icon:Activity},
   {id:"relatorios", label:"Relatórios",     Icon:BookOpen},
   {id:"custos",     label:"Custos",         Icon:Receipt},
   {id:"ajuda",      label:"Ajuda",          Icon:HelpCircle},
@@ -1830,11 +1829,15 @@ export default function ClientDashboardPage() {
     return {chart,m,curVol,curDD,ddChart:dd5,ytdRet};
   },[dates,equityRaw,benchRaw,period]);
 
-  // Profile scaling — recomputed whenever riskProfileLocal changes
-  const profileFactor=riskProfileLocal==="conservador"?0.75:riskProfileLocal==="dinamico"?1.25:1.0;
-  const profileLabel =riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado";
-  const scaledVol    =(perfData?.curVol??0)*profileFactor;
-  const scaledDD     =(perfData?.curDD ??0)*profileFactor;
+  // Profile scaling — useMemo with explicit deps so React always re-evaluates
+  const profileFactor=useMemo(()=>
+    riskProfileLocal==="conservador"?0.75:riskProfileLocal==="dinamico"?1.25:1.0
+  ,[riskProfileLocal]);
+  const profileLabel=useMemo(()=>
+    riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado"
+  ,[riskProfileLocal]);
+  const scaledVol=useMemo(()=>(perfData?.curVol??0)*profileFactor,[perfData,profileFactor]);
+  const scaledDD =useMemo(()=>(perfData?.curDD ??0)*profileFactor,[perfData,profileFactor]);
 
   // Annual returns from equity series
   const annualReturns=useMemo(()=>{
@@ -2208,24 +2211,6 @@ export default function ClientDashboardPage() {
 
             <div className="px-8 py-6 space-y-5">
 
-              {/* ── SIMULADOR ── */}
-              {activePage==="simulador"&&(
-                <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
-                  <div className="flex items-center gap-2 px-5 pt-5 pb-3">
-                    <h2 className="text-slate-200 text-sm font-bold tracking-wide uppercase">Simulação de Capital</h2>
-                    <Info size={13} className="text-slate-500"/>
-                    {!loggedIn&&(
-                      <button onClick={()=>setShowRegModal(true)} className="ml-auto text-xs px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 rounded-lg font-semibold transition-colors">
-                        Guardar simulação →
-                      </button>
-                    )}
-                  </div>
-                  <div className="px-5 pb-5">
-                    <NativeSimulator dates={dates} equity={equityRaw} bench={benchRaw}
-                      onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}/>
-                  </div>
-                </div>
-              )}
 
               {/* ── RELATÓRIOS ── */}
               {activePage==="relatorios"&&(
@@ -2239,6 +2224,20 @@ export default function ClientDashboardPage() {
               {/* ── DASHBOARD ── */}
               {activePage==="dashboard"&&(
                 <div className="space-y-4">
+                  {/* ── KPI header with refresh button ── */}
+                  <div className="flex items-center justify-between -mb-2">
+                    <div className="text-[10px] text-slate-500">
+                      Perfil activo: <span className="font-bold text-slate-300">{profileLabel}</span>
+                      {" · "}Vol: <span className="font-bold text-amber-400">{scaledVol>0?scaledVol.toFixed(1)+"%":"—"}</span>
+                      {" · "}Factor: <span className="font-bold text-blue-400">{profileFactor}×</span>
+                    </div>
+                    <button
+                      onClick={()=>{ setRiskProfileLocal(riskProfileLocal); }}
+                      className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-semibold text-slate-400 hover:text-slate-200 border border-[#1a1f2e] hover:border-blue-500/40 rounded-lg bg-[#0b0f1a] transition-colors">
+                      ↻ Actualizar KPIs
+                    </button>
+                  </div>
+
                   {/* ── 5 KPI cards — profileFactor applied at component level ── */}
                   {(()=>{
                     const ytdPct=perfData?.ytdRet??0;
@@ -2454,6 +2453,26 @@ export default function ClientDashboardPage() {
                     </div>
                   </div>
 
+                  {/* ── Simulador integrado ── */}
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+                    <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-[#1a1f2e]">
+                      <div className="flex items-center gap-2">
+                        <Activity size={14} className="text-blue-400"/>
+                        <h2 className="text-slate-200 text-sm font-bold tracking-wide">Simulação de Capital</h2>
+                        <Info size={12} className="text-slate-500"/>
+                      </div>
+                      {!loggedIn&&(
+                        <button onClick={()=>setShowRegModal(true)}
+                          className="text-xs px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 rounded-lg font-semibold transition-colors">
+                          Guardar simulação →
+                        </button>
+                      )}
+                    </div>
+                    <div className="px-5 py-4">
+                      <NativeSimulator dates={dates} equity={equityRaw} bench={benchRaw}
+                        onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}/>
+                    </div>
+                  </div>
 
                 </div>
               )}
