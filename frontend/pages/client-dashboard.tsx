@@ -292,7 +292,7 @@ const YF_ALIAS:Record<string,string>={
 };
 const getYFTicker=(t:string)=>YF_ALIAS[t.toUpperCase()]??t;
 
-type Page="dashboard"|"reco"|"carteira"|"perf"|"risco"|"historico"|"custos"|"ajuda"|"contactos"|"simulador"|"relatorios";
+type Page="dashboard"|"reco"|"carteira"|"perf"|"risco"|"historico"|"custos"|"ajuda"|"contactos"|"simulador"|"relatorios"|"ordens";
 type RiskProfile="conservador"|"moderado"|"dinamico";
 type FxExposure="protegida"|"parcial"|"aberta";
 type KpiMode="base"|"margem";
@@ -386,6 +386,7 @@ const NAV=[
   {id:"perf",       label:"Performance",    Icon:TrendingUp},
   {id:"risco",      label:"Risco",          Icon:ShieldCheck},
   {id:"historico",  label:"Histórico",      Icon:Clock},
+  {id:"ordens",     label:"Enviar Ordens",   Icon:Send},
   {id:"relatorios", label:"Relatórios",     Icon:BookOpen},
   {id:"custos",     label:"Custos",         Icon:Receipt},
   {id:"ajuda",      label:"Ajuda",          Icon:HelpCircle},
@@ -1676,6 +1677,369 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
   );
 }
 
+/* ─── Página: Confirmar e enviar ordens para IB ────────────── */
+type OrdersStep="review"|"confirm"|"sending"|"done"|"error";
+function OrdensPage({actionCounts,recoLabel,aum,loggedIn,onBack,onShowRegister,profileLabel,fxExposure,marginEnabled}:{
+  actionCounts:{comprar:number;aumentar:number;reduzir:number;vender:number;manter:number;
+    rows:{ticker:string;prev:number;cur:number;delta:number;action:string}[];
+    allRows:{ticker:string;prev:number;cur:number;delta:number;action:string}[];};
+  recoLabel:string;aum:number;loggedIn:boolean;onBack:()=>void;onShowRegister:()=>void;
+  profileLabel:string;fxExposure:string;marginEnabled:boolean;
+}) {
+  const [step,setStep]=React.useState<OrdersStep>("confirm");
+  const [errMsg,setErrMsg]=React.useState("");
+  const [orderRef,setOrderRef]=React.useState("");
+  const [paperMode,setPaperMode]=React.useState(true);
+
+  const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fmtEm=(v:number)=>Math.abs(v).toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  // Compute order list from actionCounts.allRows (excluding Manter)
+  const orderRows=actionCounts.allRows.filter(r=>r.action!=="Manter");
+  const nOrdens=orderRows.length;
+  const totalInvest=orderRows.filter(r=>r.delta>0).reduce((s,r)=>s+r.delta,0);
+  const totalReduce=orderRows.filter(r=>r.delta<0).reduce((s,r)=>s+r.delta,0);
+  const netChange=totalInvest+totalReduce;
+
+  // Est. values based on AUM
+  const investEur=totalInvest/100*aum;
+  const reduceEur=Math.abs(totalReduce)/100*aum;
+  const netEur=netChange/100*aum;
+  const tradeCost=Math.max(2.0,nOrdens*0.7); // rough estimate €0.70/order, min €2
+
+  async function submitOrders() {
+    if(!loggedIn){onShowRegister();return;}
+    setStep("sending");
+    try {
+      const body={
+        orders:orderRows.map(r=>({
+          ticker:r.ticker,
+          action:r.action,
+          delta_pct:r.delta,
+          est_eur:Math.abs(r.delta)/100*aum,
+        })),
+        paper_mode:paperMode,
+        profile:profileLabel,
+        fx_exposure:fxExposure,
+        margin_enabled:marginEnabled,
+        aum,
+      };
+      const resp=await fetch("/api/ibkr-orders",{
+        method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)
+      });
+      if(resp.ok){
+        const j=await resp.json().catch(()=>({}));
+        setOrderRef(j.order_ref??"ORD-"+Date.now().toString(36).toUpperCase());
+        setStep("done");
+      } else {
+        const j=await resp.json().catch(()=>({}));
+        setErrMsg(j.error||j.detail||`Erro ${resp.status}`);
+        setStep("error");
+      }
+    } catch(e:unknown){
+      setErrMsg(e instanceof Error?e.message:"Falha de ligação");
+      setStep("error");
+    }
+  }
+
+  // Step progress bar
+  const steps=[
+    {n:1,label:"Revisão do plano",done:true},
+    {n:2,label:"Confirmação",active:step==="confirm"},
+    {n:3,label:"Envio para IB",active:step==="sending"||step==="done"},
+  ];
+
+  if(step==="done") return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
+      <div className="w-20 h-20 rounded-full bg-emerald-500/15 border-2 border-emerald-500/40 flex items-center justify-center">
+        <CheckCircle2 size={40} className="text-emerald-400"/>
+      </div>
+      <div className="text-center">
+        <div className="text-2xl font-black text-slate-100 mb-1">Ordens enviadas!</div>
+        <div className="text-slate-400 text-sm">As suas ordens foram submetidas à Interactive Brokers.</div>
+        {orderRef&&<div className="mt-2 text-xs text-slate-500">Referência: <span className="font-mono text-slate-300">{orderRef}</span></div>}
+      </div>
+      <div className="flex gap-3">
+        <button onClick={onBack} className="px-5 py-2.5 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">Ver Recomendações</button>
+        <button onClick={()=>setStep("confirm")} className="px-5 py-2.5 bg-blue-600/20 border border-blue-500/30 text-blue-400 text-sm font-semibold rounded-xl hover:bg-blue-600/30 transition-colors">Enviar novas ordens</button>
+      </div>
+    </div>
+  );
+
+  if(step==="error") return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
+      <div className="w-20 h-20 rounded-full bg-red-500/15 border-2 border-red-500/40 flex items-center justify-center">
+        <AlertTriangle size={36} className="text-red-400"/>
+      </div>
+      <div className="text-center">
+        <div className="text-xl font-black text-slate-100 mb-1">Erro ao enviar ordens</div>
+        <div className="text-slate-400 text-sm max-w-md">{errMsg}</div>
+      </div>
+      <div className="flex gap-3">
+        <button onClick={onBack} className="px-5 py-2.5 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">Cancelar</button>
+        <button onClick={()=>setStep("confirm")} className="px-5 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-500 transition-colors">Tentar novamente</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Back link */}
+      <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors -mt-1">
+        <ArrowUpRight size={12} className="rotate-[225deg]"/>Voltar ao plano
+      </button>
+
+      {/* Step progress */}
+      <div className="flex items-center gap-0 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-6 py-4">
+        {steps.map((s,i)=>(
+          <React.Fragment key={s.n}>
+            <div className="flex items-center gap-2 shrink-0">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black border-2 transition-colors ${
+                s.done?"bg-emerald-600 border-emerald-500 text-white":
+                s.active?"bg-blue-600 border-blue-500 text-white":
+                "bg-[#111827] border-[#252a3a] text-slate-500"}`}>
+                {s.done?<CheckCircle2 size={14}/>:s.n}
+              </div>
+              <span className={`text-xs font-semibold ${s.done?"text-emerald-400":s.active?"text-slate-100":"text-slate-500"}`}>{s.label}</span>
+            </div>
+            {i<steps.length-1&&<div className="flex-1 h-px bg-[#1a1f2e] mx-4"/>}
+          </React.Fragment>
+        ))}
+      </div>
+
+      {/* Info banner */}
+      <div className="flex items-center gap-2 bg-blue-500/[0.07] border border-blue-500/20 rounded-xl px-4 py-3">
+        <Info size={14} className="text-blue-400 shrink-0"/>
+        <span className="text-xs text-slate-300">Ao aprovar, as ordens serão enviadas para a <span className="font-bold text-blue-300">Interactive Brokers</span> para execução ao melhor preço disponível.</span>
+      </div>
+
+      {/* Main 2-col layout */}
+      <div className="grid grid-cols-3 gap-4">
+
+        {/* LEFT: what happens + order list */}
+        <div className="col-span-2 space-y-4">
+
+          {/* What happens now */}
+          <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+            <div className="font-bold text-slate-200 text-sm mb-4">O que vai acontecer agora</div>
+            <div className="space-y-4">
+              {[
+                {icon:<ShieldCheck size={18} className="text-blue-400"/>,title:"Validação das ordens",desc:"Vamos validar todas as ordens e verificar disponibilidade de caixa e margem na sua conta IB."},
+                {icon:<Send size={18} className="text-blue-400"/>,title:"Envio para a Interactive Brokers",desc:"As ordens serão enviadas de forma atómica e segura através da API da IB."},
+                {icon:<Activity size={18} className="text-blue-400"/>,title:"Execução",desc:"A IB executará as ordens ao melhor preço disponível no mercado."},
+                {icon:<CheckCircle2 size={18} className="text-blue-400"/>,title:"Confirmação",desc:"Receberá uma notificação quando todas as ordens estiverem executadas."},
+              ].map(x=>(
+                <div key={x.title} className="flex gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-blue-600/10 border border-blue-500/20 flex items-center justify-center shrink-0">{x.icon}</div>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-200">{x.title}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{x.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Order list */}
+          <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="font-bold text-slate-200 text-sm">Ordens a executar</div>
+              <span className="text-xs text-slate-500">{nOrdens} ordens · {recoLabel}</span>
+            </div>
+            {nOrdens===0?(
+              <div className="text-slate-500 text-sm text-center py-8">Sem ordens a executar este mês.</div>
+            ):(
+              <table className="w-full text-xs">
+                <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
+                  <th className="pb-2 font-semibold">Ativo</th>
+                  <th className="pb-2 font-semibold">Ação</th>
+                  <th className="pb-2 font-semibold text-right">Peso actual</th>
+                  <th className="pb-2 font-semibold text-right">Peso novo</th>
+                  <th className="pb-2 font-semibold text-right">Δ Peso</th>
+                  <th className="pb-2 font-semibold text-right">Val. estimado</th>
+                </tr></thead>
+                <tbody>
+                  {orderRows.map(r=>{
+                    const isBuy=r.action==="Comprar";const isUp=r.action==="Aumentar";
+                    const isSell=r.action==="Vender";const isDown=r.action==="Reduzir";
+                    const acBg=isBuy?"bg-emerald-500/15 text-emerald-300 border-emerald-500/30":isUp?"bg-cyan-500/15 text-cyan-300 border-cyan-500/30":isSell?"bg-red-500/15 text-red-300 border-red-500/30":"bg-amber-500/15 text-amber-300 border-amber-500/30";
+                    const acIcon=isBuy?"↑":isUp?"↗":isSell?"↓":"↙";
+                    const estVal=Math.abs(r.delta)/100*aum;
+                    return (
+                      <tr key={r.ticker} className="border-b border-[#111520] hover:bg-white/[0.02]">
+                        <td className="py-2.5">
+                          <a href={`https://finance.yahoo.com/quote/${r.ticker}`} target="_blank" rel="noopener noreferrer"
+                            className="font-bold text-blue-400 hover:underline">{r.ticker}</a>
+                        </td>
+                        <td className="py-2.5">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${acBg}`}>
+                            <span className="font-black">{acIcon}</span>{r.action}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-right text-slate-400">{r.prev.toFixed(1)}%</td>
+                        <td className="py-2.5 text-right text-slate-300">{r.cur.toFixed(1)}%</td>
+                        <td className={`py-2.5 text-right font-semibold ${r.delta>0?"text-emerald-400":"text-red-400"}`}>{r.delta>0?"+":""}{r.delta.toFixed(2)}%</td>
+                        <td className={`py-2.5 text-right font-semibold ${r.delta>0?"text-emerald-400":"text-amber-400"}`}>{r.delta>0?"":"-"}€ {fmtEm(estVal)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Important note */}
+          <div className="flex items-start gap-3 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl px-4 py-4">
+            <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5"/>
+            <div>
+              <div className="text-xs font-bold text-amber-300 mb-1">Nota importante</div>
+              <div className="text-xs text-slate-400 space-y-1">
+                <p>As ordens são executadas de acordo com as condições de mercado actuais.</p>
+                <p>Pequenas diferenças de preços podem ocorrer entre a simulação e a execução final.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Paper mode toggle */}
+          <div className="flex items-center justify-between bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-4 py-3">
+            <div>
+              <div className="text-xs font-semibold text-slate-300">Modo paper trading</div>
+              <div className="text-[10px] text-slate-500">Simula o envio sem executar ordens reais na IB</div>
+            </div>
+            <button onClick={()=>setPaperMode(v=>!v)}
+              className={`w-11 h-6 rounded-full transition-colors relative ${paperMode?"bg-blue-600":"bg-slate-700"}`}>
+              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${paperMode?"translate-x-5":"translate-x-0.5"}`}/>
+            </button>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex gap-3">
+            <button onClick={onBack} className="px-6 py-3 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">
+              Cancelar
+            </button>
+            <button onClick={submitOrders} disabled={step==="sending"||nOrdens===0}
+              className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all shadow-lg shadow-emerald-900/30">
+              {step==="sending"?(
+                <><span className="animate-spin">⟳</span> A enviar ordens…</>
+              ):(
+                <><Send size={15}/>{paperMode?"Simular envio para IB →":"Confirmar e enviar ordens para IB →"}</>
+              )}
+            </button>
+          </div>
+          <p className="text-center text-[10px] text-slate-600 flex items-center justify-center gap-1">
+            <ShieldCheck size={11}/> Conexão segura com a Interactive Brokers
+          </p>
+        </div>
+
+        {/* RIGHT: summary */}
+        <div className="space-y-4">
+          <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="font-bold text-slate-200 text-sm">Resumo do plano</div>
+              <span className="text-xs text-slate-500">{nOrdens} ordens</span>
+            </div>
+            <div className="grid grid-cols-3 gap-3 mb-5">
+              {[
+                {label:"Valor a investir",val:`€ ${fmtE(investEur)}`,c:"text-emerald-400"},
+                {label:"Custo estimado",val:`€ ${fmtE(tradeCost)}`,c:"text-slate-300"},
+                {label:"Trade esperado",val:`${(nOrdens/aum*100).toFixed(2)}%`,c:"text-slate-300"},
+              ].map(k=>(
+                <div key={k.label} className="text-center">
+                  <div className="text-[9px] text-slate-500 mb-1">{k.label}</div>
+                  <div className={`text-sm font-black ${k.c}`}>{k.val}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-[#1a1f2e] pt-4 mb-4">
+              <div className="text-xs font-semibold text-slate-400 mb-3">Alterações na carteira</div>
+              <div className="space-y-2">
+                {[
+                  {label:`A aumentar / comprar (${actionCounts.comprar+actionCounts.aumentar})`,val:`€ ${fmtE(investEur)}`,c:"text-emerald-400",dot:"bg-emerald-500"},
+                  {label:`A reduzir / vender (${actionCounts.reduzir+actionCounts.vender})`,val:`-€ ${fmtE(reduceEur)}`,c:"text-red-400",dot:"bg-red-500"},
+                  {label:`Manter (${actionCounts.manter})`,val:"0,00 €",c:"text-slate-400",dot:"bg-slate-500"},
+                ].map(x=>(
+                  <div key={x.label} className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full shrink-0 ${x.dot}`}/><span className="text-slate-400">{x.label}</span></div>
+                    <span className={`font-semibold ${x.c}`}>{x.val}</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between text-xs border-t border-[#1a1f2e] pt-2 mt-2">
+                  <span className="text-slate-300 font-semibold">Total</span>
+                  <span className={`font-bold ${netEur>=0?"text-emerald-400":"text-amber-400"}`}>{netEur>=0?"+":"-"}€ {fmtEm(netEur)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Top changes */}
+            <div className="border-t border-[#1a1f2e] pt-4">
+              <div className="text-xs font-semibold text-slate-400 mb-3">Principais alterações</div>
+              <table className="w-full text-[10px]">
+                <thead><tr className="text-slate-600 border-b border-[#1a1f2e]">
+                  <th className="text-left pb-1.5">Ativo</th>
+                  <th className="text-left pb-1.5">Ação</th>
+                  <th className="text-right pb-1.5">Val. est.</th>
+                </tr></thead>
+                <tbody>
+                  {orderRows.slice(0,6).map(r=>{
+                    const isBuy=r.action==="Comprar"||r.action==="Aumentar";
+                    const est=Math.abs(r.delta)/100*aum;
+                    return (
+                      <tr key={r.ticker} className="border-b border-[#0d1017]">
+                        <td className="py-1.5 font-bold text-slate-200">{r.ticker}</td>
+                        <td className="py-1.5">
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${isBuy?"bg-emerald-500/15 text-emerald-300":"bg-amber-500/15 text-amber-300"}`}>{r.action}</span>
+                        </td>
+                        <td className={`py-1.5 text-right font-semibold ${isBuy?"text-emerald-400":"text-amber-400"}`}>{isBuy?"+":"-"}€ {fmtEm(est)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Liquidity */}
+            <div className="border-t border-[#1a1f2e] pt-4 mt-4">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs text-slate-500 flex items-center gap-1">Liquidez após execução (estimada)<Info size={10}/></div>
+              </div>
+              <div className="text-base font-black text-slate-100">€ {fmtE(Math.max(0,aum*0.02))}</div>
+              <div className="text-[10px] text-slate-600">Disponível na conta IB após execução das ordens</div>
+            </div>
+          </div>
+
+          {/* Security badges */}
+          <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4 space-y-3">
+            {[
+              {icon:<ShieldCheck size={14} className="text-emerald-400"/>,title:"Ligação segura",desc:"Comunicação encriptada com a IB"},
+              {icon:<CheckCircle2 size={14} className="text-blue-400"/>,title:"Sem intervenção manual",desc:"Execução automática e optimizada"},
+              {icon:<Activity size={14} className="text-slate-400"/>,title:"Transparência total",desc:"Acompanhe todas as execuções no histórico"},
+            ].map(x=>(
+              <div key={x.title} className="flex gap-3 items-start">
+                <div className="mt-0.5 shrink-0">{x.icon}</div>
+                <div>
+                  <div className="text-[10px] font-semibold text-slate-300">{x.title}</div>
+                  <div className="text-[9px] text-slate-500">{x.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Profile context */}
+          <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
+            <div className="text-[10px] text-slate-500 space-y-1">
+              <div className="flex justify-between"><span>Perfil</span><span className="text-slate-300 font-semibold">{profileLabel}</span></div>
+              <div className="flex justify-between"><span>Exposição FX</span><span className="text-slate-300 font-semibold capitalize">{fxExposure}</span></div>
+              <div className="flex justify-between"><span>Margem</span><span className={`font-semibold ${marginEnabled?"text-amber-400":"text-slate-400"}`}>{marginEnabled?"Activa":"Desactivada"}</span></div>
+              <div className="flex justify-between"><span>Modo</span><span className={`font-semibold ${paperMode?"text-blue-400":"text-emerald-400"}`}>{paperMode?"Paper trading":"Real"}</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ClientDashboardPage() {
   const router=useRouter();
   const {profile}=useSyncedRiskProfileFromOnboarding();
@@ -2033,7 +2397,8 @@ export default function ClientDashboardPage() {
                   activePage==="simulador"?"Simulador":
                   activePage==="relatorios"?"Relatórios":
                   activePage==="custos"?"Custos":
-                  activePage==="ajuda"?"Ajuda":"Contactos"
+                  activePage==="ajuda"?"Ajuda":
+                  activePage==="ordens"?"Confirmar e enviar ordens":"Contactos"
                 }</h1>
                 <p className="text-slate-400 text-xs mt-0.5">{
                   activePage==="dashboard"?"Visão geral da sua carteira e recomendações":
@@ -2046,6 +2411,7 @@ export default function ClientDashboardPage() {
                   activePage==="relatorios"?"Relatórios detalhados da carteira":
                   activePage==="custos"?"Transparência total sobre os custos do serviço e da sua carteira":
                   activePage==="ajuda"?"Perguntas frequentes e recursos":
+                  activePage==="ordens"?"Revise o plano e envie as ordens para execução na Interactive Brokers.":
                   "Fale connosco"
                 }</p>
               </div>
@@ -2557,7 +2923,8 @@ export default function ClientDashboardPage() {
                   </div>
                   <div className="ml-auto flex flex-col gap-2 min-w-[220px]">
                     {loggedIn ? (
-                      <button className="relative bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-900/50 ring-1 ring-emerald-500/40 hover:shadow-emerald-800/60 hover:scale-[1.02] active:scale-100">
+                      <button onClick={()=>setActivePage("ordens")}
+                        className="relative bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-900/50 ring-1 ring-emerald-500/40 hover:shadow-emerald-800/60 hover:scale-[1.02] active:scale-100">
                         <CheckCircle2 size={16}/> Aprovar Plano
                       </button>
                     ) : (
@@ -3197,6 +3564,21 @@ export default function ClientDashboardPage() {
                     )}
                   </div>
                 </div>
+              )}
+
+              {/* ── ORDENS ── */}
+              {activePage==="ordens"&&(
+                <OrdensPage
+                  actionCounts={actionCounts}
+                  recoLabel={recoLabel}
+                  aum={aum}
+                  loggedIn={loggedIn}
+                  onBack={()=>setActivePage("reco")}
+                  onShowRegister={()=>setShowRegModal(true)}
+                  profileLabel={profileLabel}
+                  fxExposure={fxExposure}
+                  marginEnabled={marginEnabled}
+                />
               )}
 
             </div>
