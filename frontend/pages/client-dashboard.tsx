@@ -2337,6 +2337,13 @@ export default function ClientDashboardPage() {
   const [prices,setPrices]=useState<Record<string,{price:number;currency:string;qty?:number;value?:number}|null>>({});
   const [pricesLoading,setPricesLoading]=useState(false);
 
+  // Carteira page: tab (real IB vs plano modelo) + IB snapshot state
+  const [cartTab,setCartTab]=useState<"ib"|"plano">("ib");
+  const [cartIbPos,setCartIbPos]=useState<{ticker:string;qty:number;value:number;weight_pct:number;currency:string;name?:string;sector?:string;country?:string}[]|null>(null);
+  const [cartIbLoading,setCartIbLoading]=useState(false);
+  const [cartIbErr,setCartIbErr]=useState("");
+  const [cartIbNav,setCartIbNav]=useState<{value:number;ccy:string}>({value:0,ccy:""});
+
   // freeze series
   const [dates,setDates]=useState<string[]>([]);
   const [equityRaw,setEquityRaw]=useState<number[]>([]);
@@ -2387,6 +2394,28 @@ export default function ClientDashboardPage() {
       .finally(()=>setPricesLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[activePage,latestMonth?.date]);
+
+  async function fetchCartIbPositions(){
+    setCartIbLoading(true);setCartIbErr("");
+    try{
+      const resp=await fetch("/api/ibkr-snapshot",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paper_mode:true})});
+      const j=await resp.json();
+      if(j.status==="ok"||j.positions){
+        setCartIbPos(j.positions??[]);
+        setCartIbNav({value:j.net_liquidation??0,ccy:j.net_liquidation_ccy??"EUR"});
+      } else {
+        setCartIbErr(j.error||"Erro ao carregar posições");
+      }
+    }catch(e:unknown){setCartIbErr(e instanceof Error?e.message:"Erro de ligação");}
+    finally{setCartIbLoading(false);}
+  }
+
+  useEffect(()=>{
+    if(activePage==="carteira"&&cartTab==="ib"&&cartIbPos===null&&!cartIbLoading){
+      fetchCartIbPositions();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[activePage,cartTab]);
 
   const actionCounts=useMemo(()=>{
     const empty:{ticker:string;prev:number;cur:number;delta:number;action:string}[]=[];
@@ -3264,6 +3293,80 @@ export default function ClientDashboardPage() {
               {/* ── CARTEIRA ── */}
               {activePage==="carteira"&&(
                 <div className="space-y-5">
+                  {/* Tab bar */}
+                  <div className="flex gap-1 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-1 w-fit">
+                    {([["ib","Carteira real (IB)"],["plano","Plano modelo"]] as const).map(([k,l])=>(
+                      <button key={k} onClick={()=>setCartTab(k)}
+                        className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${cartTab===k?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* ── TAB: Carteira real IB ── */}
+                  {cartTab==="ib"&&(
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="text-slate-400 text-xs">
+                          {cartIbPos!==null&&!cartIbErr&&(
+                            <span>{cartIbPos.length} posições · NAV {cartIbNav.value.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} {cartIbNav.ccy}</span>
+                          )}
+                        </div>
+                        <button onClick={fetchCartIbPositions} disabled={cartIbLoading}
+                          className="flex items-center gap-1.5 bg-[#0b0f1a] border border-[#1a1f2e] hover:border-blue-500 text-slate-300 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                          {cartIbLoading?<span className="animate-spin text-xs">⟳</span>:null}
+                          {cartIbLoading?"A carregar…":"↻ Actualizar"}
+                        </button>
+                      </div>
+                      {cartIbErr&&<div className="bg-red-900/30 border border-red-500/30 text-red-300 text-xs rounded-lg px-4 py-3">{cartIbErr}</div>}
+                      {cartIbPos===null&&!cartIbLoading&&!cartIbErr&&(
+                        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-8 text-center text-slate-500 text-sm">A carregar posições IB…</div>
+                      )}
+                      {cartIbPos!==null&&cartIbPos.length===0&&!cartIbErr&&(
+                        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-8 text-center">
+                          <div className="text-slate-400 text-sm mb-1">Nenhuma posição em carteira</div>
+                          <div className="text-slate-500 text-xs">A conta IB está vazia. Usa "Enviar Ordens" para construir a carteira.</div>
+                        </div>
+                      )}
+                      {cartIbPos!==null&&cartIbPos.length>0&&(
+                        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead><tr className="text-slate-500 border-b border-[#1a1f2e] font-semibold">
+                              <th className="text-left px-4 py-3">Ativo</th>
+                              <th className="text-left px-2 py-3">Nome</th>
+                              <th className="text-left px-2 py-3">Setor</th>
+                              <th className="text-left px-2 py-3">País</th>
+                              <th className="text-right px-2 py-3">Qtd</th>
+                              <th className="text-right px-2 py-3">Valor</th>
+                              <th className="text-right px-4 py-3">Peso %</th>
+                            </tr></thead>
+                            <tbody>
+                              {cartIbPos.map((p,i)=>(
+                                <tr key={p.ticker} className={`border-b border-[#1a1f2e] hover:bg-[#111827] transition-colors ${i%2===0?"":"bg-[#080c14]"}`}>
+                                  <td className="px-4 py-2.5 font-bold text-blue-400">{p.ticker}</td>
+                                  <td className="px-2 py-2.5 text-slate-300">{(p as any).name||"—"}</td>
+                                  <td className="px-2 py-2.5 text-slate-400">{(p as any).sector||"—"}</td>
+                                  <td className="px-2 py-2.5 text-slate-400">{(p as any).country||"—"}</td>
+                                  <td className="px-2 py-2.5 text-right text-slate-300">{p.qty.toLocaleString("pt-PT",{maximumFractionDigits:4})}</td>
+                                  <td className="px-2 py-2.5 text-right text-slate-300">
+                                    {p.value.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})} {p.currency}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right">
+                                    <span className={`font-semibold ${p.weight_pct>5?"text-emerald-400":p.weight_pct>2?"text-blue-400":"text-slate-400"}`}>
+                                      {p.weight_pct.toFixed(2)}%
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── TAB: Plano modelo ── */}
+                  {cartTab==="plano"&&<div className="space-y-5">
                   <div className="grid grid-cols-3 gap-4">
                     <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                       <div className="text-slate-400 text-xs mb-2">Nº de posições</div>
@@ -3730,6 +3833,9 @@ export default function ClientDashboardPage() {
                   </div>
                 );
               })()}
+                  </div>}{/* end cartTab==="plano" */}
+                </div>
+              )}{/* end activePage==="carteira" */}
 
               {/* ── HISTÓRICO ── */}
               {activePage==="historico"&&<HistoricoPage sortedMonths={sortedMonths} dates={dates} equityRaw={equityRaw}/>}
