@@ -2570,12 +2570,26 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             </div>
           )}
 
+          {/* Warning: "Construção inicial" requires IB positions to be loaded first */}
+          {execMode==="full"&&!ibkrPos&&!done&&(
+            <div className="flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-[11px] text-amber-300">
+              <span className="text-base shrink-0">⚠</span>
+              <div>
+                <span className="font-semibold">Carregar posições IB antes de enviar</span>
+                <span className="text-amber-400/70"> — Em modo <em>Construção inicial</em> o sistema só compra a diferença face ao que já tens em carteira. Sem carregar as posições, serão enviadas ordens de compra pelo valor total (como se a carteira estivesse vazia), podendo duplicar posições existentes.</span>
+                <button onClick={fetchIbkrPositions} disabled={ibkrLoading} className="mt-1.5 block text-xs font-semibold text-white bg-amber-600 hover:bg-amber-500 disabled:opacity-50 px-3 py-1 rounded-lg transition-colors">
+                  {ibkrLoading?"A verificar…":"→ Verificar carteira IB agora"}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Action buttons */}
           <div className="flex gap-3">
             <button onClick={onBack} className="px-6 py-3 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">
               Cancelar
             </button>
-            <button onClick={submitOrders} disabled={sending||nOrdens===0||done||aum<=0||paperMode}
+            <button onClick={submitOrders} disabled={sending||nOrdens===0||done||aum<=0||paperMode||(execMode==="full"&&!ibkrPos)}
               className={`flex-1 flex items-center justify-center gap-2 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all ${paperMode?"bg-slate-700 cursor-not-allowed":"bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30"}`}>
               <Send size={15}/>{paperMode?"Desliga 'Simulação local' para enviar à IB →":"Confirmar e enviar ordens para IB →"}
             </button>
