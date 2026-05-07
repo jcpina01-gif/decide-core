@@ -259,6 +259,12 @@ export default function OnboardingFlowBar({
             alt="DECIDE"
             height={44}
             style={{ height: 44, width: "auto", display: "block" }}
+            onError={(e) => {
+              const img = e.currentTarget;
+              if (!img.src.endsWith(".png")) {
+                img.src = "/images/imagem-final-logo-decide.png";
+              }
+            }}
           />
         </a>
 

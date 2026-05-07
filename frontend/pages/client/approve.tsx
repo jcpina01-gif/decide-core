@@ -265,6 +265,10 @@ export default function ApprovePage({
   } | null>(null);
   const [clientRefPlanBusy, setClientRefPlanBusy] = useState(false);
   const [clientRefPlanError, setClientRefPlanError] = useState("");
+  /** Input manual de montante quando não está em localStorage nem na URL. */
+  const [montanteInputText, setMontanteInputText] = useState("");
+  /** Montante efectivo usado para carregar o plano (0 = ainda não definido). */
+  const [montanteLoaded, setMontanteLoaded] = useState(0);
 
   const [excludedTickers, setExcludedTickers] = useState<string[]>([]);
   const [ibkrLive, setIbkrLive] = useState<IbkrLiveState>(initialIbkrLive);
@@ -495,22 +499,12 @@ export default function ApprovePage({
     void refreshIbkrSnapshot();
   }, [refreshIbkrSnapshot]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    let montante = 0;
-    try {
-      const raw = window.localStorage.getItem(ONBOARDING_MONTANTE_KEY);
-      montante =
-        raw != null ? safeNumber(Number(String(raw).replace(/\s/g, "").replace(",", ".")), 0) : 0;
-    } catch {
-      montante = 0;
-    }
-    if (!(montante > 0)) return;
-
+  const fetchApprovalPlan = useCallback((montante: number) => {
+    if (!(montante > 0)) return () => { /* noop */ };
     let cancelled = false;
     setClientRefPlanBusy(true);
     setClientRefPlanError("");
+    setMontanteLoaded(montante);
     void fetch("/api/client/approval-plan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -566,11 +560,35 @@ export default function ApprovePage({
       .finally(() => {
         if (!cancelled) setClientRefPlanBusy(false);
       });
+    return () => { cancelled = true; };
+  }, []);
 
-    return () => {
-      cancelled = true;
-    };
-    // Montante do onboarding lido uma vez ao montar — define o NAV do plano em conjunto com o smoke IBKR no servidor.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let montante = 0;
+    try {
+      // 1. URL query param: /client/approve?montante=25000
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlVal = urlParams.get("montante") ?? urlParams.get("nav") ?? "";
+      const fromUrl = safeNumber(Number(urlVal.replace(/\s/g, "").replace(",", ".")), 0);
+      if (fromUrl > 0) {
+        montante = Math.round(fromUrl);
+        try { window.localStorage.setItem(ONBOARDING_MONTANTE_KEY, String(montante)); } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
+
+    if (!(montante > 0)) {
+      try {
+        const raw = window.localStorage.getItem(ONBOARDING_MONTANTE_KEY);
+        montante =
+          raw != null ? safeNumber(Number(String(raw).replace(/\s/g, "").replace(",", ".")), 0) : 0;
+      } catch {
+        montante = 0;
+      }
+    }
+
+    return fetchApprovalPlan(montante);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -811,8 +829,19 @@ export default function ApprovePage({
                   : null}
                 {mifidDone && kycDone && hedgeGateOk && ibkrPrepDone && !hasTradePlan
                   ? displayNavEur <= 0
-                    ? `Património inválido (${formatEuro(displayNavEur)}).`
+                    ? null
                     : "Sem linhas de plano (confirma backend/freeze do modelo e tmp_diag)."
+                  : null}
+                {mifidDone && kycDone && hedgeGateOk && ibkrPrepDone && !hasTradePlan && displayNavEur <= 0 && !clientRefPlanBusy
+                  ? (
+                    <span>
+                      {" "}Montante de investimento não definido.{" "}
+                      <Link href="/client-montante" style={{ color: "#fcd34d", textDecoration: "underline" }}>
+                        Defina o montante
+                      </Link>{" "}
+                      ou indique-o aqui:
+                    </span>
+                  )
                   : null}
                 {mifidDone && kycDone && hedgeGateOk && ibkrPrepDone && hasTradePlan && ibkrLive.loading
                   ? " A confirmar liquidez na conta IBKR paper…"
@@ -837,6 +866,68 @@ export default function ApprovePage({
                 {accountCode ? ` Conta: ${accountCode}.` : ""}
                 {cashEur > 0 ? ` Cash: ${formatEuro(cashEur)}.` : ""}
               </div>
+            </section>
+          )}
+
+          {flowReady && !hasTradePlan && displayNavEur <= 0 && !clientRefPlanBusy && (
+            <section className="mb-6 rounded-xl border border-blue-800/60 bg-blue-950/40 p-4">
+              <div className="text-sm font-semibold text-blue-100 mb-2">
+                Indique o montante a investir (EUR)
+              </div>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const val = safeNumber(Number(String(montanteInputText).replace(/\s/g, "").replace(",", ".")), 0);
+                  if (!(val > 0)) return;
+                  try { window.localStorage.setItem(ONBOARDING_MONTANTE_KEY, String(Math.round(val))); } catch { /* ignore */ }
+                  fetchApprovalPlan(Math.round(val));
+                }}
+                style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}
+              >
+                <input
+                  type="number"
+                  min={1000}
+                  max={50000000}
+                  step={1000}
+                  placeholder="Ex: 25000"
+                  value={montanteInputText}
+                  onChange={(e) => setMontanteInputText(e.target.value)}
+                  style={{
+                    background: "rgba(30,41,59,0.8)",
+                    border: "1px solid rgba(96,165,250,0.4)",
+                    borderRadius: 8,
+                    color: "#e2e8f0",
+                    padding: "6px 12px",
+                    fontSize: 14,
+                    width: 160,
+                    outline: "none",
+                  }}
+                />
+                <button
+                  type="submit"
+                  style={{
+                    background: "linear-gradient(135deg,#0ea5e9,#0284c7)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 8,
+                    padding: "6px 16px",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  Carregar plano
+                </button>
+                <span style={{ fontSize: 11, color: "#93c5fd" }}>
+                  ou{" "}
+                  <Link href="/client-montante" style={{ color: "#60a5fa", textDecoration: "underline" }}>
+                    altere o montante no onboarding
+                  </Link>
+                </span>
+              </form>
+              {clientRefPlanError && (
+                <div style={{ marginTop: 8, fontSize: 12, color: "#fca5a5" }}>{clientRefPlanError}</div>
+              )}
             </section>
           )}
 
