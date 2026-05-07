@@ -29,9 +29,9 @@ function Nav() {
         display:"flex",alignItems:"center",justifyContent:"space-between",
         padding:"0 28px",
       }}>
-        {/* Logo */}
+        {/* Logo — mix-blend-mode:screen torna o fundo preto transparente */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/images/imagem-final-logo-decide.png" alt="DECIDE" style={{height:36,width:"auto",objectFit:"contain"}} />
+        <img src="/images/decide-logo-full.png" alt="DECIDE" style={{height:48,width:"auto",objectFit:"contain",mixBlendMode:"screen"}} />
 
         {/* Nav links */}
         <Flex style={{gap:32,alignItems:"center"}}>
@@ -447,7 +447,7 @@ export default function LandingPage() {
             <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:20,
               display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/images/imagem-final-logo-decide.png" alt="DECIDE" style={{height:28,width:"auto",objectFit:"contain",opacity:0.6}} />
+              <img src="/images/decide-logo-full.png" alt="DECIDE" style={{height:36,width:"auto",objectFit:"contain",mixBlendMode:"screen",opacity:0.75}} />
               <p style={{fontSize:11,color:"#334155",margin:0,textAlign:"right",maxWidth:560,lineHeight:1.5}}>
                 Informação meramente indicativa. Investimentos envolvem risco de perda. Leia a documentação regulamentar antes de subscrever qualquer serviço.
               </p>
