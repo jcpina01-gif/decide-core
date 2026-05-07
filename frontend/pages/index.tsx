@@ -23,15 +23,12 @@ function Nav() {
       background:"rgba(7,9,26,0.90)",
       backdropFilter:"blur(14px)",
       borderBottom:"1px solid rgba(255,255,255,0.07)",
+      display:"flex",alignItems:"center",justifyContent:"space-between",
+      padding:"0 32px",
     }}>
-      <div style={{
-        maxWidth:1200,margin:"0 auto",height:"100%",
-        display:"flex",alignItems:"center",justifyContent:"space-between",
-        padding:"0 28px",
-      }}>
-        {/* Logo — mix-blend-mode:screen torna o fundo preto transparente */}
+        {/* Logo encostado à esquerda — mix-blend-mode:screen remove fundo preto do PNG */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/images/decide-logo-full.png" alt="DECIDE" style={{height:48,width:"auto",objectFit:"contain",mixBlendMode:"screen"}} />
+        <img src="/images/decide-logo-full.png" alt="DECIDE" style={{height:62,width:"auto",objectFit:"contain",mixBlendMode:"screen",flexShrink:0}} />
 
         {/* Nav links */}
         <Flex style={{gap:32,alignItems:"center"}}>
@@ -58,7 +55,6 @@ function Nav() {
             background:`linear-gradient(135deg, ${TEAL2} 0%, ${BLUE} 100%)`,
           }}>Criar conta</Link>
         </Flex>
-      </div>
     </nav>
   );
 }
@@ -295,9 +291,10 @@ export default function LandingPage() {
               <div style={{display:"flex",alignItems:"center",gap:10,borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:20}}>
                 <span style={{fontSize:12,color:"#475569",fontWeight:500}}>Em parceria com</span>
                 <div style={{display:"flex",alignItems:"center",gap:4}}>
-                  <div style={{background:"rgba(255,255,255,0.92)",borderRadius:6,padding:"3px 8px",display:"inline-flex",alignItems:"center"}}>
+                  <div style={{display:"inline-flex",alignItems:"center",gap:6}}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src="/images/ibkr-logo.png" alt="Interactive Brokers" style={{height:22,width:"auto"}} />
+                    <img src="/images/ibkr-icon.png" alt="" style={{height:22,width:"auto"}} />
+                    <span style={{fontSize:13,fontWeight:700,color:"#cbd5e1",letterSpacing:-0.2}}>Interactive<span style={{fontWeight:800,color:"#f1f5f9"}}>Brokers</span></span>
                   </div>
                   <span style={{display:"none",fontSize:13,fontWeight:700,color:"#94a3b8",letterSpacing:-0.3}}>
                     Interactive<span style={{fontWeight:800,color:"#b0b8c8"}}>Brokers</span>
@@ -440,9 +437,10 @@ export default function LandingPage() {
               {/* IB logo */}
               <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
                 <span style={{fontSize:11,color:"#475569"}}>Em parceria com</span>
-                <div style={{background:"rgba(255,255,255,0.88)",borderRadius:6,padding:"4px 10px",display:"inline-flex",alignItems:"center"}}>
+                <div style={{display:"inline-flex",alignItems:"center",gap:6}}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/images/ibkr-logo.png" alt="Interactive Brokers" style={{height:24,width:"auto"}} />
+                  <img src="/images/ibkr-icon.png" alt="" style={{height:24,width:"auto"}} />
+                  <span style={{fontSize:13,fontWeight:700,color:"#94a3b8",letterSpacing:-0.2}}>Interactive<span style={{fontWeight:800,color:"#b0b8c8"}}>Brokers</span></span>
                 </div>
                 <span style={{fontSize:10,color:"#334155"}}>Líder global em serviços de investimento</span>
               </div>
