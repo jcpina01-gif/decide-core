@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { DecideBrandImage } from "./DecideLogoHeader";
 import { ONBOARDING_SHELL_MAX_WIDTH_PX } from "../lib/decideClientTheme";
 import { isFxHedgeGateOk } from "../lib/fxHedgePrefs";
 import {
@@ -252,15 +251,14 @@ export default function OnboardingFlowBar({
           gap: 24,
         }}
       >
-        {/* Logo oficial — mixBlendMode screen remove o fundo preto do PNG */}
+        {/* Logo oficial — SVG com fundo transparente */}
         <a href="/" style={{ flexShrink: 0, textDecoration: "none", lineHeight: 0 }}>
-          <DecideBrandImage
-            priority
-            height={72}
-            maxWidth="220px"
-            sizes="220px"
-            knockoutBackground={false}
-            style={{ mixBlendMode: "screen" }}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/images/imagem-final-logo-decide.svg"
+            alt="DECIDE"
+            height={44}
+            style={{ height: 44, width: "auto", display: "block" }}
           />
         </a>
 
