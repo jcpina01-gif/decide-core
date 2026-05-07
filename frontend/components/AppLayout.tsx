@@ -18,6 +18,7 @@ export default function AppLayout({
   const isDashboardWithOwnNav = router.pathname === "/client-dashboard";
   /** Páginas de onboarding têm o OnboardingFlowBar próprio — sem header global */
   const isOnboardingPage = [
+    "/client/register",
     "/client/RegisterForm",
     "/client-montante",
     "/mifid-test",

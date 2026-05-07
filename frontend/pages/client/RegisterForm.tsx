@@ -1368,6 +1368,9 @@ export default function ClientRegisterPage() {
                     Object.keys(window.localStorage)
                       .filter((k) => k.startsWith("decide_"))
                       .forEach((k) => window.localStorage.removeItem(k));
+                    Object.keys(window.sessionStorage)
+                      .filter((k) => k.startsWith("decide_"))
+                      .forEach((k) => window.sessionStorage.removeItem(k));
                   } catch { /* ignore */ }
                   window.location.href = "/client/register";
                 }}
