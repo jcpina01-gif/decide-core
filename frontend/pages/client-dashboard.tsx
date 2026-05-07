@@ -198,6 +198,14 @@ const SECTOR: Record<string, string> = {
   LMT:"Industrial",RTX:"Industrial",UNP:"Industrial",CSX:"Industrial",
   DE:"Industrial",EMR:"Industrial",ETN:"Industrial",MARUY:"Industrial",
   CTAS:"Industrial",TM:"Industrial",MSBHF:"Industrial",PH:"Industrial",PCAR:"Industrial",
+  // Japan batch-3
+  NTTYY:"Comunicação",SOBKY:"Comunicação",
+  RCRUY:"Tecnologia",SHECY:"Mat. Básicos",
+  MTSUY:"Industrial",ITOCY:"Industrial",MITSY:"Industrial",
+  DNZOY:"Industrial",SSUMY:"Industrial",MHVIY:"Industrial",
+  DSNKY:"Saúde",CHGCY:"Saúde",HOCPY:"Saúde",
+  TKOMY:"Financeiro",MSADY:"Financeiro",SMPNY:"Financeiro",
+  SVNDY:"Cons. Básico",FRCOY:"Cons. Discr.",
   UNH:"Saúde",JNJ:"Saúde",LLY:"Saúde",ABBV:"Saúde",
   MRK:"Saúde",PFE:"Saúde",TMO:"Saúde",ABT:"Saúde",BAYRY:"Saúde",NVO:"Saúde",
   XOM:"Energia",CVX:"Energia",COP:"Energia",EOG:"Energia",E:"Energia",
@@ -313,6 +321,8 @@ const US_TRADEABLE_ADR=new Set([
   "ADYEY","WTKWY","ATCOY",
   // Japan — OTC/NYSE ADRs
   "TM","SONY","HMC","NMR","SMFG","MUFG","SFTBY","MRAAY","IFNNY","JXHLY","MSBHF","MARUY",
+  "NTTYY","RCRUY","MTSUY","ITOCY","DSNKY","CHGCY","MITSY","SHECY","TKOMY",
+  "DNZOY","SSUMY","MHVIY","HOCPY","SVNDY","SOBKY","MSADY","SMPNY","FRCOY","FANUY",
   // Other
   "PDD","BIDU",
 ]);
@@ -448,12 +458,19 @@ const COMPANY:Record<string,string>={
   DKILY:"Daikin",STLA:"Stellantis",PHG:"Philips",
   UBS:"UBS",CS:"Credit Suisse",NVO:"Novo Nordisk",EQNR:"Equinor",
   // Japan
-  SFTBY:"SoftBank",MRAAY:"Murata Mfg",MARUY:"Marubeni",
+  SFTBY:"SoftBank Group",MRAAY:"Murata Mfg",MARUY:"Marubeni",
   TM:"Toyota",MSBHF:"Mitsubishi Corp",JXHLY:"ENEOS Holdings",
   SMFG:"Sumitomo Mitsui",NMR:"Nomura",SONY:"Sony",HMC:"Honda",
-  FANUY:"Fanuc",FUJIY:"Fujitsu",KDDIY:"KDDI",NTDOY:"Nintendo",
-  NJDCY:"Nidec",FRCOY:"Fanuc (FR)",MFG:"Mizuho Financial",
+  FANUY:"Fanuc",FUJIY:"Fujifilm",KDDIY:"KDDI",NTDOY:"Nintendo",
+  NJDCY:"Nidec",FRCOY:"Fast Retailing",MFG:"Mizuho Financial",
   MUFG:"Mitsubishi UFJ",IX:"ORIX",CRARY:"Crédit Agricole",
+  // Japan batch-3 (cap>30bn)
+  NTTYY:"NTT",RCRUY:"Recruit Holdings",MTSUY:"Mitsubishi Corp",
+  ITOCY:"Itochu",DSNKY:"Daiichi Sankyo",CHGCY:"Chugai Pharma",
+  MITSY:"Mitsui",SHECY:"Shin-Etsu Chemical",TKOMY:"Tokio Marine",
+  DNZOY:"Denso",SSUMY:"Sumitomo Corp",MHVIY:"Mitsubishi Heavy",
+  HOCPY:"Hoya",SVNDY:"Seven & I Holdings",SOBKY:"SoftBank Corp",
+  MSADY:"MS&AD Insurance",SMPNY:"Sompo Holdings",
   // China
   PDD:"PDD Holdings",BIDU:"Baidu",JD:"JD.com",NTES:"NetEase",
   // ADR misc
