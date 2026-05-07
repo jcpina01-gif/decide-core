@@ -1704,8 +1704,12 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
     const resumo=compras.length
       ?`Comprar ${compras.slice(0,2).join(", ")}${compras.length>2?` +${compras.length-2}`:""}${vendas.length?` · Vender ${vendas.slice(0,1).join(", ")}${vendas.length>1?` +${vendas.length-1}`:""}`:""}`
       :aumentos.length
-        ?`Reforçar ${aumentos.slice(0,2).join(", ")}${reducoes.length?` · Reduzir ${reducoes.slice(0,1).join(", ")}`:""}`:
-        "Rebalanceamento sem alterações";
+        ?`Reforçar ${aumentos.slice(0,2).join(", ")}${reducoes.length?` · Reduzir ${reducoes.slice(0,1).join(", ")}`:""}${vendas.length?` · Vender ${vendas.slice(0,1).join(", ")}`:""}`
+      :vendas.length
+        ?`Vender ${vendas.slice(0,2).join(", ")}${vendas.length>2?` +${vendas.length-2}`:""}${reducoes.length?` · Reduzir ${reducoes.slice(0,1).join(", ")}`:""}`
+      :reducoes.length
+        ?`Reduzir ${reducoes.slice(0,2).join(", ")}${reducoes.length>2?` +${reducoes.length-2}`:""}`
+        :"Sem alterações significativas";
     return {label,compras,aumentos,vendas,reducoes,manter,getMiniPts,isLatest,estado,estadoStyle,resumo};
   }),[sortedMonths,dates,equityRaw]);
 
