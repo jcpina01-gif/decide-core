@@ -158,7 +158,7 @@ def _execute_ib_orders(
             net_map = _ib_portfolio_net_qty_by_key(ib)
             rem_long = {k: max(0.0, v) for k, v in net_map.items()}
 
-        total_buy_eur = 0.0  # track EUR notional of USD-equity buys for FX hedge
+        total_buy_usd = 0.0  # accumulate ACTUAL filled USD notional for FX hedge
 
         for o in orders:
             sym = (o.ticker or "").strip().upper()
@@ -183,13 +183,20 @@ def _execute_ib_orders(
                 qty = min(qty, avail)
                 rem_long[cap_key] = max(0.0, avail - qty)
 
-            # Track USD equity buys for FX hedge (exclude EUR-denominated UCITS)
-            if side == "BUY" and not _is_eur_mm_ucits_symbol(sym):
-                total_buy_eur += abs(o.est_eur)
-
             order_in = _SOrderIn(ticker=sym, side=side, qty=float(qty))
             row = _place_eur_mm_ucits(ib, order_in) if _is_eur_mm_ucits_symbol(sym) else _place_stock(ib, order_in)
             fills.append(row)
+
+            # Accumulate ACTUAL filled USD notional for FX hedge (not est_eur which can be a small delta)
+            # USD stocks: fill qty * avg_fill_price (price is in USD for US equities)
+            if side == "BUY" and not _is_eur_mm_ucits_symbol(sym):
+                filled_qty = float(row.get("filled") or 0)
+                fill_px = float(row.get("avg_fill_price") or 0)
+                if filled_qty > 0 and fill_px > 0:
+                    total_buy_usd += filled_qty * fill_px
+                else:
+                    # Order pending/in-progress — estimate from est_eur converted to USD
+                    total_buy_usd += abs(o.est_eur) * fx_eurusd
 
         # ── EUR/USD hedge (SELL USD / BUY EUR) after equities ────────────────
         # fx_exposure values:
@@ -197,9 +204,9 @@ def _execute_ib_orders(
         #   "parcial"             → hedge ~50%
         #   "aberta"  | "nenhum"  → skip
         _fx_normalised = fx_exposure.lower().strip()
-        if _fx_normalised in ("total", "parcial", "protegida") and total_buy_eur > 0:
+        if _fx_normalised in ("total", "parcial", "protegida") and total_buy_usd > 0:
             hedge_frac = 0.9 if _fx_normalised == "protegida" else (1.0 if _fx_normalised == "total" else 0.5)
-            usd_to_sell = total_buy_eur * fx_eurusd * hedge_frac
+            usd_to_sell = total_buy_usd * hedge_frac  # already in USD — no EUR conversion needed
             usd_amount_rounded = round(usd_to_sell / 1000) * 1000  # IB min lot 1000 USD
             MIN_FX_FXCONV = 1000.0   # IB minimum lot for FXCONV (currency conversion)
             if usd_to_sell < MIN_FX_FXCONV:
