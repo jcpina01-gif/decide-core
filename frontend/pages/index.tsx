@@ -295,8 +295,10 @@ export default function LandingPage() {
               <div style={{display:"flex",alignItems:"center",gap:10,borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:20}}>
                 <span style={{fontSize:12,color:"#475569",fontWeight:500}}>Em parceria com</span>
                 <div style={{display:"flex",alignItems:"center",gap:4}}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/images/ibkr-logo.svg" alt="Interactive Brokers" style={{height:28,width:"auto",filter:"brightness(1.2)"}} />
+                  <div style={{background:"rgba(255,255,255,0.92)",borderRadius:6,padding:"3px 8px",display:"inline-flex",alignItems:"center"}}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/images/ibkr-logo.png" alt="Interactive Brokers" style={{height:22,width:"auto"}} />
+                  </div>
                   <span style={{display:"none",fontSize:13,fontWeight:700,color:"#94a3b8",letterSpacing:-0.3}}>
                     Interactive<span style={{fontWeight:800,color:"#b0b8c8"}}>Brokers</span>
                   </span>
@@ -438,8 +440,10 @@ export default function LandingPage() {
               {/* IB logo */}
               <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
                 <span style={{fontSize:11,color:"#475569"}}>Em parceria com</span>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/images/ibkr-logo.svg" alt="Interactive Brokers" style={{height:32,width:"auto",filter:"brightness(1.15)"}} />
+                <div style={{background:"rgba(255,255,255,0.88)",borderRadius:6,padding:"4px 10px",display:"inline-flex",alignItems:"center"}}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/images/ibkr-logo.png" alt="Interactive Brokers" style={{height:24,width:"auto"}} />
+                </div>
                 <span style={{fontSize:10,color:"#334155"}}>Líder global em serviços de investimento</span>
               </div>
             </div>
