@@ -566,6 +566,22 @@ export default function ApprovePage({
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    try {
+      // URL params: ?montante=25000&ibkr_prep=1&mifid=1&kyc=1
+      // Permite entrar directamente na página sem passar pelo fluxo completo (testes / suporte).
+      const urlParams = new URLSearchParams(window.location.search);
+
+      if (urlParams.get("ibkr_prep") === "1") {
+        window.localStorage.setItem(IBKR_PREP_DONE_KEY, "1");
+      }
+      if (urlParams.get("mifid") === "1") {
+        window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.mifid, "1");
+      }
+      if (urlParams.get("kyc") === "1") {
+        window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.kyc, "1");
+      }
+    } catch { /* ignore */ }
+
     let montante = 0;
     try {
       // 1. URL query param: /client/approve?montante=25000
@@ -825,7 +841,14 @@ export default function ApprovePage({
                   ? " Falta concluir o hedge cambial (0%, 50% ou 100% nos indicadores)."
                   : null}
                 {mifidDone && kycDone && hedgeGateOk && !ibkrPrepDone
-                  ? " Falta preparar IBKR (passo «Plano e pagamento»)."
+                  ? (
+                    <span>
+                      {" "}Falta concluir o passo de preparação IBKR.{" "}
+                      <Link href="/client/ibkr-prep" style={{ color: "#fcd34d", textDecoration: "underline" }}>
+                        Ir para Preparação IBKR
+                      </Link>
+                    </span>
+                  )
                   : null}
                 {mifidDone && kycDone && hedgeGateOk && ibkrPrepDone && !hasTradePlan
                   ? displayNavEur <= 0
