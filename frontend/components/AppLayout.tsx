@@ -25,6 +25,8 @@ export default function AppLayout({
     "/persona-onboarding",
     "/client/fx-hedge-onboarding",
     "/client/ibkr-prep",
+    "/client/approve",
+    "/client/fund-account",
     "/onboarding",
     "/client/login",
     "/client/verify-email",
