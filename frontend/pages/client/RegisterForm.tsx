@@ -1528,6 +1528,46 @@ export default function ClientRegisterPage() {
                     </ul>
                   </div>
 
+                  {/* ── Reiniciar onboarding ── */}
+                  <div
+                    style={{
+                      background: "rgba(127,29,29,0.12)",
+                      border: "1px solid rgba(248,113,113,0.25)",
+                      borderRadius: 12,
+                      padding: 12,
+                    }}
+                  >
+                    <div style={{ fontWeight: 900, color: "#fca5a5", marginBottom: 8, fontSize: 12 }}>
+                      Reiniciar onboarding (testes)
+                    </div>
+                    <p style={{ margin: "0 0 10px", fontSize: 12, color: "#d4d4d8", lineHeight: 1.45 }}>
+                      Limpa todas as chaves <code style={{ color: "#fde68a" }}>decide_*</code> do localStorage — o fluxo recomeça do início.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          Object.keys(window.localStorage)
+                            .filter((k) => k.startsWith("decide_"))
+                            .forEach((k) => window.localStorage.removeItem(k));
+                        } catch { /* ignore */ }
+                        window.location.href = "/client/register";
+                      }}
+                      style={{
+                        background: "rgba(127,29,29,0.4)",
+                        color: "#fecaca",
+                        border: "1px solid rgba(248,113,113,0.45)",
+                        borderRadius: 10,
+                        padding: "8px 14px",
+                        fontWeight: 800,
+                        fontSize: 12,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Limpar estado e reiniciar
+                    </button>
+                  </div>
+
                   {signupDevLink && (wizardStep === 1 || wizardStep === 2 || postRegisterEmailLinkActive) ? (
                     <div
                       style={{
