@@ -3858,8 +3858,13 @@ export default function ClientDashboardPage() {
                             <tbody>
                               {(()=>{
                                 // IB marketValue is in account base currency (EUR) — use aum as denominator for weight
-                                // actionCounts.allRows is available in this scope (ClientDashboardPage)
-                                const planMap=new Map<string,number>(actionCounts.allRows.map(r=>[r.ticker.toUpperCase(),r.cur]));
+                                // planMap keyed by plan ticker AND IB-alias (e.g. "BATS"→cur AND "BTI"→cur)
+                                const planMap=new Map<string,number>();
+                                actionCounts.allRows.forEach(r=>{
+                                  planMap.set(r.ticker.toUpperCase(),r.cur);
+                                  const ibAlias=toIbTicker(r.ticker);
+                                  if(ibAlias!==r.ticker.toUpperCase()) planMap.set(ibAlias,r.cur);
+                                });
                                 return cartIbPos.map((p,i)=>{
                                   const pctOfPlan=aum>0?(p.value/aum*100):0;
                                   const planTarget=planMap.get(p.ticker.toUpperCase())??0;
@@ -3882,7 +3887,7 @@ export default function ClientDashboardPage() {
                                           {pctOfPlan.toFixed(2)}%
                                         </span>
                                       </td>
-                                      <td className={`px-4 py-2.5 text-right text-[11px] font-semibold ${devColor}`} title={planTarget>0?`Alvo: ${planTarget.toFixed(1)}%`:"Não está no plano"}>
+                                      <td className={`px-4 py-2.5 text-right text-[11px] font-semibold ${devColor}`} title={planTarget>0?`Alvo no plano: ${planTarget.toFixed(1)}%`:"Não está no plano (posição órfã)"}>
                                         {desvioTxt}
                                         {planTarget===0&&p.ticker!=="MM Euro"&&<span className="ml-1 text-[9px] text-red-400/70">fora</span>}
                                       </td>
@@ -3895,17 +3900,26 @@ export default function ClientDashboardPage() {
                               {(()=>{
                                 const totalInvestedEur=cartIbPos.reduce((s,p)=>s+p.value,0);
                                 const pctInvested=aum>0?(totalInvestedEur/aum*100):0;
-                                // Sum of absolute deviations vs plan
-                                const planMap2=new Map<string,number>(actionCounts.allRows.map(r=>[r.ticker.toUpperCase(),r.cur]));
+                                // Sum of absolute deviations vs plan (same alias-aware map)
+                                const planMap2=new Map<string,number>();
+                                actionCounts.allRows.forEach(r=>{
+                                  planMap2.set(r.ticker.toUpperCase(),r.cur);
+                                  const ibAlias=toIbTicker(r.ticker);
+                                  if(ibAlias!==r.ticker.toUpperCase()) planMap2.set(ibAlias,r.cur);
+                                });
                                 const sumAbsDesvio=cartIbPos.reduce((s,p)=>{
                                   const pct=aum>0?(p.value/aum*100):0;
                                   const tgt=planMap2.get(p.ticker.toUpperCase())??0;
                                   return s+Math.abs(pct-tgt);
                                 },0);
                                 // Also count plan tickers with 0 IB position (missing from portfolio)
+                                // Use both plan ticker and IB alias when checking what's in the portfolio
                                 const ibTickers=new Set(cartIbPos.map(p=>p.ticker.toUpperCase()));
-                                const missingDesvio=actionCounts.allRows.reduce((s,r)=>
-                                  r.cur>0&&!ibTickers.has(r.ticker.toUpperCase())?s+r.cur:s,0);
+                                const missingDesvio=actionCounts.allRows.reduce((s,r)=>{
+                                  const ibAlias=toIbTicker(r.ticker);
+                                  const inPortfolio=ibTickers.has(r.ticker.toUpperCase())||ibTickers.has(ibAlias);
+                                  return r.cur>0&&!inPortfolio?s+r.cur:s;
+                                },0);
                                 const totalAbsDesvio=sumAbsDesvio+missingDesvio;
                                 return(
                                   <>
