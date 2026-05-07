@@ -30,16 +30,8 @@ function Nav() {
         padding:"0 28px",
       }}>
         {/* Logo */}
-        <Flex style={{alignItems:"center",gap:9}}>
-          <div style={{
-            width:34,height:34,borderRadius:8,
-            background:`linear-gradient(135deg, ${TEAL} 0%, ${BLUE} 100%)`,
-            display:"flex",alignItems:"center",justifyContent:"center",
-            fontWeight:900,fontSize:18,color:"#fff",letterSpacing:-1,
-            flexShrink:0,
-          }}>D</div>
-          <span style={{fontWeight:800,fontSize:20,color:"#f1f5f9",letterSpacing:-0.5}}>DECIDE</span>
-        </Flex>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/images/imagem-final-logo-decide.png" alt="DECIDE" style={{height:36,width:"auto",objectFit:"contain"}} />
 
         {/* Nav links */}
         <Flex style={{gap:32,alignItems:"center"}}>
@@ -303,9 +295,9 @@ export default function LandingPage() {
               <div style={{display:"flex",alignItems:"center",gap:10,borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:20}}>
                 <span style={{fontSize:12,color:"#475569",fontWeight:500}}>Em parceria com</span>
                 <div style={{display:"flex",alignItems:"center",gap:4}}>
-                  <div style={{width:18,height:18,borderRadius:4,background:"#cc0000",
-                    display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:900,color:"#fff"}}>IB</div>
-                  <span style={{fontSize:13,fontWeight:700,color:"#94a3b8",letterSpacing:-0.3}}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/images/ibkr-logo.svg" alt="Interactive Brokers" style={{height:28,width:"auto",filter:"brightness(1.2)"}} />
+                  <span style={{display:"none",fontSize:13,fontWeight:700,color:"#94a3b8",letterSpacing:-0.3}}>
                     Interactive<span style={{fontWeight:800,color:"#b0b8c8"}}>Brokers</span>
                   </span>
                 </div>
@@ -446,25 +438,16 @@ export default function LandingPage() {
               {/* IB logo */}
               <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
                 <span style={{fontSize:11,color:"#475569"}}>Em parceria com</span>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <div style={{width:24,height:24,borderRadius:5,background:"#cc0000",
-                    display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:900,color:"#fff"}}>IB</div>
-                  <div style={{lineHeight:1.1}}>
-                    <div style={{fontSize:12,fontWeight:700,color:"#94a3b8"}}>Interactive</div>
-                    <div style={{fontSize:14,fontWeight:800,color:"#b0b8c8",letterSpacing:-0.3}}>Brokers</div>
-                  </div>
-                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/images/ibkr-logo.svg" alt="Interactive Brokers" style={{height:32,width:"auto",filter:"brightness(1.15)"}} />
                 <span style={{fontSize:10,color:"#334155"}}>Líder global em serviços de investimento</span>
               </div>
             </div>
 
             <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:20,
               display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
-              <Flex style={{alignItems:"center",gap:8}}>
-                <div style={{width:26,height:26,borderRadius:6,background:`linear-gradient(135deg,${TEAL},${BLUE})`,
-                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:"#fff"}}>D</div>
-                <span style={{fontSize:13,fontWeight:700,color:"#64748b"}}>DECIDE</span>
-              </Flex>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/images/imagem-final-logo-decide.png" alt="DECIDE" style={{height:28,width:"auto",objectFit:"contain",opacity:0.6}} />
               <p style={{fontSize:11,color:"#334155",margin:0,textAlign:"right",maxWidth:560,lineHeight:1.5}}>
                 Informação meramente indicativa. Investimentos envolvem risco de perda. Leia a documentação regulamentar antes de subscrever qualquer serviço.
               </p>
