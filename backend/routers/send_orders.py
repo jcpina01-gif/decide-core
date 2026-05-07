@@ -36,8 +36,9 @@ TWS_HOST = ib_socket_host()
 TWS_PORT = ib_socket_port()
 TWS_CLIENT_ID = int(os.environ.get("TWS_CLIENT_ID_SEND_ORDERS", "778"))
 
-# Mínimo USD para tentar hedge FX (evita micro-ordens)
-MIN_FX_HEDGE_USD = float(os.environ.get("DECIDE_MIN_FX_HEDGE_USD", "500"))
+# Mínimo USD para tentar hedge FX — IDEALPRO (mercado profissional IB) exige ≥ 25 000 USD nocional.
+# Abaixo deste valor a IB cancela a ordem automaticamente; usar DECIDE_MIN_FX_HEDGE_USD para overrride.
+MIN_FX_HEDGE_USD = float(os.environ.get("DECIDE_MIN_FX_HEDGE_USD", "25000"))
 
 # ETFs de tesouraria / caixa usados como TBILL_PROXY — na paper às vezes SMART devolve ordem «Inactive»;
 # ARCA (NYSE Arca) costuma ser o listing principal.

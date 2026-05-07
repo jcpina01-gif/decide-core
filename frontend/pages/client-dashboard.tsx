@@ -172,8 +172,13 @@ function buildSimulatorSrc(profile: string): string {
 
 /* ─── sector map ─────────────────────────────────────────────────────────── */
 const SECTOR: Record<string, string> = {
-  AAPL:"Tecnologia",NVDA:"Tecnologia",MSFT:"Tecnologia",GOOGL:"Tecnologia",GOOG:"Tecnologia",
-  META:"Tecnologia",AVGO:"Tecnologia",AMD:"Tecnologia",CRM:"Tecnologia",
+  // Internet / Comunicação digital
+  GOOGL:"Internet",GOOG:"Internet",META:"Internet",
+  NFLX:"Internet",SNAP:"Internet",PINS:"Internet",TWTR:"Internet",BIDU:"Internet",
+  TCEHY:"Internet",JD:"Internet",BABA:"Internet",
+  // Tecnologia
+  AAPL:"Tecnologia",NVDA:"Tecnologia",MSFT:"Tecnologia",
+  AVGO:"Tecnologia",AMD:"Tecnologia",CRM:"Tecnologia",
   ORCL:"Tecnologia",QCOM:"Tecnologia",TXN:"Tecnologia",AMAT:"Tecnologia",
   KLAC:"Tecnologia",LRCX:"Tecnologia",SNPS:"Tecnologia",CDNS:"Tecnologia",
   CTSH:"Tecnologia",NOW:"Tecnologia",ADBE:"Tecnologia",INTU:"Tecnologia",
@@ -197,9 +202,11 @@ const SECTOR: Record<string, string> = {
   XOM:"Energia",CVX:"Energia",COP:"Energia",EOG:"Energia",E:"Energia",
   PXD:"Energia",SLB:"Energia",PSX:"Energia",VLO:"Energia",
   EQNR:"Energia",SU:"Energia",JXHLY:"Energia",FANG:"Energia",
-  WMT:"Cons. Básico",PG:"Cons. Básico",KO:"Cons. Básico",BATS:"Cons. Básico",
+  WMT:"Cons. Básico",PG:"Cons. Básico",KO:"Cons. Básico",
+  BATS:"Cons. Básico",BTI:"Cons. Básico",  // BATS=LSE, BTI=NYSE ADR
   PEP:"Cons. Básico",COST:"Cons. Básico",MDLZ:"Cons. Básico",
-  NEM:"Mat. Básicos",GOLD:"Mat. Básicos",AEM:"Mat. Básicos",WPM:"Mat. Básicos",
+  NEM:"Mineira",GOLD:"Mineira",AEM:"Mineira",WPM:"Mineira",
+  FCX:"Mineira",AA:"Mineira",RIO:"Mineira",BHP:"Mineira",VALE:"Mineira",
   XEON:"Liquidez",
 };
 const getSector = (t: string) => SECTOR[t.toUpperCase()] ?? "Outros";
@@ -225,7 +232,7 @@ const COUNTRY:Record<string,string>={
   HON:"EUA",MMM:"EUA",GE:"EUA",LMT:"EUA",RTX:"EUA",UNP:"EUA",
   CSX:"EUA",DE:"EUA",EMR:"EUA",ETN:"EUA",
   AEM:"Canadá",WPM:"Canadá",CM:"Canadá",SU:"Canadá",
-  NOK:"Finlândia",BATS:"Reino Unido",E:"Itália",BAYRY:"Alemanha",MARUY:"Japão",
+  NOK:"Finlândia",BATS:"Reino Unido",BTI:"Reino Unido",E:"Itália",BAYRY:"Alemanha",MARUY:"Japão",
   ASML:"Países Baixos",IFNNY:"Alemanha",
   EQNR:"Noruega",
   SFTBY:"Japão",MRAAY:"Japão",TM:"Japão",MSBHF:"Japão",JXHLY:"Japão",
@@ -235,6 +242,38 @@ const COUNTRY:Record<string,string>={
   XEON:"Eurozona",
 };
 const getZone=(t:string)=>COUNTRY[t.toUpperCase()]??"EUA";
+
+// Tickers that are foreign companies but trade on US exchanges (NYSE/NASDAQ/OTC via SMART/USD).
+// These are orderable through IB despite getZone() returning a non-EUA country.
+const US_TRADEABLE_ADR=new Set([
+  // Canada (NYSE/TSX dual-listed or NYSE-listed)
+  "GOLD","AEM","WPM","CM","SU","CNQ","ABX","NTR",
+  // Europe — NYSE/NASDAQ ADRs
+  "NOK","NVO","ASML","EQNR","BATS","BTI","AZN","BP","RIO","BBL","GSK","UL",
+  "BAYRY","E","SAN","BBVA","ING","DB","CS","UBS","BCS","LYG",
+  // Japan — OTC/NYSE ADRs
+  "TM","SONY","HMC","NMR","SMFG","MUFG","SFTBY","MRAAY","IFNNY","JXHLY","MSBHF","MARUY",
+  // Other
+  "PDD","BIDU",
+]);
+
+// A ticker is orderable if it's US-domiciled OR is a known ADR trading on US markets
+const isTradeableUS=(t:string)=>t==="XEON"||getZone(t)==="EUA"||US_TRADEABLE_ADR.has(t.toUpperCase());
+
+// Plan ticker → IB-compatible US ticker (when they differ).
+// The model may output LSE/local tickers; IB requires the US ADR symbol.
+const TICKER_IB_ALIAS:Record<string,string>={
+  BATS:"BTI",    // British American Tobacco: LSE BATS → NYSE BTI
+  BAYRY:"BAYRY", // Bayer AG: OTC BAYRY (correct for IB OTC)
+  MARUY:"MARUY", // Marubeni: OTC MARUY (correct)
+  MRAAY:"MRAAY", // Marubeni (alt): OTC
+  IFNNY:"IFNNY", // Infineon: OTC
+  JXHLY:"JXHLY", // JXTG Holdings: OTC
+  MSBHF:"MSBHF", // Mitsubishi: OTC
+  SFTBY:"SFTBY", // SoftBank: OTC
+  // Add more as needed: PLANLOCAL:"USNYADR"
+};
+const toIbTicker=(t:string)=>TICKER_IB_ALIAS[t.toUpperCase()]??t.toUpperCase();
 
 /* ─── company name map ─────────────────────────────────────────────────────── */
 const COMPANY:Record<string,string>={
@@ -1699,8 +1738,10 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [done,setDone]=React.useState(false);
   const [errMsg,setErrMsg]=React.useState("");
   const [orderRef,setOrderRef]=React.useState("");
-  const [fills,setFills]=React.useState<{ticker:string;action:string;requested_qty:number;filled:number;avg_fill_price?:number;status:string;message?:string}[]>([]);
-  const [paperMode,setPaperMode]=React.useState(true);
+  type FillRow={ticker:string;action:string;requested_qty:number;filled:number;avg_fill_price?:number|null;status:string;message?:string|null;ib_order_id?:number|null;ib_perm_id?:number|null;executed_as?:string|null;fx_hedge_attached?:boolean};
+  const [fills,setFills]=React.useState<FillRow[]>([]);
+  const [paperMode,setPaperMode]=React.useState(false);
+  const [showDiag,setShowDiag]=React.useState(false);
   // "full" = send entire plan (all positions); "delta" = send only this month's changes
   const [execMode,setExecMode]=React.useState<"full"|"delta">("full");
   // IB live positions (for orphan detection and "vender tudo")
@@ -1709,10 +1750,25 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [ibkrErr,setIbkrErr]=React.useState("");
   const [sellAllSending,setSellAllSending]=React.useState(false);
   const [sellAllResult,setSellAllResult]=React.useState<{ref:string;fills:number}|null>(null);
-  const [sellAllFills,setSellAllFills]=React.useState<{ticker:string;action:string;requested_qty:number;filled:number;avg_fill_price?:number;status:string}[]>([]);
+  const [sellAllFills,setSellAllFills]=React.useState<FillRow[]>([]);
+  // Flatten (zerar) — fecha longs (SELL) E shorts (BUY to cover)
+  const [flatSending,setFlatSending]=React.useState(false);
+  const [flatResult,setFlatResult]=React.useState<{ref:string;longs:number;shorts:number}|null>(null);
+  const [flatFills,setFlatFills]=React.useState<FillRow[]>([]);
+  const [pollCount,setPollCount]=React.useState(0);
 
   const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtEm=(v:number)=>Math.abs(v).toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  // Auto-refresh fills by re-querying IB snapshot after submit (paper: fills are near-instant)
+  React.useEffect(()=>{
+    if(!done||paperMode||pollCount>0) return;
+    const hasPending=fills.some(f=>f.status==="Submitted"||f.status==="PreSubmitted"||f.status==="PendingSubmit");
+    if(!hasPending) return;
+    // Wait 4s then re-fetch snapshot to confirm fills via IB positions
+    const t=setTimeout(()=>setPollCount(1),4000);
+    return ()=>clearTimeout(t);
+  },[done,paperMode,fills,pollCount]);
 
   // Full plan: ALL positions (for display and "full" execution mode)
   const allPlanRows=actionCounts.allRows; // includes Manter
@@ -1772,26 +1828,101 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     finally{setSellAllSending(false);}
   }
 
+  async function flattenAllPositions(){
+    if(!ibkrPos||ibkrPos.length===0) return;
+    const longs=ibkrPos.filter(p=>p.qty>0);
+    const shorts=ibkrPos.filter(p=>p.qty<0);
+    if(longs.length===0&&shorts.length===0) return;
+    setFlatSending(true);setIbkrErr("");
+    try{
+      if(paperMode){
+        await new Promise(r=>setTimeout(r,1400));
+        setFlatResult({ref:"SIM-FLAT-"+Date.now().toString(36).toUpperCase(),longs:longs.length,shorts:shorts.length});
+        return;
+      }
+      const orders=[
+        // Close longs: SELL at actual qty
+        ...longs.map(p=>({ticker:p.ticker,action:"Vender",est_eur:Math.abs(p.value),qty:p.qty})),
+        // Close shorts: BUY TO COVER at actual qty (use negative qty → absolute)
+        ...shorts.map(p=>({ticker:p.ticker,action:"Comprar",est_eur:Math.abs(p.value),qty:Math.abs(p.qty)})),
+      ];
+      const body={
+        orders,
+        paper_mode:false,aum,profile:profileLabel,
+        fx_exposure:"nenhum",  // no FX hedge when flattening
+        margin_enabled:marginEnabled,
+        sell_cap_disabled:true,  // must bypass sell cap — shorts have qty < 0 in portfolio
+      };
+      const resp=await fetch("/api/ibkr-orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const j=await resp.json().catch(()=>({}));
+      if(resp.ok&&j.status!=="rejected"&&j.status!=="error"){
+        setFlatResult({ref:j.order_ref||"ORD-"+Date.now().toString(36).toUpperCase(),longs:longs.length,shorts:shorts.length});
+        setFlatFills(j.fills??[]);
+        setIbkrPos(null);  // force refresh
+      } else {setIbkrErr(j.error||j.detail||`Erro ${resp.status}`);}
+    }catch(e:unknown){setIbkrErr(e instanceof Error?e.message:"Erro de ligação");}
+    finally{setFlatSending(false);}
+  }
+
   // Delta rows: only changed positions (Comprar/Aumentar/Reduzir/Vender)
   const deltaRows=actionCounts.allRows.filter(r=>r.action!=="Manter");
 
   // Orders actually sent depend on execMode
   // In "full" mode: BUY all positions with cur>0, SELL positions with cur===0 (Vender)
   // In "delta" mode: only changed positions
-  const orderRows=execMode==="full"
-    ? allPlanRows.filter(r=>r.cur>0||r.action==="Vender")
-    : deltaRows;
-  const nOrdens=orderRows.length;
+  // US equities + known ADRs trading on US exchanges (SMART/USD) + XEON money market.
+  const isOrderable=(t:string)=>isTradeableUS(t);
 
-  // For summary financials
-  const totalBuyPct=execMode==="full"
-    ? orderRows.filter(r=>r.action!=="Vender").reduce((s,r)=>s+r.cur,0)
-    : orderRows.filter(r=>r.delta>0).reduce((s,r)=>s+r.delta,0);
-  const totalSellPct=execMode==="full"
-    ? orderRows.filter(r=>r.action==="Vender").reduce((s,r)=>s+r.prev,0)
-    : Math.abs(orderRows.filter(r=>r.delta<0).reduce((s,r)=>s+r.delta,0));
-  const investEur=totalBuyPct/100*aum;
-  const reduceEur=totalSellPct/100*aum;
+  const orderRows=execMode==="full"
+    ? allPlanRows.filter(r=>isOrderable(r.ticker)&&(r.cur>0||r.action==="Vender"))
+    : deltaRows.filter(r=>isOrderable(r.ticker));
+
+  // Map ticker → EUR value currently held in IB (from diagnostic snapshot, if loaded)
+  // IB marketValue is already in EUR base currency
+  const MIN_ORDER_EUR=20; // minimum incremental buy to bother sending
+  const ibkrHoldingsMap=React.useMemo(()=>{
+    const m=new Map<string,number>();
+    (ibkrPos??[]).forEach(p=>m.set(p.ticker.toUpperCase(),p.value));
+    return m;
+  },[ibkrPos]);
+
+  // In "Construção inicial" mode: subtract what we already hold from BUY notional
+  // so we only buy the DIFFERENCE needed to reach the target weight.
+  type AdjRow={ticker:string;prev:number;cur:number;delta:number;action:string;
+    estEur:number;heldEur:number;targetEur:number;adjEur:number;skipReason?:string};
+  const adjustedOrderRows:AdjRow[]=React.useMemo(()=>orderRows.map(r=>{
+    const isFullExit=r.action==="Vender";
+    const isSell=execMode==="full"?isFullExit:(r.action==="Vender"||r.action==="Reduzir");
+    const targetEur=execMode==="full"
+      ? (isFullExit?r.prev/100*aum:r.cur/100*aum)
+      : Math.abs(r.delta)/100*aum;
+    const heldEur=ibkrHoldingsMap.get(r.ticker.toUpperCase())??0;
+    // For BUY in full mode: only buy the shortfall vs current holding
+    let adjEur=targetEur;
+    let skipReason:string|undefined;
+    if(execMode==="full"&&!isSell&&heldEur>0){
+      adjEur=Math.max(0, targetEur-heldEur);
+      if(adjEur<MIN_ORDER_EUR)skipReason=adjEur<=0?"Já no alvo ou acima":"Incremento < €"+MIN_ORDER_EUR;
+    }
+    return {
+      ...r,
+      estEur:adjEur,
+      heldEur,
+      targetEur,
+      adjEur,
+      skipReason,
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }),[orderRows,execMode,aum,ibkrHoldingsMap]);
+
+  const activeOrderRows=adjustedOrderRows.filter(r=>!r.skipReason&&r.adjEur>=MIN_ORDER_EUR||r.action==="Vender");
+  const nOrdens=activeOrderRows.length;
+
+  // For summary financials — use adjusted amounts
+  const investEur=activeOrderRows.filter(r=>r.action!=="Vender"&&r.action!=="Reduzir"||execMode==="full"&&r.action!=="Vender").reduce((s,r)=>s+r.adjEur,0);
+  const reduceEur=activeOrderRows.filter(r=>r.action==="Vender"||(execMode==="delta"&&r.action==="Reduzir")).reduce((s,r)=>s+r.adjEur,0);
+  const totalBuyPct=investEur/aum*100;
+  const totalSellPct=reduceEur/aum*100;
   const tradeCost=Math.max(2.0,nOrdens*0.7);
 
   async function submitOrders() {
@@ -1805,31 +1936,37 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         setDone(true);
         return;
       }
-      // Build payload: full mode uses cur weight for est_eur; delta mode uses |delta|
+      // ── Build order payload ──────────────────────────────────────────────
+      // Uses activeOrderRows (already adjusted for existing IB holdings):
+      //   • "Construção inicial": BUY only the shortfall vs. current position
+      //   • "Rebalanceamento": trade only the delta vs. previous month
       const body={
-        orders:orderRows.map(r=>({
-          ticker:r.ticker,
-          action:r.action==="Vender"?"Vender":
-                 r.action==="Reduzir"&&execMode==="delta"?"Reduzir":
-                 r.action==="Manter"||r.action==="Aumentar"||r.action==="Comprar"?"Comprar":"Vender",
-          delta_pct:execMode==="full"?r.cur:r.delta,
-          est_eur:execMode==="full"
-            ? (r.action==="Vender"?r.prev/100*aum:r.cur/100*aum)
-            : Math.abs(r.delta)/100*aum,
-        })),
+        orders:activeOrderRows.map(r=>{
+          const isFullExit=r.action==="Vender";
+          const isBuy=execMode==="full"
+            ?!isFullExit
+            :(r.action==="Comprar"||r.action==="Aumentar");
+          const isSell=execMode==="full"
+            ?isFullExit
+            :(r.action==="Vender"||r.action==="Reduzir");
+          const side=isBuy?"Comprar":isSell?"Vender":"Comprar";
+          // Translate plan ticker → IB US ticker (e.g. BATS → BTI)
+          return {ticker:toIbTicker(r.ticker), action:side, est_eur:Math.max(0,r.adjEur)};
+        }).filter(o=>o.est_eur>=MIN_ORDER_EUR||o.action==="Vender"),
         paper_mode:false,profile:profileLabel,
         fx_exposure:fxExposure,margin_enabled:marginEnabled,aum,
       };
       const resp=await fetch("/api/ibkr-orders",{
         method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)
       });
-      if(resp.ok){
-        const j=await resp.json().catch(()=>({}));
+      const j=await resp.json().catch(()=>({}));
+      // Check both HTTP status AND JSON status (backend can return 200 with error body)
+      if(resp.ok&&j.status!=="rejected"&&j.status!=="error"){
         setOrderRef(j.order_ref??"ORD-"+Date.now().toString(36).toUpperCase());
         setFills(j.fills??[]);
+        setPollCount(0);
         setDone(true);
       } else {
-        const j=await resp.json().catch(()=>({}));
         setErrMsg(j.error||j.detail||`Erro ${resp.status} — o backend FastAPI e a IB Gateway têm de estar activos para envio real.`);
       }
     } catch(e:unknown){
@@ -1910,27 +2047,33 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                 {/* execMode toggle */}
                 <div className="flex rounded-lg border border-[#252a3a] overflow-hidden text-[10px] font-semibold">
                   <button onClick={()=>setExecMode("full")}
-                    className={`px-3 py-1.5 transition-colors ${execMode==="full"?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>
-                    Plano completo
+                    className={`px-3 py-1.5 transition-colors ${execMode==="full"?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}
+                    title="Construção inicial: compra todas as posições ao peso-alvo. Ideal para conta vazia.">
+                    Construção inicial
                   </button>
                   <button onClick={()=>setExecMode("delta")}
-                    className={`px-3 py-1.5 transition-colors border-l border-[#252a3a] ${execMode==="delta"?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>
-                    Só alterações
+                    className={`px-3 py-1.5 transition-colors border-l border-[#252a3a] ${execMode==="delta"?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}
+                    title="Rebalanceamento: envia apenas as ordens com alteração ≥ 1 pp face ao mês anterior.">
+                    Rebalanceamento
                   </button>
                 </div>
               </div>
             </div>
             <div className="text-[10px] text-slate-500 mb-3">
               {execMode==="full"
-                ? `Plano completo: ${nOrdens} ordens serão enviadas (todas as posições com peso > 0)`
-                : `Rebalancing: ${nOrdens} ordens com alterações este mês (Δ ≥ 1 pp)`}
+                ? `Construção inicial: ${nOrdens} ordens BUY ao peso-alvo (para conta vazia ou reset completo)`
+                : `Rebalanceamento: ${nOrdens} ordens com alteração ≥ 1 pp face ao mês anterior`}
             </div>
             <table className="w-full text-xs">
               <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
                 <th className="pb-2 font-semibold">Ativo</th>
                 <th className="pb-2 font-semibold">Ação</th>
-                <th className="pb-2 font-semibold text-right">Peso actual</th>
-                <th className="pb-2 font-semibold text-right">Peso alvo</th>
+                <th className="pb-2 font-semibold text-right">
+                  <span title="Peso no plano do mês anterior">Mês ant.</span>
+                </th>
+                <th className="pb-2 font-semibold text-right">
+                  <span title="Peso alvo no plano deste mês">Este mês</span>
+                </th>
                 <th className="pb-2 font-semibold text-right">Δ Peso</th>
                 <th className="pb-2 font-semibold text-right">Val. estimado</th>
               </tr></thead>
@@ -1938,23 +2081,29 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                 {allPlanRows.map(r=>{
                   const isManter=r.action==="Manter";
                   const isBuy=r.action==="Comprar";const isUp=r.action==="Aumentar";
-                  const isSell=r.action==="Vender";const isDown=r.action==="Reduzir";
-                  const inExec=orderRows.some(x=>x.ticker===r.ticker);
+                  const isSell=r.action==="Vender";
+                  const inExec=activeOrderRows.some(x=>x.ticker===r.ticker);
+                  const notOrderable=!isOrderable(r.ticker);
+                  const adjRow=adjustedOrderRows.find(x=>x.ticker===r.ticker);
+                  const heldEur=ibkrHoldingsMap.get(r.ticker.toUpperCase())??0;
                   const acBg=isManter?"bg-slate-700/30 text-slate-500 border-slate-700/50":
                              isBuy?"bg-emerald-500/15 text-emerald-300 border-emerald-500/30":
                              isUp?"bg-cyan-500/15 text-cyan-300 border-cyan-500/30":
                              isSell?"bg-red-500/15 text-red-300 border-red-500/30":
                              "bg-amber-500/15 text-amber-300 border-amber-500/30";
                   const acIcon=isManter?"=":isBuy?"↑":isUp?"↗":isSell?"↓":"↙";
-                  const estVal=execMode==="full"
-                    ? (isSell?r.prev/100*aum:r.cur/100*aum)
-                    : Math.abs(r.delta)/100*aum;
+                  const skipped=adjRow?.skipReason;
+                  const displayVal=adjRow?adjRow.adjEur:(execMode==="full"?(isSell?r.prev/100*aum:r.cur/100*aum):Math.abs(r.delta)/100*aum);
                   return (
-                    <tr key={r.ticker} className={`border-b border-[#111520] hover:bg-white/[0.02] ${isManter&&execMode==="delta"?"opacity-40":""}`}>
+                    <tr key={r.ticker} className={`border-b border-[#111520] hover:bg-white/[0.02] ${(isManter&&execMode==="delta")||notOrderable||skipped?"opacity-40":""}`}>
                       <td className="py-2.5">
                         <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
-                          className={`font-bold hover:underline ${inExec?"text-blue-400":"text-slate-500"}`}>{displayTicker(r.ticker)}</a>
-                        {!inExec&&execMode==="delta"&&<span className="ml-1 text-[9px] text-slate-600">(não enviada)</span>}
+                          className={`font-bold hover:underline ${inExec?"text-blue-400":skipped?"text-slate-600":"text-slate-500"}`}>{displayTicker(r.ticker)}</a>
+                        {notOrderable&&<span className="ml-1 text-[9px] text-amber-600" title="Não listada nos EUA — excluída do envio à IB">⚠ não-US</span>}
+                        {!notOrderable&&toIbTicker(r.ticker)!==r.ticker.toUpperCase()&&
+                          <span className="ml-1 text-[9px] text-sky-500" title={`Enviado à IB como ${toIbTicker(r.ticker)}`}>→ {toIbTicker(r.ticker)}</span>}
+                        {skipped&&<span className="ml-1 text-[9px] text-slate-600" title={adjRow?.skipReason}>✓ {adjRow?.skipReason}</span>}
+                        {!notOrderable&&!inExec&&!skipped&&execMode==="delta"&&<span className="ml-1 text-[9px] text-slate-600">(não enviada)</span>}
                       </td>
                       <td className="py-2.5">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${acBg}`}>
@@ -1966,27 +2115,68 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                       <td className={`py-2.5 text-right font-semibold ${r.delta>0?"text-emerald-400":r.delta<0?"text-red-400":"text-slate-500"}`}>
                         {r.delta>0?"+":""}{r.delta.toFixed(2)}%
                       </td>
-                      <td className={`py-2.5 text-right font-semibold ${inExec?(r.action==="Vender"||r.action==="Reduzir"?"text-amber-400":"text-emerald-400"):"text-slate-600"}`}>
-                        {inExec?`€ ${fmtEm(estVal)}`:"—"}
+                      <td className={`py-2.5 text-right font-semibold ${inExec?(isSell?"text-amber-400":"text-emerald-400"):skipped?"text-slate-600":"text-slate-600"}`}>
+                        {(inExec||skipped)?(
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span>{inExec?`€ ${fmtEm(displayVal)}`:"—"}</span>
+                            {heldEur>0&&execMode==="full"&&!isSell&&(
+                              <span className="text-[9px] text-slate-500" title={`Tens €${fmtEm(heldEur)} em carteira. Alvo: €${fmtEm(adjRow?.targetEur??0)}`}>
+                                já tens € {fmtEm(heldEur)}
+                              </span>
+                            )}
+                          </div>
+                        ):"—"}
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-[#252a3a] bg-[#0b0f1a]">
+                  <td colSpan={2} className="py-2.5 text-xs font-bold text-slate-400">
+                    {nOrdens} ordens a enviar
+                    {ibkrPos&&execMode==="full"&&<span className="ml-1.5 text-[10px] font-normal text-sky-400" title="Valores ajustados para posições já existentes na carteira IB">· ajustado vs carteira IB</span>}
+                  </td>
+                  <td className="py-2.5 text-right text-xs text-slate-500">—</td>
+                  <td className="py-2.5 text-right text-xs text-slate-500">—</td>
+                  <td className="py-2.5 text-right text-xs text-slate-500">—</td>
+                  <td className="py-2.5 text-right text-xs font-black text-emerald-400">
+                    € {fmtEm(investEur+reduceEur)}
+                  </td>
+                </tr>
+                {aum>0&&(
+                  <tr className="bg-[#080c14]">
+                    <td colSpan={5} className="py-2 text-xs font-bold text-slate-200">Montante de referência (NAV)</td>
+                    <td className="py-2 text-right text-xs font-black text-white">€ {fmtEm(aum)}</td>
+                  </tr>
+                )}
+              </tfoot>
             </table>
           </div>
 
-          {/* Important note */}
-          <div className="flex items-start gap-3 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl px-4 py-4">
-            <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5"/>
-            <div>
-              <div className="text-xs font-bold text-amber-300 mb-1">Nota importante</div>
-              <div className="text-xs text-slate-400 space-y-1">
-                <p>As ordens são executadas de acordo com as condições de mercado actuais.</p>
-                <p>Pequenas diferenças de preços podem ocorrer entre a simulação e a execução final.</p>
+          {/* Mode-specific warning */}
+          {execMode==="full"?(
+            <div className="flex items-start gap-3 bg-amber-500/[0.08] border border-amber-500/30 rounded-xl px-4 py-4">
+              <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5"/>
+              <div>
+                <div className="text-xs font-bold text-amber-300 mb-1">Construção inicial — usa para conta vazia</div>
+                <div className="text-xs text-slate-400 space-y-1">
+                  <p>Este modo envia uma ordem de <strong className="text-slate-300">compra ao peso-alvo</strong> para <em>todas</em> as posições do plano, independentemente do que já tens em carteira.</p>
+                  <p>Se já tens posições, usa antes o modo <strong className="text-slate-300">Rebalanceamento</strong> que só envia as alterações face ao mês anterior.</p>
+                </div>
               </div>
             </div>
-          </div>
+          ):(
+            <div className="flex items-start gap-3 bg-blue-500/[0.06] border border-blue-500/20 rounded-xl px-4 py-4">
+              <Info size={15} className="text-blue-400 shrink-0 mt-0.5"/>
+              <div>
+                <div className="text-xs font-bold text-blue-300 mb-1">Rebalanceamento mensal</div>
+                <div className="text-xs text-slate-400">
+                  Apenas as posições com variação ≥ 1 pp face ao mês anterior são enviadas. O tamanho de cada ordem corresponde ao <strong className="text-slate-300">delta de peso × montante NAV</strong>.
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Paper mode toggle */}
           <div className="flex items-center justify-between bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-4 py-3">
@@ -2002,112 +2192,178 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
 
           {/* ── Diagnóstico / Testes ─────────────────────────────────────── */}
           <div className="bg-[#080c14] border border-amber-500/20 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between">
+              <button onClick={()=>setShowDiag(v=>!v)}
+                className="flex items-center gap-2 hover:opacity-80 transition-opacity">
                 <AlertTriangle size={13} className="text-amber-400"/>
                 <span className="text-xs font-bold text-amber-300">Diagnóstico de carteira IB</span>
                 <span className="text-[10px] text-slate-500">— ferramentas de teste</span>
-              </div>
-              <button onClick={fetchIbkrPositions} disabled={ibkrLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold bg-[#111827] border border-[#252a3a] text-slate-300 rounded-lg hover:bg-[#1a1f2e] disabled:opacity-50 transition-colors">
-                {ibkrLoading?<span className="animate-spin text-xs">⟳</span>:<Activity size={11}/>}
-                {ibkrLoading?"A carregar…":"Verificar carteira IB"}
+                <span className="text-[10px] text-slate-600 ml-1">{showDiag?"▲":"▼"}</span>
               </button>
+              {showDiag&&(
+                <button onClick={fetchIbkrPositions} disabled={ibkrLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold bg-[#111827] border border-[#252a3a] text-slate-300 rounded-lg hover:bg-[#1a1f2e] disabled:opacity-50 transition-colors">
+                  {ibkrLoading?<span className="animate-spin text-xs">⟳</span>:<Activity size={11}/>}
+                  {ibkrLoading?"A carregar…":"Verificar carteira IB"}
+                </button>
+              )}
             </div>
-
-            {ibkrErr&&(
-              <div className="text-[10px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mb-3">{ibkrErr}</div>
-            )}
-
-            {ibkrPos&&(
-              <>
-                {/* Orphan positions */}
-                {orphanPositions.length>0&&(
-                  <div className="mb-3">
-                    <div className="text-[10px] font-semibold text-amber-400 mb-1.5">
-                      Posições fora do plano ({orphanPositions.length}) — candidatas a vender
-                    </div>
-                    <table className="w-full text-[10px]">
-                      <thead><tr className="text-slate-600 border-b border-[#1a1f2e]">
-                        <th className="text-left pb-1">Ticker</th>
-                        <th className="text-right pb-1">Qtd</th>
-                        <th className="text-right pb-1">Valor</th>
-                        <th className="text-right pb-1">Peso %</th>
-                      </tr></thead>
-                      <tbody>
-                        {orphanPositions.map(p=>(
-                          <tr key={p.ticker} className="border-b border-[#111520]">
-                            <td className="py-1.5 font-bold text-amber-400">
-                              <a href={`https://finance.yahoo.com/quote/${p.ticker}`} target="_blank" rel="noopener noreferrer" className="hover:underline">{displayTicker(p.ticker)}</a>
-                            </td>
-                            <td className="py-1.5 text-right text-slate-300">{p.qty.toFixed(0)}</td>
-                            <td className="py-1.5 text-right text-slate-300">€ {fmtE(Math.abs(p.value))}</td>
-                            <td className="py-1.5 text-right text-amber-300">{p.weight_pct.toFixed(2)}%</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+            {!showDiag&&<div className="text-[10px] text-slate-600 mt-1">Clique para expandir · verifica posições IB e permite vender toda a carteira</div>}
+            {showDiag&&(
+              <div className="mt-3 space-y-3">
+                {ibkrErr&&(
+                  <div className="text-[10px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{ibkrErr}</div>
                 )}
-
-                {/* All IB positions summary */}
-                <div className="text-[10px] text-slate-500 mb-3">
-                  {ibkrPos.length} posições activas na IB
-                  {orphanPositions.length>0?` · ${orphanPositions.length} fora do plano`:` · todas no plano`}
-                </div>
-
-                {/* Vender tudo button */}
-                {!sellAllResult?(
-                  <button onClick={sellAllPositions} disabled={sellAllSending||ibkrPos.length===0}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 rounded-xl disabled:opacity-50 transition-colors">
-                    {sellAllSending?<span className="animate-spin text-sm">⟳</span>:<Trash2 size={13}/>}
-                    {sellAllSending?"A enviar ordens de venda…":
-                      paperMode?`⚠ Desliga "Simulação local" para enviar ordens reais à IB`
-                               :`⚠ Vender toda a carteira IB (${ibkrPos.length} posições) — TESTE`}
-                  </button>
-                ):(
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2.5">
-                      <CheckCircle2 size={14} className="text-emerald-400 shrink-0"/>
+                {ibkrPos&&(
+                  <>
+                    {orphanPositions.length>0&&(
                       <div>
-                        <div className="text-[10px] font-bold text-emerald-300">Ordens de venda submetidas</div>
-                        <div className="text-[10px] text-slate-500">{sellAllResult.fills} ordens · ref {sellAllResult.ref}</div>
-                      </div>
-                      <button onClick={()=>{setSellAllResult(null);setSellAllFills([]);setIbkrPos(null);}} className="ml-auto text-slate-500 hover:text-slate-300"><X size={12}/></button>
-                    </div>
-                    {sellAllFills.length>0&&(
-                      <div className="rounded-lg border border-[#1a1f2e] overflow-hidden">
-                        <table className="w-full text-[11px]">
-                          <thead><tr className="text-slate-500 border-b border-[#1a1f2e] bg-[#0b0f1a]">
-                            <th className="text-left px-3 py-1.5">Ticker</th>
-                            <th className="text-right px-2 py-1.5">Qtd</th>
-                            <th className="text-right px-2 py-1.5">Preço médio</th>
-                            <th className="text-left px-3 py-1.5">Estado</th>
+                        <div className="text-[10px] font-semibold text-amber-400 mb-1.5">
+                          Posições fora do plano ({orphanPositions.length}) — candidatas a vender
+                        </div>
+                        <table className="w-full text-[10px]">
+                          <thead><tr className="text-slate-600 border-b border-[#1a1f2e]">
+                            <th className="text-left pb-1">Ticker</th>
+                            <th className="text-right pb-1">Qtd</th>
+                            <th className="text-right pb-1">Valor</th>
+                            <th className="text-right pb-1">Peso %</th>
                           </tr></thead>
                           <tbody>
-                            {sellAllFills.map((f,i)=>{
-                              const skipped=["skip_zero","skip_sell_no_long","contract_not_qualified"].includes(f.status);
-                              const filled=f.status==="Filled";
-                              return(
-                                <tr key={i} className={`border-b border-[#1a1f2e] ${i%2===0?"":"bg-[#080c14]"} ${skipped?"opacity-50":""}`}>
-                                  <td className="px-3 py-1 font-bold text-red-400">{f.ticker}</td>
-                                  <td className="px-2 py-1 text-right text-slate-300">{f.filled||f.requested_qty||"—"}</td>
-                                  <td className="px-2 py-1 text-right text-slate-400">{f.avg_fill_price?f.avg_fill_price.toFixed(2):"—"}</td>
-                                  <td className="px-3 py-1">
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${filled?"bg-emerald-900/40 text-emerald-300":skipped?"bg-slate-800 text-slate-500":"bg-amber-900/40 text-amber-300"}`}>
-                                      {filled?"Vendida":skipped?"Ignorada":f.status==="Submitted"?"Em curso":f.status}
-                                    </span>
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                            {orphanPositions.map(p=>(
+                              <tr key={p.ticker} className="border-b border-[#111520]">
+                                <td className="py-1.5 font-bold text-amber-400">
+                                  <a href={`https://finance.yahoo.com/quote/${p.ticker}`} target="_blank" rel="noopener noreferrer" className="hover:underline">{displayTicker(p.ticker)}</a>
+                                </td>
+                                <td className="py-1.5 text-right text-slate-300">{p.qty.toFixed(0)}</td>
+                                <td className="py-1.5 text-right text-slate-300">€ {fmtE(Math.abs(p.value))}</td>
+                                <td className="py-1.5 text-right text-amber-300">{p.weight_pct.toFixed(2)}%</td>
+                              </tr>
+                            ))}
                           </tbody>
                         </table>
                       </div>
                     )}
-                  </div>
+                    <div className="text-[10px] text-slate-500">
+                      {ibkrPos.length} posições activas na IB
+                      {orphanPositions.length>0?` · ${orphanPositions.length} fora do plano`:` · todas no plano`}
+                    </div>
+                    {/* Short positions warning */}
+                    {ibkrPos.some(p=>p.qty<0)&&(
+                      <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-[10px] text-red-300">
+                        <AlertTriangle size={11} className="shrink-0 mt-0.5"/>
+                        <span>
+                          <strong>{ibkrPos.filter(p=>p.qty<0).length} posições SHORT</strong> detectadas ({ibkrPos.filter(p=>p.qty<0).map(p=>p.ticker).join(", ")}).
+                          Usa <strong>FLAT</strong> abaixo para fechar tudo (longs + shorts).
+                        </span>
+                      </div>
+                    )}
+
+                    {/* FLAT button — closes ALL positions (longs + shorts) */}
+                    {!flatResult?(
+                      <button onClick={flattenAllPositions}
+                        disabled={flatSending||ibkrPos.length===0||(ibkrPos.every(p=>p.qty===0))}
+                        className="w-full flex items-center justify-center gap-2 py-3 text-xs font-black bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/50 text-orange-300 rounded-xl disabled:opacity-50 transition-colors">
+                        {flatSending?<span className="animate-spin text-sm">⟳</span>:<span className="text-base leading-none">⊘</span>}
+                        {flatSending?"A zerar carteira (longs + shorts)…":
+                          paperMode?`⚠ Desliga "Simulação local" para zerar à IB`:
+                          `ZERAR CARTEIRA IB — ${ibkrPos.filter(p=>p.qty>0).length} longs + ${ibkrPos.filter(p=>p.qty<0).length} shorts — TESTE`}
+                      </button>
+                    ):(
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2.5">
+                          <CheckCircle2 size={14} className="text-emerald-400 shrink-0"/>
+                          <div>
+                            <div className="text-[10px] font-bold text-emerald-300">Carteira zerada</div>
+                            <div className="text-[10px] text-slate-500">{flatResult.longs} longs + {flatResult.shorts} shorts · ref {flatResult.ref}</div>
+                          </div>
+                          <button onClick={()=>{setFlatResult(null);setFlatFills([]);setIbkrPos(null);}} className="ml-auto text-slate-500 hover:text-slate-300"><X size={12}/></button>
+                        </div>
+                        {flatFills.length>0&&(
+                          <div className="rounded-lg border border-[#1a1f2e] overflow-hidden max-h-48 overflow-y-auto">
+                            <table className="w-full text-[11px]">
+                              <thead><tr className="text-slate-500 border-b border-[#1a1f2e] bg-[#0b0f1a] sticky top-0">
+                                <th className="text-left px-3 py-1.5">Ticker</th>
+                                <th className="text-left px-2 py-1.5">Lado</th>
+                                <th className="text-right px-2 py-1.5">Qtd</th>
+                                <th className="text-left px-3 py-1.5">Estado</th>
+                              </tr></thead>
+                              <tbody>
+                                {flatFills.map((f,i)=>{
+                                  const filled=f.status==="Filled";
+                                  const skipped=["skip_zero","skip_sell_no_long","contract_not_qualified"].includes(f.status);
+                                  return(
+                                    <tr key={i} className={`border-b border-[#1a1f2e] ${i%2===0?"":"bg-[#080c14]"} ${skipped?"opacity-50":""}`}>
+                                      <td className="px-3 py-1 font-bold text-orange-400">{f.ticker}</td>
+                                      <td className={`px-2 py-1 font-semibold text-[10px] ${f.action==="BUY"||f.action==="Comprar"?"text-emerald-400":"text-red-400"}`}>{f.action==="BUY"||f.action==="Comprar"?"Comprar (cover)":"Vender"}</td>
+                                      <td className="px-2 py-1 text-right text-slate-300">{f.filled||f.requested_qty}</td>
+                                      <td className="px-3 py-1">
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${filled?"bg-emerald-900/40 text-emerald-300":skipped?"bg-slate-800 text-slate-500":"bg-amber-900/40 text-amber-300"}`}>
+                                          {filled?"OK":skipped?"Ignorada":"Em curso"}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Original sell-longs-only button */}
+                    {!sellAllResult?(
+                      <button onClick={sellAllPositions} disabled={sellAllSending||ibkrPos.filter(p=>p.qty>0).length===0}
+                        className="w-full flex items-center justify-center gap-2 py-2 text-[10px] font-bold bg-red-600/10 hover:bg-red-600/20 border border-red-500/20 text-red-400 rounded-xl disabled:opacity-50 transition-colors">
+                        {sellAllSending?<span className="animate-spin text-xs">⟳</span>:<Trash2 size={11}/>}
+                        {sellAllSending?"A vender longs…":
+                          `Vender só longs (${ibkrPos.filter(p=>p.qty>0).length}) — TESTE`}
+                      </button>
+                    ):(
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2.5">
+                          <CheckCircle2 size={14} className="text-emerald-400 shrink-0"/>
+                          <div>
+                            <div className="text-[10px] font-bold text-emerald-300">Ordens de venda submetidas</div>
+                            <div className="text-[10px] text-slate-500">{sellAllResult.fills} ordens · ref {sellAllResult.ref}</div>
+                          </div>
+                          <button onClick={()=>{setSellAllResult(null);setSellAllFills([]);setIbkrPos(null);}} className="ml-auto text-slate-500 hover:text-slate-300"><X size={12}/></button>
+                        </div>
+                        {sellAllFills.length>0&&(
+                          <div className="rounded-lg border border-[#1a1f2e] overflow-hidden">
+                            <table className="w-full text-[11px]">
+                              <thead><tr className="text-slate-500 border-b border-[#1a1f2e] bg-[#0b0f1a]">
+                                <th className="text-left px-3 py-1.5">Ticker</th>
+                                <th className="text-right px-2 py-1.5">Qtd</th>
+                                <th className="text-right px-2 py-1.5">Preço médio</th>
+                                <th className="text-left px-3 py-1.5">Estado</th>
+                              </tr></thead>
+                              <tbody>
+                                {sellAllFills.map((f,i)=>{
+                                  const skipped=["skip_zero","skip_sell_no_long","contract_not_qualified"].includes(f.status);
+                                  const filled=f.status==="Filled";
+                                  return(
+                                    <tr key={i} className={`border-b border-[#1a1f2e] ${i%2===0?"":"bg-[#080c14]"} ${skipped?"opacity-50":""}`}>
+                                      <td className="px-3 py-1 font-bold text-red-400">{f.ticker}</td>
+                                      <td className="px-2 py-1 text-right text-slate-300">{f.filled||f.requested_qty||"—"}</td>
+                                      <td className="px-2 py-1 text-right text-slate-400">{f.avg_fill_price?f.avg_fill_price.toFixed(2):"—"}</td>
+                                      <td className="px-3 py-1">
+                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${filled?"bg-emerald-900/40 text-emerald-300":skipped?"bg-slate-800 text-slate-500":"bg-amber-900/40 text-amber-300"}`}>
+                                          {filled?"Vendida":skipped?"Ignorada":f.status==="Submitted"?"Em curso":f.status}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
-              </>
+              </div>
             )}
 
             {!ibkrPos&&!ibkrLoading&&(
@@ -2168,67 +2424,144 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                 </div>
                 {orderRef&&<span className="ml-auto text-[10px] font-mono text-slate-400 border border-[#252a3a] px-2 py-1 rounded">{orderRef}</span>}
               </div>
-              <div className="grid grid-cols-3 gap-3 border-t border-[#1a1f2e] pt-4">
+              <div className="grid grid-cols-4 gap-3 border-t border-[#1a1f2e] pt-4">
                 <div className="text-center">
-                  <div className="text-[9px] text-slate-500 mb-1">Ordens enviadas</div>
-                  <div className="text-lg font-black text-slate-100">{fills.length>0?fills.filter(f=>!["skip_zero","skip_sell_no_long","contract_not_qualified"].includes(f.status)).length:nOrdens}</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-[9px] text-slate-500 mb-1">Modo</div>
-                  <div className={`text-sm font-bold ${paperMode?"text-amber-400":"text-emerald-400"}`}>{paperMode?"Simulação local":"Envia à IB"}</div>
+                  <div className="text-[9px] text-slate-500 mb-1">Enviadas</div>
+                  <div className="text-lg font-black text-slate-100">{fills.length>0?fills.filter(f=>!["skip_zero","skip_sell_no_long","contract_not_qualified","skip_fx_below_min"].includes(f.status)).length:nOrdens}</div>
                 </div>
                 <div className="text-center">
                   <div className="text-[9px] text-slate-500 mb-1">Preenchidas</div>
-                  <div className="text-sm font-bold text-emerald-400">{fills.length>0?fills.filter(f=>f.status==="Filled").length+" / "+fills.length:"Pendente"}</div>
+                  <div className="text-sm font-black text-emerald-400">{fills.length>0?fills.filter(f=>f.status==="Filled").length:0}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-[9px] text-slate-500 mb-1">Em curso</div>
+                  <div className="text-sm font-black text-amber-400">{fills.length>0?fills.filter(f=>f.status==="Submitted"||f.status==="PreSubmitted").length:0}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-[9px] text-slate-500 mb-1">Ignoradas</div>
+                  <div className="text-sm font-black text-slate-500">{fills.length>0?fills.filter(f=>["skip_zero","skip_sell_no_long","contract_not_qualified","skip_fx_below_min"].includes(f.status)).length:0}</div>
                 </div>
               </div>
+              {!paperMode&&fills.some(f=>f.status==="Submitted"||f.status==="PreSubmitted")&&(
+                <div className="flex items-center gap-2 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-3 py-2 text-[10px] text-amber-300">
+                  <span className="animate-pulse font-bold">⟳</span>
+                  Ordens submetidas à IB — aguarda execução (paper: costuma ser imediato)
+                </div>
+              )}
 
               {/* Execution table */}
               {fills.length>0&&(
-                <div className="border-t border-[#1a1f2e] pt-3">
-                  <div className="font-semibold text-slate-300 text-xs mb-2">Detalhe de execução</div>
-                  <div className="overflow-auto max-h-72 rounded-lg border border-[#1a1f2e]">
+                <div className="border-t border-[#1a1f2e] pt-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold text-slate-300 text-xs">Detalhe de execução</div>
+                    <div className="flex gap-3 text-[10px] text-slate-500">
+                      {fills.some(f=>f.ticker==="EUR/USD"||f.ticker==="EURUSD")&&
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-violet-500/60 inline-block"/>Cambial (FX hedge)</span>}
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-700/60 inline-block"/>Preenchida</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-700/60 inline-block"/>Em curso</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-slate-700/60 inline-block"/>Ignorada</span>
+                    </div>
+                  </div>
+                  <div className="overflow-auto rounded-lg border border-[#1a1f2e]" style={{maxHeight:"360px"}}>
                     <table className="w-full text-[11px]">
-                      <thead className="sticky top-0 bg-[#0b0f1a]">
-                        <tr className="text-slate-500 border-b border-[#1a1f2e]">
-                          <th className="text-left px-3 py-2">Ticker</th>
-                          <th className="text-left px-2 py-2">Acção</th>
-                          <th className="text-right px-2 py-2">Qtd pedida</th>
-                          <th className="text-right px-2 py-2">Qtd exec.</th>
+                      <thead className="sticky top-0 bg-[#0b0f1a] z-10">
+                        <tr className="text-slate-500 border-b border-[#252a3a]">
+                          <th className="text-left px-3 py-2">Ativo</th>
+                          <th className="text-left px-2 py-2">Lado</th>
+                          <th className="text-right px-2 py-2">Qtd. pedida</th>
+                          <th className="text-right px-2 py-2">Qtd. exec.</th>
                           <th className="text-right px-2 py-2">Preço médio</th>
-                          <th className="text-left px-3 py-2">Estado</th>
+                          <th className="text-right px-2 py-2">Valor exec.</th>
+                          <th className="text-center px-2 py-2">Estado</th>
+                          <th className="text-left px-3 py-2">Nota</th>
                         </tr>
                       </thead>
                       <tbody>
                         {fills.map((f,i)=>{
-                          const skipped=["skip_zero","skip_sell_no_long","contract_not_qualified"].includes(f.status);
-                          const filled=f.status==="Filled";
+                          const isFx=f.ticker==="EUR/USD"||f.ticker==="EURUSD";
+                          const SKIP_ST=["skip_zero","skip_sell_no_long","contract_not_qualified","skip_fx_below_min","error"];
+                          const skipped=SKIP_ST.includes(f.status);
+                          const isFilled=f.status==="Filled";
+                          const isSubmitted=["Submitted","PreSubmitted","PendingSubmit"].includes(f.status);
+                          const isError=f.status==="error";
+                          const valorExec=f.filled&&f.avg_fill_price?f.filled*f.avg_fill_price:null;
+                          const rowBg=isFx?"bg-violet-950/30":i%2===0?"":"bg-[#080c14]";
+                          const statusBadge=isFilled
+                            ?"bg-emerald-900/50 text-emerald-300 border-emerald-700/40"
+                            :skipped
+                              ?"bg-slate-800/60 text-slate-500 border-slate-700/30"
+                              :isError
+                                ?"bg-red-900/40 text-red-300 border-red-700/30"
+                                :"bg-amber-900/40 text-amber-300 border-amber-700/30";
+                          const statusLabel=isFilled?"✓ Preenchida":skipped?"— Ignorada":isSubmitted?"⟳ Em curso":isError?"✕ Erro":f.status;
                           return(
-                            <tr key={i} className={`border-b border-[#1a1f2e] ${skipped?"opacity-40":""} ${i%2===0?"":"bg-[#080c14]"}`}>
-                              <td className="px-3 py-1.5 font-bold text-blue-400">{f.ticker}</td>
-                              <td className={`px-2 py-1.5 font-semibold ${f.action==="BUY"?"text-emerald-400":"text-red-400"}`}>{f.action==="BUY"?"Comprar":"Vender"}</td>
-                              <td className="px-2 py-1.5 text-right text-slate-400">{f.requested_qty}</td>
-                              <td className="px-2 py-1.5 text-right text-slate-200 font-semibold">{f.filled||"—"}</td>
-                              <td className="px-2 py-1.5 text-right text-slate-300">{f.avg_fill_price?f.avg_fill_price.toFixed(2):"—"}</td>
-                              <td className="px-3 py-1.5">
-                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${filled?"bg-emerald-900/40 text-emerald-300":skipped?"bg-slate-800 text-slate-500":"bg-amber-900/40 text-amber-300"}`}>
-                                  {filled?"Preenchida":skipped?"Ignorada":f.status==="Submitted"?"Em curso":f.status}
+                            <tr key={i} className={`border-b border-[#1a1f2e] ${skipped?"opacity-50":""} ${rowBg} transition-colors hover:brightness-110`}>
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-1.5">
+                                  {isFx&&<span className="text-[9px] px-1 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30 font-bold">FX</span>}
+                                  <span className={`font-bold ${isFx?"text-violet-300":"text-blue-400"}`}>{f.ticker}</span>
+                                  {f.executed_as&&f.executed_as!==f.ticker&&
+                                    <span className="text-[9px] text-slate-500">(como {f.executed_as})</span>}
+                                </div>
+                                {f.ib_order_id&&<div className="text-[9px] text-slate-600 mt-0.5">ID #{f.ib_order_id}</div>}
+                              </td>
+                              <td className="px-2 py-2">
+                                <span className={`font-semibold text-[10px] px-1.5 py-0.5 rounded ${f.action==="BUY"?"bg-emerald-900/30 text-emerald-400":"bg-red-900/30 text-red-400"}`}>
+                                  {f.action==="BUY"?(isFx?"Comprar EUR":"Comprar"):"Vender"}
                                 </span>
+                              </td>
+                              <td className="px-2 py-2 text-right text-slate-400 tabular-nums">{f.requested_qty>0?f.requested_qty.toLocaleString("pt-PT",{maximumFractionDigits:2}):"—"}</td>
+                              <td className="px-2 py-2 text-right font-semibold tabular-nums">
+                                <span className={f.filled>0?"text-slate-100":"text-slate-600"}>{f.filled>0?f.filled.toLocaleString("pt-PT",{maximumFractionDigits:2}):"—"}</span>
+                              </td>
+                              <td className="px-2 py-2 text-right text-slate-300 tabular-nums">
+                                {f.avg_fill_price?f.avg_fill_price.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:4}):"—"}
+                              </td>
+                              <td className="px-2 py-2 text-right tabular-nums">
+                                {valorExec?<span className="text-slate-200">{valorExec.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>:"—"}
+                              </td>
+                              <td className="px-2 py-2 text-center">
+                                <span className={`px-1.5 py-0.5 rounded border text-[9px] font-semibold whitespace-nowrap ${statusBadge}`}>
+                                  {statusLabel}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-[10px] text-slate-500 max-w-[180px]">
+                                {f.message?<span title={f.message}>{f.message.length>60?f.message.slice(0,57)+"…":f.message}</span>:"—"}
                               </td>
                             </tr>
                           );
                         })}
                       </tbody>
+                      <tfoot className="sticky bottom-0 bg-[#0b0f1a] border-t-2 border-[#252a3a]">
+                        <tr>
+                          <td colSpan={3} className="px-3 py-2 text-[10px] text-slate-500">
+                            {fills.filter(f=>!["skip_zero","skip_sell_no_long","contract_not_qualified","skip_fx_below_min"].includes(f.status)).length} enviadas
+                            · {fills.filter(f=>f.status==="Filled").length} preenchidas
+                            · {fills.filter(f=>["Submitted","PreSubmitted","PendingSubmit"].includes(f.status)).length} em curso
+                            · {fills.filter(f=>["skip_zero","skip_sell_no_long","contract_not_qualified","skip_fx_below_min"].includes(f.status)).length} ignoradas
+                          </td>
+                          <td className="px-2 py-2 text-right text-[10px] font-bold text-slate-300 tabular-nums">
+                            {fills.reduce((s,f)=>s+(f.filled||0),0).toLocaleString("pt-PT",{maximumFractionDigits:0})}
+                          </td>
+                          <td colSpan={2} className="px-2 py-2 text-right text-[10px] font-bold text-emerald-400 tabular-nums">
+                            {(()=>{const tot=fills.reduce((s,f)=>s+(f.filled&&f.avg_fill_price?f.filled*f.avg_fill_price:0),0); return tot>0?tot.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2}):"—";})()}
+                          </td>
+                          <td colSpan={2} className="px-3 py-2"/>
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 </div>
               )}
 
               <div className="flex gap-2 pt-1">
-                <button onClick={onBack} className="flex-1 py-2 text-xs font-semibold text-slate-300 border border-[#1a1f2e] bg-[#080c14] rounded-lg hover:bg-[#111827] transition-colors">
-                  Ver Recomendações
+                <button onClick={onBack} className="py-2 px-3 text-xs font-semibold text-slate-300 border border-[#1a1f2e] bg-[#080c14] rounded-lg hover:bg-[#111827] transition-colors">
+                  Recomendações
                 </button>
-                <button onClick={()=>{setDone(false);setOrderRef("");setErrMsg("");setFills([]);}} className="flex-1 py-2 text-xs font-semibold text-blue-400 border border-blue-500/30 bg-blue-600/10 rounded-lg hover:bg-blue-600/20 transition-colors">
+                <button onClick={()=>{ if(typeof window!=="undefined") window.dispatchEvent(new CustomEvent("decide:nav",{detail:"carteira"})); }} className="flex-1 py-2 text-xs font-bold text-emerald-300 border border-emerald-500/30 bg-emerald-600/10 rounded-lg hover:bg-emerald-600/20 transition-colors">
+                  ✓ Ver Carteira IB actualizada
+                </button>
+                <button onClick={()=>{setDone(false);setOrderRef("");setErrMsg("");setFills([]);setPollCount(0);}} className="py-2 px-3 text-xs font-semibold text-blue-400 border border-blue-500/30 bg-blue-600/10 rounded-lg hover:bg-blue-600/20 transition-colors">
                   Nova submissão
                 </button>
               </div>
@@ -2256,7 +2589,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             <div className="flex items-center justify-between mb-4">
               <div className="font-bold text-slate-200 text-sm">Resumo do plano</div>
               <span className={`text-xs px-2 py-0.5 rounded-full font-bold border ${execMode==="full"?"bg-blue-600/15 text-blue-300 border-blue-500/30":"bg-slate-700/30 text-slate-400 border-slate-600/30"}`}>
-                {execMode==="full"?"Plano completo":"Só alterações"}
+                {execMode==="full"?"Construção inicial":"Rebalanceamento"}
               </span>
             </div>
             <div className="grid grid-cols-3 gap-3 mb-5">
@@ -2324,13 +2657,25 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
               </table>
             </div>
 
-            {/* Liquidity */}
-            <div className="border-t border-[#1a1f2e] pt-4 mt-4">
-              <div className="flex items-center justify-between mb-1">
-                <div className="text-xs text-slate-500 flex items-center gap-1">Liquidez após execução (estimada)<Info size={10}/></div>
+            {/* NAV reference */}
+            <div className="border-t border-[#1a1f2e] pt-4 mt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500">Montante de referência (NAV)</span>
+                <span className="text-xs font-bold text-white">€ {fmtE(aum)}</span>
               </div>
-              <div className="text-base font-black text-slate-100">€ {fmtE(Math.max(0,aum*0.02))}</div>
-              <div className="text-[10px] text-slate-600">Disponível na conta IB após execução das ordens</div>
+              {/* Warn if IB NAV is known and differs significantly from aum */}
+              {ibkrPos!==null&&(()=>{
+                const ibNav=ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0);
+                const diff=Math.abs(ibNav-aum);
+                const pct=aum>0?diff/aum*100:0;
+                if(pct<5) return null;
+                return (
+                  <div className="flex items-start gap-2 bg-amber-500/[0.08] border border-amber-500/20 rounded-lg px-2.5 py-2 text-[10px] text-amber-300">
+                    <AlertTriangle size={11} className="shrink-0 mt-0.5"/>
+                    <span>NAV IB ({fmtE(ibNav)} €) diverge {pct.toFixed(0)}% do montante de referência ({fmtE(aum)} €). Considera actualizar o montante abaixo ou na Carteira.</span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -2416,7 +2761,7 @@ export default function ClientDashboardPage() {
   const setKpiMode=(v:KpiMode)=>{setKpiModeRaw(v);savePrefs({kpiMode:v});};
   const [contactForm,setContactForm]=useState({nome:"",email:"",assunto:"",msg:""});
   const [contactSent,setContactSent]=useState(false);
-  const [aum,setAum]=useState(100000); // portfolio size in EUR for shares calculation
+  const [aum,setAum]=useState(100000); // initialised below from localStorage (decide_onboarding_montante_eur_v1)
   const [prices,setPrices]=useState<Record<string,{price:number;currency:string;qty?:number;value?:number}|null>>({});
   const [pricesLoading,setPricesLoading]=useState(false);
 
@@ -2438,7 +2783,31 @@ export default function ClientDashboardPage() {
 
   const syncSession=()=>{ try{ setSessionUser(getCurrentSessionUser()); setLoggedIn(isClientLoggedIn()); }catch{} };
 
-  useEffect(()=>{ setMounted(true); syncSession(); },[]);
+  useEffect(()=>{
+    setMounted(true);
+    syncSession();
+    // Seed aum from the montante chosen during onboarding (localStorage)
+    try {
+      const raw = typeof window!=="undefined" ? window.localStorage.getItem("decide_onboarding_montante_eur_v1") : null;
+      if (raw) {
+        const v = Number(String(raw).replace(/\s/g,"").replace(",","."));
+        if (v > 0) setAum(Math.round(v));
+      }
+    } catch { /* ignore */ }
+
+    // Listen for internal navigation events (e.g. from OrdensPage after submit)
+    const handleNav=(e:Event)=>{
+      const detail=(e as CustomEvent).detail as string;
+      if(detail==="carteira"){
+        setActivePage("carteira");
+        setCartTab("ib");
+        setCartIbPos(null); // force refresh
+      }
+    };
+    window.addEventListener("decide:nav",handleNav);
+    return ()=>window.removeEventListener("decide:nav",handleNav);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
   // NO redirect — public dashboard shows to all
 
   useEffect(()=>{
@@ -2508,22 +2877,41 @@ export default function ClientDashboardPage() {
     const ALWAYS_INCLUDE=new Set(["XEON"]);
     const pm=new Map(prevMonth.rows.map(r=>[r.ticker,r.weightPct]));
     const cm=new Map(latestMonth.rows.map(r=>[r.ticker,r.weightPct]));
+    // Only include tickers tradeable on US exchanges — US stocks + known ADRs.
+    // Tickers not tradeable via IB SMART/USD are excluded BEFORE normalisation so
+    // their weights are redistributed proportionally to the remaining positions.
     const candidates=[...new Set([...pm.keys(),...cm.keys()])]
-      .filter(t=>!ALWAYS_INCLUDE.has(t)&&t!=="TBILL_PROXY"&&!t.startsWith("CASH")&&!t.startsWith("TBILL"));
+      .filter(t=>
+        !ALWAYS_INCLUDE.has(t)&&
+        t!=="TBILL_PROXY"&&!t.startsWith("CASH")&&!t.startsWith("TBILL")&&
+        isTradeableUS(t)
+      );
     const ranked=candidates
       .map(t=>({t,w:Math.max(pm.get(t)??0,cm.get(t)??0)}))
       .sort((a,b)=>b.w-a.w).slice(0,N_POS).map(x=>x.t);
     const all=[...ranked,...ALWAYS_INCLUDE];
-    let c=0,au=0,rd=0,v=0,m=0;
-    const rows:{ticker:string;prev:number;cur:number;delta:number;action:string}[]=[];
+
+    // Collect raw weights for selected positions
+    const raw:{ticker:string;prev:number;cur:number}[]=[];
     all.forEach(t=>{
-      // XEON fallback: use tbillsTotalPct if not explicitly in rows
       const p=pm.get(t)??(t==="XEON"?prevMonth.tbillsTotalPct??0:0);
       const cur=cm.get(t)??(t==="XEON"?latestMonth.tbillsTotalPct??0:0);
-      const delta=cur-p;
+      raw.push({ticker:t,prev:p,cur});
+    });
+
+    // Normalise to 100% so excluded small positions are redistributed proportionally
+    const sumPrev=raw.reduce((s,r)=>s+r.prev,0)||1;
+    const sumCur=raw.reduce((s,r)=>s+r.cur,0)||1;
+
+    let c=0,au=0,rd=0,v=0,m=0;
+    const rows:{ticker:string;prev:number;cur:number;delta:number;action:string}[]=[];
+    raw.forEach(({ticker:t,prev:pRaw,cur:curRaw})=>{
+      const p=Math.round((pRaw/sumPrev*100)*100)/100;
+      const cur=Math.round((curRaw/sumCur*100)*100)/100;
+      const delta=Math.round((cur-p)*100)/100;
       let action="Manter";
-      if(p===0&&cur>0){action="Comprar";c++;}
-      else if(cur===0&&p>0){action="Vender";v++;}
+      if(pRaw===0&&curRaw>0){action="Comprar";c++;}
+      else if(curRaw===0&&pRaw>0){action="Vender";v++;}
       else if(delta>=DMIN){action="Aumentar";au++;}
       else if(delta<=-DMIN){action="Reduzir";rd++;}
       else{action="Manter";m++;}
@@ -2542,12 +2930,17 @@ export default function ClientDashboardPage() {
   },[latestMonth,prevMonth]);
 
   const sectorData=useMemo(()=>{
-    if(!latestMonth) return [];
+    // Use actionCounts.allRows (already US-only + normalised) so the chart matches the plan
+    if(!actionCounts.allRows.length) return [];
     const map=new Map<string,number>();
-    latestMonth.rows.forEach(r=>{ if(r.ticker==="TBILL_PROXY") return; const s=getSector(r.ticker); map.set(s,(map.get(s)??0)+r.weightPct); });
+    actionCounts.allRows.forEach(r=>{
+      if(r.ticker==="XEON") return; // money market — don't attribute to equity sector
+      const s=getSector(r.ticker);
+      map.set(s,(map.get(s)??0)+r.cur);
+    });
     const total=[...map.values()].reduce((a,b)=>a+b,0)||1;
     return [...map.entries()].map(([name,pct])=>({name,value:Math.round(pct/total*100)})).sort((a,b)=>b.value-a.value);
-  },[latestMonth]);
+  },[actionCounts]);
 
   // ── Profile factor (must be before scaledEquity / perfData) ─────────────
   const profileFactor=useMemo(()=>
@@ -2644,8 +3037,8 @@ export default function ClientDashboardPage() {
 
   // Sector allocation + risk contribution
   const SECTOR_BETA:Record<string,number>={
-    "Tecnologia":1.35,"Comunicação":1.15,"Energia":1.05,"Industrial":1.00,
-    "Mat. Básicos":0.90,"Cons. Básico":0.70,"Saúde":0.75,"Financeiro":1.10,
+    "Tecnologia":1.35,"Comunicação":1.15,"Internet":1.20,"Energia":1.05,"Industrial":1.00,
+    "Mat. Básicos":0.90,"Mineira":0.85,"Cons. Básico":0.70,"Saúde":0.75,"Financeiro":1.10,
     "Imobiliário":0.85,"Outro":1.00,
   };
   const sectorAlloc=useMemo(()=>{
@@ -3154,8 +3547,8 @@ export default function ClientDashboardPage() {
                           <div className="relative">
                             <ResponsiveContainer width={130} height={130}>
                               <PieChart>
-                                <Pie data={sectorData.slice(0,6)} cx="50%" cy="50%" innerRadius={38} outerRadius={60} dataKey="value" strokeWidth={0} paddingAngle={2}>
-                                  {sectorData.slice(0,6).map((_,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
+                                <Pie data={sectorData.filter(s=>s.value>=1)} cx="50%" cy="50%" innerRadius={38} outerRadius={60} dataKey="value" strokeWidth={0} paddingAngle={2}>
+                                  {sectorData.filter(s=>s.value>=1).map((_,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
                                 </Pie>
                                 <Tooltip formatter={(v:number)=>`${v}%`} contentStyle={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,fontSize:11}}/>
                               </PieChart>
@@ -3166,7 +3559,7 @@ export default function ClientDashboardPage() {
                             </div>
                           </div>
                           <div className="w-full space-y-1.5">
-                            {sectorData.slice(0,6).map((s,i)=>(
+                            {sectorData.filter(s=>s.value>=1).map((s,i)=>(
                               <div key={s.name} className="flex items-center justify-between text-[10px]">
                                 <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-sm shrink-0" style={{background:PIE_COLORS[i%PIE_COLORS.length]}}/><span className="text-slate-400">{s.name}</span></div>
                                 <span className="text-slate-300 font-semibold">{s.value}%</span>
@@ -3335,8 +3728,12 @@ export default function ClientDashboardPage() {
                       <th className="text-left pb-2 font-semibold">Ativo</th>
                       <th className="text-left pb-2 font-semibold">Setor</th>
                       <th className="text-left pb-2 font-semibold">País</th>
-                      <th className="text-right pb-2 font-semibold">Actual</th>
-                      <th className="text-right pb-2 font-semibold">Novo</th>
+                      <th className="text-right pb-2 font-semibold">
+                        <span title="Peso no plano do mês anterior">Mês ant.</span>
+                      </th>
+                      <th className="text-right pb-2 font-semibold">
+                        <span title="Peso no plano deste mês">Este mês</span>
+                      </th>
                       <th className="text-right pb-2 font-semibold">&#916;</th>
                       <th className="text-right pb-2 font-semibold">Ação</th>
                     </tr></thead>
@@ -3367,6 +3764,21 @@ export default function ClientDashboardPage() {
                         );
                       })}
                     </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-[#252a3a] bg-[#0b0f1a]">
+                        <td colSpan={3} className="py-2.5 px-0 text-xs font-bold text-slate-400">
+                          Total ({actionCounts.allRows.length} posições)
+                        </td>
+                        <td className="py-2.5 text-right text-xs font-semibold text-slate-300">
+                          {actionCounts.allRows.reduce((s,r)=>s+r.prev,0).toFixed(1)}%
+                        </td>
+                        <td className="py-2.5 text-right text-xs font-bold text-slate-200">
+                          {actionCounts.allRows.reduce((s,r)=>s+r.cur,0).toFixed(1)}%
+                        </td>
+                        <td className="py-2.5 text-right text-xs text-slate-500">—</td>
+                        <td className="py-2.5 text-right text-xs text-slate-500">—</td>
+                      </tr>
+                    </tfoot>
                   </table>
                 )}
               </div>
@@ -3392,7 +3804,10 @@ export default function ClientDashboardPage() {
                       <div className="flex items-center justify-between">
                         <div className="text-slate-400 text-xs">
                           {cartIbPos!==null&&!cartIbErr&&(
-                            <span>{cartIbPos.length} posições · NAV {cartIbNav.value.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} {cartIbNav.ccy}</span>
+                            <span>
+                            {cartIbPos.length} posições · investido {cartIbPos.reduce((s,p)=>s+p.value,0).toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} EUR
+                            {cartIbNav.value>0&&<span className="text-slate-600 ml-2">(conta paper: {cartIbNav.value.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} {cartIbNav.ccy})</span>}
+                          </span>
                           )}
                         </div>
                         <button onClick={fetchCartIbPositions} disabled={cartIbLoading}
@@ -3421,27 +3836,101 @@ export default function ClientDashboardPage() {
                               <th className="text-left px-2 py-3">País</th>
                               <th className="text-right px-2 py-3">Qtd</th>
                               <th className="text-right px-2 py-3">Valor</th>
-                              <th className="text-right px-4 py-3">Peso %</th>
+                              <th className="text-right px-2 py-3">Peso %</th>
+                              <th className="text-right px-4 py-3 text-slate-600" title="Diferença face ao peso-alvo do plano">Desvio</th>
                             </tr></thead>
                             <tbody>
-                              {cartIbPos.map((p,i)=>(
-                                <tr key={p.ticker} className={`border-b border-[#1a1f2e] hover:bg-[#111827] transition-colors ${i%2===0?"":"bg-[#080c14]"}`}>
-                                  <td className="px-4 py-2.5 font-bold text-blue-400">{displayTicker(p.ticker)}</td>
-                                  <td className="px-2 py-2.5 text-slate-300">{(p as any).name||"—"}</td>
-                                  <td className="px-2 py-2.5 text-slate-400">{(p as any).sector||"—"}</td>
-                                  <td className="px-2 py-2.5 text-slate-400">{(p as any).country||"—"}</td>
-                                  <td className="px-2 py-2.5 text-right text-slate-300">{p.qty.toLocaleString("pt-PT",{maximumFractionDigits:4})}</td>
-                                  <td className="px-2 py-2.5 text-right text-slate-300">
-                                    {p.value.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})} {p.currency}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-right">
-                                    <span className={`font-semibold ${p.weight_pct>5?"text-emerald-400":p.weight_pct>2?"text-blue-400":"text-slate-400"}`}>
-                                      {p.weight_pct.toFixed(2)}%
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
+                              {(()=>{
+                                // IB marketValue is in account base currency (EUR) — use aum as denominator for weight
+                                // actionCounts.allRows is available in this scope (ClientDashboardPage)
+                                const planMap=new Map<string,number>(actionCounts.allRows.map(r=>[r.ticker.toUpperCase(),r.cur]));
+                                return cartIbPos.map((p,i)=>{
+                                  const pctOfPlan=aum>0?(p.value/aum*100):0;
+                                  const planTarget=planMap.get(p.ticker.toUpperCase())??0;
+                                  const desvio=pctOfPlan-planTarget;
+                                  const desvioTxt=desvio===0?"—":`${desvio>0?"+":""}${desvio.toFixed(1)}pp`;
+                                  const devColor=Math.abs(desvio)<1?"text-slate-500":desvio>0?"text-amber-400":"text-sky-400";
+                                  return(
+                                    <tr key={p.ticker} className={`border-b border-[#1a1f2e] hover:bg-[#111827] transition-colors ${i%2===0?"":"bg-[#080c14]"}`}>
+                                      <td className="px-4 py-2.5 font-bold text-blue-400">{displayTicker(p.ticker)}</td>
+                                      <td className="px-2 py-2.5 text-slate-300">{(p as any).name||"—"}</td>
+                                      <td className="px-2 py-2.5 text-slate-400">{(p as any).sector||"—"}</td>
+                                      <td className="px-2 py-2.5 text-slate-400">{(p as any).country||"—"}</td>
+                                      <td className="px-2 py-2.5 text-right text-slate-300">{p.qty.toLocaleString("pt-PT",{maximumFractionDigits:4})}</td>
+                                      <td className="px-2 py-2.5 text-right text-slate-300">
+                                        {p.value.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})} EUR
+                                        {p.currency&&p.currency!=="EUR"&&<span className="text-slate-600 ml-1 text-[10px]">({p.currency})</span>}
+                                      </td>
+                                      <td className="px-2 py-2.5 text-right">
+                                        <span className={`font-semibold ${pctOfPlan>5?"text-emerald-400":pctOfPlan>2?"text-blue-400":"text-slate-400"}`}>
+                                          {pctOfPlan.toFixed(2)}%
+                                        </span>
+                                      </td>
+                                      <td className={`px-4 py-2.5 text-right text-[11px] font-semibold ${devColor}`} title={planTarget>0?`Alvo: ${planTarget.toFixed(1)}%`:"Não está no plano"}>
+                                        {desvioTxt}
+                                        {planTarget===0&&p.ticker!=="MM Euro"&&<span className="ml-1 text-[9px] text-red-400/70">fora</span>}
+                                      </td>
+                                    </tr>
+                                  );
+                                });
+                              })()}
                             </tbody>
+                            <tfoot>
+                              {(()=>{
+                                const totalInvestedEur=cartIbPos.reduce((s,p)=>s+p.value,0);
+                                const pctInvested=aum>0?(totalInvestedEur/aum*100):0;
+                                // Sum of absolute deviations vs plan
+                                const planMap2=new Map<string,number>(actionCounts.allRows.map(r=>[r.ticker.toUpperCase(),r.cur]));
+                                const sumAbsDesvio=cartIbPos.reduce((s,p)=>{
+                                  const pct=aum>0?(p.value/aum*100):0;
+                                  const tgt=planMap2.get(p.ticker.toUpperCase())??0;
+                                  return s+Math.abs(pct-tgt);
+                                },0);
+                                // Also count plan tickers with 0 IB position (missing from portfolio)
+                                const ibTickers=new Set(cartIbPos.map(p=>p.ticker.toUpperCase()));
+                                const missingDesvio=actionCounts.allRows.reduce((s,r)=>
+                                  r.cur>0&&!ibTickers.has(r.ticker.toUpperCase())?s+r.cur:s,0);
+                                const totalAbsDesvio=sumAbsDesvio+missingDesvio;
+                                return(
+                                  <>
+                                    {/* ── Linha do plano (% sobre o AUM do utilizador) ── */}
+                                    <tr className="border-t-2 border-[#252a3a] bg-[#0b0f1a]">
+                                      <td colSpan={4} className="px-4 py-2.5 text-xs font-bold text-slate-300">
+                                        Investido da carteira
+                                        <span className="ml-1.5 text-[10px] font-normal text-slate-500">
+                                          (plano {(aum/1000).toFixed(0)}k€)
+                                        </span>
+                                      </td>
+                                      <td className="px-2 py-2.5 text-right text-xs text-slate-500">—</td>
+                                      <td className="px-2 py-2.5 text-right text-xs font-bold text-emerald-400">
+                                        {totalInvestedEur.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})} EUR
+                                      </td>
+                                      <td className="px-2 py-2.5 text-right text-xs font-bold text-emerald-400">
+                                        {pctInvested.toFixed(1)}%
+                                      </td>
+                                      <td className="px-4 py-2.5 text-right text-xs font-semibold text-slate-400"
+                                          title={`Soma dos desvios em módulo face ao plano\n(inclui posições em falta: ${missingDesvio.toFixed(1)}pp)`}>
+                                        Σ|dev|: {totalAbsDesvio.toFixed(1)}pp
+                                      </td>
+                                    </tr>
+                                    {/* ── Linha informativa do saldo total da conta paper ── */}
+                                    {cartIbNav.value>0&&(
+                                      <tr className="bg-[#080c14] opacity-60">
+                                        <td colSpan={4} className="px-4 py-1.5 text-[11px] text-slate-500 italic">
+                                          Saldo total conta paper IB
+                                          <span className="ml-1.5 text-[10px] text-slate-600">(inclui caixa não investido — não é a carteira DECIDE)</span>
+                                        </td>
+                                        <td className="px-2 py-1.5 text-right text-[11px] text-slate-600">—</td>
+                                        <td className="px-2 py-1.5 text-right text-[11px] text-slate-500">
+                                          {cartIbNav.value.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})} {cartIbNav.ccy}
+                                        </td>
+                                        <td className="px-4 py-1.5 text-right text-[11px] text-slate-600" colSpan={2}>—</td>
+                                      </tr>
+                                    )}
+                                  </>
+                                );
+                              })()}
+                            </tfoot>
                           </table>
                         </div>
                       )}
@@ -3474,7 +3963,7 @@ export default function ClientDashboardPage() {
                           </Pie></PieChart>
                         </ResponsiveContainer>
                         <div className="space-y-2 flex-1">
-                          {sectorData.slice(0,6).map((s,i)=>(
+                          {sectorData.filter(s=>s.value>=1).map((s,i)=>(
                             <div key={s.name} className="flex items-center justify-between text-xs">
                               <div className="flex items-center gap-2">
                                 <div className="w-2.5 h-2.5 rounded-sm" style={{background:["#60a5fa","#34d399","#f59e0b","#f87171","#a78bfa","#22d3ee"][i%6]}}/>
@@ -3509,7 +3998,7 @@ export default function ClientDashboardPage() {
                       <div className="flex items-center gap-3">
                         {pricesLoading&&<span className="text-slate-500 text-[10px]">A carregar preços…</span>}
                         <label className="flex items-center gap-2 text-xs text-slate-400">
-                          Carteira (€)
+                          Montante plano (€)
                           <input type="number" value={aum} onChange={e=>setAum(Number(e.target.value)||100000)}
                             className="w-28 bg-[#111827] border border-[#252a3a] text-slate-200 text-xs rounded-lg px-2 py-1 outline-none focus:border-blue-500"
                             min={1000} step={1000}/>
@@ -3522,74 +4011,43 @@ export default function ClientDashboardPage() {
                         <th className="text-left pb-2">Nome</th>
                         <th className="text-left pb-2">Setor</th>
                         <th className="text-left pb-2">País</th>
-                        <th className="text-right pb-2">Anterior</th>
-                        <th className="text-right pb-2">Actual</th>
+                        <th className="text-right pb-2">
+                          <span title="Peso no plano do mês anterior">Mês ant.</span>
+                        </th>
+                        <th className="text-right pb-2">
+                          <span title="Peso no plano deste mês">Este mês</span>
+                        </th>
                         <th className="text-right pb-2">&#916;</th>
                         <th className="text-right pb-2">Preço</th>
                         <th className="text-right pb-2">Nº Acções</th>
                       </tr></thead>
                       <tbody>
                         {(()=>{
-                          // ── build raw equity rows from ALL model positions ──────────────
-                          const pm=new Map((sortedMonths[sortedMonths.length-2]?.rows??[]).map((x:any)=>[x.ticker,x.weightPct??0]));
-                          const rawEquityRows=(latestMonth?.rows??[])
-                            .filter((r:any)=>r.ticker!=="XEON"&&!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="TBILL_PROXY")
-                            .map((r:any)=>{
-                              const cur:number=r.weightPct??0;
-                              const prev:number=pm.get(r.ticker)??0;
-                              const action=actionCounts.allRows.find((x:any)=>x.ticker===r.ticker)?.action??"Manter";
-                              return {ticker:r.ticker,cur,prev,action};
-                            })
-                            .filter((r:any)=>r.cur>=0.5);
-                          const xeonRaw=latestMonth?.tbillsTotalPct??0;
-                          const xeonPrev=sortedMonths[sortedMonths.length-2]?.tbillsTotalPct??0;
-
-                          // ── normalize weights so equity+XEON = exactly 100% ───────────
-                          const rawTotal=rawEquityRows.reduce((s:number,r:any)=>s+r.cur,0)+xeonRaw;
-                          const scale=rawTotal>0?100/rawTotal:1;
+                          // ── use the same normalised source as Recomendações ──────────────
+                          // actionCounts.allRows already has top-20 equity + XEON, normalised to 100%
                           type CartRow={ticker:string;cur:number;prev:number;action:string;special:boolean};
-                          const equityNorm:CartRow[]=rawEquityRows.map((r:any)=>({
-                            ticker:r.ticker,
-                            cur:r.cur*scale,
-                            prev:r.prev*scale,
-                            action:r.action,
-                            special:false,
-                          }));
-                          const xeonNorm=xeonRaw*scale;
-                          const xeonPrevNorm=xeonPrev*scale;
+                          const equityRows:CartRow[]=actionCounts.allRows
+                            .filter(r=>r.ticker!=="XEON")
+                            .map(r=>({ticker:r.ticker,cur:r.cur,prev:r.prev,action:r.action,special:false}));
+                          const xeonRow=actionCounts.allRows.find(r=>r.ticker==="XEON");
+                          const xeonCur=xeonRow?.cur??0;
+                          const xeonPrev=xeonRow?.prev??0;
 
-                          // ── filter <1 share when prices are available ─────────────────
-                          const hasPrices=!pricesLoading&&Object.values(prices).some(p=>p!==null);
+                          // USD exposure for hedge row (from equity rows)
+                          const usdExposure=equityRows.filter(r=>getZone(r.ticker)==="EUA").reduce((s,r)=>s+r.cur,0);
 
-                          // Sum of normalized weights for PRICED equity tickers (to redistribute unpriced weight)
-                          const equityPricedWeightSum=equityNorm.reduce((s,r)=>{
+                          // Priced equity weight sum for share redistribution
+                          const pricedWsum=equityRows.reduce((s,r)=>{
                             const p=prices[r.ticker];
                             return s+(p?.price?r.cur:0);
                           },0);
-                          const equityTotalNorm=equityNorm.reduce((s,r)=>s+r.cur,0); // = 100 - xeonNorm
+                          const equityTotal=equityRows.reduce((s,r)=>s+r.cur,0);
 
-                          const equityFiltered=hasPrices?equityNorm.filter(r=>{
-                            const p=prices[r.ticker];
-                            if(!p?.price) return true; // keep priced-missing rows
-                            // effective normalized weight redistributed to priced tickers:
-                            const effW=equityPricedWeightSum>0?(r.cur/equityPricedWeightSum)*equityTotalNorm:r.cur;
-                            const shares=p.qty!=null?p.qty:(effW/100)*aum/p.price;
-                            return shares>=1;
-                          }):equityNorm;
-
-                          const usdExposure=equityFiltered.filter(r=>getZone(r.ticker)==="EUA").reduce((s,r)=>s+r.cur,0);
                           const allRows:CartRow[]=[
-                            ...equityFiltered,
-                            {ticker:"XEON",cur:xeonNorm,prev:xeonPrevNorm,action:"Manter",special:true},
+                            ...equityRows,
+                            {ticker:"XEON",cur:xeonCur,prev:xeonPrev,action:xeonRow?.action??"Manter",special:true},
                             {ticker:"EURUSD",cur:usdExposure,prev:usdExposure,action:"Manter",special:true},
                           ];
-
-                          // Recalculate priced equity weight sum after <1 share filter
-                          const pricedWsum=equityFiltered.reduce((s,r)=>{
-                            const p=prices[r.ticker];
-                            return s+(p?.price?r.cur:0);
-                          },0);
-                          const equityTotalFiltered=equityFiltered.reduce((s,r)=>s+r.cur,0);
 
                           return allRows.map(r=>{
                             const delta=r.cur-r.prev;
@@ -3628,7 +4086,7 @@ export default function ClientDashboardPage() {
                                   const ccy=p?.currency??"USD";
                                   const ccySym=ccy==="EUR"?"€":ccy==="GBp"?"p":ccy==="GBP"?"£":"$";
                                   // redistribute unpriced weights to priced tickers for share calculation
-                                  const effW=priceVal&&pricedWsum>0?(r.cur/pricedWsum)*equityTotalFiltered:r.cur;
+                                  const effW=priceVal&&pricedWsum>0?(r.cur/pricedWsum)*equityTotal:r.cur;
                                   const shares=p?.qty!=null?Math.round(p.qty):priceVal&&effW>0?Math.round((effW/100)*aum/priceVal):null;
                                   return (
                                     <>
@@ -3645,7 +4103,7 @@ export default function ClientDashboardPage() {
                             );
                           });
                         })()}
-                        {/* weight total footer – always 100% after normalisation */}
+                        {/* weight total footer – always 100% (same normalised source as Recomendações) */}
                         <tr className="border-t-2 border-slate-600 bg-slate-800/40">
                           <td colSpan={5} className="py-2 text-right text-slate-400 font-semibold text-xs pr-3">Total</td>
                           <td className="py-2 text-right font-bold text-emerald-400">100.0%</td>
