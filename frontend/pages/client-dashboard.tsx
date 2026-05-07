@@ -1,6 +1,7 @@
 ﻿import Head from "next/head";
 import { useRouter } from "next/router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { ComposableMap, Geographies, Geography, ZoomableGroup } from "react-simple-maps";
 import { displayTicker } from "../lib/tickerDisplay";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -251,6 +252,17 @@ const COUNTRY:Record<string,string>={
   XEON:"Eurozona",
 };
 const getZone=(t:string)=>COUNTRY[t.toUpperCase()]??"EUA";
+
+/* ─── ISO numeric → country name (for world map) ───────────────────────── */
+const ISO_TO_COUNTRY:Record<string,string>={
+  "840":"EUA","124":"Canadá","826":"Reino Unido","276":"Alemanha",
+  "528":"Países Baixos","756":"Suíça","380":"Itália","724":"Espanha",
+  "246":"Finlândia","208":"Dinamarca","578":"Noruega","036":"Austrália",
+  "392":"Japão","156":"China","076":"Brasil","250":"França",
+  "752":"Suécia","442":"Luxemburgo","372":"Irlanda","040":"Áustria",
+};
+const COUNTRY_TO_ISO:Record<string,string>={};
+Object.entries(ISO_TO_COUNTRY).forEach(([iso,c])=>{COUNTRY_TO_ISO[c]=iso;});
 
 // Tickers that are foreign companies but trade on US exchanges (NYSE/NASDAQ/OTC via SMART/USD).
 // These are orderable through IB despite getZone() returning a non-EUA country.
@@ -3603,6 +3615,78 @@ export default function ClientDashboardPage() {
                       )}
                     </div>
                   </div>
+
+                  {/* ── Row 3b: World allocation map ── */}
+                  {(()=>{
+                    const countryAlloc=new Map<string,number>();
+                    actionCounts.allRows.forEach(r=>{
+                      if(r.ticker==="XEON") return;
+                      const c=getZone(r.ticker);
+                      if(c==="Eurozona") return;
+                      countryAlloc.set(c,(countryAlloc.get(c)??0)+r.cur);
+                    });
+                    const maxPct=Math.max(...countryAlloc.values(),0.1);
+                    const [hoveredCountry,setHoveredCountry]=React.useState<{name:string;pct:number}|null>(null);
+                    const topCountries=[...countryAlloc.entries()].sort((a,b)=>b[1]-a[1]);
+                    return (
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="font-bold text-slate-200 text-sm mb-3 flex items-center gap-2">
+                          Exposição geográfica
+                          {hoveredCountry&&(
+                            <span className="ml-2 text-xs font-normal text-blue-300">
+                              {hoveredCountry.name}: <strong>{hoveredCountry.pct.toFixed(1)}%</strong>
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="col-span-2">
+                            <ComposableMap
+                              projection="geoNaturalEarth1"
+                              projectionConfig={{scale:140,center:[10,10]}}
+                              style={{width:"100%",height:"auto"}}
+                            >
+                              <ZoomableGroup zoom={1} center={[10,10]} disablePanning>
+                                <Geographies geography="https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json">
+                                  {({geographies})=>geographies.map(geo=>{
+                                    const isoId=String(geo.id).padStart(3,"0");
+                                    const cName=ISO_TO_COUNTRY[isoId];
+                                    const pct=cName?countryAlloc.get(cName)??0:0;
+                                    const intensity=pct>0?0.15+0.85*(pct/maxPct):0;
+                                    const fill=pct>0
+                                      ?`rgba(96,165,250,${intensity})`
+                                      :"#111827";
+                                    return (
+                                      <Geography
+                                        key={geo.rsmKey}
+                                        geography={geo}
+                                        fill={fill}
+                                        stroke="#1e293b"
+                                        strokeWidth={0.5}
+                                        style={{default:{outline:"none"},hover:{outline:"none",fill:pct>0?"#93c5fd":fill},pressed:{outline:"none"}}}
+                                        onMouseEnter={()=>{if(cName&&pct>0)setHoveredCountry({name:cName,pct});}}
+                                        onMouseLeave={()=>setHoveredCountry(null)}
+                                      />
+                                    );
+                                  })}
+                                </Geographies>
+                              </ZoomableGroup>
+                            </ComposableMap>
+                          </div>
+                          <div className="space-y-1.5 self-center">
+                            {topCountries.map(([c,pct])=>(
+                              <div key={c} className="flex items-center gap-2 text-[11px]">
+                                <div className="w-full bg-slate-800 rounded-full h-1.5 flex-1">
+                                  <div className="bg-blue-400 h-1.5 rounded-full" style={{width:`${Math.min(100,(pct/maxPct)*100)}%`}}/>
+                                </div>
+                                <span className="text-slate-400 w-28 shrink-0">{c}</span>
+                                <span className="text-slate-200 font-semibold w-10 text-right shrink-0">{pct.toFixed(1)}%</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* ── Row 4: positions + profile summary ── */}
                   <div className="grid grid-cols-3 gap-4">
