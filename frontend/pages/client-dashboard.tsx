@@ -399,6 +399,24 @@ const COMPANY:Record<string,string>={
   PDD:"PDD Holdings",BIDU:"Baidu",JD:"JD.com",NTES:"NetEase",
   // ADR misc
   GRFS:"Grifols",RACE:"Ferrari",SUZ:"Suzano",ERIC:"Ericsson",
+  // US Tech (additional)
+  NFLX:"Netflix",ROKU:"Roku",RIVN:"Rivian",SMCI:"Super Micro",
+  A:"Agilent",CPRT:"Copart",IT:"Gartner",VRSK:"Verisk Analytics",
+  SHW:"Sherwin-Williams",PPG:"PPG Industries",VMC:"Vulcan Materials",
+  CDW:"CDW Corp",CEG:"Constellation Energy",PAYC:"Paycom",
+  SIRI:"Sirius XM",MELI:"MercadoLibre",
+  // US Consumer (additional)
+  AAL:"American Airlines",DAL:"Delta",UAL:"United Airlines",
+  F:"Ford",GM:"General Motors",LEN:"Lennar",
+  KDP:"Keurig Dr Pepper",STZ:"Constellation Brands",
+  // US Utilities (additional)
+  AEE:"Ameren",
+  // US Industrials (additional)
+  APD:"Air Products",DOW:"Dow Inc",AIG:"AIG",AJG:"Arthur J. Gallagher",
+  // Canada (additional)
+  "SHOP.1":"Shopify",
+  // Japan (additional)
+  "6954.T":"Fanuc",
   // Cash / ETF
   XEON:"MM Euro",GOLD:"Barrick Gold",
 };
