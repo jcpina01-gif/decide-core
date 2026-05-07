@@ -316,14 +316,18 @@ export default function ApprovePage({
     [ibkrLive, displayNavEur],
   );
 
+  /**
+   * A verificação de fundos (paper account) é um aviso — não bloqueia a aprovação do plano.
+   * O utilizador pode aprovar o plano mesmo sem IB Gateway activo; o envio real de ordens
+   * exige a conta conectada na página de execução (Enviar Ordens).
+   */
   const canApproveAll =
     hasTradePlan &&
     mifidDone &&
     kycDone &&
     hedgeGateOk &&
     ibkrPrepDone &&
-    !ibkrLive.loading &&
-    paperFundsVerified;
+    !ibkrLive.loading;
 
   const handleToggle = (ticker: string) => {
     if (!canExclude) return;
@@ -400,9 +404,7 @@ export default function ApprovePage({
       setIbkrPrepDone(ibkrPrep);
       setHedgeGateOk(hedgeOk);
 
-      const fundsOk =
-        ibkrLive.loading || ibkrPaperFundsCoverPlan(ibkrLive, displayNavEur);
-      const allowed = hasTradePlan && mifid && kyc && hedgeOk && ibkrPrep && fundsOk;
+      const allowed = hasTradePlan && mifid && kyc && hedgeOk && ibkrPrep;
       if (!allowed) {
         window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.approve, "0");
         setUserApproved(false);
@@ -417,7 +419,7 @@ export default function ApprovePage({
     } finally {
       setFlowReady(true);
     }
-  }, [hasTradePlan, ibkrLive.loading, ibkrLive.ok, ibkrLive.nav, ibkrLive.navCcy, displayNavEur]);
+  }, [hasTradePlan]);
 
   useEffect(() => {
     syncApprovalGatesFromLocalStorage();
