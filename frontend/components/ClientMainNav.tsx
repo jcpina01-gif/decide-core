@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type { LucideIcon } from "lucide-react";
-import { Activity, BookOpen, Briefcase, FileText, LayoutDashboard } from "lucide-react";
+import { Activity, BookOpen, Briefcase, LayoutDashboard } from "lucide-react";
 import { useEffect, useState } from "react";
 import InlineLoadingDots from "./InlineLoadingDots";
 
@@ -12,7 +12,6 @@ export const CLIENT_MAIN_NAV_ITEMS: { href: string; label: string; icon: LucideI
   { href: "/client/como-funciona", label: "Como funciona", icon: BookOpen },
   { href: "/client-dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/client/carteira", label: "Carteira", icon: Briefcase },
-  { href: "/client/report", label: "Plano", icon: FileText },
   { href: "/client/atividade", label: "Atividade", icon: Activity },
 ];
 
