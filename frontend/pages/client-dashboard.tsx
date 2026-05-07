@@ -1786,6 +1786,8 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     if((latestMonth?.tbillsTotalPct??0)>0) s.add("XEON");
     // Fallback: also include anything from top-20 with cur>0 (in case latestMonth is null)
     allPlanRows.filter(r=>r.cur>0).forEach(r=>s.add(r.ticker));
+    // Also add IB-alias equivalents so e.g. "BTI" (IB ticker for "BATS") is not flagged as orphan
+    [...s].forEach(t=>{ const ib=toIbTicker(t); if(ib!==t) s.add(ib); });
     return s;
   },[latestMonth,allPlanRows]);
   // IB positions not in the current plan → "orphan"
@@ -1877,8 +1879,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     ? allPlanRows.filter(r=>isOrderable(r.ticker)&&(r.cur>0||r.action==="Vender"))
     : deltaRows.filter(r=>isOrderable(r.ticker));
 
-  // Map ticker → EUR value currently held in IB (from diagnostic snapshot, if loaded)
-  // IB marketValue is already in EUR base currency
+  // Map IB ticker → EUR value currently held (IB positions use IB tickers e.g. "BTI" not "BATS")
   const MIN_ORDER_EUR=20; // minimum incremental buy to bother sending
   const ibkrHoldingsMap=React.useMemo(()=>{
     const m=new Map<string,number>();
@@ -1896,7 +1897,8 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     const targetEur=execMode==="full"
       ? (isFullExit?r.prev/100*aum:r.cur/100*aum)
       : Math.abs(r.delta)/100*aum;
-    const heldEur=ibkrHoldingsMap.get(r.ticker.toUpperCase())??0;
+    // Look up by IB ticker (e.g. BATS→BTI) since ibkrHoldingsMap is keyed by IB ticker
+    const heldEur=ibkrHoldingsMap.get(toIbTicker(r.ticker))??ibkrHoldingsMap.get(r.ticker.toUpperCase())??0;
     // For BUY in full mode: only buy the shortfall vs current holding
     let adjEur=targetEur;
     let skipReason:string|undefined;
@@ -2085,7 +2087,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                   const inExec=activeOrderRows.some(x=>x.ticker===r.ticker);
                   const notOrderable=!isOrderable(r.ticker);
                   const adjRow=adjustedOrderRows.find(x=>x.ticker===r.ticker);
-                  const heldEur=ibkrHoldingsMap.get(r.ticker.toUpperCase())??0;
+                  const heldEur=ibkrHoldingsMap.get(toIbTicker(r.ticker))??ibkrHoldingsMap.get(r.ticker.toUpperCase())??0;
                   const acBg=isManter?"bg-slate-700/30 text-slate-500 border-slate-700/50":
                              isBuy?"bg-emerald-500/15 text-emerald-300 border-emerald-500/30":
                              isUp?"bg-cyan-500/15 text-cyan-300 border-cyan-500/30":
@@ -2236,7 +2238,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                                 </td>
                                 <td className="py-1.5 text-right text-slate-300">{p.qty.toFixed(0)}</td>
                                 <td className="py-1.5 text-right text-slate-300">€ {fmtE(Math.abs(p.value))}</td>
-                                <td className="py-1.5 text-right text-amber-300">{p.weight_pct.toFixed(2)}%</td>
+                                <td className="py-1.5 text-right text-amber-300">{(p.value/aum*100).toFixed(2)}%</td>
                               </tr>
                             ))}
                           </tbody>
