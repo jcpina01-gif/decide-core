@@ -1,7 +1,7 @@
 ﻿import Head from "next/head";
 import { useRouter } from "next/router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ComposableMap, Geographies, Geography, ZoomableGroup } from "react-simple-maps";
+import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from "react-simple-maps";
 import { displayTicker } from "../lib/tickerDisplay";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -3630,7 +3630,16 @@ export default function ClientDashboardPage() {
 
                   {/* ── Row 3b: World allocation map ── */}
                   {(()=>{
-                    const maxPct=Math.max(...countryAlloc.values(),0.1);
+                    // Approximate centroids [lng, lat] for label placement
+                    const CENTROIDS:Record<string,[number,number]>={
+                      "EUA":[-98,38],"Canadá":[-96,60],"Reino Unido":[-2,54],
+                      "Japão":[138,37],"Alemanha":[10,51],"Países Baixos":[5,52],
+                      "Noruega":[15,65],"Dinamarca":[10,56],"Finlândia":[25,64],
+                      "Itália":[12,43],"Espanha":[-4,40],"Suíça":[8,47],
+                      "Austrália":[134,-27],"China":[104,35],"França":[2,46],
+                      "Suécia":[17,62],"Irlanda":[-8,53],"Áustria":[14,47],
+                      "Brasil":[-52,-10],"Luxemburgo":[6,49.6],
+                    };
                     const topCountries=[...countryAlloc.entries()].sort((a,b)=>b[1]-a[1]);
                     return (
                       <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
@@ -3655,10 +3664,7 @@ export default function ClientDashboardPage() {
                                     const isoId=String(geo.id).padStart(3,"0");
                                     const cName=ISO_TO_COUNTRY[isoId];
                                     const pct=cName?countryAlloc.get(cName)??0:0;
-                                    const intensity=pct>0?0.15+0.85*(pct/maxPct):0;
-                                    const fill=pct>0
-                                      ?`rgba(96,165,250,${intensity})`
-                                      :"#111827";
+                                    const fill=pct>0?"#3b82f6":"#111827";
                                     return (
                                       <Geography
                                         key={geo.rsmKey}
@@ -3666,13 +3672,29 @@ export default function ClientDashboardPage() {
                                         fill={fill}
                                         stroke="#1e293b"
                                         strokeWidth={0.5}
-                                        style={{default:{outline:"none"},hover:{outline:"none",fill:pct>0?"#93c5fd":fill},pressed:{outline:"none"}}}
+                                        style={{default:{outline:"none"},hover:{outline:"none",fill:pct>0?"#60a5fa":fill},pressed:{outline:"none"}}}
                                         onMouseEnter={()=>{if(cName&&pct>0)setHoveredCountry({name:cName,pct});}}
                                         onMouseLeave={()=>setHoveredCountry(null)}
                                       />
                                     );
                                   })}
                                 </Geographies>
+                                {/* Percentage labels on countries */}
+                                {[...countryAlloc.entries()].map(([c,pct])=>{
+                                  const coords=CENTROIDS[c];
+                                  if(!coords) return null;
+                                  return (
+                                    <Marker key={c} coordinates={coords}>
+                                      <text
+                                        textAnchor="middle"
+                                        style={{fontFamily:"sans-serif",fontSize:c==="EUA"?8:6,fontWeight:700,fill:"#ffffff",pointerEvents:"none"}}
+                                        dy=".35em"
+                                      >
+                                        {pct.toFixed(1)}%
+                                      </text>
+                                    </Marker>
+                                  );
+                                })}
                               </ZoomableGroup>
                             </ComposableMap>
                           </div>
@@ -3680,7 +3702,7 @@ export default function ClientDashboardPage() {
                             {topCountries.map(([c,pct])=>(
                               <div key={c} className="flex items-center gap-2 text-[11px]">
                                 <div className="w-full bg-slate-800 rounded-full h-1.5 flex-1">
-                                  <div className="bg-blue-400 h-1.5 rounded-full" style={{width:`${Math.min(100,(pct/maxPct)*100)}%`}}/>
+                                  <div className="bg-blue-500 h-1.5 rounded-full" style={{width:`${Math.min(100,(pct/topCountries[0][1])*100)}%`}}/>
                                 </div>
                                 <span className="text-slate-400 w-28 shrink-0">{c}</span>
                                 <span className="text-slate-200 font-semibold w-10 text-right shrink-0">{pct.toFixed(1)}%</span>
