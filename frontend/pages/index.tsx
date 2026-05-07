@@ -8,7 +8,7 @@ const BG2     = "#0b0f22";
 const TEAL    = "#2dd4bf";
 const TEAL2   = "#14b8a6";
 const BLUE    = "#3b82f6";
-const NAV_H   = 88;
+const NAV_H   = 100;
 
 /* ─── reusable helpers ──────────────────────────────────────────────────── */
 const Flex = ({children, style}: {children:React.ReactNode; style?:React.CSSProperties}) =>
@@ -26,9 +26,12 @@ function Nav() {
       display:"flex",alignItems:"center",justifyContent:"space-between",
       padding:"0 32px",
     }}>
-        {/* Logo encostado à esquerda — mix-blend-mode:screen remove fundo preto do PNG */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/images/decide-logo-full.png" alt="DECIDE" style={{height:80,width:"auto",objectFit:"contain",mixBlendMode:"screen",flexShrink:0}} />
+        {/* Logo — PNG tem padding negro; mostra-se maior e clipado para o logo real ficar visível */}
+        <div style={{height:NAV_H,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center"}}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/images/decide-logo-full.png" alt="DECIDE"
+            style={{height:220,width:"auto",objectFit:"contain",mixBlendMode:"screen",marginTop:0}} />
+        </div>
 
         {/* Nav links */}
         <Flex style={{gap:32,alignItems:"center"}}>
@@ -448,8 +451,10 @@ export default function LandingPage() {
 
             <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:20,
               display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/images/decide-logo-full.png" alt="DECIDE" style={{height:36,width:"auto",objectFit:"contain",mixBlendMode:"screen",opacity:0.75}} />
+              <div style={{height:44,overflow:"hidden",display:"flex",alignItems:"center"}}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/images/decide-logo-full.png" alt="DECIDE" style={{height:110,width:"auto",mixBlendMode:"screen",opacity:0.8}} />
+              </div>
               <p style={{fontSize:11,color:"#334155",margin:0,textAlign:"right",maxWidth:560,lineHeight:1.5}}>
                 Informação meramente indicativa. Investimentos envolvem risco de perda. Leia a documentação regulamentar antes de subscrever qualquer serviço.
               </p>
