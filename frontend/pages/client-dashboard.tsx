@@ -2804,6 +2804,7 @@ export default function ClientDashboardPage() {
 
   // Carteira page: tab (real IB vs plano modelo) + IB snapshot state
   const [cartTab,setCartTab]=useState<"ib"|"plano">("ib");
+  const [hoveredCountry,setHoveredCountry]=useState<{name:string;pct:number}|null>(null);
   const [cartIbPos,setCartIbPos]=useState<{ticker:string;qty:number;value:number;weight_pct:number;currency:string;name?:string;sector?:string;country?:string}[]|null>(null);
   const [cartIbLoading,setCartIbLoading]=useState(false);
   const [cartIbErr,setCartIbErr]=useState("");
@@ -3094,6 +3095,17 @@ export default function ClientDashboardPage() {
   },[latestMonth]);
 
   // Risk metrics: VaR 95%, Beta
+  const countryAlloc=useMemo(()=>{
+    const m=new Map<string,number>();
+    actionCounts.allRows.forEach(r=>{
+      if(r.ticker==="XEON") return;
+      const c=getZone(r.ticker);
+      if(c==="Eurozona") return;
+      m.set(c,(m.get(c)??0)+r.cur);
+    });
+    return m;
+  },[actionCounts.allRows]);
+
   const riskMetrics=useMemo(()=>{
     if(scaledEquity.length<252) return {var95:0,beta:0};
     const mRets=scaledEquity.slice(1).map((v,i)=>v/scaledEquity[i]-1);
@@ -3618,15 +3630,7 @@ export default function ClientDashboardPage() {
 
                   {/* ── Row 3b: World allocation map ── */}
                   {(()=>{
-                    const countryAlloc=new Map<string,number>();
-                    actionCounts.allRows.forEach(r=>{
-                      if(r.ticker==="XEON") return;
-                      const c=getZone(r.ticker);
-                      if(c==="Eurozona") return;
-                      countryAlloc.set(c,(countryAlloc.get(c)??0)+r.cur);
-                    });
                     const maxPct=Math.max(...countryAlloc.values(),0.1);
-                    const [hoveredCountry,setHoveredCountry]=React.useState<{name:string;pct:number}|null>(null);
                     const topCountries=[...countryAlloc.entries()].sort((a,b)=>b[1]-a[1]);
                     return (
                       <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
