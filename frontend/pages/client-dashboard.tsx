@@ -232,11 +232,20 @@ const COUNTRY:Record<string,string>={
   HON:"EUA",MMM:"EUA",GE:"EUA",LMT:"EUA",RTX:"EUA",UNP:"EUA",
   CSX:"EUA",DE:"EUA",EMR:"EUA",ETN:"EUA",
   AEM:"Canadá",WPM:"Canadá",CM:"Canadá",SU:"Canadá",
-  NOK:"Finlândia",BATS:"Reino Unido",BTI:"Reino Unido",E:"Itália",BAYRY:"Alemanha",MARUY:"Japão",
-  ASML:"Países Baixos",IFNNY:"Alemanha",
+  NOK:"Finlândia",BATS:"Reino Unido",BTI:"Reino Unido",
+  AZN:"Reino Unido",BP:"Reino Unido",GSK:"Reino Unido",SHEL:"Reino Unido",UL:"Reino Unido",
+  BBL:"Reino Unido",BCS:"Reino Unido",LYG:"Reino Unido",RIO:"Austrália",
+  E:"Itália",
+  BAYRY:"Alemanha",IFNNY:"Alemanha",DB:"Alemanha",
+  SAN:"Espanha",BBVA:"Espanha",
+  ING:"Países Baixos",ASML:"Países Baixos",
+  UBS:"Suíça",CS:"Suíça",
+  NVO:"Dinamarca",
   EQNR:"Noruega",
-  SFTBY:"Japão",MRAAY:"Japão",TM:"Japão",MSBHF:"Japão",JXHLY:"Japão",
-  SMFG:"Japão",NMR:"Japão",
+  CNQ:"Canadá",ABX:"Canadá",NTR:"Canadá",
+  MARUY:"Japão",SFTBY:"Japão",MRAAY:"Japão",TM:"Japão",MSBHF:"Japão",JXHLY:"Japão",
+  SMFG:"Japão",NMR:"Japão",SONY:"Japão",HMC:"Japão",
+  PDD:"China",BIDU:"China",
   NVO:"Dinamarca",
   PDD:"China",
   XEON:"Eurozona",
@@ -3876,7 +3885,7 @@ export default function ClientDashboardPage() {
                                       <td className="px-4 py-2.5 font-bold text-blue-400">{displayTicker(p.ticker)}</td>
                                       <td className="px-2 py-2.5 text-slate-300">{(p as any).name||"—"}</td>
                                       <td className="px-2 py-2.5 text-slate-400">{(p as any).sector||"—"}</td>
-                                      <td className="px-2 py-2.5 text-slate-400">{(p as any).country||"—"}</td>
+                                      <td className="px-2 py-2.5 text-slate-400">{COUNTRY[p.ticker.toUpperCase()]||(p as any).country||"—"}</td>
                                       <td className="px-2 py-2.5 text-right text-slate-300">{p.qty.toLocaleString("pt-PT",{maximumFractionDigits:4})}</td>
                                       <td className="px-2 py-2.5 text-right text-slate-300">
                                         {p.value.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})} EUR
