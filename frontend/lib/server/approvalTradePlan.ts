@@ -821,12 +821,18 @@ export async function loadApprovalAlignedProposedTrades(
       };
     });
 
+  /** Máximo de posições equity na lista de recomendações — evita incluir todo o universo de research. */
+  const MAX_EQUITY_POSITIONS = safeNumber(
+    Number(process.env.DECIDE_APPROVAL_MAX_EQUITY_POSITIONS ?? process.env.NEXT_PUBLIC_DECIDE_APPROVAL_MAX_EQUITY_POSITIONS ?? 25),
+    25,
+  );
+
   if (!preferLiveWeights && officialMonth?.rows?.length) {
     const cashFromRows = sumCashSleeveWeight(officialMonth.rows);
     if (cashFromRows >= 0 && cashFromRows <= 0.95) {
       cashSleeveFrac = cashFromRows;
     }
-    recommendedRaw = officialMonth.rows.map((row) => {
+    const allRows: RecommendedPosition[] = officialMonth.rows.map((row) => {
       const t = remapJpListingToAdrTicker(row.ticker.trim().toUpperCase());
       const m = metaForTicker(t);
       return {
@@ -845,6 +851,32 @@ export async function loadApprovalAlignedProposedTrades(
         excluded: false,
       };
     });
+
+    const equityRows = allRows.filter((p) => {
+      const u = p.ticker.trim().toUpperCase();
+      return u !== "TBILL_PROXY" && !isDecideCashSleeveBrokerSymbol(u);
+    });
+    const cashRows = allRows.filter((p) => {
+      const u = p.ticker.trim().toUpperCase();
+      return u === "TBILL_PROXY" || isDecideCashSleeveBrokerSymbol(u);
+    });
+
+    if (equityRows.length > MAX_EQUITY_POSITIONS) {
+      /* Muitas posições — preferir freeze (portfolio oficial) se disponível. */
+      const snap = tryFreezeHoldingsAsModelPositions(projectRoot, nextFrontendCwd);
+      if (snap?.length) {
+        const freezeCash = freezeKpisLatestCashSleeveFrac(projectRoot, nextFrontendCwd);
+        if (freezeCash !== null) cashSleeveFrac = freezeCash;
+        const investedFrac = 1 - cashSleeveFrac;
+        recommendedRaw = mapPositionsRawToRecommended(snap as unknown[], investedFrac);
+      } else {
+        /* Fallback: top-N por peso */
+        const topN = [...equityRows].sort((a, b) => b.weightPct - a.weightPct).slice(0, MAX_EQUITY_POSITIONS);
+        recommendedRaw = [...topN, ...cashRows];
+      }
+    } else {
+      recommendedRaw = allRows;
+    }
   } else if (preferLiveWeights) {
     const investedFrac = 1 - cashSleeveFrac;
     const positionsRaw = Array.isArray((mp?.current_portfolio as Record<string, unknown> | undefined)?.positions)
