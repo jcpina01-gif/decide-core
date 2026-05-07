@@ -208,6 +208,15 @@ const SECTOR: Record<string, string> = {
   PEP:"Cons. Básico",COST:"Cons. Básico",MDLZ:"Cons. Básico",
   NEM:"Mineira",GOLD:"Mineira",AEM:"Mineira",WPM:"Mineira",
   FCX:"Mineira",AA:"Mineira",RIO:"Mineira",BHP:"Mineira",VALE:"Mineira",
+  // France ADRs
+  TTE:"Energia",SNY:"Saúde",LRLCY:"Cons. Básico",HESAY:"Cons. Discr.",
+  SBGSY:"Industrial",SAFRY:"Industrial",AIQUY:"Mat. Básicos",
+  ESLOY:"Saúde",AXAHY:"Financeiro",ORAN:"Comunicação",ENGIY:"Energia",
+  DANOY:"Cons. Básico",PUBGY:"Comunicação",CGEMY:"Tecnologia",MGDDY:"Cons. Básico",
+  // Spain ADRs
+  SAN:"Financeiro",BBVA:"Financeiro",IDEXY:"Cons. Discr.",IBDRY:"Energia",TEF:"Comunicação",
+  // Portugal ADRs
+  EDPFY:"Energia",GLPEY:"Energia",
   XEON:"Liquidez",
 };
 const getSector = (t: string) => SECTOR[t.toUpperCase()] ?? "Outros";
@@ -238,7 +247,11 @@ const COUNTRY:Record<string,string>={
   BBL:"Reino Unido",BCS:"Reino Unido",LYG:"Reino Unido",RIO:"Austrália",
   E:"Itália",
   BAYRY:"Alemanha",IFNNY:"Alemanha",DB:"Alemanha",
-  SAN:"Espanha",BBVA:"Espanha",
+  SAN:"Espanha",BBVA:"Espanha",IDEXY:"Espanha",IBDRY:"Espanha",TEF:"Espanha",
+  TTE:"França",SNY:"França",LRLCY:"França",HESAY:"França",SBGSY:"França",
+  SAFRY:"França",AIQUY:"França",ESLOY:"França",AXAHY:"França",ORAN:"França",
+  ENGIY:"França",DANOY:"França",PUBGY:"França",CGEMY:"França",MGDDY:"França",
+  EDPFY:"Portugal",GLPEY:"Portugal",
   ING:"Países Baixos",ASML:"Países Baixos",
   UBS:"Suíça",CS:"Suíça",
   NVO:"Dinamarca",
@@ -260,6 +273,7 @@ const ISO_TO_COUNTRY:Record<string,string>={
   "246":"Finlândia","208":"Dinamarca","578":"Noruega","036":"Austrália",
   "392":"Japão","156":"China","076":"Brasil","250":"França",
   "752":"Suécia","442":"Luxemburgo","372":"Irlanda","040":"Áustria",
+  "620":"Portugal",
 };
 const COUNTRY_TO_ISO:Record<string,string>={};
 Object.entries(ISO_TO_COUNTRY).forEach(([iso,c])=>{COUNTRY_TO_ISO[c]=iso;});
@@ -271,7 +285,9 @@ const US_TRADEABLE_ADR=new Set([
   "GOLD","AEM","WPM","CM","SU","CNQ","ABX","NTR",
   // Europe — NYSE/NASDAQ ADRs
   "NOK","NVO","ASML","EQNR","BATS","BTI","AZN","BP","RIO","BBL","GSK","UL",
-  "BAYRY","E","SAN","BBVA","ING","DB","CS","UBS","BCS","LYG",
+  "BAYRY","E","SAN","BBVA","IDEXY","IBDRY","TEF","ING","DB","CS","UBS","BCS","LYG",
+  "TTE","SNY","LRLCY","HESAY","SBGSY","SAFRY","AIQUY","ESLOY","AXAHY","ORAN",
+  "ENGIY","DANOY","PUBGY","CGEMY","MGDDY","EDPFY","GLPEY",
   // Japan — OTC/NYSE ADRs
   "TM","SONY","HMC","NMR","SMFG","MUFG","SFTBY","MRAAY","IFNNY","JXHLY","MSBHF","MARUY",
   // Other
@@ -384,7 +400,15 @@ const COMPANY:Record<string,string>={
   E:"Eni",BAYRY:"Bayer",IFNNY:"Infineon",DB:"Deutsche Bank",
   ADDYY:"Adidas",BASFY:"BASF",SIEGY:"Siemens",MBGYY:"Mercedes-Benz",
   VWAGY:"Volkswagen",ALIZY:"Allianz",BNPQY:"BNP Paribas",
-  SAN:"Santander",BBVA:"BBVA",ING:"ING Group",
+  SAN:"Santander",BBVA:"BBVA",IDEXY:"Inditex",IBDRY:"Iberdrola",TEF:"Telefónica",
+  ING:"ING Group",
+  // France ADRs
+  TTE:"TotalEnergies",SNY:"Sanofi",LRLCY:"L'Oréal",HESAY:"Hermès",
+  SBGSY:"Schneider Electric",SAFRY:"Safran",AIQUY:"Air Liquide",
+  ESLOY:"EssilorLuxottica",AXAHY:"AXA",ORAN:"Orange",ENGIY:"Engie",
+  DANOY:"Danone",PUBGY:"Publicis",CGEMY:"Capgemini",MGDDY:"Michelin",
+  // Portugal ADRs
+  EDPFY:"EDP",GLPEY:"Galp Energia",
   SAP:"SAP",LVMUY:"LVMH",PPRUY:"Kering",ARGX:"argenx",
   DKILY:"Daikin",STLA:"Stellantis",PHG:"Philips",
   UBS:"UBS",CS:"Credit Suisse",NVO:"Novo Nordisk",EQNR:"Equinor",
@@ -3732,6 +3756,7 @@ export default function ClientDashboardPage() {
                       "Austrália":[134,-27],"China":[104,35],"França":[2,46],
                       "Suécia":[17,62],"Irlanda":[-8,53],"Áustria":[14,47],
                       "Brasil":[-52,-10],"Luxemburgo":[6,49.6],
+                      "Portugal":[-8,39],
                     };
                     const topCountries=[...countryAlloc.entries()].sort((a,b)=>b[1]-a[1]);
                     return (
