@@ -3104,24 +3104,30 @@ export default function ClientDashboardPage() {
   const whatChanged=useMemo(()=>{
     const changed=actionCounts.rows.filter(r=>r.action!=="Manter"&&r.ticker!=="XEON");
     if(!changed.length) return [{icon:"up",title:"Modelo mantém posicionamento",desc:"Sem alterações significativas este mês."}];
-    // Group by sector: bought/increased vs sold/reduced
-    const bySector=(tickers:{ticker:string;action:string}[],dir:"up"|"down")=>{
-      const map=new Map<string,string[]>();
-      tickers.forEach(r=>{const s=getSector(r.ticker);if(!map.has(s))map.set(s,[]);map.get(s)!.push(r.ticker);});
-      return [...map.entries()].map(([sector,tks])=>({
-        icon:dir,
-        title:dir==="up"?`Aumentámos exposição a ${sector}`:`Reduzimos ${sector}`,
-        desc:`${tks.join(", ")}.`,
-      }));
-    };
-    const bought=changed.filter(r=>r.action==="Comprar"||r.action==="Aumentar");
-    const sold=changed.filter(r=>r.action==="Vender"||r.action==="Reduzir");
-    const items=[
-      ...bySector(bought,"up"),
-      ...bySector(sold,"down"),
-      {icon:"wave",title:"Volatilidade controlada",desc:`Vol actual ${perfData?.curVol?.toFixed(1)??"—"}% anual — nível Moderado.`},
-    ];
-    return items.slice(0,4) as {icon:string;title:string;desc:string}[];
+    // Compute net delta per sector — avoids showing both "Aumentámos" and "Reduzimos" for the same sector
+    const sectorNet=new Map<string,{delta:number;up:string[];down:string[]}>();
+    changed.forEach(r=>{
+      const s=getSector(r.ticker)||"Outro";
+      if(!sectorNet.has(s)) sectorNet.set(s,{delta:0,up:[],down:[]});
+      const e=sectorNet.get(s)!;
+      e.delta+=r.delta;
+      if(r.action==="Comprar"||r.action==="Aumentar") e.up.push(r.ticker);
+      else e.down.push(r.ticker);
+    });
+    const items:[{icon:string;title:string;desc:string}]=[] as any;
+    [...sectorNet.entries()]
+      .sort((a,b)=>Math.abs(b[1].delta)-Math.abs(a[1].delta))
+      .forEach(([sector,{delta,up,down}])=>{
+        const dir=delta>=0?"up":"down";
+        const tickers=delta>=0?up:down;
+        items.push({
+          icon:dir,
+          title:delta>=0?`Aumentámos exposição a ${sector}`:`Reduzimos ${sector}`,
+          desc:`${tickers.join(", ")}.`,
+        });
+      });
+    items.push({icon:"wave",title:"Volatilidade controlada",desc:`Vol actual ${perfData?.curVol?.toFixed(1)??"—"}% anual — nível Moderado.`});
+    return (items as {icon:string;title:string;desc:string}[]).slice(0,4);
   },[actionCounts.rows,perfData]);
 
   const simulatorSrc=useMemo(()=>mounted?buildSimulatorSrc(profile):"",[mounted,profile]);
