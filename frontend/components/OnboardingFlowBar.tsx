@@ -252,14 +252,15 @@ export default function OnboardingFlowBar({
           gap: 24,
         }}
       >
-        {/* Logo oficial */}
+        {/* Logo oficial — mixBlendMode screen remove o fundo preto do PNG */}
         <a href="/" style={{ flexShrink: 0, textDecoration: "none", lineHeight: 0 }}>
           <DecideBrandImage
             priority
             height={72}
             maxWidth="220px"
             sizes="220px"
-            knockoutBackground
+            knockoutBackground={false}
+            style={{ mixBlendMode: "screen" }}
           />
         </a>
 
