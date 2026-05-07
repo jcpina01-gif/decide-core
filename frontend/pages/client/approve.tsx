@@ -326,8 +326,7 @@ export default function ApprovePage({
     mifidDone &&
     kycDone &&
     hedgeGateOk &&
-    ibkrPrepDone &&
-    !ibkrLive.loading;
+    ibkrPrepDone;
 
   const handleToggle = (ticker: string) => {
     if (!canExclude) return;
@@ -652,36 +651,7 @@ export default function ApprovePage({
       alert("Aprovação bloqueada: confirme a preparação IBKR (passo «Plano e pagamento»).");
       return;
     }
-    if (ibkrLive.loading) {
-      // eslint-disable-next-line no-alert
-      alert("Aguarde a leitura da conta IBKR paper (TWS / Gateway).");
-      return;
-    }
-    if (!paperFundsVerified) {
-      if (!ibkrLive.ok) {
-        // eslint-disable-next-line no-alert
-        alert(
-          `Aprovação bloqueada: não há leitura válida da conta paper na IBKR. ${ibkrLive.error ? ibkrLive.error + " " : ""}Confirme TWS/IB Gateway e use «Atualizar leitura (TWS)».`,
-        );
-        return;
-      }
-      if (!ibkrLiveSupportsFundsCheck(ibkrLive)) {
-        // eslint-disable-next-line no-alert
-        alert(
-          "Aprovação bloqueada: nesta página só validamos património quando a conta paper está em EUR ou USD (base). Ajuste na IBKR ou contacte suporte.",
-        );
-        return;
-      }
-      const eq = ibkrNavEurEquivalent(ibkrLive);
-      const eqStr = eq != null ? formatEuro(eq) : "—";
-      // eslint-disable-next-line no-alert
-      alert(
-        `Aprovação bloqueada: património líquido total na paper (${eqStr}) tem de ser ≥ ${formatEuro(
-          DECIDE_MIN_INVEST_EUR,
-        )} e ≥ ~85 % do NAV de referência do plano (${formatEuro(displayNavEur)}). Alinhe o montante do onboarding ao que tem na conta ou deposite na paper.`,
-      );
-      return;
-    }
+    /* Verificação IBKR paper — apenas aviso, não bloqueia aprovação do plano. */
     if (!confirmReview) {
       // eslint-disable-next-line no-alert
       alert("Marque a confirmação: reviu a proposta e compreende os riscos associados.");
