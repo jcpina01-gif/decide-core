@@ -217,6 +217,18 @@ const SECTOR: Record<string, string> = {
   SAN:"Financeiro",BBVA:"Financeiro",IDEXY:"Cons. Discr.",IBDRY:"Energia",TEF:"Comunicação",
   // Portugal ADRs
   EDPFY:"Energia",GLPEY:"Energia",
+  // UK batch-2
+  DEO:"Cons. Básico",RELX:"Comunicação",HLN:"Saúde",
+  RYCEY:"Industrial",BAESY:"Industrial",EXPGY:"Tecnologia",LSEGY:"Financeiro",
+  // Germany batch-2
+  EADSY:"Industrial",DTEGY:"Comunicação",MURGY:"Financeiro",
+  BMWKY:"Cons. Discr.",DPSGY:"Industrial",
+  // Switzerland batch-2
+  ABBNY:"Industrial",CFRUY:"Cons. Discr.",ZURVY:"Financeiro",
+  // Italy batch-2
+  ENLAY:"Energia",UNCRY:"Financeiro",ISNPY:"Financeiro",
+  // Netherlands + Sweden batch-2
+  ADYEY:"Financeiro",WTKWY:"Comunicação",ATCOY:"Industrial",
   XEON:"Liquidez",
 };
 const getSector = (t: string) => SECTOR[t.toUpperCase()] ?? "Outros";
@@ -252,6 +264,13 @@ const COUNTRY:Record<string,string>={
   SAFRY:"França",AIQUY:"França",ESLOY:"França",AXAHY:"França",ORAN:"França",
   ENGIY:"França",DANOY:"França",PUBGY:"França",CGEMY:"França",MGDDY:"França",
   EDPFY:"Portugal",GLPEY:"Portugal",
+  DEO:"Reino Unido",RELX:"Reino Unido",HLN:"Reino Unido",
+  RYCEY:"Reino Unido",BAESY:"Reino Unido",EXPGY:"Reino Unido",LSEGY:"Reino Unido",
+  EADSY:"Países Baixos",DTEGY:"Alemanha",MURGY:"Alemanha",BMWKY:"Alemanha",DPSGY:"Alemanha",
+  ABBNY:"Suíça",CFRUY:"Suíça",ZURVY:"Suíça",
+  ENLAY:"Itália",UNCRY:"Itália",ISNPY:"Itália",
+  ADYEY:"Países Baixos",WTKWY:"Países Baixos",
+  ATCOY:"Suécia",
   ING:"Países Baixos",ASML:"Países Baixos",
   UBS:"Suíça",CS:"Suíça",
   NVO:"Dinamarca",
@@ -288,6 +307,10 @@ const US_TRADEABLE_ADR=new Set([
   "BAYRY","E","SAN","BBVA","IDEXY","IBDRY","TEF","ING","DB","CS","UBS","BCS","LYG",
   "TTE","SNY","LRLCY","HESAY","SBGSY","SAFRY","AIQUY","ESLOY","AXAHY","ORAN",
   "ENGIY","DANOY","PUBGY","CGEMY","MGDDY","EDPFY","GLPEY",
+  "DEO","RELX","HLN","RYCEY","BAESY","EXPGY","LSEGY",
+  "EADSY","DTEGY","MURGY","BMWKY","DPSGY",
+  "ABBNY","CFRUY","ZURVY","ENLAY","UNCRY","ISNPY",
+  "ADYEY","WTKWY","ATCOY",
   // Japan — OTC/NYSE ADRs
   "TM","SONY","HMC","NMR","SMFG","MUFG","SFTBY","MRAAY","IFNNY","JXHLY","MSBHF","MARUY",
   // Other
@@ -409,6 +432,18 @@ const COMPANY:Record<string,string>={
   DANOY:"Danone",PUBGY:"Publicis",CGEMY:"Capgemini",MGDDY:"Michelin",
   // Portugal ADRs
   EDPFY:"EDP",GLPEY:"Galp Energia",
+  // UK batch-2
+  DEO:"Diageo",RELX:"RELX",HLN:"Haleon",
+  RYCEY:"Rolls-Royce",BAESY:"BAE Systems",EXPGY:"Experian",LSEGY:"London Stock Exch.",
+  // Germany batch-2
+  EADSY:"Airbus",DTEGY:"Deutsche Telekom",MURGY:"Munich Re",
+  BMWKY:"BMW",DPSGY:"Deutsche Post",
+  // Switzerland batch-2
+  ABBNY:"ABB",CFRUY:"Richemont",ZURVY:"Zurich Insurance",
+  // Italy batch-2
+  ENLAY:"Enel",UNCRY:"UniCredit",ISNPY:"Intesa Sanpaolo",
+  // Netherlands + Sweden batch-2
+  ADYEY:"Adyen",WTKWY:"Wolters Kluwer",ATCOY:"Atlas Copco",
   SAP:"SAP",LVMUY:"LVMH",PPRUY:"Kering",ARGX:"argenx",
   DKILY:"Daikin",STLA:"Stellantis",PHG:"Philips",
   UBS:"UBS",CS:"Credit Suisse",NVO:"Novo Nordisk",EQNR:"Equinor",
