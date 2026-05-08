@@ -788,7 +788,7 @@ def _place_stock(ib: IB, o: OrderIn, attach_fx_hedge: bool = False) -> dict[str,
     order.tif = "DAY"
     order.outsideRth = True  # permite execução pré/pós-mercado na paper account
     trade, fx_att, sfx = _place_or_parent_fx(qc, order)
-    _wait_trade_after_place(ib, trade, float(int(qty)), max_sec=8.0)
+    _wait_trade_after_place(ib, trade, float(int(qty)), max_sec=3.0)
     msg = (sfx.strip() if sfx else None) or None
     return _return_fill(trade, msg, fx_att)
 
