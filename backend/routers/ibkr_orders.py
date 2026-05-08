@@ -295,8 +295,9 @@ def _execute_ib_orders(
             if _do_fx and side == "BUY" and not _is_eur_mm_ucits_symbol(sym):
                 _total_fx_eur += abs(o.est_eur) * _hedge_frac
 
-        # ── Phase 4: Wait up to 8s for ALL fills collectively ──
-        deadline = time.monotonic() + 8.0
+        # ── Phase 4: Wait up to 20s for ALL fills collectively ──
+        # JP ADRs (OTC Pink Sheets) have lower liquidity and need more time
+        deadline = time.monotonic() + 20.0
         while time.monotonic() < deadline:
             all_equity_done = all(
                 str(t.orderStatus.status or "").strip() in
@@ -306,7 +307,7 @@ def _execute_ib_orders(
             )
             if all_equity_done:
                 break
-            ib.sleep(0.3)
+            ib.sleep(0.5)
 
         # Collect equity results
         total_buy_usd = 0.0
@@ -344,7 +345,6 @@ def _execute_ib_orders(
                 _fx_st = str(_fx_trade.orderStatus.status or "").strip() or "Submitted"
                 _fx_filled = float(_fx_trade.orderStatus.filled or 0.0)
                 _fx_ap = float(_fx_trade.orderStatus.avgFillPrice or 0.0)
-                # Capture rejection reason if order not accepted
                 _reject = ""
                 if _fx_st in ("Inactive", "ApiCancelled", "Cancelled"):
                     for _entry in (_fx_trade.log or []):
@@ -353,15 +353,22 @@ def _execute_ib_orders(
                             _reject = _msg
                             break
                     print(f"[FX] IDEALPRO order rejected: {_reject}")
+                    # Likely cause: Forex not enabled in IB paper account
+                    _note = (f"Conta paper sem permissão Forex API. "
+                             f"Para activar: IB Account Management → Trading Experience → Forex. "
+                             f"Erro: {_reject}" if _reject else
+                             f"Conta paper sem permissão Forex API. "
+                             f"Para activar: IB Account Management → Trading Experience → Forex.")
+                else:
+                    _note = (f"Hedge FX {fx_exposure} (IDEALPRO): {_fx_qty:,} EUR "
+                             f"@ limit {_fx_limit:.5f}")
                 fills.append({
                     "ticker": "EUR/USD", "action": "BUY",
                     "requested_qty": _fx_qty,
                     "filled": _fx_filled,
                     "avg_fill_price": _fx_ap if _fx_ap > 0 else fx_eurusd,
                     "status": _fx_st,
-                    "message": (f"Hedge FX {fx_exposure} (IDEALPRO): {_fx_qty:,} EUR "
-                                f"@ limit {_fx_limit:.5f}"
-                                + (f" | {_reject}" if _reject else "")),
+                    "message": _note,
                     "is_fx": True,
                 })
             except Exception as _fx_exc:
