@@ -270,12 +270,17 @@ def _execute_ib_orders(
                 est_usd = abs(o.est_eur) * fx_eurusd
                 eur_hedge = max(100, int(est_usd * _hedge_frac / fx_eurusd / 100) * 100)
                 fx_order = MarketOrder("BUY", eur_hedge)
-                fx_order.tif = "DAY"
+                fx_order.tif = "GTC"  # GTC more robust than DAY for FX
                 try:
                     fx_trade = ib.placeOrder(_fxconv_contract, fx_order)
                     pending_fx.append((fx_trade, sym, eur_hedge))
-                except Exception:
-                    pass  # per-order FX failure logged in final step
+                except Exception as _fx_e:
+                    fills.append({
+                        "ticker": "EUR/USD", "action": "BUY",
+                        "requested_qty": eur_hedge, "filled": 0,
+                        "status": "error", "is_fx": True,
+                        "message": f"Hedge FX {sym}: placeOrder falhou — {_fx_e}",
+                    })
 
         # ── Phase 4: Wait up to 8s for ALL fills collectively ──
         deadline = time.monotonic() + 8.0
@@ -315,6 +320,14 @@ def _execute_ib_orders(
             fx_st = str(fx_trade.orderStatus.status or "").strip() or "Submitted"
             fx_filled = float(fx_trade.orderStatus.filled or 0.0)
             fx_ap = float(fx_trade.orderStatus.avgFillPrice or 0.0)
+            # Capture IB rejection reason from trade log if Inactive
+            reject_reason = ""
+            if fx_st in ("Inactive", "ApiCancelled", "Cancelled"):
+                for entry in (fx_trade.log or []):
+                    msg = str(getattr(entry, "message", "") or "")
+                    if msg:
+                        reject_reason = msg
+                        break
             fills.append({
                 "ticker": "EUR/USD",
                 "action": "BUY",
@@ -322,7 +335,8 @@ def _execute_ib_orders(
                 "filled": fx_filled,
                 "avg_fill_price": fx_ap if fx_ap > 0 else fx_eurusd,
                 "status": fx_st,
-                "message": f"Hedge FX {sym} (FXCONV): {eur_hedge:,} EUR @ {fx_eurusd:.4f}",
+                "message": f"Hedge FX {sym} (FXCONV): {eur_hedge:,} EUR @ {fx_eurusd:.4f}"
+                           + (f" | Rejeição: {reject_reason}" if reject_reason else ""),
                 "is_fx": True,
             })
 
