@@ -226,10 +226,13 @@ def _execute_ib_orders(
             else:
                 price = price_map.get(sym)
                 if price and price > 0:
+                    # 0.90 safety factor: cotações atrasadas tendem a subestimar o preço real
+                    # → comprar 10% menos para evitar overshoot do AUM
+                    _PRICE_SAFETY = float(os.environ.get("DECIDE_QTY_SAFETY_FACTOR", "0.90"))
                     if _is_eur_mm_ucits_symbol(sym):
-                        qty = max(1, int(abs(o.est_eur) / price))
+                        qty = max(1, int(abs(o.est_eur) * _PRICE_SAFETY / price))
                     else:
-                        qty = max(1, int(abs(o.est_eur) * fx_eurusd / price))
+                        qty = max(1, int(abs(o.est_eur) * _PRICE_SAFETY * fx_eurusd / price))
                 else:
                     qty = 1
 
