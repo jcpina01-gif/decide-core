@@ -164,6 +164,36 @@ def _execute_ib_orders(
 
         fx_eurusd = _fetch_live_eurusd(ib)
 
+        # ── Backend guard: rejeitar se carteira IB já excede AUM × 1.05 ──────
+        # Previne duplicação de ordens quando o frontend não verificou posições
+        if aum_eur > 0:
+            _only_buys = all(o.action in ("Comprar", "Aumentar") for o in orders)
+            if _only_buys:
+                _pf_val = sum(abs(float(item.marketValue or 0)) for item in ib.portfolio()
+                              if (getattr(item.contract, "secType", "") or "").upper() not in ("CASH",))
+                if _pf_val > aum_eur * 1.05:
+                    ib.disconnect()
+                    return {
+                        "status": "rejected",
+                        "error": (f"Carteira IB já investida ({_pf_val:,.0f} EUR) excede o AUM "
+                                  f"({aum_eur:,.0f} EUR × 1.05). "
+                                  "Verifica as posições no Diagnóstico e usa FLAT antes de comprar novamente."),
+                        "fills": [],
+                    }
+
+        # ── Diagnose FXCONV availability (log only, doesn't block) ───────────
+        _fxconv_details_ok = False
+        try:
+            _fxc_test = Contract(secType="CASH", symbol="EUR", currency="USD", exchange="FXCONV")
+            _fxc_dets = ib.reqContractDetails(_fxc_test)
+            _fxconv_details_ok = bool(_fxc_dets)
+            if not _fxc_dets:
+                print("[FX] FXCONV contract details returned empty — FX permissions may be missing in IB Gateway")
+            else:
+                print(f"[FX] FXCONV available: conId={_fxc_dets[0].contract.conId}")
+        except Exception as _fxc_e:
+            print(f"[FX] FXCONV reqContractDetails error: {_fxc_e}")
+
         rem_long: dict[str, float] = {}
         if not sell_cap_disabled:
             net_map = _ib_portfolio_net_qty_by_key(ib)
