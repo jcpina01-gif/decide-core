@@ -492,13 +492,16 @@ def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
             "status": "ok",
             "net_liquidation": nav, "net_liquidation_ccy": nav_ccy, "account_code": acct_code,
             "account_type": acct_type,
-            "fx_supported": acct_type.upper() not in ("CASH", ""),
+            # fx_supported: Margin/RegT accounts support Forex API; Cash accounts don't
+            # IB tag values: "CASH", "INDIVIDUAL", "INDIVIDUAL MARGIN", "REG_T_MARGIN", etc.
+            "fx_supported": bool(acct_type) and acct_type.upper() not in ("CASH",),
             "positions": positions,
             "open_orders": open_orders_data,
             "meta": {
                 "ibkr_snapshot_enrich": bool(IBKR_SNAPSHOT_ENRICH_METADATA),
                 "enrich_positions_attempted": enrich_attempted,
                 "enrich_long_name_ok": enrich_named,
+                "account_type_raw": acct_type,
             },
             "cash_ledger": {
                 "tag": "TotalCashValue", "value": cash_val,

@@ -1982,6 +1982,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [ibkrPos,setIbkrPos]=React.useState<{ticker:string;qty:number;value:number;weight_pct:number}[]|null>(null);
   const [ibkrOpenOrders,setIbkrOpenOrders]=React.useState<{ticker:string;side:string;remaining_qty:number;status:string}[]>([]);
   const [ibkrFxSupported,setIbkrFxSupported]=React.useState<boolean|null>(null);
+  const [ibkrAcctType,setIbkrAcctType]=React.useState("");
   const [ibkrLoading,setIbkrLoading]=React.useState(false);
   const [ibkrErr,setIbkrErr]=React.useState("");
   const [sellAllSending,setSellAllSending]=React.useState(false);
@@ -2038,6 +2039,8 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         setIbkrPos(j.positions);
         setIbkrOpenOrders(j.open_orders??[]);
         if(typeof j.fx_supported==="boolean") setIbkrFxSupported(j.fx_supported);
+        if(j.account_type) setIbkrAcctType(j.account_type);
+        else if(j.meta?.account_type_raw) setIbkrAcctType(j.meta.account_type_raw);
       }
       else{setIbkrErr(j.error||"Erro ao obter posições IB");}
     }catch(e:unknown){setIbkrErr(e instanceof Error?e.message:"Erro de ligação");}
@@ -2518,6 +2521,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                       {ibkrPos.length} posições activas na IB
                       {orphanPositions.length>0?` · ${orphanPositions.length} fora do plano`:` · todas no plano`}
                       {ibkrOpenOrders.length>0&&` · ${ibkrOpenOrders.length} ordem(ns) em curso`}
+                      {ibkrAcctType&&` · conta ${ibkrAcctType} · FX ${ibkrFxSupported===false?"bloqueado":"suportado"}`}
                     </div>
                     {/* Open orders summary */}
                     {ibkrOpenOrders.length>0&&(
