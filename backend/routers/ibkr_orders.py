@@ -138,8 +138,23 @@ def _execute_ib_orders(
     ib = IB()
     fills: List[dict[str, Any]] = []
 
+    # Try clientId; if already in use, cycle through 3 alternates (stale sessions from crashes)
+    tried: list[int] = []
+    connected = False
+    for cid in [client_id] + list(range(client_id + 1, client_id + 4)):
+        try:
+            ib.connect(host, port, clientId=cid, timeout=5)
+            connected = True
+            break
+        except Exception:
+            tried.append(cid)
+            ib = IB()  # fresh instance for next attempt
+    if not connected:
+        return {"status": "error",
+                "error": f"Não foi possível ligar à IB Gateway {host}:{port} — clientIds {tried} em uso. Reinicia a IB Gateway.",
+                "fills": []}
+
     try:
-        ib.connect(host, port, clientId=client_id, timeout=8)
         ib.reqMarketDataType(3)
 
         is_paper, accounts = is_paper_account(ib)

@@ -184,23 +184,41 @@ const SECTOR: Record<string, string> = {
   ORCL:"Tecnologia",QCOM:"Tecnologia",TXN:"Tecnologia",AMAT:"Tecnologia",
   KLAC:"Tecnologia",LRCX:"Tecnologia",SNPS:"Tecnologia",CDNS:"Tecnologia",
   CTSH:"Tecnologia",NOW:"Tecnologia",ADBE:"Tecnologia",INTU:"Tecnologia",
-  INTC:"Tecnologia",MU:"Tecnologia",MRVL:"Tecnologia",ON:"Tecnologia",NOK:"Tecnologia",XYZ:"Tecnologia",
+  INTC:"Tecnologia",MU:"Tecnologia",MRVL:"Tecnologia",ON:"Tecnologia",NOK:"Tecnologia",
+  XYZ:"Tecnologia",SQ:"Tecnologia", // Block Inc (SQ antigo, XYZ actual)
   ADI:"Tecnologia",MSI:"Tecnologia",PANW:"Tecnologia",DDOG:"Tecnologia",ASML:"Tecnologia",
   SFTBY:"Tecnologia",MRAAY:"Tecnologia",IFNNY:"Tecnologia",APH:"Tecnologia",PLTR:"Tecnologia",
-  JPM:"Financeiro",GS:"Financeiro",MS:"Financeiro",BAC:"Financeiro",
-  V:"Financeiro",MA:"Financeiro",AXP:"Financeiro",BLK:"Financeiro",
-  SPGI:"Financeiro",ICE:"Financeiro",MCO:"Financeiro",COF:"Financeiro",
-  CM:"Financeiro",SMFG:"Financeiro",NMR:"Financeiro",ALL:"Financeiro",
+  ARM:"Tecnologia",CRWD:"Tecnologia",NET:"Tecnologia",SNOW:"Tecnologia",MDB:"Tecnologia",
+  SMCI:"Tecnologia",HUBS:"Tecnologia",OKTA:"Tecnologia",DOCU:"Tecnologia",TWLO:"Tecnologia",
+  TTD:"Tecnologia",TTWO:"Tecnologia",ZS:"Tecnologia",FICO:"Tecnologia",GPN:"Tecnologia",
+  IBM:"Tecnologia",SAP:"Tecnologia",ERIC:"Tecnologia",EQIX:"Tecnologia",IT:"Tecnologia",
+  SHOP:"Tecnologia",TEAM:"Tecnologia",PAYC:"Tecnologia",ROKU:"Tecnologia",
+  NJDCY:"Tecnologia",HOCPY:"Saúde",FUJIY:"Saúde",
+  JPM:"Financeiro",GS:"Financeiro",MS:"Financeiro",BAC:"Financeiro",WFC:"Financeiro",
+  V:"Financeiro",MA:"Financeiro",AXP:"Financeiro",BLK:"Financeiro",SCHW:"Financeiro",
+  SPGI:"Financeiro",ICE:"Financeiro",MCO:"Financeiro",COF:"Financeiro",MSCI:"Financeiro",
+  CM:"Financeiro",SMFG:"Financeiro",NMR:"Financeiro",ALL:"Financeiro",COIN:"Financeiro",
+  PYPL:"Financeiro",HSBC:"Financeiro",DB:"Financeiro",BNPQY:"Financeiro",NWG:"Financeiro",
+  BAM:"Financeiro",BN:"Financeiro",BMO:"Financeiro",BX:"Financeiro",PGR:"Financeiro",
+  MUFG:"Financeiro",MFG:"Financeiro",TKOMY:"Financeiro",MSADY:"Financeiro",SMPNY:"Financeiro",
   BKNG:"Cons. Discr.",AMZN:"Cons. Discr.",TSLA:"Cons. Discr.",
   NKE:"Cons. Discr.",MCD:"Cons. Discr.",SBUX:"Cons. Discr.",
   TJX:"Cons. Discr.",LOW:"Cons. Discr.",HD:"Cons. Discr.",WBD:"Comunicação",
   UBER:"Cons. Discr.",CMG:"Cons. Discr.",PDD:"Cons. Discr.",DHI:"Cons. Discr.",
+  MELI:"Cons. Discr.",ETSY:"Cons. Discr.",EBAY:"Cons. Discr.",RCL:"Cons. Discr.",
+  NCLH:"Cons. Discr.",CCL:"Cons. Discr.",DAL:"Cons. Discr.",UAL:"Cons. Discr.",AAL:"Cons. Discr.",
+  GM:"Cons. Discr.",F:"Cons. Discr.",ROST:"Cons. Discr.",ORLY:"Cons. Discr.",LEN:"Cons. Discr.",
+  TGT:"Cons. Básico",DG:"Cons. Básico",DLTR:"Cons. Básico",GIS:"Cons. Básico",
+  NTDOY:"Cons. Discr.",STLA:"Cons. Discr.",VWAGY:"Cons. Discr.",MBGYY:"Cons. Discr.",
+  LVMUY:"Cons. Discr.",PPRUY:"Cons. Discr.",FRCOY:"Cons. Discr.",HESAY:"Cons. Discr.",
   CAT:"Industrial",HON:"Industrial",MMM:"Industrial",GE:"Industrial",
   LMT:"Industrial",RTX:"Industrial",UNP:"Industrial",CSX:"Industrial",
   DE:"Industrial",EMR:"Industrial",ETN:"Industrial",MARUY:"Industrial",
   CTAS:"Industrial",TM:"Industrial",MSBHF:"Industrial",PH:"Industrial",PCAR:"Industrial",
+  NOC:"Industrial",CARR:"Industrial",JCI:"Industrial",FDX:"Industrial",TT:"Industrial",
+  CPRT:"Industrial",SIEGY:"Industrial",
   // Japan batch-3
-  NTTYY:"Comunicação",SOBKY:"Comunicação",
+  NTTYY:"Comunicação",SOBKY:"Comunicação",KDDIY:"Comunicação",TMUS:"Comunicação",NTES:"Internet",
   RCRUY:"Tecnologia",SHECY:"Mat. Básicos",
   MTSUY:"Industrial",ITOCY:"Industrial",MITSY:"Industrial",
   DNZOY:"Industrial",SSUMY:"Industrial",MHVIY:"Industrial",
@@ -209,14 +227,21 @@ const SECTOR: Record<string, string> = {
   SVNDY:"Cons. Básico",FRCOY:"Cons. Discr.",
   UNH:"Saúde",JNJ:"Saúde",LLY:"Saúde",ABBV:"Saúde",
   MRK:"Saúde",PFE:"Saúde",TMO:"Saúde",ABT:"Saúde",BAYRY:"Saúde",NVO:"Saúde",
+  GILD:"Saúde",VRTX:"Saúde",REGN:"Saúde",ISRG:"Saúde",IDXX:"Saúde",
+  BIIB:"Saúde",CI:"Saúde",HCA:"Saúde",MCK:"Saúde",CAH:"Saúde",
+  GRFS:"Saúde",PHG:"Saúde",ARGX:"Saúde",
   XOM:"Energia",CVX:"Energia",COP:"Energia",EOG:"Energia",E:"Energia",
-  PXD:"Energia",SLB:"Energia",PSX:"Energia",VLO:"Energia",
+  PXD:"Energia",SLB:"Energia",PSX:"Energia",VLO:"Energia",SHEL:"Energia",
   EQNR:"Energia",SU:"Energia",JXHLY:"Energia",FANG:"Energia",
+  OXY:"Energia",DVN:"Energia",MPC:"Energia",KMI:"Energia",WMB:"Energia",
+  NEE:"Energia",EXC:"Energia",PCG:"Energia",ED:"Energia",IMO:"Energia",
+  BKR:"Energia",CTRA:"Energia",
   WMT:"Cons. Básico",PG:"Cons. Básico",KO:"Cons. Básico",
   BATS:"Cons. Básico",BTI:"Cons. Básico",  // BATS=LSE, BTI=NYSE ADR
   PEP:"Cons. Básico",COST:"Cons. Básico",MDLZ:"Cons. Básico",
   NEM:"Mineira",GOLD:"Mineira",AEM:"Mineira",WPM:"Mineira",
-  FCX:"Mineira",AA:"Mineira",RIO:"Mineira",BHP:"Mineira",VALE:"Mineira",
+  FCX:"Mineira",AA:"Mineira",RIO:"Mineira",BHP:"Mineira",VALE:"Mineira",TECK:"Mineira",
+  SPG:"Imobiliário",EQIX:"Imobiliário",PLD:"Imobiliário",IRM:"Imobiliário",EXR:"Imobiliário",WELL:"Imobiliário",CBRE:"Imobiliário",
   // France ADRs
   TTE:"Energia",SNY:"Saúde",LRLCY:"Cons. Básico",HESAY:"Cons. Discr.",
   SBGSY:"Industrial",SAFRY:"Industrial",AIQUY:"Mat. Básicos",
@@ -286,10 +311,20 @@ const COUNTRY:Record<string,string>={
   EQNR:"Noruega",
   CNQ:"Canadá",ABX:"Canadá",NTR:"Canadá",
   MARUY:"Japão",SFTBY:"Japão",MRAAY:"Japão",TM:"Japão",MSBHF:"Japão",JXHLY:"Japão",
-  SMFG:"Japão",NMR:"Japão",SONY:"Japão",HMC:"Japão",
-  PDD:"China",BIDU:"China",
-  NVO:"Dinamarca",
-  PDD:"China",
+  SMFG:"Japão",NMR:"Japão",SONY:"Japão",HMC:"Japão",MUFG:"Japão",MFG:"Japão",
+  NTDOY:"Japão",FUJIY:"Japão",NJDCY:"Japão",KDDIY:"Japão",SHECY:"Japão",
+  DSNKY:"Japão",CHGCY:"Japão",HOCPY:"Japão",MHVIY:"Japão",MITSY:"Japão",
+  MTSUY:"Japão",SSUMY:"Japão",TKOMY:"Japão",MSADY:"Japão",DNZOY:"Japão",
+  RCRUY:"Japão",NTTYY:"Japão",SOBKY:"Japão",SVNDY:"Japão",SMPNY:"Japão",
+  PDD:"China",BIDU:"China",TCEHY:"China",JD:"China",BABA:"China",NTES:"China",
+  SHOP:"Canadá",BAM:"Canadá",BN:"Canadá",BMO:"Canadá",TECK:"Canadá",IMO:"Canadá",
+  SAP:"Alemanha",SIEGY:"Alemanha",MBGYY:"Alemanha",VWAGY:"Alemanha",
+  HSBC:"Reino Unido",NWG:"Reino Unido",
+  ERIC:"Suécia",ARGX:"Bélgica",PHG:"Países Baixos",STLA:"Países Baixos",
+  LVMUY:"França",PPRUY:"França",BNPQY:"França",
+  GRFS:"Espanha",
+  TEAM:"Austrália",
+  SQ:"EUA",
   XEON:"Eurozona",
 };
 const getZone=(t:string)=>COUNTRY[t.toUpperCase()]??"EUA";
@@ -335,14 +370,14 @@ const isTradeableUS=(t:string)=>t==="XEON"||getZone(t)==="EUA"||US_TRADEABLE_ADR
 // The model may output LSE/local tickers; IB requires the US ADR symbol.
 const TICKER_IB_ALIAS:Record<string,string>={
   BATS:"BTI",    // British American Tobacco: LSE BATS → NYSE BTI
+  SQ:"XYZ",      // Block Inc. rebranded NYSE ticker SQ → XYZ (Jan 2024)
   BAYRY:"BAYRY", // Bayer AG: OTC BAYRY (correct for IB OTC)
   MARUY:"MARUY", // Marubeni: OTC MARUY (correct)
-  MRAAY:"MRAAY", // Marubeni (alt): OTC
+  MRAAY:"MRAAY", // Murata Mfg: OTC
   IFNNY:"IFNNY", // Infineon: OTC
   JXHLY:"JXHLY", // JXTG Holdings: OTC
   MSBHF:"MSBHF", // Mitsubishi: OTC
   SFTBY:"SFTBY", // SoftBank: OTC
-  // Add more as needed: PLANLOCAL:"USNYADR"
 };
 const toIbTicker=(t:string)=>TICKER_IB_ALIAS[t.toUpperCase()]??t.toUpperCase();
 
@@ -363,8 +398,7 @@ const COMPANY:Record<string,string>={
   DOCU:"DocuSign",TWLO:"Twilio",TTD:"Trade Desk",ZS:"Zscaler",
   COIN:"Coinbase",SQ:"Block",PYPL:"PayPal",ADSK:"Autodesk",
   MSCI:"MSCI Inc",FICO:"Fair Isaac",CTSH:"Cognizant",IBM:"IBM",
-  // Semis
-  TXN:"Texas Instruments",
+  // Semis (TXN already listed above, no duplicate needed)
   // US Financials
   JPM:"JPMorgan",GS:"Goldman Sachs",MS:"Morgan Stanley",BAC:"Bank of America",
   V:"Visa",MA:"Mastercard",AXP:"Amex",BLK:"BlackRock",
@@ -372,9 +406,9 @@ const COMPANY:Record<string,string>={
   CM:"CIBC",ALL:"Allstate",BX:"Blackstone",SCHW:"Charles Schwab",
   PNC:"PNC Financial",USB:"U.S. Bancorp",WFC:"Wells Fargo",C:"Citigroup",
   PRU:"Prudential",MET:"MetLife",AMP:"Ameriprise",TROW:"T. Rowe Price",
-  CME:"CME Group",GPN:"Global Payments",BAM:"Brookfield Asset",
-  BN:"Brookfield Corp",RY:"Royal Bank Canada",TD:"TD Bank",
-  BMO:"Bank of Montreal",SLF:"Sun Life Financial",
+  CME:"CME Group",GPN:"Global Payments",
+  RY:"Royal Bank Canada",TD:"TD Bank",
+  SLF:"Sun Life Financial",
   // US Consumer
   BKNG:"Booking",AMZN:"Amazon",TSLA:"Tesla",NKE:"Nike",MCD:"McDonald's",
   SBUX:"Starbucks",TJX:"TJX",LOW:"Lowe's",HD:"Home Depot",
@@ -457,7 +491,7 @@ const COMPANY:Record<string,string>={
   ADYEY:"Adyen",WTKWY:"Wolters Kluwer",ATCOY:"Atlas Copco",
   SAP:"SAP",LVMUY:"LVMH",PPRUY:"Kering",ARGX:"argenx",
   DKILY:"Daikin",STLA:"Stellantis",PHG:"Philips",
-  UBS:"UBS",CS:"Credit Suisse",NVO:"Novo Nordisk",EQNR:"Equinor",
+  UBS:"UBS",CS:"Credit Suisse",NVO:"Novo Nordisk",
   // Japan
   SFTBY:"SoftBank Group",MRAAY:"Murata Mfg",MARUY:"Marubeni",
   TM:"Toyota",MSBHF:"Mitsubishi Corp",JXHLY:"ENEOS Holdings",
@@ -473,7 +507,7 @@ const COMPANY:Record<string,string>={
   HOCPY:"Hoya",SVNDY:"Seven & I Holdings",SOBKY:"SoftBank Corp",
   MSADY:"MS&AD Insurance",SMPNY:"Sompo Holdings",
   // China
-  PDD:"PDD Holdings",BIDU:"Baidu",JD:"JD.com",NTES:"NetEase",
+  BIDU:"Baidu",JD:"JD.com",NTES:"NetEase",TCEHY:"Tencent",BABA:"Alibaba",
   // ADR misc
   GRFS:"Grifols",RACE:"Ferrari",SUZ:"Suzano",ERIC:"Ericsson",
   // US Tech (additional)
@@ -483,7 +517,6 @@ const COMPANY:Record<string,string>={
   CDW:"CDW Corp",CEG:"Constellation Energy",PAYC:"Paycom",
   SIRI:"Sirius XM",MELI:"MercadoLibre",
   // US Consumer (additional)
-  AAL:"American Airlines",DAL:"Delta",UAL:"United Airlines",
   F:"Ford",GM:"General Motors",LEN:"Lennar",
   KDP:"Keurig Dr Pepper",STZ:"Constellation Brands",
   // US Utilities (additional)
@@ -492,7 +525,7 @@ const COMPANY:Record<string,string>={
   APD:"Air Products",DOW:"Dow Inc",AIG:"AIG",AJG:"Arthur J. Gallagher",
   // Canada (additional)
   "SHOP.1":"Shopify",
-  // Japan (additional)
+  // Japan (additional) — 6954.T remapped to FANUY in CSV; keep for display fallback
   "6954.T":"Fanuc",
   // Cash / ETF
   XEON:"MM Euro",GOLD:"Barrick Gold",
@@ -506,6 +539,7 @@ const BENCH_SHORT="Benchmark";
 /* ─── Yahoo Finance ticker aliases (some ADRs use different symbols) ──────── */
 const YF_ALIAS:Record<string,string>={
   BATS:"BTI",       // British American Tobacco ADR
+  SQ:"XYZ",         // Block Inc. rebranded NYSE SQ → XYZ (Jan 2024)
   BAYRY:"BAYRY",    // Bayer ADR
   MARUY:"MARUY",    // Marubeni ADR
   SFTBY:"SFTBY",    // SoftBank ADR
@@ -2120,7 +2154,13 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const nOrdens=activeOrderRows.length;
 
   // For summary financials — use adjusted amounts
-  const investEur=activeOrderRows.filter(r=>r.action!=="Vender"&&r.action!=="Reduzir"||execMode==="full"&&r.action!=="Vender").reduce((s,r)=>s+r.adjEur,0);
+  // In full mode: every non-Vender row is effectively a buy (adjEur already accounts for existing holding)
+  // In delta mode: only Comprar/Aumentar are buys; Reduzir are sells
+  const investEur=activeOrderRows.filter(r=>{
+    if(r.action==="Vender") return false;
+    if(execMode==="delta"&&r.action==="Reduzir") return false;
+    return true;
+  }).reduce((s,r)=>s+r.adjEur,0);
   const reduceEur=activeOrderRows.filter(r=>r.action==="Vender"||(execMode==="delta"&&r.action==="Reduzir")).reduce((s,r)=>s+r.adjEur,0);
   const totalBuyPct=investEur/aum*100;
   const totalSellPct=reduceEur/aum*100;
@@ -2360,10 +2400,10 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             <div className="flex items-start gap-3 bg-amber-500/[0.08] border border-amber-500/30 rounded-xl px-4 py-4">
               <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5"/>
               <div>
-                <div className="text-xs font-bold text-amber-300 mb-1">Construção inicial — usa para conta vazia</div>
+                <div className="text-xs font-bold text-amber-300 mb-1">Construção inicial — compra a diferença para o peso-alvo</div>
                 <div className="text-xs text-slate-400 space-y-1">
-                  <p>Este modo envia uma ordem de <strong className="text-slate-300">compra ao peso-alvo</strong> para <em>todas</em> as posições do plano, independentemente do que já tens em carteira.</p>
-                  <p>Se já tens posições, usa antes o modo <strong className="text-slate-300">Rebalanceamento</strong> que só envia as alterações face ao mês anterior.</p>
+                  <p>Para cada posição do plano, compra apenas a <strong className="text-slate-300">diferença entre o peso-alvo e o que já tens em carteira</strong>. Posições acima do alvo não são reduzidas.</p>
+                  <p>Para ajustar posições que excedem o alvo, usa o modo <strong className="text-slate-300">Rebalanceamento</strong> que envia tanto compras como vendas parciais.</p>
                 </div>
               </div>
             </div>
@@ -3255,13 +3295,13 @@ export default function ClientDashboardPage() {
   const SECTOR_BETA:Record<string,number>={
     "Tecnologia":1.35,"Comunicação":1.15,"Internet":1.20,"Energia":1.05,"Industrial":1.00,
     "Mat. Básicos":0.90,"Mineira":0.85,"Cons. Básico":0.70,"Saúde":0.75,"Financeiro":1.10,
-    "Imobiliário":0.85,"Outro":1.00,
+    "Imobiliário":0.85,"Cons. Discr.":1.15,"Liquidez":0.10,"Outros":1.00,
   };
   const sectorAlloc=useMemo(()=>{
     if(!latestMonth) return [];
     const m=new Map<string,number>();
     (latestMonth.rows??[]).filter((r:any)=>r.ticker!=="XEON"&&!r.ticker.startsWith("TBILL")&&(r.weightPct??0)>=0.5).forEach((r:any)=>{
-      const s=getSector(r.ticker)||"Outro";
+      const s=getSector(r.ticker)||"Outros";
       m.set(s,(m.get(s)??0)+(r.weightPct??0));
     });
     const total=[...m.values()].reduce((a,b)=>a+b,0)||1;
@@ -3309,7 +3349,7 @@ export default function ClientDashboardPage() {
     // Compute net delta per sector — avoids showing both "Aumentámos" and "Reduzimos" for the same sector
     const sectorNet=new Map<string,{delta:number;up:string[];down:string[]}>();
     changed.forEach(r=>{
-      const s=getSector(r.ticker)||"Outro";
+      const s=getSector(r.ticker)||"Outros";
       if(!sectorNet.has(s)) sectorNet.set(s,{delta:0,up:[],down:[]});
       const e=sectorNet.get(s)!;
       e.delta+=r.delta;
@@ -3882,7 +3922,7 @@ export default function ClientDashboardPage() {
                             {topCountries.map(([c,pct])=>(
                               <div key={c} className="flex items-center gap-2 text-[11px]">
                                 <div className="w-full bg-slate-800 rounded-full h-1.5 flex-1">
-                                  <div className="bg-blue-500 h-1.5 rounded-full" style={{width:`${Math.min(100,(pct/topCountries[0][1])*100)}%`}}/>
+                                  <div className="bg-blue-500 h-1.5 rounded-full" style={{width:`${Math.min(100,(pct/(topCountries[0]?.[1]||1))*100)}%`}}/>
                                 </div>
                                 <span className="text-slate-400 w-28 shrink-0">{c}</span>
                                 <span className="text-slate-200 font-semibold w-10 text-right shrink-0">{pct.toFixed(1)}%</span>

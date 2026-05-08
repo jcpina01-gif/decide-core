@@ -6,6 +6,15 @@
     },
     "pages/api/send-orders.ts": {
       "maxDuration": 300
+    },
+    "pages/api/ibkr-orders.ts": {
+      "maxDuration": 300
+    },
+    "pages/api/ibkr-snapshot.ts": {
+      "maxDuration": 60
+    },
+    "pages/api/flatten-portfolio.ts": {
+      "maxDuration": 300
     }
   }
 }
