@@ -2146,16 +2146,23 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     const heldEur=ibkrHoldingsMap.get(ibTicker)??ibkrHoldingsMap.get(r.ticker.toUpperCase())??0;
     let adjEur=targetEur;
     let skipReason:string|undefined;
-    if(execMode==="full"&&!isSell){
-      // Skip if there's already an active BUY order for this ticker in IB
+    if(!isSell){
+      // Skip if there's already an active BUY order for this ticker in IB (any mode)
       if(pendingBuyTickers.has(ibTicker.toUpperCase())||pendingBuyTickers.has(r.ticker.toUpperCase())){
         adjEur=0;
         skipReason="Ordem de compra em curso na IB";
       } else if(heldEur>0){
-        // Only buy the shortfall vs current holding
-        adjEur=Math.max(0, targetEur-heldEur);
+        // Both modes: only buy/increase up to the shortfall vs current holding.
+        // In delta mode this prevents amplifying already-overweight positions.
+        // Target for delta mode: last month weight + delta = this month's target weight
+        const effectiveTarget=execMode==="full"?targetEur:(r.cur/100*aum);
+        adjEur=Math.max(0, effectiveTarget-heldEur);
         if(adjEur<MIN_ORDER_EUR)skipReason=adjEur<=0?"Já no alvo ou acima":"Incremento < €"+MIN_ORDER_EUR;
       }
+    }
+    // SELL: in delta mode, cap sell qty to what we actually hold (avoid shorting)
+    if(isSell&&execMode==="delta"&&heldEur>0){
+      adjEur=Math.min(targetEur, heldEur);
     }
     return {
       ...r,
@@ -2851,26 +2858,40 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             </div>
           )}
 
-          {/* Warning: "Construção inicial" requires IB positions to be loaded first */}
-          {execMode==="full"&&!ibkrPos&&!done&&(
+          {/* Mandatory: load IB positions before sending in ANY mode */}
+          {!ibkrPos&&!done&&(
             <div className="flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-[11px] text-amber-300">
               <span className="text-base shrink-0">⚠</span>
               <div>
                 <span className="font-semibold">Carregar posições IB antes de enviar</span>
-                <span className="text-amber-400/70"> — Em modo <em>Construção inicial</em> o sistema só compra a diferença face ao que já tens em carteira. Sem carregar as posições, serão enviadas ordens de compra pelo valor total (como se a carteira estivesse vazia), podendo duplicar posições existentes.</span>
+                <span className="text-amber-400/70"> — Obrigatório em ambos os modos. O sistema calcula as ordens em função do que já tens em carteira; sem carregar, pode duplicar posições existentes.</span>
                 <button onClick={fetchIbkrPositions} disabled={ibkrLoading} className="mt-1.5 block text-xs font-semibold text-white bg-amber-600 hover:bg-amber-500 disabled:opacity-50 px-3 py-1 rounded-lg transition-colors">
                   {ibkrLoading?"A verificar…":"→ Verificar carteira IB agora"}
                 </button>
               </div>
             </div>
           )}
+          {/* Warn if portfolio is too far from model target to safely rebalance */}
+          {ibkrPos&&!done&&(()=>{
+            const ibNav=ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0);
+            if(ibNav<=aum*1.5) return null;
+            return (
+              <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/40 rounded-xl px-4 py-3 text-[11px] text-red-300">
+                <AlertTriangle size={13} className="shrink-0 mt-0.5"/>
+                <div>
+                  <span className="font-semibold">Carteira acumulada ({(ibNav/aum*100).toFixed(0)}% do objectivo) — não é seguro rebalancear.</span>
+                  <span className="text-red-400/70"> Usa <strong>"Zerar toda a carteira (FLAT)"</strong> no Diagnóstico abaixo e depois faz uma Construção inicial limpa.</span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Action buttons */}
           <div className="flex gap-3">
             <button onClick={onBack} className="px-6 py-3 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">
               Cancelar
             </button>
-            <button onClick={submitOrders} disabled={sending||nOrdens===0||done||aum<=0||paperMode||(execMode==="full"&&!ibkrPos)||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0)>aum*1.5&&execMode==="full")}
+            <button onClick={submitOrders} disabled={sending||nOrdens===0||done||aum<=0||paperMode||!ibkrPos||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0)>aum*1.5)}
               className={`flex-1 flex items-center justify-center gap-2 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all ${paperMode?"bg-slate-700 cursor-not-allowed":"bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30"}`}>
               <Send size={15}/>{paperMode?"Desliga 'Simulação local' para enviar à IB →":"Confirmar e enviar ordens para IB →"}
             </button>
