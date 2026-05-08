@@ -347,14 +347,22 @@ def _execute_ib_orders(
                 return ""
 
             try:
-                # ── Attempt 1: FXCONV (internal IB conversion, no margin needed) ──
+                # ── Attempt 1: FXCONV ──────────────────────────────────────────────
+                # marketDataType 1 (live) for Forex — type 3 (frozen) may not work
+                ib.reqMarketDataType(1)
                 _fxc = Contract(secType="CASH", symbol="EUR", currency="USD", exchange="FXCONV")
+                ib.qualifyContracts(_fxc)
                 _fxc_order = MarketOrder("BUY", _fx_qty_fxconv)
                 _fxc_order.tif = "DAY"
+                _fxc_order.outsideRth = True
                 _fxc_trade = ib.placeOrder(_fxc, _fxc_order)
                 ib.sleep(3)
                 _fxc_st = str(_fxc_trade.orderStatus.status or "").strip() or "Submitted"
-                print(f"[FX] FXCONV attempt: qty={_fx_qty_fxconv} status={_fxc_st}")
+                # Capture full IB error text for diagnosis
+                _fxc_log_msgs = "; ".join(
+                    str(getattr(e, "message", "") or "") for e in (_fxc_trade.log or []) if getattr(e, "message", "")
+                )
+                print(f"[FX] FXCONV attempt: qty={_fx_qty_fxconv} status={_fxc_st} log={_fxc_log_msgs}")
 
                     if _fxc_st not in ("Inactive", "ApiCancelled", "Cancelled"):
                         _fx_filled_final = float(_fxc_trade.orderStatus.filled or 0.0)
@@ -366,16 +374,20 @@ def _execute_ib_orders(
                         _fxc_reject = _read_rejection(_fxc_trade)
                         print(f"[FX] FXCONV rejected: {_fxc_reject} — trying IDEALPRO")
 
-                        # ── Attempt 2: IDEALPRO (interbank, requires Margin account) ──
+                        # ── Attempt 2: IDEALPRO ────────────────────────────────────────
                         _fxi = Forex("EURUSD")
                         ib.qualifyContracts(_fxi)
                         _fx_limit = round(fx_eurusd * 1.003, 5)
                         _fxi_order = LimitOrder("BUY", _fx_qty_idealpro, _fx_limit)
                         _fxi_order.tif = "DAY"
+                        _fxi_order.outsideRth = True
                         _fxi_trade = ib.placeOrder(_fxi, _fxi_order)
                         ib.sleep(4)
                         _fxi_st = str(_fxi_trade.orderStatus.status or "").strip() or "Submitted"
-                        print(f"[FX] IDEALPRO attempt: qty={_fx_qty_idealpro} status={_fxi_st}")
+                        _fxi_log_msgs = "; ".join(
+                            str(getattr(e, "message", "") or "") for e in (_fxi_trade.log or []) if getattr(e, "message", "")
+                        )
+                        print(f"[FX] IDEALPRO attempt: qty={_fx_qty_idealpro} status={_fxi_st} log={_fxi_log_msgs}")
 
                         _fx_qty_final = _fx_qty_idealpro
                         _fx_filled_final = float(_fxi_trade.orderStatus.filled or 0.0)
@@ -387,9 +399,7 @@ def _execute_ib_orders(
                             _fxc_err = f" FXCONV: {_fxc_reject}." if _fxc_reject else ""
                             _fxi_err = f" IDEALPRO: {_fxi_reject}." if _fxi_reject else ""
                             _fx_note_final = (
-                                f"Conta Caixa (Cash) não suporta Forex API standalone — "
-                                f"cria uma conta paper Margem em IB → Abrir contas adicionais → Paper Trading → Margem."
-                                + (_fxc_err + _fxi_err if (_fxc_err or _fxi_err) else "")
+                                f"FX rejeitado.{_fxc_err}{_fxi_err}"
                             )
                         else:
                             _fx_note_final = (
