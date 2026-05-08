@@ -132,24 +132,24 @@ def _execute_ib_orders(
     fx_exposure: str = "parcial",
     aum_eur: float = 0.0,
 ) -> dict[str, Any]:
-    """Corre numa thread isolada para garantir event loop limpo (compat. Python 3.13 + FastAPI)."""
-    from routers.send_orders import OrderIn as _SOrderIn, MIN_FX_HEDGE_USD
+    """Corre numa thread isolada — submete TODAS as ordens em batch para caber no timeout Cloudflare."""
+    from routers.send_orders import MIN_FX_HEDGE_USD
 
     created_loop, _loop = ensure_ib_insync_loop()
     ib = IB()
     fills: List[dict[str, Any]] = []
 
-    # Try clientId; if already in use, cycle through 3 alternates (stale sessions from crashes)
+    # Try clientId; cycle through 4 alternates if stale session exists
     tried: list[int] = []
     connected = False
-    for cid in [client_id] + list(range(client_id + 1, client_id + 4)):
+    for cid in [client_id] + list(range(client_id + 1, client_id + 5)):
         try:
             ib.connect(host, port, clientId=cid, timeout=5)
             connected = True
             break
         except Exception:
             tried.append(cid)
-            ib = IB()  # fresh instance for next attempt
+            ib = IB()
     if not connected:
         return {"status": "error",
                 "error": f"Não foi possível ligar à IB Gateway {host}:{port} — clientIds {tried} em uso. Reinicia a IB Gateway.",
@@ -160,13 +160,8 @@ def _execute_ib_orders(
 
         is_paper, accounts = is_paper_account(ib)
         if ibkr_require_paper_env() and not is_paper:
-            return {
-                "status": "rejected",
-                "error": f"Conta ligada não é paper ({accounts}).",
-                "fills": [],
-            }
+            return {"status": "rejected", "error": f"Conta não é paper ({accounts}).", "fills": []}
 
-        # ── Fetch live EUR/USD rate once (used for all USD qty calculations) ──
         fx_eurusd = _fetch_live_eurusd(ib)
 
         rem_long: dict[str, float] = {}
@@ -174,20 +169,67 @@ def _execute_ib_orders(
             net_map = _ib_portfolio_net_qty_by_key(ib)
             rem_long = {k: max(0.0, v) for k, v in net_map.items()}
 
-        total_buy_usd = 0.0  # accumulate ACTUAL filled USD notional for FX hedge
+        # ── Phase 1: Batch qualify contracts (1 round-trip for ALL tickers) ──
+        raw_contracts = []
+        for o in orders:
+            sym = (o.ticker or "").strip().upper()
+            if _is_eur_mm_ucits_symbol(sym):
+                raw_contracts.append(Stock(sym, "SMART", "EUR"))
+            else:
+                raw_contracts.append(Stock(sym, "SMART", "USD"))
+        try:
+            qualified = ib.qualifyContracts(*raw_contracts)
+        except Exception:
+            qualified = []
+        qc_map: dict[str, Any] = {}
+        for qc in qualified:
+            if qc and getattr(qc, "symbol", None):
+                qc_map[qc.symbol.upper()] = qc
+
+        # ── Phase 2: Batch price fetch (1 round-trip for ALL contracts) ──
+        valid_qcs = [q for q in qualified if q and getattr(q, "conId", 0)]
+        price_map: dict[str, float] = {}
+        if valid_qcs:
+            try:
+                tickers_data = ib.reqTickers(*valid_qcs)
+                for td in tickers_data:
+                    sym_t = getattr(td.contract, "symbol", "").upper()
+                    for v in (td.last, td.close, td.bid, td.ask):
+                        try:
+                            fv = float(v)
+                            if math.isfinite(fv) and fv > 0:
+                                price_map[sym_t] = fv
+                                break
+                        except (TypeError, ValueError):
+                            continue
+            except Exception:
+                pass
+
+        # ── Phase 3: Submit all orders simultaneously (no per-order wait) ──
+        pending: list[tuple[Any, str, str, int, _OrderIn]] = []  # (trade, sym, side, qty, o)
+        total_buy_usd = 0.0
 
         for o in orders:
             sym = (o.ticker or "").strip().upper()
             side = "BUY" if o.action in ("Comprar", "Aumentar") else "SELL"
-            # qty explícita tem prioridade (ex: vender toda a carteira com qty real)
+
             if o.qty is not None and o.qty > 0:
                 qty = int(math.floor(o.qty + 1e-9)) or 1
             else:
-                qty = _est_qty(ib, sym, abs(o.est_eur), fx_eurusd)
+                price = price_map.get(sym)
+                if price and price > 0:
+                    if _is_eur_mm_ucits_symbol(sym):
+                        qty = max(1, round(abs(o.est_eur) / price))
+                    else:
+                        qty = max(1, round(abs(o.est_eur) * fx_eurusd / price))
+                else:
+                    qty = 1  # fallback conservador
+
             if qty <= 0:
                 fills.append({"ticker": sym, "action": side, "requested_qty": 0,
                                "filled": 0, "status": "skip_zero", "message": "qty=0"})
                 continue
+
             if not sell_cap_disabled and side == "SELL":
                 cap_key = _position_map_key(sym)
                 avail = int(math.floor(rem_long.get(cap_key, 0.0) + 1e-9))
@@ -199,19 +241,51 @@ def _execute_ib_orders(
                 qty = min(qty, avail)
                 rem_long[cap_key] = max(0.0, avail - qty)
 
-            order_in = _SOrderIn(ticker=sym, side=side, qty=float(qty))
-            row = _place_eur_mm_ucits(ib, order_in) if _is_eur_mm_ucits_symbol(sym) else _place_stock(ib, order_in)
+            qc = qc_map.get(sym)
+            if not qc:
+                fills.append({"ticker": sym, "action": side, "requested_qty": float(qty),
+                               "filled": 0, "status": "contract_not_qualified",
+                               "message": "Contrato não qualificou na IB."})
+                continue
+
+            order = MarketOrder(side, int(qty))
+            order.tif = "DAY"
+            order.outsideRth = True
+            trade = ib.placeOrder(qc, order)
+            pending.append((trade, sym, side, qty, o))
+
+        # ── Phase 4: Wait up to 8s for ALL fills collectively ──
+        deadline = time.monotonic() + 8.0
+        while time.monotonic() < deadline:
+            done = all(
+                str(t.orderStatus.status or "").strip() in
+                ("Filled", "Cancelled", "ApiCancelled", "Inactive")
+                or float(t.orderStatus.filled or 0) >= qty - 1e-6
+                for t, _, _, qty, _ in pending
+            )
+            if done:
+                break
+            ib.sleep(0.3)
+
+        # Collect results from batch
+        for trade, sym, side, qty, o in pending:
+            st = str(trade.orderStatus.status or "").strip() or "Submitted"
+            ap = float(trade.orderStatus.avgFillPrice or 0.0)
+            filled = float(trade.orderStatus.filled or 0.0)
+            oid = int(getattr(trade.order, "orderId", 0) or 0)
+            row: dict[str, Any] = {
+                "ticker": sym, "action": side,
+                "requested_qty": float(qty), "filled": filled,
+                "avg_fill_price": ap if ap > 0 else None,
+                "status": st, "message": None,
+                "ib_order_id": oid or None,
+            }
             fills.append(row)
 
-            # Accumulate ACTUAL filled USD notional for FX hedge (not est_eur which can be a small delta)
-            # USD stocks: fill qty * avg_fill_price (price is in USD for US equities)
             if side == "BUY" and not _is_eur_mm_ucits_symbol(sym):
-                filled_qty = float(row.get("filled") or 0)
-                fill_px = float(row.get("avg_fill_price") or 0)
-                if filled_qty > 0 and fill_px > 0:
-                    total_buy_usd += filled_qty * fill_px
+                if filled > 0 and ap > 0:
+                    total_buy_usd += filled * ap
                 else:
-                    # Order pending/in-progress — estimate from est_eur converted to USD
                     total_buy_usd += abs(o.est_eur) * fx_eurusd
 
         # ── EUR/USD hedge (SELL USD / BUY EUR) after equities ────────────────
