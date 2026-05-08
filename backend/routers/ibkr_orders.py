@@ -240,12 +240,9 @@ def _execute_ib_orders(
         _do_fx = _fx_normalised in ("total", "parcial", "protegida")
         _hedge_frac = 0.9 if _fx_normalised == "protegida" else (1.0 if _fx_normalised == "total" else 0.5)
 
-        # Pre-build a single FXCONV contract (reused for all mini-hedges, no qualifyContracts needed)
-        _fxconv_contract = Contract(secType="CASH", symbol="EUR", currency="USD", exchange="FXCONV")
-
         pending: list[tuple[Any, str, str, int, _OrderIn]] = []
-        # (fx_trade, sym, eur_qty) — mini FX hedges paired with each BUY
         pending_fx: list[tuple[Any, str, int]] = []
+        _total_fx_eur = 0.0  # accumulate EUR equivalent to hedge (one IDEALPRO order at the end)
 
         for o in orders:
             sym = (o.ticker or "").strip().upper()
@@ -257,7 +254,6 @@ def _execute_ib_orders(
                 price = price_map.get(sym)
                 if price and price > 0:
                     # 0.90 safety factor: cotações atrasadas tendem a subestimar o preço real
-                    # → comprar 10% menos para evitar overshoot do AUM
                     _PRICE_SAFETY = float(os.environ.get("DECIDE_QTY_SAFETY_FACTOR", "0.90"))
                     if _is_eur_mm_ucits_symbol(sym):
                         qty = max(1, int(abs(o.est_eur) * _PRICE_SAFETY / price))
@@ -295,22 +291,9 @@ def _execute_ib_orders(
             trade = ib.placeOrder(qc, equity_order)
             pending.append((trade, sym, side, qty, o))
 
-            # ── Per-order mini FX hedge (immediately after equity order) ────
+            # Accumulate FX EUR amount (placed as single IDEALPRO order after equities)
             if _do_fx and side == "BUY" and not _is_eur_mm_ucits_symbol(sym):
-                est_usd = abs(o.est_eur) * fx_eurusd
-                eur_hedge = max(100, int(est_usd * _hedge_frac / fx_eurusd / 100) * 100)
-                fx_order = MarketOrder("BUY", eur_hedge)
-                fx_order.tif = "GTC"  # GTC more robust than DAY for FX
-                try:
-                    fx_trade = ib.placeOrder(_fxconv_contract, fx_order)
-                    pending_fx.append((fx_trade, sym, eur_hedge))
-                except Exception as _fx_e:
-                    fills.append({
-                        "ticker": "EUR/USD", "action": "BUY",
-                        "requested_qty": eur_hedge, "filled": 0,
-                        "status": "error", "is_fx": True,
-                        "message": f"Hedge FX {sym}: placeOrder falhou — {_fx_e}",
-                    })
+                _total_fx_eur += abs(o.est_eur) * _hedge_frac
 
         # ── Phase 4: Wait up to 8s for ALL fills collectively ──
         deadline = time.monotonic() + 8.0
@@ -345,35 +328,56 @@ def _execute_ib_orders(
                 else:
                     total_buy_usd += abs(o.est_eur) * fx_eurusd
 
-        # Collect per-order FX hedge results (already submitted above)
-        for fx_trade, sym, eur_hedge in pending_fx:
-            fx_st = str(fx_trade.orderStatus.status or "").strip() or "Submitted"
-            fx_filled = float(fx_trade.orderStatus.filled or 0.0)
-            fx_ap = float(fx_trade.orderStatus.avgFillPrice or 0.0)
-            # Capture IB rejection reason from trade log if Inactive
-            reject_reason = ""
-            if fx_st in ("Inactive", "ApiCancelled", "Cancelled"):
-                for entry in (fx_trade.log or []):
-                    msg = str(getattr(entry, "message", "") or "")
-                    if msg:
-                        reject_reason = msg
-                        break
+        # ── Single aggregated IDEALPRO FX hedge ─────────────────────────────
+        if _do_fx and _total_fx_eur >= 1000.0:
+            # Round to nearest 1,000 EUR lot; IDEALPRO minimum is 20,000 EUR
+            _fx_qty = max(20000, int(round(_total_fx_eur / 1000.0)) * 1000)
+            try:
+                _fx_c = Forex("EURUSD")  # EUR/USD on IDEALPRO
+                ib.qualifyContracts(_fx_c)
+                # LimitOrder slightly above market → fills immediately like a market order
+                _fx_limit = round(fx_eurusd * 1.003, 5)
+                _fx_o = LimitOrder("BUY", _fx_qty, _fx_limit)
+                _fx_o.tif = "DAY"
+                _fx_trade = ib.placeOrder(_fx_c, _fx_o)
+                ib.sleep(4)
+                _fx_st = str(_fx_trade.orderStatus.status or "").strip() or "Submitted"
+                _fx_filled = float(_fx_trade.orderStatus.filled or 0.0)
+                _fx_ap = float(_fx_trade.orderStatus.avgFillPrice or 0.0)
+                # Capture rejection reason if order not accepted
+                _reject = ""
+                if _fx_st in ("Inactive", "ApiCancelled", "Cancelled"):
+                    for _entry in (_fx_trade.log or []):
+                        _msg = str(getattr(_entry, "message", "") or "")
+                        if _msg:
+                            _reject = _msg
+                            break
+                    print(f"[FX] IDEALPRO order rejected: {_reject}")
+                fills.append({
+                    "ticker": "EUR/USD", "action": "BUY",
+                    "requested_qty": _fx_qty,
+                    "filled": _fx_filled,
+                    "avg_fill_price": _fx_ap if _fx_ap > 0 else fx_eurusd,
+                    "status": _fx_st,
+                    "message": (f"Hedge FX {fx_exposure} (IDEALPRO): {_fx_qty:,} EUR "
+                                f"@ limit {_fx_limit:.5f}"
+                                + (f" | {_reject}" if _reject else "")),
+                    "is_fx": True,
+                })
+            except Exception as _fx_exc:
+                fills.append({
+                    "ticker": "EUR/USD", "action": "BUY",
+                    "requested_qty": 0, "filled": 0,
+                    "status": "error", "is_fx": True,
+                    "message": f"Hedge FX falhou: {_fx_exc}",
+                })
+        elif _do_fx and _total_fx_eur > 0:
             fills.append({
-                "ticker": "EUR/USD",
-                "action": "BUY",
-                "requested_qty": eur_hedge,
-                "filled": fx_filled,
-                "avg_fill_price": fx_ap if fx_ap > 0 else fx_eurusd,
-                "status": fx_st,
-                "message": f"Hedge FX {sym} (FXCONV): {eur_hedge:,} EUR @ {fx_eurusd:.4f}"
-                           + (f" | Rejeição: {reject_reason}" if reject_reason else ""),
-                "is_fx": True,
+                "ticker": "EUR/USD", "action": "BUY",
+                "requested_qty": 0, "filled": 0,
+                "status": "skip_fx_below_min", "is_fx": True,
+                "message": f"Hedge FX ignorado — total {_total_fx_eur:,.0f} EUR < mínimo IDEALPRO 20,000 EUR",
             })
-
-        # Per-order FX hedges are submitted inline above (pending_fx).
-        # A short wait ensures IB has processed them before we collect status.
-        if pending_fx:
-            ib.sleep(3)
 
     except (ConnectionRefusedError, TimeoutError, OSError) as exc:
         return {
