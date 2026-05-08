@@ -393,12 +393,15 @@ def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
         nav = 0.0
         nav_ccy = "USD"
         acct_code = ""
+        acct_type = ""
         for v in ib.accountValues():
-            if getattr(v, "tag", "") == "NetLiquidation":
+            tag = getattr(v, "tag", "")
+            if tag == "NetLiquidation":
                 nav = float(v.value or 0.0)
                 nav_ccy = str(getattr(v, "currency", "USD") or "USD").upper()
                 acct_code = str(getattr(v, "account", "") or "").strip()
-                break
+            elif tag == "AccountType" and not acct_type:
+                acct_type = str(v.value or "").strip()
 
         positions: list[dict] = []
         enrich_attempted = 0
@@ -488,6 +491,8 @@ def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
         return {
             "status": "ok",
             "net_liquidation": nav, "net_liquidation_ccy": nav_ccy, "account_code": acct_code,
+            "account_type": acct_type,
+            "fx_supported": acct_type.upper() not in ("CASH", ""),
             "positions": positions,
             "open_orders": open_orders_data,
             "meta": {
