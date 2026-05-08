@@ -1752,14 +1752,15 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
       if(t==="TBILL_PROXY"||t.startsWith("TBILL")||t.startsWith("CASH")||t==="XEON") return false;
       return Math.max(pm.get(t)??0, cm.get(t)??0)>=WMIN;
     });
-    const compras:string[]=[],aumentos:string[]=[],vendas:string[]=[],reducoes:string[]=[],manter:string[]=[];
+    type TW={t:string;w:number};
+    const compras:TW[]=[],aumentos:TW[]=[],vendas:TW[]=[],reducoes:TW[]=[],manter:TW[]=[];
     tickers.forEach(t=>{
       const p=pm.get(t)??0,cu=cm.get(t)??0,d=cu-p;
-      if(p<WMIN&&cu>=WMIN) compras.push(t);
-      else if(cu<WMIN&&p>=WMIN) vendas.push(t);
-      else if(d>=DMIN) aumentos.push(t);
-      else if(d<=-DMIN) reducoes.push(t);
-      else if(cu>=WMIN) manter.push(t);
+      if(p<WMIN&&cu>=WMIN) compras.push({t,w:cu});
+      else if(cu<WMIN&&p>=WMIN) vendas.push({t,w:p});
+      else if(d>=DMIN) aumentos.push({t,w:cu});
+      else if(d<=-DMIN) reducoes.push({t,w:cu});
+      else if(cu>=WMIN) manter.push({t,w:cu});
     });
     const rebalDate=raw?new Date(raw):null;
     const getMiniPts=():Array<{date:string;v:number}>|null=>{
@@ -1778,13 +1779,13 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
     const estado=isLatest?"Recente":"Aprovado";
     const estadoStyle=isLatest?"bg-blue-500/20 text-blue-400":"bg-emerald-500/15 text-emerald-400";
     const resumo=compras.length
-      ?`Comprar ${compras.slice(0,2).join(", ")}${compras.length>2?` +${compras.length-2}`:""}${vendas.length?` · Vender ${vendas.slice(0,1).join(", ")}${vendas.length>1?` +${vendas.length-1}`:""}`:""}`
+      ?`Comprar ${compras.slice(0,2).map(x=>x.t).join(", ")}${compras.length>2?` +${compras.length-2}`:""}${vendas.length?` · Vender ${vendas.slice(0,1).map(x=>x.t).join(", ")}${vendas.length>1?` +${vendas.length-1}`:""}`:""}`
       :aumentos.length
-        ?`Reforçar ${aumentos.slice(0,2).join(", ")}${reducoes.length?` · Reduzir ${reducoes.slice(0,1).join(", ")}`:""}${vendas.length?` · Vender ${vendas.slice(0,1).join(", ")}`:""}`
+        ?`Reforçar ${aumentos.slice(0,2).map(x=>x.t).join(", ")}${reducoes.length?` · Reduzir ${reducoes.slice(0,1).map(x=>x.t).join(", ")}`:""}${vendas.length?` · Vender ${vendas.slice(0,1).map(x=>x.t).join(", ")}`:""}`
       :vendas.length
-        ?`Vender ${vendas.slice(0,2).join(", ")}${vendas.length>2?` +${vendas.length-2}`:""}${reducoes.length?` · Reduzir ${reducoes.slice(0,1).join(", ")}`:""}`
+        ?`Vender ${vendas.slice(0,2).map(x=>x.t).join(", ")}${vendas.length>2?` +${vendas.length-2}`:""}${reducoes.length?` · Reduzir ${reducoes.slice(0,1).map(x=>x.t).join(", ")}`:""}`
       :reducoes.length
-        ?`Reduzir ${reducoes.slice(0,2).join(", ")}${reducoes.length>2?` +${reducoes.length-2}`:""}`
+        ?`Reduzir ${reducoes.slice(0,2).map(x=>x.t).join(", ")}${reducoes.length>2?` +${reducoes.length-2}`:""}`
         :"Sem alterações significativas";
     return {label,compras,aumentos,vendas,reducoes,manter,getMiniPts,isLatest,estado,estadoStyle,resumo};
   }),[sortedMonths,dates,equityRaw]);
@@ -1855,10 +1856,11 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
                           {r.compras.length>0&&(
                             <div>
                               <div className="text-emerald-400 font-bold mb-1.5">▲ Comprar</div>
-                              {r.compras.map(t=>(
-                                <div key={t} className="py-0.5">
+                              {r.compras.map(({t,w})=>(
+                                <div key={t} className="py-0.5 flex items-baseline gap-1">
                                   <span className="font-mono text-slate-200">{t}</span>
-                                  {COMPANY[t.toUpperCase()]&&<span className="ml-1 text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
+                                  <span className="text-emerald-300 text-[10px] font-semibold">{w.toFixed(1)}%</span>
+                                  {COMPANY[t.toUpperCase()]&&<span className="text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
                                 </div>
                               ))}
                             </div>
@@ -1866,10 +1868,11 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
                           {r.aumentos.length>0&&(
                             <div>
                               <div className="text-cyan-400 font-bold mb-1.5">↑ Reforçar</div>
-                              {r.aumentos.map(t=>(
-                                <div key={t} className="py-0.5">
+                              {r.aumentos.map(({t,w})=>(
+                                <div key={t} className="py-0.5 flex items-baseline gap-1">
                                   <span className="font-mono text-slate-200">{t}</span>
-                                  {COMPANY[t.toUpperCase()]&&<span className="ml-1 text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
+                                  <span className="text-cyan-300 text-[10px] font-semibold">{w.toFixed(1)}%</span>
+                                  {COMPANY[t.toUpperCase()]&&<span className="text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
                                 </div>
                               ))}
                             </div>
@@ -1877,10 +1880,11 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
                           {r.vendas.length>0&&(
                             <div>
                               <div className="text-red-400 font-bold mb-1.5">▼ Vender</div>
-                              {r.vendas.map(t=>(
-                                <div key={t} className="py-0.5">
+                              {r.vendas.map(({t,w})=>(
+                                <div key={t} className="py-0.5 flex items-baseline gap-1">
                                   <span className="font-mono text-slate-200">{t}</span>
-                                  {COMPANY[t.toUpperCase()]&&<span className="ml-1 text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
+                                  <span className="text-red-400 text-[10px] font-semibold">{w.toFixed(1)}%</span>
+                                  {COMPANY[t.toUpperCase()]&&<span className="text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
                                 </div>
                               ))}
                             </div>
@@ -1888,10 +1892,11 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
                           {r.reducoes.length>0&&(
                             <div>
                               <div className="text-amber-400 font-bold mb-1.5">↓ Reduzir</div>
-                              {r.reducoes.map(t=>(
-                                <div key={t} className="py-0.5">
+                              {r.reducoes.map(({t,w})=>(
+                                <div key={t} className="py-0.5 flex items-baseline gap-1">
                                   <span className="font-mono text-slate-200">{t}</span>
-                                  {COMPANY[t.toUpperCase()]&&<span className="ml-1 text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
+                                  <span className="text-amber-300 text-[10px] font-semibold">{w.toFixed(1)}%</span>
+                                  {COMPANY[t.toUpperCase()]&&<span className="text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
                                 </div>
                               ))}
                             </div>
