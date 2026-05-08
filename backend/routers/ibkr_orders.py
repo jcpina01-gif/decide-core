@@ -40,8 +40,9 @@ TWS_PORT = ib_socket_port()
 # Taxa EUR/USD para estimar qty em acções USD (pode ser overridden via env)
 _FX_EURUSD = float(os.environ.get("DECIDE_EURUSD_ESTIMATE", "1.09"))
 
-# clientId separado para não colidir com o send_orders (778)
-_CLIENT_ID = int(os.environ.get("TWS_CLIENT_ID_IBKR_ORDERS", "779"))
+# clientId separado para não colidir com o send_orders (778).
+# Base 790: afastado de 779/780 que ficaram presos em sessões anteriores.
+_CLIENT_ID = int(os.environ.get("TWS_CLIENT_ID_IBKR_ORDERS", "790"))
 
 
 class _OrderIn(BaseModel):
@@ -328,13 +329,13 @@ def ibkr_orders_post(body: IbkrOrdersBody) -> dict[str, Any]:
         body.fx_exposure, body.aum,
     )
     try:
-        result = future.result(timeout=90)
+        result = future.result(timeout=280)
         _ex.shutdown(wait=False)
         return result
     except concurrent.futures.TimeoutError:
         _ex.shutdown(wait=False)
         return {"status": "error",
-                "error": f"Timeout (90s) ao executar ordens na IB Gateway {TWS_HOST}:{TWS_PORT}.",
+                "error": f"Timeout (280s) ao executar ordens na IB Gateway {TWS_HOST}:{TWS_PORT}. Mercado pode estar fechado ou ordens muito numerosas.",
                 "fills": []}
 
 
