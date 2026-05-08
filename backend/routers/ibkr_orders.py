@@ -312,16 +312,16 @@ def _execute_ib_orders(
                     if eur_qty < 1.0:
                         raise ValueError(f"EUR qty too small ({eur_qty})")
 
+                    # IDEALPRO requires integer quantities (no fractions)
+                    eur_qty_int = max(20000, int(round(eur_qty / 1000.0)) * 1000)  # round to nearest 1000 EUR lot
                     if usd_to_sell >= MIN_FX_HEDGE_USD:
                         # Large amount → use IDEALPRO (OTC interdealer, tightest spreads)
                         fx_contract = Forex("EURUSD")
                         ib.qualifyContracts(fx_contract)
                         venue_label = "IDEALPRO"
-                        hedge_order = LimitOrder(
-                            "BUY", eur_qty,
-                            round(fx_eurusd * 1.002, 5),  # limit slightly above market → fills immediately
-                            tif="DAY",
-                        )
+                        hedge_order = MarketOrder("BUY", eur_qty_int)
+                        hedge_order.tif = "DAY"
+                        hedge_order.outsideRth = True
                     else:
                         # Below IDEALPRO minimum → use FXCONV (IB currency conversion, no minimum)
                         fx_contract = Contract(
@@ -329,20 +329,20 @@ def _execute_ib_orders(
                         )
                         ib.qualifyContracts(fx_contract)
                         if not getattr(fx_contract, "conId", None):
-                            # FXCONV not available in this account — fallback to IDEALPRO anyway
                             fx_contract = Forex("EURUSD")
                             ib.qualifyContracts(fx_contract)
                         venue_label = "FXCONV"
-                        hedge_order = MarketOrder("BUY", eur_qty)
+                        hedge_order = MarketOrder("BUY", eur_qty_int)
                         hedge_order.tif = "DAY"
+                        hedge_order.outsideRth = True
 
                     trade = ib.placeOrder(fx_contract, hedge_order)
-                    ib.sleep(2)
+                    ib.sleep(3)
                     st = trade.orderStatus.status or "Submitted"
                     fills.append({
                         "ticker": "EUR/USD",
                         "action": "BUY",
-                        "requested_qty": round(eur_qty),
+                        "requested_qty": eur_qty_int,
                         "filled": trade.orderStatus.filled,
                         "avg_fill_price": trade.orderStatus.avgFillPrice or fx_eurusd,
                         "status": st,
