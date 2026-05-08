@@ -331,7 +331,7 @@ def _execute_ib_orders(
         # ── Single aggregated IDEALPRO FX hedge ─────────────────────────────
         if _do_fx and _total_fx_eur >= 1000.0:
             # Round to nearest 1,000 EUR lot; IDEALPRO minimum is 20,000 EUR
-            _fx_qty = max(20000, int(round(_total_fx_eur / 1000.0)) * 1000)
+            _fx_qty = int(max(20000, round(_total_fx_eur / 1000.0) * 1000))  # inteiro garantido
             try:
                 _fx_c = Forex("EURUSD")  # EUR/USD on IDEALPRO
                 ib.qualifyContracts(_fx_c)
