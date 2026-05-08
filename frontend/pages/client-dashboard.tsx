@@ -63,7 +63,7 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
     const base=slice.eq[0]||1;
     const bbase=slice.bch[0]||1; // base separada para benchmark
     return slice.dts.filter((_,i)=>i%step===0).map((d,i)=>({
-      date:d.slice(0,4),
+      date:d.slice(0,10),
       modelo:Math.round((slice.eq[i*step]/base)*capital),
       bench: Math.round((slice.bch[i*step]/bbase)*capital),
     }));
@@ -130,7 +130,8 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
       <ResponsiveContainer width="100%" height={220}>
         <LineChart data={simData} margin={{top:4,right:8,left:8,bottom:0}}>
           <XAxis dataKey="date" tick={{fontSize:10,fill:"#64748b"}} tickLine={false} axisLine={false}
-            interval={Math.floor(simData.length/8)}/>
+            interval={Math.floor(simData.length/8)}
+            tickFormatter={(d:string)=>d.slice(0,4)}/>
           <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow
             tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false}
             tickFormatter={v=>v>=1e6?`\u20AC${(v/1e6).toFixed(1)}M`:v>=1000?`\u20AC${(v/1000).toFixed(0)}k`:`\u20AC${v}`}/>
@@ -543,7 +544,7 @@ function rollingDD(dates: string[], eq: number[], step=10) {
   return dates.filter((_,i)=>i%step===0).map((d,j)=>{
     const v=eq[j*step]??eq[eq.length-1];
     if(v>pk)pk=v;
-    return { date:d.slice(0,7), dd:((v-pk)/pk)*100 };
+    return { date:d.slice(0,10), dd:((v-pk)/pk)*100 };
   });
 }
 
@@ -592,7 +593,7 @@ function makeChartData(dates:string[], eq:number[], bench:number[], period:Perio
   const base=eq[s]||1, bb=bench[s]||1;
   const step=Math.max(1,Math.floor((dates.length-s)/200));
   return dates.slice(s).filter((_,i)=>i%step===0).map((d,i)=>({
-    date:d.slice(0,7),
+    date:d.slice(0,10),
     modelo:+((eq[s+i*step]/base)*100).toFixed(3),
     bench:+((bench[s+i*step]/bb)*100).toFixed(3),
   }));
@@ -1770,8 +1771,8 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
       const end=Math.min(dates.length-1,idx+63);
       const base=equityRaw[start]??1;
       const pts:Array<{date:string;v:number}>=[];
-      for(let j=start;j<=end;j+=5){
-        pts.push({date:dates[j]!.slice(0,7),v:+((equityRaw[j]??base)/base*100).toFixed(2)});
+      for(let j=start;j<=end;j++){
+        pts.push({date:dates[j]!.slice(0,10),v:+((equityRaw[j]??base)/base*100).toFixed(2)});
       }
       return pts;
     };
@@ -1840,10 +1841,13 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
                             return (
                               <ResponsiveContainer width="100%" height={110}>
                                 <LineChart data={pts} margin={{top:4,right:4,left:-20,bottom:0}}>
-                                  <XAxis dataKey="date" tick={{fontSize:8,fill:"#475569"}} tickLine={false} axisLine={false} interval={Math.floor(pts.length/4)}/>
+                                  <XAxis dataKey="date" tick={{fontSize:8,fill:"#475569"}} tickLine={false} axisLine={false}
+                                    interval={Math.floor(pts.length/4)}
+                                    tickFormatter={(d:string)=>d.slice(5)}/>
                                   <YAxis tick={{fontSize:8,fill:"#475569"}} tickLine={false} axisLine={false} tickFormatter={v=>`${Number(v).toFixed(0)}`} domain={["dataMin-1","dataMax+1"]}/>
                                   <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3"/>
                                   <Tooltip formatter={(v:number)=>[`${Number(v).toFixed(1)}`,"Modelo (base 100)"]}
+                                    labelFormatter={(d:string)=>d}
                                     contentStyle={{background:"#0f172a",border:"1px solid #3b82f6",borderRadius:6,fontSize:10,color:"#e2e8f0"}}
                                     labelStyle={{color:"#94a3b8"}} itemStyle={{color:"#60a5fa"}}/>
                                   <Line type="monotone" dataKey="v" stroke="#60a5fa" strokeWidth={1.5} dot={false}/>
@@ -3754,7 +3758,8 @@ export default function ClientDashboardPage() {
                       </div>
                       <ResponsiveContainer width="100%" height={190}>
                         <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
-                          <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}/>
+                          <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}
+                            tickFormatter={(d:string)=>{const dt=new Date(d);return `${dt.toLocaleString("pt-PT",{month:"short"})} ${String(dt.getFullYear()).slice(2)}`;}}/>
                           <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}} width={44}/>
                           <Tooltip content={<PerfTooltip/>}/>
                           <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
@@ -4472,7 +4477,8 @@ export default function ClientDashboardPage() {
                     </div>
                     <ResponsiveContainer width="100%" height={220}>
                       <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
-                        <XAxis dataKey="date" tick={{fontSize:10,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}/>
+                        <XAxis dataKey="date" tick={{fontSize:10,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}
+                          tickFormatter={(d:string)=>{const dt=new Date(d);return `${dt.toLocaleString("pt-PT",{month:"short"})} ${String(dt.getFullYear()).slice(2)}`;}}/>
                         <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}}/>
                         <Tooltip content={<PerfTooltip/>}/>
                         <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
