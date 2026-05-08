@@ -394,14 +394,41 @@ def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
         nav_ccy = "USD"
         acct_code = ""
         acct_type = ""
+        _has_sma = False        # SMA (Special Memorandum Account) — Margin accounts only
+        _has_reg_t = False      # RegTEquity — Margin accounts only
+        _buying_power = 0.0
+        _cash_balance = 0.0
         for v in ib.accountValues():
             tag = getattr(v, "tag", "")
+            val_str = str(v.value or "").strip()
             if tag == "NetLiquidation":
-                nav = float(v.value or 0.0)
+                nav = float(val_str or 0.0)
                 nav_ccy = str(getattr(v, "currency", "USD") or "USD").upper()
                 acct_code = str(getattr(v, "account", "") or "").strip()
             elif tag == "AccountType" and not acct_type:
-                acct_type = str(v.value or "").strip()
+                acct_type = val_str
+            elif tag == "SMA":
+                try:
+                    _has_sma = float(val_str or 0) != 0
+                except ValueError:
+                    pass
+            elif tag == "RegTEquity":
+                try:
+                    _has_reg_t = float(val_str or 0) > 0
+                except ValueError:
+                    pass
+            elif tag == "BuyingPower":
+                try:
+                    _buying_power = float(val_str or 0)
+                except ValueError:
+                    pass
+            elif tag in ("TotalCashValue", "CashBalance"):
+                try:
+                    _cash_balance = max(_cash_balance, float(val_str or 0))
+                except ValueError:
+                    pass
+        # Margin accounts have SMA, RegTEquity, and buying power > cash balance
+        _is_margin = _has_sma or _has_reg_t or (_buying_power > _cash_balance * 1.05 and _buying_power > 1000)
 
         positions: list[dict] = []
         enrich_attempted = 0
@@ -492,9 +519,8 @@ def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
             "status": "ok",
             "net_liquidation": nav, "net_liquidation_ccy": nav_ccy, "account_code": acct_code,
             "account_type": acct_type,
-            # fx_supported: Margin/RegT accounts support Forex API; Cash accounts don't
-            # IB tag values: "CASH", "INDIVIDUAL", "INDIVIDUAL MARGIN", "REG_T_MARGIN", etc.
-            "fx_supported": bool(acct_type) and acct_type.upper() not in ("CASH",),
+            # fx_supported: only True if confirmed Margin (SMA/RegTEquity present, or buying power > cash)
+            "fx_supported": _is_margin,
             "positions": positions,
             "open_orders": open_orders_data,
             "meta": {
@@ -502,6 +528,9 @@ def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
                 "enrich_positions_attempted": enrich_attempted,
                 "enrich_long_name_ok": enrich_named,
                 "account_type_raw": acct_type,
+                "fx_detection": {"sma": _has_sma, "reg_t": _has_reg_t,
+                                  "buying_power": _buying_power, "cash_balance": _cash_balance,
+                                  "is_margin": _is_margin},
             },
             "cash_ledger": {
                 "tag": "TotalCashValue", "value": cash_val,
