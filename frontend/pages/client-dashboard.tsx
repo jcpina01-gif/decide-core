@@ -1979,6 +1979,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [execMode,setExecMode]=React.useState<"full"|"delta">("full");
   // IB live positions (for orphan detection and "vender tudo")
   const [ibkrPos,setIbkrPos]=React.useState<{ticker:string;qty:number;value:number;weight_pct:number}[]|null>(null);
+  const [ibkrOpenOrders,setIbkrOpenOrders]=React.useState<{ticker:string;side:string;remaining_qty:number;status:string}[]>([]);
   const [ibkrLoading,setIbkrLoading]=React.useState(false);
   const [ibkrErr,setIbkrErr]=React.useState("");
   const [sellAllSending,setSellAllSending]=React.useState(false);
@@ -2031,7 +2032,10 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     try{
       const resp=await fetch("/api/ibkr-snapshot",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paper_mode:true})});
       const j=await resp.json();
-      if(j.status==="ok"){setIbkrPos(j.positions);}
+      if(j.status==="ok"){
+        setIbkrPos(j.positions);
+        setIbkrOpenOrders(j.open_orders??[]);
+      }
       else{setIbkrErr(j.error||"Erro ao obter posições IB");}
     }catch(e:unknown){setIbkrErr(e instanceof Error?e.message:"Erro de ligação");}
     finally{setIbkrLoading(false);}
@@ -2124,6 +2128,13 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   // so we only buy the DIFFERENCE needed to reach the target weight.
   type AdjRow={ticker:string;prev:number;cur:number;delta:number;action:string;
     estEur:number;heldEur:number;targetEur:number;adjEur:number;skipReason?:string};
+  // Tickers com ordens BUY activas na IB (Submitted/PreSubmitted) — não comprar de novo
+  const pendingBuyTickers=React.useMemo(()=>{
+    const s=new Set<string>();
+    ibkrOpenOrders.filter(o=>o.side==="BUY").forEach(o=>s.add(o.ticker.toUpperCase()));
+    return s;
+  },[ibkrOpenOrders]);
+
   const adjustedOrderRows:AdjRow[]=React.useMemo(()=>orderRows.map(r=>{
     const isFullExit=r.action==="Vender";
     const isSell=execMode==="full"?isFullExit:(r.action==="Vender"||r.action==="Reduzir");
@@ -2131,13 +2142,20 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
       ? (isFullExit?r.prev/100*aum:r.cur/100*aum)
       : Math.abs(r.delta)/100*aum;
     // Look up by IB ticker (e.g. BATS→BTI) since ibkrHoldingsMap is keyed by IB ticker
-    const heldEur=ibkrHoldingsMap.get(toIbTicker(r.ticker))??ibkrHoldingsMap.get(r.ticker.toUpperCase())??0;
-    // For BUY in full mode: only buy the shortfall vs current holding
+    const ibTicker=toIbTicker(r.ticker);
+    const heldEur=ibkrHoldingsMap.get(ibTicker)??ibkrHoldingsMap.get(r.ticker.toUpperCase())??0;
     let adjEur=targetEur;
     let skipReason:string|undefined;
-    if(execMode==="full"&&!isSell&&heldEur>0){
-      adjEur=Math.max(0, targetEur-heldEur);
-      if(adjEur<MIN_ORDER_EUR)skipReason=adjEur<=0?"Já no alvo ou acima":"Incremento < €"+MIN_ORDER_EUR;
+    if(execMode==="full"&&!isSell){
+      // Skip if there's already an active BUY order for this ticker in IB
+      if(pendingBuyTickers.has(ibTicker.toUpperCase())||pendingBuyTickers.has(r.ticker.toUpperCase())){
+        adjEur=0;
+        skipReason="Ordem de compra em curso na IB";
+      } else if(heldEur>0){
+        // Only buy the shortfall vs current holding
+        adjEur=Math.max(0, targetEur-heldEur);
+        if(adjEur<MIN_ORDER_EUR)skipReason=adjEur<=0?"Já no alvo ou acima":"Incremento < €"+MIN_ORDER_EUR;
+      }
     }
     return {
       ...r,
@@ -2148,7 +2166,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
       skipReason,
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }),[orderRows,execMode,aum,ibkrHoldingsMap]);
+  }),[orderRows,execMode,aum,ibkrHoldingsMap,pendingBuyTickers]);
 
   const activeOrderRows=adjustedOrderRows.filter(r=>!r.skipReason&&r.adjEur>=MIN_ORDER_EUR||r.action==="Vender");
   const nOrdens=activeOrderRows.length;
@@ -2487,7 +2505,26 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                     <div className="text-[10px] text-slate-500">
                       {ibkrPos.length} posições activas na IB
                       {orphanPositions.length>0?` · ${orphanPositions.length} fora do plano`:` · todas no plano`}
+                      {ibkrOpenOrders.length>0&&` · ${ibkrOpenOrders.length} ordem(ns) em curso`}
                     </div>
+                    {/* Open orders summary */}
+                    {ibkrOpenOrders.length>0&&(
+                      <div className="bg-amber-500/[0.05] border border-amber-500/20 rounded-lg px-3 py-2">
+                        <div className="text-[10px] font-semibold text-amber-300 mb-1.5">
+                          ⟳ Ordens em curso na IB ({ibkrOpenOrders.length}) — excluídas do cálculo de compras
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {ibkrOpenOrders.map((o,i)=>(
+                            <span key={i} className="inline-flex items-center gap-1 bg-[#111827] border border-[#252a3a] rounded px-2 py-0.5 text-[10px]">
+                              <span className={o.side==="BUY"?"text-emerald-400":"text-red-400"}>{o.side==="BUY"?"▲":"▼"}</span>
+                              <span className="text-slate-300 font-mono">{o.ticker}</span>
+                              <span className="text-slate-500">×{o.remaining_qty.toFixed(0)}</span>
+                              <span className="text-slate-600">{o.status}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {/* Short positions warning */}
                     {ibkrPos.some(p=>p.qty<0)&&(
                       <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-[10px] text-red-300">

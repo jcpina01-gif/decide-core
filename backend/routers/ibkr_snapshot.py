@@ -438,6 +438,34 @@ def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
 
         positions.sort(key=lambda r: abs(float(r.get("value") or 0.0)), reverse=True)
 
+        # ── Open orders (Submitted / PreSubmitted — not yet filled) ──────────
+        open_orders_data: list[dict] = []
+        try:
+            ib.sleep(0.3)
+            for trade in ib.openTrades():
+                c_o = trade.contract
+                o_o = trade.order
+                os_o = trade.orderStatus
+                sym_o = str(getattr(c_o, "symbol", "") or "").strip().upper()
+                if not sym_o:
+                    continue
+                status_o = str(getattr(os_o, "status", "") or "")
+                if status_o in ("Filled", "Cancelled", "ApiCancelled", "Inactive"):
+                    continue
+                total_qty = float(getattr(o_o, "totalQuantity", 0) or 0)
+                filled_qty = float(getattr(os_o, "filled", 0) or 0)
+                remaining = max(0.0, total_qty - filled_qty)
+                if remaining < 1e-9:
+                    continue
+                open_orders_data.append({
+                    "ticker": sym_o,
+                    "side": str(getattr(o_o, "action", "BUY") or "BUY").upper(),
+                    "remaining_qty": remaining,
+                    "status": status_o,
+                })
+        except Exception:
+            pass
+
         cash_val = 0.0
         cash_ccy = nav_ccy
         acct_vals = ib.accountValues()
@@ -461,6 +489,7 @@ def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
             "status": "ok",
             "net_liquidation": nav, "net_liquidation_ccy": nav_ccy, "account_code": acct_code,
             "positions": positions,
+            "open_orders": open_orders_data,
             "meta": {
                 "ibkr_snapshot_enrich": bool(IBKR_SNAPSHOT_ENRICH_METADATA),
                 "enrich_positions_attempted": enrich_attempted,
