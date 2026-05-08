@@ -364,48 +364,46 @@ def _execute_ib_orders(
                 )
                 print(f"[FX] FXCONV attempt: qty={_fx_qty_fxconv} status={_fxc_st} log={_fxc_log_msgs}")
 
-                    if _fxc_st not in ("Inactive", "ApiCancelled", "Cancelled"):
-                        _fx_filled_final = float(_fxc_trade.orderStatus.filled or 0.0)
-                        _fx_ap_final     = float(_fxc_trade.orderStatus.avgFillPrice or 0.0)
-                        _fx_st_final     = _fxc_st
-                        _fx_qty_final    = _fx_qty_fxconv
-                        _fx_note_final   = f"Hedge FX {fx_exposure} (FXCONV): {_fx_qty_fxconv:,} EUR"
+                if _fxc_st not in ("Inactive", "ApiCancelled", "Cancelled"):
+                    _fx_filled_final = float(_fxc_trade.orderStatus.filled or 0.0)
+                    _fx_ap_final     = float(_fxc_trade.orderStatus.avgFillPrice or 0.0)
+                    _fx_st_final     = _fxc_st
+                    _fx_qty_final    = _fx_qty_fxconv
+                    _fx_note_final   = f"Hedge FX {fx_exposure} (FXCONV): {_fx_qty_fxconv:,} EUR"
+                else:
+                    _fxc_reject = _read_rejection(_fxc_trade)
+                    print(f"[FX] FXCONV rejected: {_fxc_reject} — trying IDEALPRO")
+
+                    # ── Attempt 2: IDEALPRO ────────────────────────────────────────
+                    _fxi = Forex("EURUSD")
+                    ib.qualifyContracts(_fxi)
+                    _fx_limit = round(fx_eurusd * 1.003, 5)
+                    _fxi_order = LimitOrder("BUY", _fx_qty_idealpro, _fx_limit)
+                    _fxi_order.tif = "DAY"
+                    _fxi_order.outsideRth = True
+                    _fxi_trade = ib.placeOrder(_fxi, _fxi_order)
+                    ib.sleep(4)
+                    _fxi_st = str(_fxi_trade.orderStatus.status or "").strip() or "Submitted"
+                    _fxi_log_msgs = "; ".join(
+                        str(getattr(e, "message", "") or "") for e in (_fxi_trade.log or []) if getattr(e, "message", "")
+                    )
+                    print(f"[FX] IDEALPRO attempt: qty={_fx_qty_idealpro} status={_fxi_st} log={_fxi_log_msgs}")
+
+                    _fx_qty_final    = _fx_qty_idealpro
+                    _fx_filled_final = float(_fxi_trade.orderStatus.filled or 0.0)
+                    _fx_ap_final     = float(_fxi_trade.orderStatus.avgFillPrice or 0.0)
+                    _fx_st_final     = _fxi_st
+                    if _fxi_st in ("Inactive", "ApiCancelled", "Cancelled"):
+                        _fxi_reject = _read_rejection(_fxi_trade)
+                        print(f"[FX] IDEALPRO rejected: {_fxi_reject}")
+                        _fxc_err = f" FXCONV: {_fxc_reject}." if _fxc_reject else ""
+                        _fxi_err = f" IDEALPRO: {_fxi_reject}." if _fxi_reject else ""
+                        _fx_note_final = f"FX rejeitado.{_fxc_err}{_fxi_err}"
                     else:
-                        _fxc_reject = _read_rejection(_fxc_trade)
-                        print(f"[FX] FXCONV rejected: {_fxc_reject} — trying IDEALPRO")
-
-                        # ── Attempt 2: IDEALPRO ────────────────────────────────────────
-                        _fxi = Forex("EURUSD")
-                        ib.qualifyContracts(_fxi)
-                        _fx_limit = round(fx_eurusd * 1.003, 5)
-                        _fxi_order = LimitOrder("BUY", _fx_qty_idealpro, _fx_limit)
-                        _fxi_order.tif = "DAY"
-                        _fxi_order.outsideRth = True
-                        _fxi_trade = ib.placeOrder(_fxi, _fxi_order)
-                        ib.sleep(4)
-                        _fxi_st = str(_fxi_trade.orderStatus.status or "").strip() or "Submitted"
-                        _fxi_log_msgs = "; ".join(
-                            str(getattr(e, "message", "") or "") for e in (_fxi_trade.log or []) if getattr(e, "message", "")
+                        _fx_note_final = (
+                            f"Hedge FX {fx_exposure} (IDEALPRO): {_fx_qty_idealpro:,} EUR "
+                            f"@ limit {_fx_limit:.5f}"
                         )
-                        print(f"[FX] IDEALPRO attempt: qty={_fx_qty_idealpro} status={_fxi_st} log={_fxi_log_msgs}")
-
-                        _fx_qty_final = _fx_qty_idealpro
-                        _fx_filled_final = float(_fxi_trade.orderStatus.filled or 0.0)
-                        _fx_ap_final     = float(_fxi_trade.orderStatus.avgFillPrice or 0.0)
-                        _fx_st_final     = _fxi_st
-                        if _fxi_st in ("Inactive", "ApiCancelled", "Cancelled"):
-                            _fxi_reject = _read_rejection(_fxi_trade)
-                            print(f"[FX] IDEALPRO rejected: {_fxi_reject}")
-                            _fxc_err = f" FXCONV: {_fxc_reject}." if _fxc_reject else ""
-                            _fxi_err = f" IDEALPRO: {_fxi_reject}." if _fxi_reject else ""
-                            _fx_note_final = (
-                                f"FX rejeitado.{_fxc_err}{_fxi_err}"
-                            )
-                        else:
-                            _fx_note_final = (
-                                f"Hedge FX {fx_exposure} (IDEALPRO): {_fx_qty_idealpro:,} EUR "
-                                f"@ limit {_fx_limit:.5f}"
-                            )
 
                 fills.append({
                     "ticker": "EUR/USD", "action": "BUY",
