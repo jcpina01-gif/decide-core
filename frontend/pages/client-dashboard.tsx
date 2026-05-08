@@ -1992,6 +1992,8 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [flatSending,setFlatSending]=React.useState(false);
   const [flatResult,setFlatResult]=React.useState<{ref:string;longs:number;shorts:number}|null>(null);
   const [flatFills,setFlatFills]=React.useState<FillRow[]>([]);
+  const [cancelSending,setCancelSending]=React.useState(false);
+  const [cancelResult,setCancelResult]=React.useState<string|null>(null);
   const [pollCount,setPollCount]=React.useState(0);
 
   const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -2045,6 +2047,22 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
       else{setIbkrErr(j.error||"Erro ao obter posições IB");}
     }catch(e:unknown){setIbkrErr(e instanceof Error?e.message:"Erro de ligação");}
     finally{setIbkrLoading(false);}
+  }
+
+  async function cancelPendingOrders(){
+    setCancelSending(true);setCancelResult(null);setIbkrErr("");
+    try{
+      const resp=await fetch("/api/cancel-open-orders-paper",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paper_mode:true})});
+      const j=await resp.json().catch(()=>({}));
+      if(resp.ok&&(j.status==="ok"||j.ok)){
+        const n=j.cancellations?.length??j.cancelled??0;
+        setCancelResult(`${n} ordem(ns) cancelada(s)`);
+        setIbkrOpenOrders([]);
+      } else {
+        setCancelResult("Erro: "+(j.error||j.detail||`HTTP ${resp.status}`));
+      }
+    }catch(e:unknown){setCancelResult("Erro: "+(e instanceof Error?e.message:"ligação"));}
+    finally{setCancelSending(false);}
   }
 
   async function sellAllPositions(){
@@ -2551,6 +2569,16 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                         </span>
                       </div>
                     )}
+
+                    {/* Cancel pending orders */}
+                    <div>
+                      <button onClick={cancelPendingOrders} disabled={cancelSending}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold bg-slate-700/40 hover:bg-slate-600/40 border border-slate-500/30 text-slate-300 rounded-xl disabled:opacity-50 transition-colors">
+                        {cancelSending?<span className="animate-spin text-xs">⟳</span>:<span className="text-xs">✕</span>}
+                        {cancelSending?"A cancelar ordens pendentes…":"Cancelar ordens pendentes (Em curso)"}
+                      </button>
+                      {cancelResult&&<div className="mt-1.5 text-[10px] text-center text-slate-400">{cancelResult}</div>}
+                    </div>
 
                     {/* FLAT button — closes ALL positions (longs + shorts) */}
                     {!flatResult?(
