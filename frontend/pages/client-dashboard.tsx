@@ -3634,32 +3634,20 @@ export default function ClientDashboardPage() {
                         <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wide">Exposição cambial</span>
                         <Info size={11} className="text-slate-600"/>
                       </div>
-                      {ibkrFxSupported===false?(
-                        <div className="flex items-start gap-2 bg-slate-800/60 border border-slate-600/40 rounded-xl px-3 py-2.5 text-[10px] text-slate-400">
-                          <span className="shrink-0 mt-0.5">🔒</span>
-                          <div>
-                            <span className="font-semibold text-slate-300">Conta Caixa — hedge FX indisponível via API.</span>
-                            {" "}Para activar, converte para conta Margem em IB Account Management → Abrir contas adicionais → Paper Trading → Margem.
-                          </div>
-                        </div>
-                      ):(
-                        <>
-                          <div className="text-[10px] text-slate-500 mb-3">Escolha o nível de protecção cambial da sua carteira.</div>
-                          <div className="grid grid-cols-3 gap-2">
-                            {([
-                              {id:"protegida" as FxExposure, label:"Protegida", sub:"Hedge ~90%"},
-                              {id:"parcial"   as FxExposure, label:"Parcial",   sub:"Hedge ~50%"},
-                              {id:"aberta"    as FxExposure, label:"Aberta",    sub:"Sem hedge"},
-                            ]).map(fx=>(
-                              <button key={fx.id} onClick={()=>setFxExposure(fx.id)}
-                                className={`rounded-xl p-3 border-2 text-center transition-all ${fxExposure===fx.id?"border-blue-500 bg-blue-500/[0.08]":"border-[#1a1f2e] bg-[#0b0f1a] hover:border-blue-500/30"}`}>
-                                <div className={`text-[11px] font-bold mb-0.5 ${fxExposure===fx.id?"text-blue-300":"text-slate-200"}`}>{fx.label}</div>
-                                <div className="text-[9px] text-slate-500">{fx.sub}</div>
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      )}
+                      <div className="text-[10px] text-slate-500 mb-3">Escolha o nível de protecção cambial da sua carteira.</div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {([
+                          {id:"protegida" as FxExposure, label:"Protegida", sub:"Hedge ~90%"},
+                          {id:"parcial"   as FxExposure, label:"Parcial",   sub:"Hedge ~50%"},
+                          {id:"aberta"    as FxExposure, label:"Aberta",    sub:"Sem hedge"},
+                        ]).map(fx=>(
+                          <button key={fx.id} onClick={()=>setFxExposure(fx.id)}
+                            className={`rounded-xl p-3 border-2 text-center transition-all ${fxExposure===fx.id?"border-blue-500 bg-blue-500/[0.08]":"border-[#1a1f2e] bg-[#0b0f1a] hover:border-blue-500/30"}`}>
+                            <div className={`text-[11px] font-bold mb-0.5 ${fxExposure===fx.id?"text-blue-300":"text-slate-200"}`}>{fx.label}</div>
+                            <div className="text-[9px] text-slate-500">{fx.sub}</div>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                     {/* Margem */}
                     <div>
