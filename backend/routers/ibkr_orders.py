@@ -205,9 +205,17 @@ def _execute_ib_orders(
             except Exception:
                 pass
 
-        # ── Phase 3: Submit all orders simultaneously (no per-order wait) ──
-        pending: list[tuple[Any, str, str, int, _OrderIn]] = []  # (trade, sym, side, qty, o)
-        total_buy_usd = 0.0
+        # ── Phase 3: Submit equity orders + per-order FX hedge ──────────────
+        _fx_normalised = fx_exposure.lower().strip()
+        _do_fx = _fx_normalised in ("total", "parcial", "protegida")
+        _hedge_frac = 0.9 if _fx_normalised == "protegida" else (1.0 if _fx_normalised == "total" else 0.5)
+
+        # Pre-build a single FXCONV contract (reused for all mini-hedges, no qualifyContracts needed)
+        _fxconv_contract = Contract(secType="CASH", symbol="EUR", currency="USD", exchange="FXCONV")
+
+        pending: list[tuple[Any, str, str, int, _OrderIn]] = []
+        # (fx_trade, sym, eur_qty) — mini FX hedges paired with each BUY
+        pending_fx: list[tuple[Any, str, int]] = []
 
         for o in orders:
             sym = (o.ticker or "").strip().upper()
@@ -219,12 +227,11 @@ def _execute_ib_orders(
                 price = price_map.get(sym)
                 if price and price > 0:
                     if _is_eur_mm_ucits_symbol(sym):
-                        # floor (not round) — price quotes can be stale; better to undershoot than overshoot AUM
                         qty = max(1, int(abs(o.est_eur) / price))
                     else:
                         qty = max(1, int(abs(o.est_eur) * fx_eurusd / price))
                 else:
-                    qty = 1  # fallback conservador
+                    qty = 1
 
             if qty <= 0:
                 fills.append({"ticker": sym, "action": side, "requested_qty": 0,
@@ -249,113 +256,77 @@ def _execute_ib_orders(
                                "message": "Contrato não qualificou na IB."})
                 continue
 
-            order = MarketOrder(side, int(qty))
-            order.tif = "DAY"
-            order.outsideRth = True
-            trade = ib.placeOrder(qc, order)
+            equity_order = MarketOrder(side, int(qty))
+            equity_order.tif = "DAY"
+            equity_order.outsideRth = True
+            trade = ib.placeOrder(qc, equity_order)
             pending.append((trade, sym, side, qty, o))
+
+            # ── Per-order mini FX hedge (immediately after equity order) ────
+            if _do_fx and side == "BUY" and not _is_eur_mm_ucits_symbol(sym):
+                est_usd = abs(o.est_eur) * fx_eurusd
+                eur_hedge = max(100, int(est_usd * _hedge_frac / fx_eurusd / 100) * 100)
+                fx_order = MarketOrder("BUY", eur_hedge)
+                fx_order.tif = "DAY"
+                try:
+                    fx_trade = ib.placeOrder(_fxconv_contract, fx_order)
+                    pending_fx.append((fx_trade, sym, eur_hedge))
+                except Exception:
+                    pass  # per-order FX failure logged in final step
 
         # ── Phase 4: Wait up to 8s for ALL fills collectively ──
         deadline = time.monotonic() + 8.0
         while time.monotonic() < deadline:
-            done = all(
+            all_equity_done = all(
                 str(t.orderStatus.status or "").strip() in
                 ("Filled", "Cancelled", "ApiCancelled", "Inactive")
                 or float(t.orderStatus.filled or 0) >= qty - 1e-6
                 for t, _, _, qty, _ in pending
             )
-            if done:
+            if all_equity_done:
                 break
             ib.sleep(0.3)
 
-        # Collect results from batch
+        # Collect equity results
+        total_buy_usd = 0.0
         for trade, sym, side, qty, o in pending:
             st = str(trade.orderStatus.status or "").strip() or "Submitted"
             ap = float(trade.orderStatus.avgFillPrice or 0.0)
             filled = float(trade.orderStatus.filled or 0.0)
             oid = int(getattr(trade.order, "orderId", 0) or 0)
-            row: dict[str, Any] = {
+            fills.append({
                 "ticker": sym, "action": side,
                 "requested_qty": float(qty), "filled": filled,
                 "avg_fill_price": ap if ap > 0 else None,
                 "status": st, "message": None,
                 "ib_order_id": oid or None,
-            }
-            fills.append(row)
-
+            })
             if side == "BUY" and not _is_eur_mm_ucits_symbol(sym):
                 if filled > 0 and ap > 0:
                     total_buy_usd += filled * ap
                 else:
                     total_buy_usd += abs(o.est_eur) * fx_eurusd
 
-        # ── EUR/USD hedge (SELL USD / BUY EUR) after equities ────────────────
-        # fx_exposure values:
-        #   "total" | "protegida" → hedge ~100% of USD exposure
-        #   "parcial"             → hedge ~50%
-        #   "aberta"  | "nenhum"  → skip
-        _fx_normalised = fx_exposure.lower().strip()
-        if _fx_normalised in ("total", "parcial", "protegida") and total_buy_usd > 0:
-            hedge_frac = 0.9 if _fx_normalised == "protegida" else (1.0 if _fx_normalised == "total" else 0.5)
-            usd_to_sell = total_buy_usd * hedge_frac  # already in USD — no EUR conversion needed
-            usd_amount_rounded = round(usd_to_sell / 1000) * 1000  # IB min lot 1000 USD
-            MIN_FX_FXCONV = 1000.0   # IB minimum lot for FXCONV (currency conversion)
-            if usd_to_sell < MIN_FX_FXCONV:
-                fills.append({
-                    "ticker": "EUR/USD", "action": "BUY",
-                    "requested_qty": 0, "filled": 0, "avg_fill_price": fx_eurusd,
-                    "status": "skip_fx_below_min",
-                    "message": f"Hedge FX ignorado — nocional {usd_to_sell:,.0f} USD < mínimo {MIN_FX_FXCONV:.0f} USD.",
-                })
-            else:
-                try:
-                    eur_qty_raw = usd_to_sell / fx_eurusd if fx_eurusd > 0 else 0.0
-                    if eur_qty_raw < 1.0:
-                        raise ValueError(f"EUR qty too small ({eur_qty_raw:.0f})")
+        # Collect per-order FX hedge results (already submitted above)
+        for fx_trade, sym, eur_hedge in pending_fx:
+            fx_st = str(fx_trade.orderStatus.status or "").strip() or "Submitted"
+            fx_filled = float(fx_trade.orderStatus.filled or 0.0)
+            fx_ap = float(fx_trade.orderStatus.avgFillPrice or 0.0)
+            fills.append({
+                "ticker": "EUR/USD",
+                "action": "BUY",
+                "requested_qty": eur_hedge,
+                "filled": fx_filled,
+                "avg_fill_price": fx_ap if fx_ap > 0 else fx_eurusd,
+                "status": fx_st,
+                "message": f"Hedge FX {sym} (FXCONV): {eur_hedge:,} EUR @ {fx_eurusd:.4f}",
+                "is_fx": True,
+            })
 
-                    # Round to nearest 100 EUR (FXCONV accepts any amount; IDEALPRO needs 1000-lots)
-                    eur_qty_int = max(100, int(round(eur_qty_raw / 100.0)) * 100)
-                    usd_equiv = eur_qty_int * fx_eurusd
-
-                    # ── Try FXCONV first (works in all paper accounts, no min/max restrictions) ──
-                    fx_contract = Contract(
-                        secType="CASH", symbol="EUR", currency="USD", exchange="FXCONV"
-                    )
-                    ib.qualifyContracts(fx_contract)
-                    fxconv_ok = bool(getattr(fx_contract, "conId", None))
-
-                    if not fxconv_ok:
-                        # Fallback: IDEALPRO — round up to nearest 1,000 EUR lot, min 20,000 EUR
-                        eur_qty_int = max(20000, int(round(eur_qty_raw / 1000.0)) * 1000)
-                        usd_equiv = eur_qty_int * fx_eurusd
-                        fx_contract = Forex("EURUSD")
-                        ib.qualifyContracts(fx_contract)
-                        venue_label = "IDEALPRO"
-                    else:
-                        venue_label = "FXCONV"
-
-                    hedge_order = MarketOrder("BUY", eur_qty_int)
-                    hedge_order.tif = "DAY"
-                    # FX trades 24/5 — outsideRth is irrelevant but harmless
-                    trade = ib.placeOrder(fx_contract, hedge_order)
-                    ib.sleep(3)
-                    st = trade.orderStatus.status or "Submitted"
-                    fills.append({
-                        "ticker": "EUR/USD",
-                        "action": "BUY",
-                        "requested_qty": eur_qty_int,
-                        "filled": trade.orderStatus.filled,
-                        "avg_fill_price": trade.orderStatus.avgFillPrice or fx_eurusd,
-                        "status": st,
-                        "message": f"Hedge FX {fx_exposure} ({venue_label}): vender {usd_equiv:,.0f} USD @ {fx_eurusd:.4f}",
-                    })
-                except Exception as fx_exc:
-                    fills.append({
-                        "ticker": "EUR/USD", "action": "BUY",
-                        "requested_qty": 0, "filled": 0,
-                        "status": "error",
-                        "message": f"Hedge FX falhou: {fx_exc}",
-                    })
+        # Per-order FX hedges are submitted inline above (pending_fx).
+        # A short wait ensures IB has processed them before we collect status.
+        if pending_fx:
+            ib.sleep(3)
 
     except (ConnectionRefusedError, TimeoutError, OSError) as exc:
         return {
