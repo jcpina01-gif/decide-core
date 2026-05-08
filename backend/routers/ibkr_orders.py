@@ -50,7 +50,8 @@ class _OrderIn(BaseModel):
     action: str          # Comprar | Aumentar | Reduzir | Vender
     delta_pct: float = 0.0
     est_eur: float = 0.0
-    qty: Optional[float] = None  # se fornecida, usa directamente (ignora price lookup)
+    qty: Optional[float] = None   # se fornecida, usa directamente (ignora price lookup)
+    ref_price: Optional[float] = None  # preço de fecho da BD — fallback quando reqTickers não devolve nada
 
 
 class IbkrOrdersBody(BaseModel):
@@ -252,6 +253,9 @@ def _execute_ib_orders(
                 qty = int(math.floor(o.qty + 1e-9)) or 1
             else:
                 price = price_map.get(sym)
+                # Fallback: use ref_price from DB when live price unavailable (market closed)
+                if not (price and price > 0):
+                    price = o.ref_price if (o.ref_price and o.ref_price > 0) else None
                 if price and price > 0:
                     # 0.90 safety factor: cotações atrasadas tendem a subestimar o preço real
                     _PRICE_SAFETY = float(os.environ.get("DECIDE_QTY_SAFETY_FACTOR", "0.90"))
@@ -261,6 +265,7 @@ def _execute_ib_orders(
                         qty = max(1, int(abs(o.est_eur) * _PRICE_SAFETY * fx_eurusd / price))
                 else:
                     qty = 1
+                    print(f"[QTY] {sym}: sem preço live nem ref_price — qty=1 (fallback)")
 
             if qty <= 0:
                 fills.append({"ticker": sym, "action": side, "requested_qty": 0,

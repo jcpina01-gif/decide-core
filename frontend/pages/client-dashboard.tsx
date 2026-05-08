@@ -1959,13 +1959,14 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
 }
 
 /* ─── Página: Confirmar e enviar ordens para IB ────────────── */
-function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onShowRegister,profileLabel,fxExposure,marginEnabled}:{
+function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onShowRegister,profileLabel,fxExposure,marginEnabled,prices}:{
   actionCounts:{comprar:number;aumentar:number;reduzir:number;vender:number;manter:number;
     rows:{ticker:string;prev:number;cur:number;delta:number;action:string}[];
     allRows:{ticker:string;prev:number;cur:number;delta:number;action:string}[];};
   latestMonth:{rows:{ticker:string;weightPct:number}[];tbillsTotalPct?:number}|null;
   recoLabel:string;aum:number;loggedIn:boolean;onBack:()=>void;onShowRegister:()=>void;
   profileLabel:string;fxExposure:string;marginEnabled:boolean;
+  prices:Record<string,{price:number;currency:string}|null>;
 }) {
   const [sending,setSending]=React.useState(false);
   const [done,setDone]=React.useState(false);
@@ -2219,7 +2220,9 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             :(r.action==="Vender"||r.action==="Reduzir");
           const side=isBuy?"Comprar":isSell?"Vender":"Comprar";
           // Translate plan ticker → IB US ticker (e.g. BATS → BTI)
-          return {ticker:toIbTicker(r.ticker), action:side, est_eur:Math.max(0,r.adjEur)};
+          const ibTick=toIbTicker(r.ticker);
+          const refP=prices[r.ticker]??prices[ibTick]??null;
+          return {ticker:ibTick, action:side, est_eur:Math.max(0,r.adjEur), ref_price:refP?.price??null};
         }).filter(o=>o.est_eur>=MIN_ORDER_EUR||o.action==="Vender"),
         paper_mode:false,profile:profileLabel,
         fx_exposure:ibkrFxSupported===false?"aberta":fxExposure,margin_enabled:marginEnabled,aum,
@@ -4915,6 +4918,7 @@ export default function ClientDashboardPage() {
                   profileLabel={profileLabel}
                   fxExposure={fxExposure}
                   marginEnabled={marginEnabled}
+                  prices={prices}
                 />
               )}
 
