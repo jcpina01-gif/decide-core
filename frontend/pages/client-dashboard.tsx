@@ -2833,7 +2833,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             <button onClick={onBack} className="px-6 py-3 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">
               Cancelar
             </button>
-            <button onClick={submitOrders} disabled={sending||nOrdens===0||done||aum<=0||paperMode||(execMode==="full"&&!ibkrPos)}
+            <button onClick={submitOrders} disabled={sending||nOrdens===0||done||aum<=0||paperMode||(execMode==="full"&&!ibkrPos)||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0)>aum*1.5&&execMode==="full")}
               className={`flex-1 flex items-center justify-center gap-2 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all ${paperMode?"bg-slate-700 cursor-not-allowed":"bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30"}`}>
               <Send size={15}/>{paperMode?"Desliga 'Simulação local' para enviar à IB →":"Confirmar e enviar ordens para IB →"}
             </button>
@@ -2928,7 +2928,14 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                 const ibNav=ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0);
                 const diff=Math.abs(ibNav-aum);
                 const pct=aum>0?diff/aum*100:0;
+                const isHugelyOver=ibNav>aum*1.5;
                 if(pct<5) return null;
+                if(isHugelyOver) return (
+                  <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/40 rounded-lg px-2.5 py-2 text-[10px] text-red-300">
+                    <AlertTriangle size={11} className="shrink-0 mt-0.5 text-red-400"/>
+                    <span><strong>Carteira acumulada de sessões anteriores ({fmtE(ibNav)} €  = {(ibNav/aum*100).toFixed(0)}% do objectivo).</strong> Envia novas ordens poderia duplicar posições já existentes. Usa <strong>"Zerar toda a carteira"</strong> no Diagnóstico para começar do zero.</span>
+                  </div>
+                );
                 return (
                   <div className="flex items-start gap-2 bg-amber-500/[0.08] border border-amber-500/20 rounded-lg px-2.5 py-2 text-[10px] text-amber-300">
                     <AlertTriangle size={11} className="shrink-0 mt-0.5"/>
