@@ -219,9 +219,10 @@ def _execute_ib_orders(
                 price = price_map.get(sym)
                 if price and price > 0:
                     if _is_eur_mm_ucits_symbol(sym):
-                        qty = max(1, round(abs(o.est_eur) / price))
+                        # floor (not round) — price quotes can be stale; better to undershoot than overshoot AUM
+                        qty = max(1, int(abs(o.est_eur) / price))
                     else:
-                        qty = max(1, round(abs(o.est_eur) * fx_eurusd / price))
+                        qty = max(1, int(abs(o.est_eur) * fx_eurusd / price))
                 else:
                     qty = 1  # fallback conservador
 
