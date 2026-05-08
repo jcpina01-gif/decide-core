@@ -12,7 +12,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const targetUrl = `${base.replace(/\/+$/, "")}/api/ibkr-orders`;
 
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 100_000);
+  const t = setTimeout(() => ac.abort(), 270_000); // 270s < maxDuration(300s) > backend(280s)
 
   try {
     const upstream = await fetch(targetUrl, {
