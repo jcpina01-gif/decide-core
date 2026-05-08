@@ -329,17 +329,29 @@ def _execute_ib_orders(
                 else:
                     total_buy_usd += abs(o.est_eur) * fx_eurusd
 
-        # ── Single aggregated IDEALPRO FX hedge ─────────────────────────────
-        if _do_fx and _total_fx_eur >= 1000.0:
-            # Round to nearest 1,000 EUR lot; IDEALPRO minimum is 20,000 EUR
-            _fx_qty = int(max(20000, round(_total_fx_eur / 1000.0) * 1000))  # inteiro garantido
+        # ── Single aggregated FX hedge — tries FXCONV then IDEALPRO ─────────
+        if _do_fx and _total_fx_eur >= 100.0:
+            _fx_qty_fxconv = int(max(100, round(_total_fx_eur / 100.0) * 100))
+            _fx_qty_idealpro = int(max(20000, round(_total_fx_eur / 1000.0) * 1000))
             try:
-                _fx_c = Forex("EURUSD")  # EUR/USD on IDEALPRO
-                ib.qualifyContracts(_fx_c)
-                # LimitOrder slightly above market → fills immediately like a market order
-                _fx_limit = round(fx_eurusd * 1.003, 5)
-                _fx_o = LimitOrder("BUY", _fx_qty, _fx_limit)
-                _fx_o.tif = "DAY"
+                # Try FXCONV first (works with Cash accounts, no margin needed)
+                _fx_c = Contract(secType="CASH", symbol="EUR", currency="USD", exchange="FXCONV")
+                _fxc_dets = ib.reqContractDetails(_fx_c)
+                if _fxc_dets:
+                    _fx_qty = _fx_qty_fxconv
+                    _fx_o = MarketOrder("BUY", _fx_qty)
+                    _fx_o.tif = "DAY"
+                    _venue = "FXCONV"
+                    _fx_limit = None
+                else:
+                    # Fallback to IDEALPRO (needs Margin account)
+                    _fx_c = Forex("EURUSD")
+                    ib.qualifyContracts(_fx_c)
+                    _fx_qty = _fx_qty_idealpro
+                    _fx_limit = round(fx_eurusd * 1.003, 5)
+                    _fx_o = LimitOrder("BUY", _fx_qty, _fx_limit)
+                    _fx_o.tif = "DAY"
+                    _venue = "IDEALPRO"
                 _fx_trade = ib.placeOrder(_fx_c, _fx_o)
                 ib.sleep(4)
                 _fx_st = str(_fx_trade.orderStatus.status or "").strip() or "Submitted"
@@ -352,16 +364,13 @@ def _execute_ib_orders(
                         if _msg:
                             _reject = _msg
                             break
-                    print(f"[FX] IDEALPRO order rejected: {_reject}")
-                    # Likely cause: Forex not enabled in IB paper account
-                    _note = (f"Conta paper sem permissão Forex API. "
-                             f"Para activar: IB Account Management → Trading Experience → Forex. "
-                             f"Erro: {_reject}" if _reject else
-                             f"Conta paper sem permissão Forex API. "
-                             f"Para activar: IB Account Management → Trading Experience → Forex.")
+                    print(f"[FX] {_venue} order rejected: {_reject}")
+                    _note = (f"Hedge FX rejeitado ({_venue}). "
+                             f"Conta Caixa não suporta Forex API — converte para conta Margem em IB Account Management. "
+                             + (f"Erro: {_reject}" if _reject else ""))
                 else:
-                    _note = (f"Hedge FX {fx_exposure} (IDEALPRO): {_fx_qty:,} EUR "
-                             f"@ limit {_fx_limit:.5f}")
+                    _lim_str = f" @ limit {_fx_limit:.5f}" if _fx_limit else ""
+                    _note = f"Hedge FX {fx_exposure} ({_venue}): {_fx_qty:,} EUR{_lim_str}"
                 fills.append({
                     "ticker": "EUR/USD", "action": "BUY",
                     "requested_qty": _fx_qty,
@@ -378,12 +387,12 @@ def _execute_ib_orders(
                     "status": "error", "is_fx": True,
                     "message": f"Hedge FX falhou: {_fx_exc}",
                 })
-        elif _do_fx and _total_fx_eur > 0:
+        elif _do_fx and 0 < _total_fx_eur < 100.0:
             fills.append({
                 "ticker": "EUR/USD", "action": "BUY",
                 "requested_qty": 0, "filled": 0,
                 "status": "skip_fx_below_min", "is_fx": True,
-                "message": f"Hedge FX ignorado — total {_total_fx_eur:,.0f} EUR < mínimo IDEALPRO 20,000 EUR",
+                "message": f"Hedge FX ignorado — total {_total_fx_eur:,.0f} EUR < mínimo 100 EUR",
             })
 
     except (ConnectionRefusedError, TimeoutError, OSError) as exc:
