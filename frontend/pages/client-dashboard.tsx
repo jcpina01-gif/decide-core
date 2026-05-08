@@ -3062,7 +3062,12 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
           <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
             <div className="text-[10px] text-slate-500 space-y-1">
               <div className="flex justify-between"><span>Perfil</span><span className="text-slate-300 font-semibold">{profileLabel}</span></div>
-              <div className="flex justify-between"><span>Exposição FX</span><span className="text-slate-300 font-semibold capitalize">{fxExposure}</span></div>
+              <div className="flex justify-between"><span>Exposição FX</span>
+                {ibkrFxSupported===false
+                  ?<span className="text-amber-400 font-semibold text-[9px]">Conta Caixa — hedge desactivado</span>
+                  :<span className="text-slate-300 font-semibold capitalize">{fxExposure}</span>
+                }
+              </div>
               <div className="flex justify-between"><span>Margem</span><span className={`font-semibold ${marginEnabled?"text-amber-400":"text-slate-400"}`}>{marginEnabled?"Activa":"Desactivada"}</span></div>
               <div className="flex justify-between"><span>Modo</span><span className={`font-semibold ${paperMode?"text-amber-400":"text-emerald-400"}`}>{paperMode?"Simulação local":"Envia à IB"}</span></div>
             </div>
