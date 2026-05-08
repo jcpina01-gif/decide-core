@@ -308,46 +308,53 @@ def _execute_ib_orders(
                 })
             else:
                 try:
-                    eur_qty = round(usd_amount_rounded / fx_eurusd, 2) if usd_amount_rounded >= 1 else 0.0
-                    if eur_qty < 1.0:
-                        raise ValueError(f"EUR qty too small ({eur_qty})")
+                    # Raw EUR quantity from the actual USD notional to hedge
+                    eur_qty_raw = usd_to_sell / fx_eurusd if fx_eurusd > 0 else 0.0
+                    if eur_qty_raw < 1.0:
+                        raise ValueError(f"EUR qty too small ({eur_qty_raw:.0f})")
 
-                    # IDEALPRO requires integer quantities (no fractions)
-                    eur_qty_int = max(20000, int(round(eur_qty / 1000.0)) * 1000)  # round to nearest 1000 EUR lot
                     if usd_to_sell >= MIN_FX_HEDGE_USD:
-                        # Large amount → use IDEALPRO (OTC interdealer, tightest spreads)
+                        # IDEALPRO: minimum 20,000 EUR, lots of 1,000 EUR
+                        eur_qty_int = max(20000, int(round(eur_qty_raw / 1000.0)) * 1000)
                         fx_contract = Forex("EURUSD")
                         ib.qualifyContracts(fx_contract)
                         venue_label = "IDEALPRO"
-                        hedge_order = MarketOrder("BUY", eur_qty_int)
-                        hedge_order.tif = "DAY"
-                        hedge_order.outsideRth = True
                     else:
-                        # Below IDEALPRO minimum → use FXCONV (IB currency conversion, no minimum)
+                        # FXCONV: no minimum — use the real amount, rounded to nearest 100 EUR
+                        eur_qty_int = max(100, int(round(eur_qty_raw / 100.0)) * 100)
                         fx_contract = Contract(
                             secType="CASH", symbol="EUR", currency="USD", exchange="FXCONV"
                         )
                         ib.qualifyContracts(fx_contract)
                         if not getattr(fx_contract, "conId", None):
-                            fx_contract = Forex("EURUSD")
-                            ib.qualifyContracts(fx_contract)
+                            # FXCONV not supported — skip FX hedge for small amounts
+                            fills.append({
+                                "ticker": "EUR/USD", "action": "BUY",
+                                "requested_qty": eur_qty_int, "filled": 0,
+                                "avg_fill_price": fx_eurusd,
+                                "status": "skip_fx_below_min",
+                                "message": f"Hedge FX ignorado — FXCONV indisponível e montante ({usd_to_sell:,.0f} USD) abaixo do mínimo IDEALPRO ({MIN_FX_HEDGE_USD:,.0f} USD).",
+                            })
+                            eur_qty_int = 0  # signal to skip
                         venue_label = "FXCONV"
+
+                    if eur_qty_int > 0:
                         hedge_order = MarketOrder("BUY", eur_qty_int)
                         hedge_order.tif = "DAY"
                         hedge_order.outsideRth = True
-
-                    trade = ib.placeOrder(fx_contract, hedge_order)
-                    ib.sleep(3)
-                    st = trade.orderStatus.status or "Submitted"
-                    fills.append({
-                        "ticker": "EUR/USD",
-                        "action": "BUY",
-                        "requested_qty": eur_qty_int,
-                        "filled": trade.orderStatus.filled,
-                        "avg_fill_price": trade.orderStatus.avgFillPrice or fx_eurusd,
-                        "status": st,
-                        "message": f"Hedge FX {fx_exposure} ({venue_label}): vender {usd_amount_rounded:,.0f} USD @ {fx_eurusd:.4f}",
-                    })
+                        usd_equiv = eur_qty_int * fx_eurusd
+                        trade = ib.placeOrder(fx_contract, hedge_order)
+                        ib.sleep(3)
+                        st = trade.orderStatus.status or "Submitted"
+                        fills.append({
+                            "ticker": "EUR/USD",
+                            "action": "BUY",
+                            "requested_qty": eur_qty_int,
+                            "filled": trade.orderStatus.filled,
+                            "avg_fill_price": trade.orderStatus.avgFillPrice or fx_eurusd,
+                            "status": st,
+                            "message": f"Hedge FX {fx_exposure} ({venue_label}): vender {usd_equiv:,.0f} USD @ {fx_eurusd:.4f}",
+                        })
                 except Exception as fx_exc:
                     fills.append({
                         "ticker": "EUR/USD", "action": "BUY",
