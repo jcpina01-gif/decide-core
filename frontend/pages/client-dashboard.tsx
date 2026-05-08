@@ -2541,24 +2541,55 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                       {ibkrOpenOrders.length>0&&` · ${ibkrOpenOrders.length} ordem(ns) em curso`}
                       {ibkrAcctType&&` · conta ${ibkrAcctType} · FX ${ibkrFxSupported===false?"bloqueado":"suportado"}`}
                     </div>
-                    {/* Open orders summary */}
-                    {ibkrOpenOrders.length>0&&(
-                      <div className="bg-amber-500/[0.05] border border-amber-500/20 rounded-lg px-3 py-2">
-                        <div className="text-[10px] font-semibold text-amber-300 mb-1.5">
-                          ⟳ Ordens em curso na IB ({ibkrOpenOrders.length}) — excluídas do cálculo de compras
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {ibkrOpenOrders.map((o,i)=>(
-                            <span key={i} className="inline-flex items-center gap-1 bg-[#111827] border border-[#252a3a] rounded px-2 py-0.5 text-[10px]">
-                              <span className={o.side==="BUY"?"text-emerald-400":"text-red-400"}>{o.side==="BUY"?"▲":"▼"}</span>
-                              <span className="text-slate-300 font-mono">{o.ticker}</span>
-                              <span className="text-slate-500">×{o.remaining_qty.toFixed(0)}</span>
-                              <span className="text-slate-600">{o.status}</span>
-                            </span>
-                          ))}
-                        </div>
+                    {/* Open orders live table */}
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between px-3 py-2 border-b border-[#1a1f2e]">
+                        <span className="text-[10px] font-semibold text-slate-300">
+                          Ordens abertas na IB (live) — {ibkrOpenOrders.length===0?"nenhuma":ibkrOpenOrders.length}
+                        </span>
+                        <button onClick={fetchIbkrPositions} disabled={ibkrLoading}
+                          className="text-[9px] text-sky-400 hover:text-sky-300 disabled:opacity-50">
+                          {ibkrLoading?"…":"↺ Actualizar"}
+                        </button>
                       </div>
-                    )}
+                      {ibkrOpenOrders.length===0?(
+                        <div className="px-3 py-2 text-[10px] text-slate-600 italic">
+                          Nenhuma ordem pendente na IB Gateway
+                        </div>
+                      ):(
+                        <table className="w-full text-[10px]">
+                          <thead>
+                            <tr className="text-slate-600 border-b border-[#1a1f2e]">
+                              <th className="text-left px-3 py-1.5">Ticker</th>
+                              <th className="text-left px-2 py-1.5">Lado</th>
+                              <th className="text-right px-2 py-1.5">Qtd. restante</th>
+                              <th className="text-left px-2 py-1.5">Estado</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {ibkrOpenOrders.map((o,i)=>(
+                              <tr key={i} className="border-b border-[#111827] last:border-0">
+                                <td className="px-3 py-1.5 font-mono text-slate-200 font-semibold">{o.ticker}</td>
+                                <td className="px-2 py-1.5">
+                                  <span className={`font-bold ${o.side==="BUY"?"text-emerald-400":"text-red-400"}`}>
+                                    {o.side==="BUY"?"▲ BUY":"▼ SELL"}
+                                  </span>
+                                </td>
+                                <td className="px-2 py-1.5 text-right text-slate-300">{o.remaining_qty.toFixed(0)}</td>
+                                <td className="px-2 py-1.5">
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${
+                                    o.status==="Submitted"?"bg-amber-500/20 text-amber-300":
+                                    o.status==="PreSubmitted"?"bg-sky-500/20 text-sky-300":
+                                    "bg-slate-700 text-slate-400"}`}>
+                                    {o.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
                     {/* Short positions warning */}
                     {ibkrPos.some(p=>p.qty<0)&&(
                       <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-[10px] text-red-300">
