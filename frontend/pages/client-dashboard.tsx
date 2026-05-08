@@ -2684,9 +2684,14 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                 </div>
               </div>
               {!paperMode&&fills.some(f=>f.status==="Submitted"||f.status==="PreSubmitted")&&(
-                <div className="flex items-center gap-2 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-3 py-2 text-[10px] text-amber-300">
-                  <span className="animate-pulse font-bold">⟳</span>
-                  Ordens submetidas à IB — aguarda execução (paper: costuma ser imediato)
+                <div className="flex flex-col gap-1 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-3 py-2 text-[10px] text-amber-300">
+                  <div className="flex items-center gap-2">
+                    <span className="animate-pulse font-bold">⟳</span>
+                    <span className="font-semibold">Ordens submetidas à IB e aguardam execução</span>
+                  </div>
+                  <div className="text-amber-400/70 leading-relaxed pl-4">
+                    As ordens US estão registadas na IB Gateway. Se o mercado americano ainda não abriu (abre às 15:30 hora de Lisboa), vão executar automaticamente na abertura. Clica <span className="font-semibold text-amber-300">Actualizar</span> na página Carteira depois das 15:30 para confirmar.
+                  </div>
                 </div>
               )}
 
