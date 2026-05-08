@@ -38,7 +38,7 @@ TWS_HOST = ib_socket_host()
 TWS_PORT = ib_socket_port()
 
 # Taxa EUR/USD para estimar qty em acções USD (pode ser overridden via env)
-_FX_EURUSD = float(os.environ.get("DECIDE_EURUSD_ESTIMATE", "1.09"))
+_FX_EURUSD = float(os.environ.get("DECIDE_EURUSD_ESTIMATE", "1.13"))
 
 # clientId separado para não colidir com o send_orders (778).
 # Base 790: afastado de 779/780 que ficaram presos em sessões anteriores.
@@ -356,53 +356,53 @@ def _execute_ib_orders(
                 _fxc_st = str(_fxc_trade.orderStatus.status or "").strip() or "Submitted"
                 print(f"[FX] FXCONV attempt: qty={_fx_qty_fxconv} status={_fxc_st}")
 
-                if _fxc_st not in ("Inactive", "ApiCancelled", "Cancelled"):
-                    _fx_filled_final = float(_fxc_trade.orderStatus.filled or 0.0)
-                    _fx_ap_final     = float(_fxc_trade.orderStatus.avgFillPrice or 0.0)
-                    _fx_st_final     = _fxc_st
-                    _fx_qty_final    = _fx_qty_fxconv
-                    _lim_str = ""
-                    _fx_note_final   = f"Hedge FX {fx_exposure} (FXCONV): {_fx_qty_fxconv:,} EUR"
-                else:
-                    _fxc_reject = _read_rejection(_fxc_trade)
-                    print(f"[FX] FXCONV rejected: {_fxc_reject} — trying IDEALPRO")
-
-                    # ── Attempt 2: IDEALPRO (interbank, requires Margin account) ──
-                    _fxi = Forex("EURUSD")
-                    ib.qualifyContracts(_fxi)
-                    _fx_limit = round(fx_eurusd * 1.003, 5)
-                    _fxi_order = LimitOrder("BUY", _fx_qty_idealpro, _fx_limit)
-                    _fxi_order.tif = "DAY"
-                    _fxi_trade = ib.placeOrder(_fxi, _fxi_order)
-                    ib.sleep(4)
-                    _fxi_st = str(_fxi_trade.orderStatus.status or "").strip() or "Submitted"
-                    print(f"[FX] IDEALPRO attempt: qty={_fx_qty_idealpro} status={_fxi_st}")
-
-                    _fx_qty_final = _fx_qty_idealpro
-                    _fx_filled_final = float(_fxi_trade.orderStatus.filled or 0.0)
-                    _fx_ap_final     = float(_fxi_trade.orderStatus.avgFillPrice or 0.0)
-                    _fx_st_final     = _fxi_st
-                    if _fxi_st in ("Inactive", "ApiCancelled", "Cancelled"):
-                        _fxi_reject = _read_rejection(_fxi_trade)
-                        print(f"[FX] IDEALPRO rejected: {_fxi_reject}")
-                        _fxc_err = f" FXCONV: {_fxc_reject}." if _fxc_reject else ""
-                        _fxi_err = f" IDEALPRO: {_fxi_reject}." if _fxi_reject else ""
-                        _fx_note_final = (
-                            f"Hedge FX rejeitado em ambas as venues.{_fxc_err}{_fxi_err} "
-                            f"Conta Caixa pode não suportar Forex standalone — "
-                            f"converte para conta Margem em IB Account Management → Negociação → Tipos de conta."
-                        )
+                    if _fxc_st not in ("Inactive", "ApiCancelled", "Cancelled"):
+                        _fx_filled_final = float(_fxc_trade.orderStatus.filled or 0.0)
+                        _fx_ap_final     = float(_fxc_trade.orderStatus.avgFillPrice or 0.0)
+                        _fx_st_final     = _fxc_st
+                        _fx_qty_final    = _fx_qty_fxconv
+                        _fx_note_final   = f"Hedge FX {fx_exposure} (FXCONV): {_fx_qty_fxconv:,} EUR"
                     else:
-                        _fx_note_final = (
-                            f"Hedge FX {fx_exposure} (IDEALPRO): {_fx_qty_idealpro:,} EUR "
-                            f"@ limit {_fx_limit:.5f}"
-                        )
+                        _fxc_reject = _read_rejection(_fxc_trade)
+                        print(f"[FX] FXCONV rejected: {_fxc_reject} — trying IDEALPRO")
+
+                        # ── Attempt 2: IDEALPRO (interbank, requires Margin account) ──
+                        _fxi = Forex("EURUSD")
+                        ib.qualifyContracts(_fxi)
+                        _fx_limit = round(fx_eurusd * 1.003, 5)
+                        _fxi_order = LimitOrder("BUY", _fx_qty_idealpro, _fx_limit)
+                        _fxi_order.tif = "DAY"
+                        _fxi_trade = ib.placeOrder(_fxi, _fxi_order)
+                        ib.sleep(4)
+                        _fxi_st = str(_fxi_trade.orderStatus.status or "").strip() or "Submitted"
+                        print(f"[FX] IDEALPRO attempt: qty={_fx_qty_idealpro} status={_fxi_st}")
+
+                        _fx_qty_final = _fx_qty_idealpro
+                        _fx_filled_final = float(_fxi_trade.orderStatus.filled or 0.0)
+                        _fx_ap_final     = float(_fxi_trade.orderStatus.avgFillPrice or 0.0)
+                        _fx_st_final     = _fxi_st
+                        if _fxi_st in ("Inactive", "ApiCancelled", "Cancelled"):
+                            _fxi_reject = _read_rejection(_fxi_trade)
+                            print(f"[FX] IDEALPRO rejected: {_fxi_reject}")
+                            _fxc_err = f" FXCONV: {_fxc_reject}." if _fxc_reject else ""
+                            _fxi_err = f" IDEALPRO: {_fxi_reject}." if _fxi_reject else ""
+                            _fx_note_final = (
+                                f"Conta Caixa (Cash) não suporta Forex API standalone — "
+                                f"cria uma conta paper Margem em IB → Abrir contas adicionais → Paper Trading → Margem."
+                                + (_fxc_err + _fxi_err if (_fxc_err or _fxi_err) else "")
+                            )
+                        else:
+                            _fx_note_final = (
+                                f"Hedge FX {fx_exposure} (IDEALPRO): {_fx_qty_idealpro:,} EUR "
+                                f"@ limit {_fx_limit:.5f}"
+                            )
 
                 fills.append({
                     "ticker": "EUR/USD", "action": "BUY",
                     "requested_qty": _fx_qty_final,
                     "filled": _fx_filled_final,
-                    "avg_fill_price": _fx_ap_final if _fx_ap_final > 0 else fx_eurusd,
+                    # Mostrar a taxa live, não o fallback
+                    "avg_fill_price": _fx_ap_final if _fx_ap_final > 0 else None,
                     "status": _fx_st_final,
                     "message": _fx_note_final,
                     "is_fx": True,
