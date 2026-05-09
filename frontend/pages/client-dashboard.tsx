@@ -3795,13 +3795,271 @@ export default function ClientDashboardPage() {
 
 
               {/* ── RELATÓRIOS ── */}
-              {activePage==="relatorios"&&(
-                <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-8 text-center">
-                  <div className="text-4xl mb-3">📄</div>
-                  <div className="text-slate-200 font-bold text-lg mb-2">Relatórios</div>
-                  <div className="text-slate-500 text-sm">Em breve: relatórios mensais, anuais e fiscais da sua carteira.</div>
-                </div>
-              )}
+              {activePage==="relatorios"&&(()=>{
+                const reportDate=new Date().toLocaleDateString("pt-PT",{day:"2-digit",month:"long",year:"numeric"});
+                const pfLabel=profileFactor<1?"Conservador":profileFactor>1?"Dinâmico":"Moderado";
+                const fmtPct=(v:number,sign=false)=>`${sign&&v>=0?"+":""}${v.toFixed(2)}%`;
+                const fmtEur=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0});
+                const sharpeVal=perfData&&scaledVol>0?(scaledAnn-2)/scaledVol:0;
+                // Top-5 holdings
+                const top5=(latestMonth?.rows??[])
+                  .filter(r=>!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="XEON")
+                  .sort((a,b)=>b.weightPct-a.weightPct).slice(0,5);
+                // Sector allocation
+                const secMap=new Map<string,number>();
+                (latestMonth?.rows??[]).forEach(r=>{
+                  if(r.ticker.startsWith("TBILL")||r.ticker.startsWith("CASH")) return;
+                  const s=getSector(r.ticker);
+                  secMap.set(s,(secMap.get(s)??0)+r.weightPct);
+                });
+                const topSectors=[...secMap.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6);
+                // Recent changes
+                const changes=actionCounts.rows.filter(r=>r.action!=="Manter").slice(0,8);
+                // Chart data (YTD only for report)
+                const reportChart=(perfData?.chart??[]).slice(-252);
+                const ytdGain=aum*scaledYtd/100;
+                const isUp=scaledYtd>=0;
+                return (
+                  <div className="space-y-5 print:space-y-4">
+                    {/* ── Report header ── */}
+                    <div className="bg-gradient-to-r from-[#0b0f1a] to-[#0f1628] border border-[#1a1f2e] rounded-xl p-6 flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-blue-600 flex items-center justify-center text-white font-black text-sm">D</div>
+                          <div>
+                            <div className="text-white font-black text-lg tracking-tight">DECIDE</div>
+                            <div className="text-slate-500 text-xs">Advisory quantitativo</div>
+                          </div>
+                        </div>
+                        <div className="text-slate-200 font-bold text-2xl mb-1">Relatório de Carteira</div>
+                        <div className="text-slate-400 text-sm">Perfil <span className="text-teal-400 font-semibold">{pfLabel}</span> · {reportDate}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-slate-500 text-xs mb-1">Valor da carteira</div>
+                        <div className="text-white font-black text-3xl">€ {fmtEur(aum)}</div>
+                        <div className={`text-sm font-bold mt-1 ${isUp?"text-emerald-400":"text-red-400"}`}>
+                          {fmtPct(scaledYtd,true)} YTD &nbsp;
+                          <span className="text-slate-500 font-normal text-xs">({isUp?"+":" "}{fmtEur(ytdGain)} €)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── KPI row ── */}
+                    <div className="grid grid-cols-5 gap-3">
+                      {[
+                        {label:"Retorno YTD",val:fmtPct(scaledYtd,true),c:isUp?"text-emerald-400":"text-red-400",sub:"Ano corrente"},
+                        {label:"Retorno total",val:fmtPct(scaledTotal,true),c:scaledTotal>=0?"text-emerald-400":"text-red-400",sub:`CAGR ${fmtPct(scaledAnn,true)}`},
+                        {label:"Volatilidade",val:scaledVol>0?`${scaledVol.toFixed(1)}%`:"—",c:"text-amber-400",sub:"Anualizada (252d)"},
+                        {label:"Máx. drawdown",val:scaledDD!==0?fmtPct(scaledDD):"—",c:"text-red-400",sub:"Últimos 3 anos"},
+                        {label:"Sharpe ratio",val:sharpeVal.toFixed(2),c:sharpeVal>=1?"text-emerald-400":sharpeVal>=0?"text-amber-400":"text-red-400",sub:"Rf = 2%"},
+                      ].map(k=>(
+                        <div key={k.label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
+                          <div className="text-slate-500 text-[10px] font-semibold mb-2 uppercase tracking-wider">{k.label}</div>
+                          <div className={`text-2xl font-black ${k.c}`}>{k.val}</div>
+                          <div className="text-slate-600 text-[10px] mt-1">{k.sub}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* ── Performance chart + Sector breakdown ── */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="font-bold text-slate-200 text-sm">Evolução da carteira</div>
+                          <div className="flex items-center gap-4 text-[10px] text-slate-500">
+                            <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-teal-500 inline-block rounded"/>{pfLabel}</span>
+                            <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-slate-600 inline-block rounded" style={{borderTop:"2px dashed #475569"}}/>{BENCH_SHORT}</span>
+                          </div>
+                        </div>
+                        {reportChart.length>0?(
+                          <ResponsiveContainer width="100%" height={200}>
+                            <AreaChart data={reportChart} margin={{top:4,right:4,bottom:0,left:0}}>
+                              <defs>
+                                <linearGradient id="repGrad" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.18}/>
+                                  <stop offset="95%" stopColor="#14b8a6" stopOpacity={0}/>
+                                </linearGradient>
+                              </defs>
+                              <XAxis dataKey="date" tick={{fill:"#475569",fontSize:9}} tickLine={false} axisLine={false}
+                                tickFormatter={d=>d?String(d).slice(0,7):""}
+                                interval={Math.floor(reportChart.length/6)}/>
+                              <YAxis tick={{fill:"#475569",fontSize:9}} tickLine={false} axisLine={false}
+                                tickFormatter={v=>`${(+v).toFixed(0)}%`} domain={["auto","auto"]}/>
+                              <Tooltip contentStyle={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:8,fontSize:11}}
+                                formatter={(v:number)=>[`${v?.toFixed(2)}%`,""]}
+                                labelFormatter={l=>String(l).slice(0,10)}/>
+                              <ReferenceLine y={0} stroke="#1e293b" strokeDasharray="3 3"/>
+                              <Area type="monotone" dataKey="model" stroke="#14b8a6" strokeWidth={2} fill="url(#repGrad)" dot={false} name={pfLabel}/>
+                              <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} strokeDasharray="4 2" dot={false} name={BENCH_SHORT}/>
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        ):(
+                          <div className="h-[200px] flex items-center justify-center text-slate-600 text-sm">Sem dados de performance</div>
+                        )}
+                      </div>
+
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="font-bold text-slate-200 text-sm mb-4">Exposição sectorial</div>
+                        {topSectors.length>0?(
+                          <div className="space-y-3">
+                            {topSectors.map(([sec,pct],i)=>(
+                              <div key={sec}>
+                                <div className="flex justify-between text-xs mb-1">
+                                  <span className="text-slate-300">{sec}</span>
+                                  <span className="text-slate-200 font-semibold">{pct.toFixed(1)}%</span>
+                                </div>
+                                <div className="h-1.5 bg-slate-800 rounded-full">
+                                  <div className="h-1.5 rounded-full" style={{width:`${pct}%`,background:PIE_COLORS[i%PIE_COLORS.length]}}/>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ):(
+                          <div className="text-slate-600 text-sm text-center py-4">Sem dados</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ── Holdings + Changes ── */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Top holdings */}
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="font-bold text-slate-200 text-sm mb-4">Principais posições</div>
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
+                              <th className="pb-2 font-semibold">Empresa</th>
+                              <th className="pb-2 font-semibold">Sector</th>
+                              <th className="pb-2 font-semibold text-right">País</th>
+                              <th className="pb-2 font-semibold text-right">Peso</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {top5.map((r,i)=>(
+                              <tr key={r.ticker} className="border-b border-[#0f172a] last:border-0">
+                                <td className="py-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{background:PIE_COLORS[i%PIE_COLORS.length]}}/>
+                                    <div>
+                                      <div className="text-slate-200 font-semibold">{getCompany(r.ticker)||r.ticker}</div>
+                                      <div className="text-slate-600 text-[9px]">{r.ticker}</div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-2 text-slate-400">{getSector(r.ticker)}</td>
+                                <td className="py-2 text-slate-400 text-right">{getZone(r.ticker)}</td>
+                                <td className="py-2 text-right font-bold text-slate-200">{r.weightPct.toFixed(1)}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Recent changes */}
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="font-bold text-slate-200 text-sm mb-4">Alterações recentes</div>
+                        {changes.length===0?(
+                          <div className="text-slate-600 text-sm text-center py-4">Sem alterações neste rebalanceamento</div>
+                        ):(
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
+                                <th className="pb-2 font-semibold">Empresa</th>
+                                <th className="pb-2 font-semibold text-right">Peso ant.</th>
+                                <th className="pb-2 font-semibold text-right">Peso novo</th>
+                                <th className="pb-2 font-semibold text-right">Ação</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {changes.map(r=>{
+                                const ac=r.action;
+                                const isB=ac==="Comprar"||ac==="Aumentar";
+                                const isS=ac==="Vender"||ac==="Reduzir";
+                                return (
+                                  <tr key={r.ticker} className="border-b border-[#0f172a] last:border-0">
+                                    <td className="py-2">
+                                      <div className="text-slate-200 font-semibold">{getCompany(r.ticker)||r.ticker}</div>
+                                      <div className="text-slate-600 text-[9px]">{r.ticker}</div>
+                                    </td>
+                                    <td className="py-2 text-right text-slate-400">{r.prevPct.toFixed(1)}%</td>
+                                    <td className="py-2 text-right text-slate-200 font-semibold">{r.newPct.toFixed(1)}%</td>
+                                    <td className="py-2 text-right">
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isB?"bg-emerald-900/40 text-emerald-400":isS?"bg-red-900/40 text-red-400":"bg-slate-800 text-slate-400"}`}>
+                                        {ac}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ── Commentary ── */}
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-6">
+                      <div className="font-bold text-slate-200 text-sm mb-4 flex items-center gap-2">
+                        <BookOpen size={14} className="text-teal-400"/>
+                        Comentário da carteira
+                      </div>
+                      <div className="space-y-4 text-sm text-slate-400 leading-relaxed">
+                        <p>
+                          A carteira DECIDE com perfil <span className="text-slate-200 font-semibold">{pfLabel}</span> encerra o período
+                          com um retorno acumulado de <span className={`font-semibold ${scaledTotal>=0?"text-emerald-400":"text-red-400"}`}>{fmtPct(scaledTotal,true)}</span>,
+                          correspondendo a uma taxa de crescimento anualizada (CAGR) de <span className="text-slate-200 font-semibold">{fmtPct(scaledAnn,true)}</span>.
+                          No ano corrente, a carteira regista <span className={`font-semibold ${isUp?"text-emerald-400":"text-red-400"}`}>{fmtPct(scaledYtd,true)}</span>,
+                          equivalente a <span className="text-slate-200 font-semibold">{isUp?"+":""}{fmtEur(ytdGain)} €</span> sobre o valor investido.
+                        </p>
+                        <p>
+                          O modelo mantém uma volatilidade anualizada de <span className="text-amber-400 font-semibold">{scaledVol.toFixed(1)}%</span>,
+                          reflectindo o nível de risco associado ao perfil {pfLabel.toLowerCase()}.
+                          O máximo drawdown nos últimos três anos foi de <span className="text-red-400 font-semibold">{fmtPct(scaledDD)}</span>,
+                          o que demonstra a capacidade de contenção de perdas da estratégia quantitativa.
+                          O rácio de Sharpe situou-se em <span className={`font-semibold ${sharpeVal>=1?"text-emerald-400":"text-amber-400"}`}>{sharpeVal.toFixed(2)}</span>,
+                          indicando {sharpeVal>=1?"uma remuneração adequada do risco assumido":"margem para melhoria na remuneração do risco"}.
+                        </p>
+                        <p>
+                          A carteira é composta por <span className="text-slate-200 font-semibold">{(latestMonth?.rows??[]).filter(r=>!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="XEON").length} títulos</span>,
+                          com maior concentração em <span className="text-slate-200 font-semibold">{topSectors[0]?.[0]??"—"}</span> ({topSectors[0]?.[1]?.toFixed(1)??"0"}%)
+                          e <span className="text-slate-200 font-semibold">{topSectors[1]?.[0]??"—"}</span> ({topSectors[1]?.[1]?.toFixed(1)??"0"}%).
+                          {changes.length>0&&(
+                            <> Neste rebalanceamento foram efectuadas <span className="text-slate-200 font-semibold">{changes.length} alterações</span>,
+                            com {actionCounts.comprar+actionCounts.aumentar} novas entradas/reforços e {actionCounts.reduzir+actionCounts.vender} reduções/saídas.</>
+                          )}
+                          {changes.length===0&&<> A carteira não sofreu alterações no último rebalanceamento.</>}
+                        </p>
+                        <p className="text-slate-600 text-xs border-t border-[#1a1f2e] pt-3">
+                          Este relatório foi gerado automaticamente pelo sistema DECIDE com base nos dados históricos do modelo quantitativo.
+                          Os dados de performance são calculados sobre a curva de capital ajustada ao perfil de risco seleccionado.
+                          A informação apresentada é de carácter meramente informativo e não constitui recomendação de investimento.
+                          O desempenho passado não garante resultados futuros.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* ── Risk metrics row ── */}
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="font-bold text-slate-200 text-sm mb-4">Métricas de risco</div>
+                      <div className="grid grid-cols-4 gap-4 text-sm">
+                        {[
+                          {label:"Volatilidade (252d)",val:`${scaledVol.toFixed(2)}%`,desc:"Desvio padrão anualizado dos retornos diários"},
+                          {label:"Máx. Drawdown (3a)",val:fmtPct(scaledDD),desc:"Queda máxima pico-a-vale nos últimos 3 anos"},
+                          {label:"Sharpe Ratio",val:sharpeVal.toFixed(2),desc:"Retorno anualizado excesso / volatilidade (Rf=2%)"},
+                          {label:"CAGR",val:fmtPct(scaledAnn,true),desc:"Taxa de crescimento anual composta desde início"},
+                        ].map(m=>(
+                          <div key={m.label} className="border border-[#1a1f2e] rounded-lg p-4">
+                            <div className="text-slate-500 text-[10px] uppercase tracking-wider mb-1">{m.label}</div>
+                            <div className="text-slate-100 font-black text-xl mb-2">{m.val}</div>
+                            <div className="text-slate-600 text-[10px] leading-relaxed">{m.desc}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                  </div>
+                );
+              })()}
 
               {/* ── DASHBOARD ── */}
               {activePage==="dashboard"&&(
