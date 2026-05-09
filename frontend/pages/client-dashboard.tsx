@@ -1982,6 +1982,10 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [ibkrPos,setIbkrPos]=React.useState<{ticker:string;qty:number;value:number;weight_pct:number}[]|null>(null);
   const [ibkrOpenOrders,setIbkrOpenOrders]=React.useState<{ticker:string;side:string;remaining_qty:number;status:string}[]>([]);
   const [ibkrFxSupported,setIbkrFxSupported]=React.useState<boolean|null>(null);
+  const [ibkrFxManualOverride,setIbkrFxManualOverride]=React.useState<boolean>(
+    ()=>localStorage.getItem("ibkr_fx_disabled")==="1"
+  );
+  const ibkrFxBlocked=ibkrFxManualOverride||(ibkrFxSupported===false);
   const [ibkrAcctType,setIbkrAcctType]=React.useState("");
   const [ibkrLoading,setIbkrLoading]=React.useState(false);
   const [ibkrErr,setIbkrErr]=React.useState("");
@@ -2246,7 +2250,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
           return {ticker:ibTick, action:side, est_eur:Math.max(0,r.adjEur), ref_price:refP?.price??null};
         }).filter(o=>o.est_eur>=MIN_ORDER_EUR||o.action==="Vender"),
         paper_mode:false,profile:profileLabel,
-        fx_exposure:ibkrFxSupported===false?"aberta":fxExposure,margin_enabled:marginEnabled,aum,
+        fx_exposure:ibkrFxBlocked?"aberta":fxExposure,margin_enabled:marginEnabled,aum,
       };
       const resp=await fetch("/api/ibkr-orders",{
         method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)
@@ -2539,7 +2543,28 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                       {ibkrPos.length} posições activas na IB
                       {orphanPositions.length>0?` · ${orphanPositions.length} fora do plano`:` · todas no plano`}
                       {ibkrOpenOrders.length>0&&` · ${ibkrOpenOrders.length} ordem(ns) em curso`}
-                      {ibkrAcctType&&` · conta ${ibkrAcctType} · FX ${ibkrFxSupported===false?"bloqueado":"suportado"}`}
+                      {ibkrAcctType&&` · conta ${ibkrAcctType} · FX ${ibkrFxBlocked?"bloqueado":"suportado"}`}
+                    </div>
+                    {/* Manual FX override toggle */}
+                    <div className="flex items-center gap-2 px-1 py-1">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <div
+                          onClick={()=>{
+                            const next=!ibkrFxManualOverride;
+                            setIbkrFxManualOverride(next);
+                            if(next) localStorage.setItem("ibkr_fx_disabled","1");
+                            else localStorage.removeItem("ibkr_fx_disabled");
+                          }}
+                          className={`relative w-8 h-4 rounded-full transition-colors ${ibkrFxManualOverride?"bg-red-700":"bg-emerald-700"}`}
+                        >
+                          <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${ibkrFxManualOverride?"translate-x-4":"translate-x-0.5"}`}/>
+                        </div>
+                        <span className="text-[10px] text-slate-400">
+                          {ibkrFxManualOverride
+                            ?"FX desactivado manualmente (conta Caixa)"
+                            :"FX activo — desactivar se conta for Caixa"}
+                        </span>
+                      </label>
                     </div>
                     {/* Open orders live table */}
                     <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg overflow-hidden">
@@ -3094,7 +3119,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             <div className="text-[10px] text-slate-500 space-y-1">
               <div className="flex justify-between"><span>Perfil</span><span className="text-slate-300 font-semibold">{profileLabel}</span></div>
               <div className="flex justify-between"><span>Exposição FX</span>
-                {ibkrFxSupported===false
+                {ibkrFxBlocked
                   ?<span className="text-amber-400 font-semibold text-[9px]">Conta Caixa — hedge desactivado</span>
                   :<span className="text-slate-300 font-semibold capitalize">{fxExposure}</span>
                 }
