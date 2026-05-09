@@ -340,6 +340,8 @@ const ISO_TO_COUNTRY:Record<string,string>={
 };
 const COUNTRY_TO_ISO:Record<string,string>={};
 Object.entries(ISO_TO_COUNTRY).forEach(([iso,c])=>{COUNTRY_TO_ISO[c]=iso;});
+// Countries that have at least one ticker in the database (for map colouring)
+const DB_COUNTRIES:Set<string>=new Set(Object.values(COUNTRY));
 
 // Tickers that are foreign companies but trade on US exchanges (NYSE/NASDAQ/OTC via SMART/USD).
 // These are orderable through IB despite getZone() returning a non-EUA country.
@@ -4035,7 +4037,11 @@ export default function ClientDashboardPage() {
                           Exposição geográfica
                           {hoveredCountry&&(
                             <span className="ml-2 text-xs font-normal text-blue-300">
-                              {hoveredCountry.name}: <strong>{hoveredCountry.pct.toFixed(1)}%</strong>
+                              {hoveredCountry.name}:{" "}
+                              {hoveredCountry.pct>0
+                                ?<strong>{hoveredCountry.pct.toFixed(1)}%</strong>
+                                :<span className="text-slate-400">na base de dados</span>
+                              }
                             </span>
                           )}
                         </div>
@@ -4052,7 +4058,10 @@ export default function ClientDashboardPage() {
                                     const isoId=String(geo.id).padStart(3,"0");
                                     const cName=ISO_TO_COUNTRY[isoId];
                                     const pct=cName?countryAlloc.get(cName)??0:0;
-                                    const fill=pct>0?"#3b82f6":"#111827";
+                                    const inDb=cName?DB_COUNTRIES.has(cName):false;
+                                    // Blue  = in recommendation | Slate-teal = in DB only | Dark = not in DB
+                                    const fill=pct>0?"#3b82f6":inDb?"#1e3a5f":"#111827";
+                                    const fillHover=pct>0?"#60a5fa":inDb?"#2d5a8e":"#1a2540";
                                     return (
                                       <Geography
                                         key={geo.rsmKey}
@@ -4060,8 +4069,8 @@ export default function ClientDashboardPage() {
                                         fill={fill}
                                         stroke="#1e293b"
                                         strokeWidth={0.5}
-                                        style={{default:{outline:"none"},hover:{outline:"none",fill:pct>0?"#60a5fa":fill},pressed:{outline:"none"}}}
-                                        onMouseEnter={()=>{if(cName&&pct>0)setHoveredCountry({name:cName,pct});}}
+                                        style={{default:{outline:"none"},hover:{outline:"none",fill:fillHover},pressed:{outline:"none"}}}
+                                        onMouseEnter={()=>{if(cName&&(pct>0||inDb))setHoveredCountry({name:cName,pct});}}
                                         onMouseLeave={()=>setHoveredCountry(null)}
                                       />
                                     );
@@ -4085,6 +4094,17 @@ export default function ClientDashboardPage() {
                                 })}
                               </ZoomableGroup>
                             </ComposableMap>
+                            {/* Legend */}
+                            <div className="flex items-center gap-3 mt-1 px-1">
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-3 h-2 rounded-sm" style={{background:"#3b82f6"}}/>
+                                <span className="text-[9px] text-slate-400">Recomendado</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-3 h-2 rounded-sm" style={{background:"#1e3a5f"}}/>
+                                <span className="text-[9px] text-slate-400">Na base de dados</span>
+                              </div>
+                            </div>
                           </div>
                           <div className="space-y-1.5 self-center">
                             {topCountries.map(([c,pct])=>(
