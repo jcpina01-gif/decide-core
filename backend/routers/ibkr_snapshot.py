@@ -468,11 +468,17 @@ def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
 
         positions.sort(key=lambda r: abs(float(r.get("value") or 0.0)), reverse=True)
 
-        # ── Open orders (Submitted / PreSubmitted — not yet filled) ──────────
+        # ── Open orders (all clients — Submitted / PreSubmitted) ─────────────
+        # reqAllOpenOrders sees orders from ALL clientIds, unlike openTrades()
         open_orders_data: list[dict] = []
         try:
-            ib.sleep(0.3)
-            for trade in ib.openTrades():
+            ib.sleep(0.5)
+            all_trades = ib.reqAllOpenOrders()   # returns list[Trade] for all connections
+            ib.sleep(0.5)                        # allow event loop to populate
+            # reqAllOpenOrders may return [] immediately; fall back to openTrades
+            if not all_trades:
+                all_trades = ib.openTrades()
+            for trade in all_trades:
                 c_o = trade.contract
                 o_o = trade.order
                 os_o = trade.orderStatus
