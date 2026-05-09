@@ -314,10 +314,14 @@ export default function LandingPage() {
         </section>
 
         {/* ── COMO FUNCIONA ─────────────────────────────────────────────── */}
-        <section id="como-funciona" style={{background:"#ffffff",padding:"80px 28px"}}>
+        <section id="como-funciona" style={{
+          background:`linear-gradient(180deg, ${BG} 0%, ${BG2} 100%)`,
+          padding:"80px 28px",
+          borderTop:"1px solid rgba(255,255,255,0.06)",
+        }}>
           <div style={{maxWidth:1100,margin:"0 auto"}}>
             <div style={{textAlign:"center",marginBottom:56}}>
-              <h2 style={{fontSize:"clamp(1.6rem,3vw,2.2rem)",fontWeight:800,color:"#0f172a",margin:"0 0 12px",letterSpacing:-0.8}}>
+              <h2 style={{fontSize:"clamp(1.6rem,3vw,2.2rem)",fontWeight:800,color:"#f8fafc",margin:"0 0 12px",letterSpacing:-0.8}}>
                 Como funciona
               </h2>
               <p style={{fontSize:16,color:"#64748b",margin:0,fontWeight:500}}>
@@ -336,17 +340,18 @@ export default function LandingPage() {
                   <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",padding:"0 20px"}}>
                     <div style={{
                       width:72,height:72,borderRadius:"50%",marginBottom:18,
-                      border:"2px solid #e2e8f0",
+                      border:"2px solid rgba(45,212,191,0.25)",
                       display:"flex",alignItems:"center",justifyContent:"center",
-                      fontSize:28,background:"#f8fafc",
+                      fontSize:28,
+                      background:"rgba(45,212,191,0.07)",
                     }}>{s.icon}</div>
-                    <h3 style={{fontSize:15,fontWeight:700,color:"#0f172a",margin:"0 0 10px",letterSpacing:-0.3}}>
+                    <h3 style={{fontSize:15,fontWeight:700,color:"#f1f5f9",margin:"0 0 10px",letterSpacing:-0.3}}>
                       {s.step}. {s.title}
                     </h3>
                     <p style={{fontSize:13.5,color:"#64748b",lineHeight:1.65,margin:0,maxWidth:200}}>{s.desc}</p>
                   </div>
                   {i<3&&(
-                    <div style={{paddingTop:36,color:"#cbd5e1",fontSize:22,flexShrink:0,userSelect:"none"}}>→</div>
+                    <div style={{paddingTop:36,color:"rgba(45,212,191,0.4)",fontSize:22,flexShrink:0,userSelect:"none"}}>→</div>
                   )}
                 </React.Fragment>
               ))}
@@ -355,9 +360,13 @@ export default function LandingPage() {
         </section>
 
         {/* ── O QUE TORNA O DECIDE DIFERENTE ───────────────────────────── */}
-        <section id="vantagens" style={{background:"#f8fafc",padding:"80px 28px"}}>
+        <section id="vantagens" style={{
+          background:BG2,
+          padding:"80px 28px",
+          borderTop:"1px solid rgba(255,255,255,0.06)",
+        }}>
           <div style={{maxWidth:1100,margin:"0 auto"}}>
-            <h2 style={{fontSize:"clamp(1.6rem,3vw,2.2rem)",fontWeight:800,color:"#0f172a",textAlign:"center",
+            <h2 style={{fontSize:"clamp(1.6rem,3vw,2.2rem)",fontWeight:800,color:"#f8fafc",textAlign:"center",
               margin:"0 0 52px",letterSpacing:-0.8}}>
               O que torna o DECIDE diferente
             </h2>
@@ -374,14 +383,16 @@ export default function LandingPage() {
                   desc:"O nosso sucesso está alinhado com o seu: foco em resultados de longo prazo."},
               ].map(c=>(
                 <div key={c.title} style={{
-                  background:"#ffffff",borderRadius:14,padding:"28px 24px",
-                  border:"1px solid #e2e8f0",
+                  background:"rgba(255,255,255,0.03)",
+                  borderRadius:14,padding:"28px 24px",
+                  border:"1px solid rgba(255,255,255,0.08)",
+                  transition:"border-color .2s",
                 }}>
                   <div style={{
                     width:42,height:42,borderRadius:10,marginBottom:16,fontSize:20,
                     background:`${c.color}18`,display:"flex",alignItems:"center",justifyContent:"center",
                   }}>{c.icon}</div>
-                  <h3 style={{fontSize:15,fontWeight:700,color:"#0f172a",margin:"0 0 10px"}}>{c.title}</h3>
+                  <h3 style={{fontSize:15,fontWeight:700,color:"#f1f5f9",margin:"0 0 10px"}}>{c.title}</h3>
                   <p style={{fontSize:13.5,color:"#64748b",lineHeight:1.65,margin:0}}>{c.desc}</p>
                 </div>
               ))}
