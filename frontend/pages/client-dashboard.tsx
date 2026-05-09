@@ -176,8 +176,7 @@ function buildSimulatorSrc(profile: string): string {
 const SECTOR: Record<string, string> = {
   // Internet / Comunicação digital
   GOOGL:"Internet",GOOG:"Internet",META:"Internet",
-  NFLX:"Internet",SNAP:"Internet",PINS:"Internet",TWTR:"Internet",BIDU:"Internet",
-  TCEHY:"Internet",JD:"Internet",BABA:"Internet",
+  NFLX:"Internet",SNAP:"Internet",PINS:"Internet",TWTR:"Internet",
   // Tecnologia
   AAPL:"Tecnologia",NVDA:"Tecnologia",MSFT:"Tecnologia",
   AVGO:"Tecnologia",AMD:"Tecnologia",CRM:"Tecnologia",
@@ -192,7 +191,7 @@ const SECTOR: Record<string, string> = {
   SMCI:"Tecnologia",HUBS:"Tecnologia",OKTA:"Tecnologia",DOCU:"Tecnologia",TWLO:"Tecnologia",
   TTD:"Tecnologia",TTWO:"Tecnologia",ZS:"Tecnologia",FICO:"Tecnologia",GPN:"Tecnologia",
   IBM:"Tecnologia",SAP:"Tecnologia",ERIC:"Tecnologia",EQIX:"Tecnologia",IT:"Tecnologia",
-  SHOP:"Tecnologia",TEAM:"Tecnologia",PAYC:"Tecnologia",ROKU:"Tecnologia",
+  SHOP:"Tecnologia",PAYC:"Tecnologia",ROKU:"Tecnologia",
   NJDCY:"Tecnologia",HOCPY:"Saúde",FUJIY:"Saúde",
   JPM:"Financeiro",GS:"Financeiro",MS:"Financeiro",BAC:"Financeiro",WFC:"Financeiro",
   V:"Financeiro",MA:"Financeiro",AXP:"Financeiro",BLK:"Financeiro",SCHW:"Financeiro",
@@ -204,7 +203,7 @@ const SECTOR: Record<string, string> = {
   BKNG:"Cons. Discr.",AMZN:"Cons. Discr.",TSLA:"Cons. Discr.",
   NKE:"Cons. Discr.",MCD:"Cons. Discr.",SBUX:"Cons. Discr.",
   TJX:"Cons. Discr.",LOW:"Cons. Discr.",HD:"Cons. Discr.",WBD:"Comunicação",
-  UBER:"Cons. Discr.",CMG:"Cons. Discr.",PDD:"Cons. Discr.",DHI:"Cons. Discr.",
+  UBER:"Cons. Discr.",CMG:"Cons. Discr.",DHI:"Cons. Discr.",
   MELI:"Cons. Discr.",ETSY:"Cons. Discr.",EBAY:"Cons. Discr.",RCL:"Cons. Discr.",
   NCLH:"Cons. Discr.",CCL:"Cons. Discr.",DAL:"Cons. Discr.",UAL:"Cons. Discr.",AAL:"Cons. Discr.",
   GM:"Cons. Discr.",F:"Cons. Discr.",ROST:"Cons. Discr.",ORLY:"Cons. Discr.",LEN:"Cons. Discr.",
@@ -218,7 +217,7 @@ const SECTOR: Record<string, string> = {
   NOC:"Industrial",CARR:"Industrial",JCI:"Industrial",FDX:"Industrial",TT:"Industrial",
   CPRT:"Industrial",SIEGY:"Industrial",
   // Japan batch-3
-  NTTYY:"Comunicação",SOBKY:"Comunicação",KDDIY:"Comunicação",TMUS:"Comunicação",NTES:"Internet",
+  NTTYY:"Comunicação",SOBKY:"Comunicação",KDDIY:"Comunicação",TMUS:"Comunicação",
   RCRUY:"Tecnologia",SHECY:"Mat. Básicos",
   MTSUY:"Industrial",ITOCY:"Industrial",MITSY:"Industrial",
   DNZOY:"Industrial",SSUMY:"Industrial",MHVIY:"Industrial",
@@ -240,7 +239,7 @@ const SECTOR: Record<string, string> = {
   BATS:"Cons. Básico",BTI:"Cons. Básico",  // BATS=LSE, BTI=NYSE ADR
   PEP:"Cons. Básico",COST:"Cons. Básico",MDLZ:"Cons. Básico",
   NEM:"Mineira",GOLD:"Mineira",AEM:"Mineira",WPM:"Mineira",
-  FCX:"Mineira",AA:"Mineira",RIO:"Mineira",BHP:"Mineira",VALE:"Mineira",TECK:"Mineira",
+  FCX:"Mineira",AA:"Mineira",BHP:"Mineira",VALE:"Mineira",TECK:"Mineira",
   SPG:"Imobiliário",EQIX:"Imobiliário",PLD:"Imobiliário",IRM:"Imobiliário",EXR:"Imobiliário",WELL:"Imobiliário",CBRE:"Imobiliário",
   // France ADRs
   TTE:"Energia",SNY:"Saúde",LRLCY:"Cons. Básico",HESAY:"Cons. Discr.",
@@ -290,7 +289,7 @@ const COUNTRY:Record<string,string>={
   AEM:"Canadá",WPM:"Canadá",CM:"Canadá",SU:"Canadá",
   NOK:"Finlândia",BATS:"Reino Unido",BTI:"Reino Unido",
   AZN:"Reino Unido",BP:"Reino Unido",GSK:"Reino Unido",SHEL:"Reino Unido",UL:"Reino Unido",
-  BBL:"Reino Unido",BCS:"Reino Unido",LYG:"Reino Unido",RIO:"Austrália",
+  BBL:"Reino Unido",BCS:"Reino Unido",LYG:"Reino Unido",
   E:"Itália",
   BAYRY:"Alemanha",IFNNY:"Alemanha",DB:"Alemanha",
   SAN:"Espanha",BBVA:"Espanha",IDEXY:"Espanha",IBDRY:"Espanha",TEF:"Espanha",
@@ -316,14 +315,12 @@ const COUNTRY:Record<string,string>={
   DSNKY:"Japão",CHGCY:"Japão",HOCPY:"Japão",MHVIY:"Japão",MITSY:"Japão",
   MTSUY:"Japão",SSUMY:"Japão",TKOMY:"Japão",MSADY:"Japão",DNZOY:"Japão",
   RCRUY:"Japão",NTTYY:"Japão",SOBKY:"Japão",SVNDY:"Japão",SMPNY:"Japão",
-  PDD:"China",BIDU:"China",TCEHY:"China",JD:"China",BABA:"China",NTES:"China",
   SHOP:"Canadá",BAM:"Canadá",BN:"Canadá",BMO:"Canadá",TECK:"Canadá",IMO:"Canadá",
   SAP:"Alemanha",SIEGY:"Alemanha",MBGYY:"Alemanha",VWAGY:"Alemanha",
   HSBC:"Reino Unido",NWG:"Reino Unido",
   ERIC:"Suécia",ARGX:"Bélgica",PHG:"Países Baixos",STLA:"Países Baixos",
   LVMUY:"França",PPRUY:"França",BNPQY:"França",
   GRFS:"Espanha",
-  TEAM:"Austrália",
   SQ:"EUA",
   XEON:"Eurozona",
 };
@@ -333,8 +330,8 @@ const getZone=(t:string)=>COUNTRY[t.toUpperCase()]??"EUA";
 const ISO_TO_COUNTRY:Record<string,string>={
   "840":"EUA","124":"Canadá","826":"Reino Unido","276":"Alemanha",
   "528":"Países Baixos","756":"Suíça","380":"Itália","724":"Espanha",
-  "246":"Finlândia","208":"Dinamarca","578":"Noruega","036":"Austrália",
-  "392":"Japão","156":"China","076":"Brasil","250":"França",
+  "246":"Finlândia","208":"Dinamarca","578":"Noruega",
+  "392":"Japão","076":"Brasil","250":"França",
   "752":"Suécia","442":"Luxemburgo","372":"Irlanda","040":"Áustria",
   "620":"Portugal",
 };
@@ -361,8 +358,6 @@ const US_TRADEABLE_ADR=new Set([
   "TM","SONY","HMC","NMR","SMFG","MUFG","SFTBY","MRAAY","IFNNY","JXHLY","MSBHF","MARUY",
   "NTTYY","RCRUY","MTSUY","ITOCY","DSNKY","CHGCY","MITSY","SHECY","TKOMY",
   "DNZOY","SSUMY","MHVIY","HOCPY","SVNDY","SOBKY","MSADY","SMPNY","FRCOY","FANUY",
-  // Other
-  "PDD","BIDU",
 ]);
 
 // A ticker is orderable if it's US-domiciled OR is a known ADR trading on US markets
@@ -396,7 +391,7 @@ const COMPANY:Record<string,string>={
   ADBE:"Adobe",INTU:"Intuit",NOW:"ServiceNow",SNPS:"Synopsys",CDNS:"Cadence",
   ANET:"Arista Networks",ARM:"ARM Holdings",NXPI:"NXP Semi",
   CRWD:"CrowdStrike",NET:"Cloudflare",SNOW:"Snowflake",MDB:"MongoDB",
-  HUBS:"HubSpot",TEAM:"Atlassian",WDAY:"Workday",OKTA:"Okta",
+  HUBS:"HubSpot",WDAY:"Workday",OKTA:"Okta",
   DOCU:"DocuSign",TWLO:"Twilio",TTD:"Trade Desk",ZS:"Zscaler",
   COIN:"Coinbase",SQ:"Block",PYPL:"PayPal",ADSK:"Autodesk",
   MSCI:"MSCI Inc",FICO:"Fair Isaac",CTSH:"Cognizant",IBM:"IBM",
@@ -414,7 +409,7 @@ const COMPANY:Record<string,string>={
   // US Consumer
   BKNG:"Booking",AMZN:"Amazon",TSLA:"Tesla",NKE:"Nike",MCD:"McDonald's",
   SBUX:"Starbucks",TJX:"TJX",LOW:"Lowe's",HD:"Home Depot",
-  UBER:"Uber",CMG:"Chipotle",PDD:"PDD Holdings",DHI:"D.R. Horton",
+  UBER:"Uber",CMG:"Chipotle",DHI:"D.R. Horton",
   COST:"Costco",MDLZ:"Mondelez",WMT:"Walmart",PG:"P&G",KO:"Coca-Cola",
   PEP:"PepsiCo",DIS:"Disney",EA:"Electronic Arts",TTWO:"Take-Two",
   EBAY:"eBay",ETSY:"Etsy",LULU:"Lululemon",MAR:"Marriott",
@@ -465,7 +460,7 @@ const COMPANY:Record<string,string>={
   // UK / Europe
   BATS:"BAT",BTI:"British American Tobacco",AZN:"AstraZeneca",
   BP:"BP",GSK:"GSK",SHEL:"Shell",UL:"Unilever",
-  BBL:"BHP Group",BCS:"Barclays",LYG:"Lloyds",RIO:"Rio Tinto",
+  BBL:"BHP Group",BCS:"Barclays",LYG:"Lloyds",
   VOD:"Vodafone",NGG:"National Grid",NWG:"NatWest",HSBC:"HSBC",
   E:"Eni",BAYRY:"Bayer",IFNNY:"Infineon",DB:"Deutsche Bank",
   ADDYY:"Adidas",BASFY:"BASF",SIEGY:"Siemens",MBGYY:"Mercedes-Benz",
@@ -508,8 +503,6 @@ const COMPANY:Record<string,string>={
   DNZOY:"Denso",SSUMY:"Sumitomo Corp",MHVIY:"Mitsubishi Heavy",
   HOCPY:"Hoya",SVNDY:"Seven & I Holdings",SOBKY:"SoftBank Corp",
   MSADY:"MS&AD Insurance",SMPNY:"Sompo Holdings",
-  // China
-  BIDU:"Baidu",JD:"JD.com",NTES:"NetEase",TCEHY:"Tencent",BABA:"Alibaba",
   // ADR misc
   GRFS:"Grifols",RACE:"Ferrari",SUZ:"Suzano",ERIC:"Ericsson",
   // US Tech (additional)
@@ -4025,7 +4018,7 @@ export default function ClientDashboardPage() {
                       "Japão":[138,37],"Alemanha":[10,51],"Países Baixos":[5,52],
                       "Noruega":[15,65],"Dinamarca":[10,56],"Finlândia":[25,64],
                       "Itália":[12,43],"Espanha":[-4,40],"Suíça":[8,47],
-                      "Austrália":[134,-27],"China":[104,35],"França":[2,46],
+                      "França":[2,46],
                       "Suécia":[17,62],"Irlanda":[-8,53],"Áustria":[14,47],
                       "Brasil":[-52,-10],"Luxemburgo":[6,49.6],
                       "Portugal":[-8,39],
