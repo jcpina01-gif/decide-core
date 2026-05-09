@@ -178,6 +178,8 @@ const SECTOR: Record<string, string> = {
   GOOGL:"Internet",GOOG:"Internet",META:"Internet",
   NFLX:"Internet",SNAP:"Internet",PINS:"Internet",TWTR:"Internet",
   BIDU:"Internet",TCEHY:"Internet",JD:"Internet",BABA:"Internet",NTES:"Internet",TCOM:"Internet",
+  TME:"Comunicação",FUTU:"Financeiro",BEKE:"Imobiliário",YUMC:"Cons. Discr.",ZTO:"Industrial",
+  CSLLY:"Saúde",FSUGY:"Mineira",
   // Tecnologia
   AAPL:"Tecnologia",NVDA:"Tecnologia",MSFT:"Tecnologia",
   AVGO:"Tecnologia",AMD:"Tecnologia",CRM:"Tecnologia",
@@ -325,8 +327,10 @@ const COUNTRY:Record<string,string>={
   // China ADRs
   BIDU:"China",JD:"China",NTES:"China",PDD:"China",
   BABA:"China",TCEHY:"China",TCOM:"China",
+  TME:"China",FUTU:"China",BEKE:"China",YUMC:"China",ZTO:"China",
   // Australia ADRs
   RIO:"Austrália",TEAM:"Austrália",BHP:"Austrália",
+  CSLLY:"Austrália",FSUGY:"Austrália",
   XEON:"Eurozona",
 };
 const getZone=(t:string)=>COUNTRY[t.toUpperCase()]??"EUA";
@@ -365,8 +369,9 @@ const US_TRADEABLE_ADR=new Set([
   "DNZOY","SSUMY","MHVIY","HOCPY","SVNDY","SOBKY","MSADY","SMPNY","FRCOY","FANUY",
   // China ADRs — NYSE/NASDAQ
   "BIDU","JD","NTES","PDD","BABA","TCEHY","TCOM",
-  // Australia ADRs — NYSE
-  "RIO","TEAM","BHP",
+  "TME","FUTU","BEKE","YUMC","ZTO",
+  // Australia ADRs — NYSE/OTC
+  "RIO","TEAM","BHP","CSLLY","FSUGY",
 ]);
 
 // A ticker is orderable if it's US-domiciled OR is a known ADR trading on US markets
@@ -514,8 +519,9 @@ const COMPANY:Record<string,string>={
   MSADY:"MS&AD Insurance",SMPNY:"Sompo Holdings",
   // China ADRs
   BIDU:"Baidu",JD:"JD.com",NTES:"NetEase",TCEHY:"Tencent",BABA:"Alibaba",PDD:"PDD Holdings",TCOM:"Trip.com",
+  TME:"Tencent Music",FUTU:"Futu Holdings",BEKE:"KE Holdings",YUMC:"Yum China",ZTO:"ZTO Express",
   // Australia ADRs
-  RIO:"Rio Tinto",TEAM:"Atlassian",BHP:"BHP Group",
+  RIO:"Rio Tinto",TEAM:"Atlassian",BHP:"BHP Group",CSLLY:"CSL Limited",FSUGY:"Fortescue Metals",
   // ADR misc
   GRFS:"Grifols",RACE:"Ferrari",SUZ:"Suzano",ERIC:"Ericsson",
   // US Tech (additional)
