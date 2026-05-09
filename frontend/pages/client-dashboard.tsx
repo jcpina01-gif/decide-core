@@ -221,9 +221,8 @@ const SECTOR: Record<string, string> = {
   RCRUY:"Tecnologia",SHECY:"Mat. Básicos",
   MTSUY:"Industrial",ITOCY:"Industrial",MITSY:"Industrial",
   DNZOY:"Industrial",SSUMY:"Industrial",MHVIY:"Industrial",
-  DSNKY:"Saúde",CHGCY:"Saúde",HOCPY:"Saúde",
-  TKOMY:"Financeiro",MSADY:"Financeiro",SMPNY:"Financeiro",
-  SVNDY:"Cons. Básico",FRCOY:"Cons. Discr.",
+  DSNKY:"Saúde",CHGCY:"Saúde",
+  SVNDY:"Cons. Básico",
   UNH:"Saúde",JNJ:"Saúde",LLY:"Saúde",ABBV:"Saúde",
   MRK:"Saúde",PFE:"Saúde",TMO:"Saúde",ABT:"Saúde",BAYRY:"Saúde",NVO:"Saúde",
   GILD:"Saúde",VRTX:"Saúde",REGN:"Saúde",ISRG:"Saúde",IDXX:"Saúde",
@@ -240,9 +239,9 @@ const SECTOR: Record<string, string> = {
   PEP:"Cons. Básico",COST:"Cons. Básico",MDLZ:"Cons. Básico",
   NEM:"Mineira",GOLD:"Mineira",AEM:"Mineira",WPM:"Mineira",
   FCX:"Mineira",AA:"Mineira",BHP:"Mineira",VALE:"Mineira",TECK:"Mineira",
-  SPG:"Imobiliário",EQIX:"Imobiliário",PLD:"Imobiliário",IRM:"Imobiliário",EXR:"Imobiliário",WELL:"Imobiliário",CBRE:"Imobiliário",
+  SPG:"Imobiliário",PLD:"Imobiliário",IRM:"Imobiliário",EXR:"Imobiliário",WELL:"Imobiliário",CBRE:"Imobiliário",
   // France ADRs
-  TTE:"Energia",SNY:"Saúde",LRLCY:"Cons. Básico",HESAY:"Cons. Discr.",
+  TTE:"Energia",SNY:"Saúde",LRLCY:"Cons. Básico",
   SBGSY:"Industrial",SAFRY:"Industrial",AIQUY:"Mat. Básicos",
   ESLOY:"Saúde",AXAHY:"Financeiro",ORAN:"Comunicação",ENGIY:"Energia",
   DANOY:"Cons. Básico",PUBGY:"Comunicação",CGEMY:"Tecnologia",MGDDY:"Cons. Básico",
@@ -548,7 +547,7 @@ const YF_ALIAS:Record<string,string>={
 };
 const getYFTicker=(t:string)=>YF_ALIAS[t.toUpperCase()]??t;
 
-type Page="dashboard"|"reco"|"carteira"|"perf"|"risco"|"historico"|"custos"|"ajuda"|"contactos"|"simulador"|"relatorios"|"ordens";
+type Page="dashboard"|"reco"|"carteira"|"perf"|"risco"|"historico"|"custos"|"ajuda"|"contactos"|"simulador"|"relatorios"|"ordens"|"actividade";
 type RiskProfile="conservador"|"moderado"|"dinamico";
 type FxExposure="protegida"|"parcial"|"aberta";
 type KpiMode="base"|"margem";
@@ -652,6 +651,7 @@ const NAV=[
   {id:"historico",  label:"Histórico",      Icon:Clock},
   {id:"ordens",     label:"Enviar Ordens",   Icon:Send},
   {id:"relatorios", label:"Relatórios",     Icon:BookOpen},
+  {id:"actividade", label:"Actividade",     Icon:Activity},
   {id:"custos",     label:"Custos",         Icon:Receipt},
   {id:"ajuda",      label:"Ajuda",          Icon:HelpCircle},
   {id:"contactos",  label:"Contactos",      Icon:Mail},
@@ -2057,6 +2057,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         const n=j.cancellations?.length??j.cancelled??0;
         setCancelResult(`${n} ordem(ns) cancelada(s)`);
         setIbkrOpenOrders([]);
+        logActivity({type:"cancelamento",label:`${n} ordem(ns) cancelada(s) na IB Gateway`,icon:"✕",color:"text-red-400"});
       } else {
         setCancelResult("Erro: "+(j.error||j.detail||`HTTP ${resp.status}`));
       }
@@ -2253,12 +2254,26 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
       const j=await resp.json().catch(()=>({}));
       // Check both HTTP status AND JSON status (backend can return 200 with error body)
       if(resp.ok&&j.status!=="rejected"&&j.status!=="error"){
-        setOrderRef(j.order_ref??"ORD-"+Date.now().toString(36).toUpperCase());
+        const ref=j.order_ref??"ORD-"+Date.now().toString(36).toUpperCase();
+        setOrderRef(ref);
         setFills(j.fills??[]);
         setPollCount(0);
         setDone(true);
+        const fills:Array<{ticker:string;side:string;qty:number}>=j.fills??[];
+        const buys=fills.filter((f)=>f.side==="BUY");
+        const sells=fills.filter((f)=>f.side==="SELL");
+        logActivity({
+          type:"ordens",
+          label:`${fills.length} ordem(ns) submetida(s) · ${ref}`,
+          detail:[
+            buys.length?`Compras: ${buys.map(f=>f.ticker).join(", ")}`:"",
+            sells.length?`Vendas: ${sells.map(f=>f.ticker).join(", ")}`:"",
+          ].filter(Boolean).join(" · ")||"Sem detalhes de fills",
+          icon:"▲",color:"text-emerald-400",
+        });
       } else {
         setErrMsg(j.error||j.detail||`Erro ${resp.status} — o backend FastAPI e a IB Gateway têm de estar activos para envio real.`);
+        logActivity({type:"ordens",label:`Erro ao submeter ordens`,detail:j.error||j.detail||`HTTP ${resp.status}`,icon:"✕",color:"text-red-400"});
       }
     } catch(e:unknown){
       setErrMsg((e instanceof Error?e.message:"Falha de ligação")+" — verifique a ligação ao backend.");
@@ -3129,6 +3144,25 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   );
 }
 
+/* ─── Activity log ─────────────────────────────────────────────────────── */
+const ACT_KEY="decide_activity_log";
+type ActEntry={
+  id:string; ts:number; type:string;
+  label:string; detail?:string; icon:string; color:string;
+};
+function logActivity(entry:Omit<ActEntry,"id"|"ts">) {
+  if(typeof window==="undefined") return;
+  try {
+    const prev:ActEntry[]=JSON.parse(localStorage.getItem(ACT_KEY)||"[]");
+    const next=[{...entry,id:Math.random().toString(36).slice(2),ts:Date.now()},...prev].slice(0,200);
+    localStorage.setItem(ACT_KEY,JSON.stringify(next));
+  } catch{}
+}
+function getActivityLog():ActEntry[] {
+  if(typeof window==="undefined") return [];
+  try { return JSON.parse(localStorage.getItem(ACT_KEY)||"[]"); } catch { return []; }
+}
+
 export default function ClientDashboardPage() {
   const router=useRouter();
   const {profile}=useSyncedRiskProfileFromOnboarding();
@@ -3167,12 +3201,19 @@ export default function ClientDashboardPage() {
       localStorage.setItem(LS_KEY,JSON.stringify({...existing,...patch}));
     }catch{}
   };
-  const setRiskProfileLocal=(v:RiskProfile)=>{setRiskProfileLocalRaw(v);savePrefs({riskProfile:v});};
-  const setFxExposure=(v:FxExposure)=>{setFxExposureRaw(v);savePrefs({fxExposure:v});};
+  const setRiskProfileLocal=(v:RiskProfile)=>{
+    setRiskProfileLocalRaw(v);savePrefs({riskProfile:v});
+    logActivity({type:"configuração",label:`Perfil de risco alterado para ${v}`,icon:"⚙",color:"text-amber-400"});
+  };
+  const setFxExposure=(v:FxExposure)=>{
+    setFxExposureRaw(v);savePrefs({fxExposure:v});
+    logActivity({type:"configuração",label:`Exposição FX alterada para ${v}`,icon:"⚙",color:"text-amber-400"});
+  };
   const setMarginEnabled=(v:boolean|((prev:boolean)=>boolean))=>{
     setMarginEnabledRaw(prev=>{
       const next=typeof v==="function"?v(prev):v;
       savePrefs({marginEnabled:next});
+      logActivity({type:"configuração",label:`Margem ${next?"activada":"desactivada"}`,icon:"⚙",color:"text-amber-400"});
       return next;
     });
   };
@@ -3580,6 +3621,7 @@ export default function ClientDashboardPage() {
                   activePage==="historico"?"Histórico":
                   activePage==="simulador"?"Simulador":
                   activePage==="relatorios"?"Relatórios":
+                  activePage==="actividade"?"Actividade":
                   activePage==="custos"?"Custos":
                   activePage==="ajuda"?"Ajuda":
                   activePage==="ordens"?"Confirmar e enviar ordens":"Contactos"
@@ -3593,6 +3635,7 @@ export default function ClientDashboardPage() {
                   activePage==="historico"?"Histórico de recomendações":
                   activePage==="simulador"?"Simule diferentes cenários de investimento":
                   activePage==="relatorios"?"Relatórios detalhados da carteira":
+                  activePage==="actividade"?"Registo completo de todas as operações e alterações":
                   activePage==="custos"?"Transparência total sobre os custos do serviço e da sua carteira":
                   activePage==="ajuda"?"Perguntas frequentes e recursos":
                   activePage==="ordens"?"Revise o plano e envie as ordens para execução na Interactive Brokers.":
@@ -3890,7 +3933,7 @@ export default function ClientDashboardPage() {
                                 labelFormatter={l=>String(l).slice(0,10)}/>
                               <ReferenceLine y={0} stroke="#1e293b" strokeDasharray="3 3"/>
                               <Area type="monotone" dataKey="model" stroke="#14b8a6" strokeWidth={2} fill="url(#repGrad)" dot={false} name={pfLabel}/>
-                              <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} strokeDasharray="4 2" dot={false} name={BENCH_SHORT}/>
+                              <Area type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} strokeDasharray="4 2" fill="none" dot={false} name={BENCH_SHORT}/>
                             </AreaChart>
                           </ResponsiveContainer>
                         ):(
@@ -3981,8 +4024,8 @@ export default function ClientDashboardPage() {
                                       <div className="text-slate-200 font-semibold">{getCompany(r.ticker)||r.ticker}</div>
                                       <div className="text-slate-600 text-[9px]">{r.ticker}</div>
                                     </td>
-                                    <td className="py-2 text-right text-slate-400">{r.prevPct.toFixed(1)}%</td>
-                                    <td className="py-2 text-right text-slate-200 font-semibold">{r.newPct.toFixed(1)}%</td>
+                                    <td className="py-2 text-right text-slate-400">{r.prev.toFixed(1)}%</td>
+                                    <td className="py-2 text-right text-slate-200 font-semibold">{r.cur.toFixed(1)}%</td>
                                     <td className="py-2 text-right">
                                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isB?"bg-emerald-900/40 text-emerald-400":isS?"bg-red-900/40 text-red-400":"bg-slate-800 text-slate-400"}`}>
                                         {ac}
@@ -4057,6 +4100,123 @@ export default function ClientDashboardPage() {
                       </div>
                     </div>
 
+                  </div>
+                );
+              })()}
+
+              {/* ── ACTIVIDADE ── */}
+              {activePage==="actividade"&&(()=>{
+                const [actLog,setActLog]=React.useState<ActEntry[]>(()=>getActivityLog());
+                const [actFilter,setActFilter]=React.useState<string>("todos");
+                // Merge rebalance-derived events with stored events
+                const rebalanceEvents:ActEntry[]=React.useMemo(()=>{
+                  const evs:ActEntry[]=[];
+                  sortedMonths.forEach((m,idx)=>{
+                    if(idx===0) return;
+                    const prev=sortedMonths[idx-1];
+                    const pm=new Map(prev.rows.map(r=>[r.ticker,r.weightPct]));
+                    const cm=new Map(m.rows.map(r=>[r.ticker,r.weightPct]));
+                    const allT=new Set([...pm.keys(),...cm.keys()]);
+                    let comprar=0,vender=0,aumentar=0,reduzir=0;
+                    const details:string[]=[];
+                    allT.forEach(t=>{
+                      if(t.startsWith("TBILL")||t.startsWith("CASH")||t==="XEON") return;
+                      const p=pm.get(t)??0, c=cm.get(t)??0, d=c-p;
+                      if(Math.abs(d)<0.01) return;
+                      const name=getCompany(t)||t;
+                      if(p===0&&c>0){comprar++;details.push(`Comprar ${name} (${c.toFixed(1)}%)`);}
+                      else if(p>0&&c===0){vender++;details.push(`Vender ${name} (era ${p.toFixed(1)}%)`);}
+                      else if(d>0){aumentar++;details.push(`Aumentar ${name} ${p.toFixed(1)}%→${c.toFixed(1)}%`);}
+                      else{reduzir++;details.push(`Reduzir ${name} ${p.toFixed(1)}%→${c.toFixed(1)}%`);}
+                    });
+                    const total=comprar+vender+aumentar+reduzir;
+                    if(total===0) return;
+                    const parts:string[]=[];
+                    if(comprar) parts.push(`${comprar} compra${comprar>1?"s":""}`);
+                    if(aumentar) parts.push(`${aumentar} reforço${aumentar>1?"s":""}`);
+                    if(reduzir) parts.push(`${reduzir} redução${reduzir>1?"ões":""}`);
+                    if(vender) parts.push(`${vender} venda${vender>1?"s":""}`);
+                    const dateStr:string=m.date??m.rebalance_date??"1970-01-01";
+                    evs.push({
+                      id:`reb-${dateStr}`,ts:new Date(dateStr).getTime(),
+                      type:"rebalanceamento",
+                      label:`Rebalanceamento · ${parts.join(", ")}`,
+                      detail:details.slice(0,5).join(" · ")+(details.length>5?` · +${details.length-5} mais`:""),
+                      icon:"↺",color:"text-blue-400",
+                    });
+                  });
+                  return evs.reverse();
+                },[sortedMonths]);
+                const allEvents=[...actLog,...rebalanceEvents].sort((a,b)=>b.ts-a.ts);
+                const filterTypes=["todos","rebalanceamento","ordens","cancelamento","configuração","login"];
+                const filtered=actFilter==="todos"?allEvents:allEvents.filter(e=>e.type===actFilter);
+                const fmtDate=(ts:number)=>{
+                  const d=new Date(ts);
+                  return d.toLocaleDateString("pt-PT",{day:"2-digit",month:"short",year:"numeric"})+" "+
+                         d.toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"});
+                };
+                return (
+                  <div className="space-y-4">
+                    {/* Filter bar */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {filterTypes.map(f=>(
+                        <button key={f} onClick={()=>setActFilter(f)}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold capitalize transition-colors ${actFilter===f?"bg-blue-600 text-white":"bg-[#0b0f1a] border border-[#1a1f2e] text-slate-400 hover:text-slate-200"}`}>
+                          {f==="todos"?`Tudo (${allEvents.length})`:f}
+                        </button>
+                      ))}
+                      <button onClick={()=>{localStorage.removeItem(ACT_KEY);setActLog([]);}}
+                        className="ml-auto px-3 py-1.5 rounded-lg text-[11px] font-semibold text-red-500 hover:text-red-400 border border-red-900/40 hover:border-red-700/60 transition-colors">
+                        Limpar histórico manual
+                      </button>
+                    </div>
+
+                    {/* Timeline */}
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+                      {filtered.length===0?(
+                        <div className="p-8 text-center text-slate-600 text-sm">
+                          <div className="text-2xl mb-2">📋</div>
+                          Sem actividade registada{actFilter!=="todos"?` para "${actFilter}"`:""}
+                        </div>
+                      ):(
+                        <div className="divide-y divide-[#111827]">
+                          {filtered.map((e,i)=>(
+                            <div key={e.id||i} className="flex items-start gap-4 px-5 py-4 hover:bg-[#0f172a] transition-colors">
+                              {/* Icon */}
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 mt-0.5
+                                ${e.type==="rebalanceamento"?"bg-blue-900/40 text-blue-400":
+                                  e.type==="ordens"?"bg-emerald-900/40 text-emerald-400":
+                                  e.type==="cancelamento"?"bg-red-900/40 text-red-400":
+                                  e.type==="configuração"?"bg-amber-900/40 text-amber-400":
+                                  e.type==="login"?"bg-slate-800 text-slate-400":
+                                  "bg-slate-800 text-slate-400"}`}>
+                                {e.icon}
+                              </div>
+                              {/* Content */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div>
+                                    <div className="text-slate-200 text-[12px] font-semibold leading-tight">{e.label}</div>
+                                    {e.detail&&<div className="text-slate-500 text-[10px] mt-1 leading-relaxed">{e.detail}</div>}
+                                  </div>
+                                  <div className="shrink-0 text-right">
+                                    <div className="text-slate-500 text-[10px]">{fmtDate(e.ts)}</div>
+                                    <div className={`text-[9px] font-semibold capitalize mt-0.5 px-1.5 py-0.5 rounded
+                                      ${e.type==="rebalanceamento"?"bg-blue-900/20 text-blue-500":
+                                        e.type==="ordens"?"bg-emerald-900/20 text-emerald-500":
+                                        e.type==="cancelamento"?"bg-red-900/20 text-red-500":
+                                        e.type==="configuração"?"bg-amber-900/20 text-amber-500":
+                                        "bg-slate-800 text-slate-500"}`}>
+                                      {e.type}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })()}
@@ -4814,6 +4974,7 @@ export default function ClientDashboardPage() {
                         <label className="flex items-center gap-2 text-xs text-slate-400">
                           Montante plano (€)
                           <input type="number" value={aum} onChange={e=>setAum(Number(e.target.value)||100000)}
+                            onBlur={e=>{const v=Number(e.target.value)||100000;logActivity({type:"configuração",label:`Montante do plano alterado para €${v.toLocaleString("pt-PT")}`,icon:"⚙",color:"text-amber-400"});}}
                             className="w-28 bg-[#111827] border border-[#252a3a] text-slate-200 text-xs rounded-lg px-2 py-1 outline-none focus:border-blue-500"
                             min={1000} step={1000}/>
                         </label>
