@@ -40,6 +40,39 @@ TWS_PORT = ib_socket_port()
 # Taxa EUR/USD para estimar qty em acções USD (pode ser overridden via env)
 _FX_EURUSD = float(os.environ.get("DECIDE_EURUSD_ESTIMATE", "1.13"))
 
+# ── Last-price cache from DB CSVs (loaded once at startup) ──────────────────
+_DB_LAST_PRICES: dict[str, float] = {}
+
+def _load_db_last_prices() -> dict[str, float]:
+    """Carrega o último preço de fecho de todos os tickers a partir dos CSVs."""
+    import pandas as pd
+    prices: dict[str, float] = {}
+    data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
+    for fname in ("prices_close_expanded.csv", "prices_close.csv",
+                  "prices_close_global_20y_from_tws.csv"):
+        fpath = os.path.join(data_dir, fname)
+        if not os.path.exists(fpath):
+            continue
+        try:
+            df = pd.read_csv(fpath, index_col=0)
+            last = df.iloc[-1]
+            for col in df.columns:
+                val = last.get(col)
+                try:
+                    fv = float(val)
+                    if math.isfinite(fv) and fv > 0 and col not in prices:
+                        prices[col.upper()] = fv
+                except (TypeError, ValueError):
+                    pass
+        except Exception:
+            pass
+    return prices
+
+try:
+    _DB_LAST_PRICES = _load_db_last_prices()
+except Exception:
+    _DB_LAST_PRICES = {}
+
 # clientId separado para não colidir com o send_orders (778).
 # Base 790: afastado de 779/780 que ficaram presos em sessões anteriores.
 _CLIENT_ID = int(os.environ.get("TWS_CLIENT_ID_IBKR_ORDERS", "790"))
@@ -253,9 +286,16 @@ def _execute_ib_orders(
                 qty = int(math.floor(o.qty + 1e-9)) or 1
             else:
                 price = price_map.get(sym)
-                # Fallback: use ref_price from DB when live price unavailable (market closed)
+                # Fallback 1: ref_price sent by frontend (last close from DB via prices state)
                 if not (price and price > 0):
                     price = o.ref_price if (o.ref_price and o.ref_price > 0) else None
+                # Fallback 2: last close from DB CSV cache (covers tickers not in prices state)
+                # Also try reverse alias: BTI→BATS, XYZ→SQ (DB stores original tickers)
+                _DB_REVERSE: dict[str, str] = {"BTI": "BATS", "XYZ": "SQ"}
+                if not (price and price > 0):
+                    price = (_DB_LAST_PRICES.get(sym)
+                             or _DB_LAST_PRICES.get(_DB_REVERSE.get(sym, ""))
+                             or _DB_LAST_PRICES.get(sym.replace(".", "")))
                 if price and price > 0:
                     # 0.90 safety factor: cotações atrasadas tendem a subestimar o preço real
                     _PRICE_SAFETY = float(os.environ.get("DECIDE_QTY_SAFETY_FACTOR", "0.90"))
