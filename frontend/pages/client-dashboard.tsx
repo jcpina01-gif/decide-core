@@ -3920,7 +3920,12 @@ export default function ClientDashboardPage() {
   const recoLabel=useMemo(()=>{
     const raw=latestMonth?.date??latestMonth?.rebalance_date??"";
     if(!raw) return "Última recomendação";
-    try{ return new Date(raw).toLocaleDateString("pt-PT",{month:"long",year:"numeric"}); }catch{ return raw; }
+    try{
+      // Rebalancing on Apr-30 → label = "maio de 2026" (the month the portfolio is applied in)
+      const d=new Date(raw);
+      d.setUTCMonth(d.getUTCMonth()+1,1);
+      return d.toLocaleDateString("pt-PT",{month:"long",year:"numeric"});
+    }catch{ return raw; }
   },[latestMonth]);
 
   const whatChanged=useMemo(()=>{
