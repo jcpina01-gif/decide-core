@@ -3669,13 +3669,14 @@ export default function ClientDashboardPage() {
 
   // ── Scaled equity curve: vol-rule scale applied to every daily return ─────
   const scaledEquity=useMemo(()=>scaleEquityCurve(equityRaw,volRuleScale),[equityRaw,volRuleScale]);
-  /* Margin simulation: remove XEON cash drag, invest 100% in equities + borrow 30% more.
-     - XEON and leverage simultaneously make no sense: XEON is removed first.
-     - r_equity ≈ r_portfolio / equityFrac  (extract pure equity return)
-     - r_margin = r_equity × 1.3 − 0.3 × 4%/252  (130% equity exposure, 30% borrowed)
-     - Works for all XEON levels: when XEON=0% just applies 1.3× directly.              */
+  /* Margin simulation — uses exactly what the model allocates to XEON each month.
+     XEON = cash held defensively (CAP15). With margin:
+       • Remove XEON: r_equity ≈ r_portfolio / equityFrac
+       • Borrow exactly the XEON% amount to be 100% in equities
+       • leverage = 100 / (100 - XEON%)   e.g. XEON=20% → 1.25×, XEON=0% → 1.0×
+       • dailyCost = (leverage-1) × 4%/252  (borrowing cost on the XEON-equivalent)
+     No arbitrary factor — the model data drives everything month by month.          */
   const MARGIN_RATE=0.04;
-  const MARGIN_LEV=1.3;  // 130% equity exposure = borrow 30% of portfolio value
   const marginEquity=useMemo(()=>{
     if(!scaledEquity.length||!dates.length||!sortedMonths.length) return scaledEquity;
     const periods=sortedMonths.map(m=>{
@@ -3683,7 +3684,8 @@ export default function ClientDashboardPage() {
       const xeonRow=m.rows.find(r=>r.ticker==="XEON");
       const xeonPct=m.tbillsTotalPct??xeonRow?.weightPct??0;
       const equityFrac=Math.max(0.05,(100-xeonPct)/100);
-      return {date,equityFrac,leverage:MARGIN_LEV,dailyCost:(MARGIN_LEV-1)*MARGIN_RATE/252};
+      const leverage=1/equityFrac;                          // exact: model-driven
+      return {date,equityFrac,leverage,dailyCost:(leverage-1)*MARGIN_RATE/252};
     }).filter(p=>p.date).sort((a,b)=>a.date.localeCompare(b.date));
     if(!periods.length) return scaledEquity;
     return leverageEquityCurveDynamic(scaledEquity,dates,periods);
