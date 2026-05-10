@@ -646,8 +646,9 @@ function makeChartData(dates:string[], eq:number[], bench:number[], period:Perio
     bench:+((bench[s+i*step]/bb)*100).toFixed(3),
   }));
 }
-function periodMetrics(eq:number[], bench:number[], period:Period) {
-  const y=period==="YTD"?(new Date().getMonth()+1)/12
+function periodMetrics(eq:number[], bench:number[], period:Period, calYearsOverride?:number) {
+  const y=calYearsOverride!==undefined?calYearsOverride
+    :period==="YTD"?(new Date().getMonth()+1)/12
     :period==="1 Ano"?1:period==="3 Anos"?3:period==="5 Anos"?5
     :period==="20 Anos"?20:eq.length/252;
   if(eq.length<2) return {ret:0,ann:0,shp:0,bench:0};
@@ -655,6 +656,11 @@ function periodMetrics(eq:number[], bench:number[], period:Period) {
   const ann=cagrFn(eq[0],eq[eq.length-1],y)*100;
   const rets=eq.slice(1).map((v,i)=>v/eq[i]-1);
   return {ret,ann,shp:sharpe(rets),bench:(bench[bench.length-1]/bench[0]-1)*100};
+}
+function calYearsFromDates(dates:string[]):number|undefined {
+  if(dates.length<2) return undefined;
+  const ms=new Date(dates[dates.length-1]).getTime()-new Date(dates[0]).getTime();
+  return ms/(365.25*24*3600*1000);
 }
 
 /* â”€â”€â”€ types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -3549,9 +3555,13 @@ export default function ClientDashboardPage() {
   // ── Recompute all KPIs from scaled curve ──────────────────────────────────
   const perfData=useMemo(()=>{
     if(!dates.length||!scaledEquity.length) return null;
-    const s=skipWarmup(scaledEquity,periodStart(dates,period));
+    // "Desde início": start at index 0 (including warmup) + calendar years to match
+    // Python _apply_vol_rule methodology → CAGR consistent with v5_kpis overlayed_cagr (25.13%)
+    const isInception=period==="Desde início";
+    const s=isInception?0:skipWarmup(scaledEquity,periodStart(dates,period));
+    const calYears=isInception?calYearsFromDates(dates):undefined;
     const chart=makeChartData(dates,scaledEquity,benchRaw,period);
-    const m=periodMetrics(scaledEquity.slice(s),benchRaw.slice(s),period);
+    const m=periodMetrics(scaledEquity.slice(s),benchRaw.slice(s),period,calYears);
     const allRets=scaledEquity.slice(1).map((v,i)=>v/scaledEquity[i]-1);
     const curVol=annualVol(allRets.slice(-252))*100;
     const curDD=currentDD(scaledEquity.slice(-252*3))*100;
@@ -3642,19 +3652,23 @@ export default function ClientDashboardPage() {
   // Benchmark period metrics (vol + shp for selected period)
   const benchPerfData=useMemo(()=>{
     if(!dates.length||!benchRaw.length) return null;
-    const s=skipWarmup(benchRaw,periodStart(dates,period));
+    // Use same starting index as model so model vs bench comparison is over identical period
+    const isInception=period==="Desde início";
+    const s=isInception?0:skipWarmup(scaledEquity,periodStart(dates,period));
     const bSlice=benchRaw.slice(s);
     const eSlice=scaledEquity.slice(s);
     if(bSlice.length<2) return null;
     const ret=(bSlice[bSlice.length-1]/bSlice[0]-1)*100;
-    const y=period==="YTD"?(new Date().getMonth()+1)/12
+    const calYears=isInception?calYearsFromDates(dates):undefined;
+    const y=calYears!==undefined?calYears
+      :period==="YTD"?(new Date().getMonth()+1)/12
       :period==="1 Ano"?1:period==="3 Anos"?3:period==="5 Anos"?5
       :period==="20 Anos"?20:bSlice.length/252;
     const ann=cagrFn(bSlice[0],bSlice[bSlice.length-1],y)*100;
     const bRets=bSlice.slice(1).map((v,i)=>v/bSlice[i]-1);
     const shp=sharpe(bRets);
     const vol=annualVol(bRets)*100;
-    // Alpha = model ret - bench ret (annualised)
+    // Alpha = model CAGR - bench CAGR (annualised, same period)
     const mRets=eSlice.slice(1).map((v,i)=>v/eSlice[i]-1);
     const mVol=annualVol(mRets)*100;
     const alpha=((perfData?.m.ann??0)-ann);
