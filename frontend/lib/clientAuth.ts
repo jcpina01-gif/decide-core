@@ -389,13 +389,9 @@ export function registerClientUser(
     !prev || (prev.email || "").trim().toLowerCase() !== emailTrim.toLowerCase();
   const keepVerified = !!(prev && !emailChanged && prev.emailVerified === true);
 
-  if (!keepVerified && !isSignupEmailVerifiedForInput(emailTrim)) {
-    return {
-      ok: false,
-      error: "Confirme o email: abra o link que lhe enviámos antes de criar a conta.",
-      field: "emailNotVerified",
-    };
-  }
+  // Email verification is recommended but not required to create the account.
+  // The account is created immediately; verification can happen afterward.
+  const preVerifiedNow = isSignupEmailVerifiedForInput(emailTrim);
 
   if (opts?.requirePhoneSms && !isSignupPhoneVerifiedForInput(phone)) {
     return {
@@ -406,14 +402,12 @@ export function registerClientUser(
     };
   }
 
-  const preVerified = isSignupEmailVerifiedForInput(emailTrim);
-
   // Demo UX: se o user já existir, atualiza email/password/telemóvel em vez de bloquear.
   db[u] = {
     passwordHash: hashPassword(pw),
     email: emailTrim,
     phone: ph.ok ? ph.e164 : "",
-    emailVerified: keepVerified || preVerified,
+    emailVerified: keepVerified || preVerifiedNow,
     updatedAt: Date.now(),
   };
   writeDb(db);

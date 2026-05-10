@@ -697,11 +697,8 @@ export default function ClientRegisterPage() {
 
   async function goWizardNextFromStep2() {
     resetMsgs();
-    if (!signupEmailOk) {
-      setRegFieldErr((x) => ({ ...x, emailNotVerified: true }));
-      setError("Confirme o email: abra o link que lhe enviámos ou peça um novo abaixo.");
-      return;
-    }
+    // Email verification is recommended but no longer a hard blocker — account is created
+    // immediately and verification can happen afterward via the link sent post-registration.
     if (phoneSmsRequiredForSignup && !signupPhoneOk) {
       setRegFieldErr((x) => ({ ...x, phoneNotVerified: true }));
       setError("Confirme o telemóvel por SMS antes de criar a conta.");
@@ -2138,11 +2135,8 @@ export default function ClientRegisterPage() {
                           if (userErr) { setRegFieldErr({ username: true }); setError(userErr); return; }
                           if (!strength.ok) { setRegFieldErr({ password: true }); setError(`Password fraca. ${passwordStrengthSummary()}`); return; }
                           if (!passwordsMatch) { setRegFieldErr({ passwordConfirm: true }); setError("As passwords não coincidem."); return; }
-                          if (!signupEmailOk) {
-                            setError("Confirme o email — clique em «Verificar» ao lado do campo de email.");
-                            if (!signupEmailLinkSentOnce) void sendSignupVerification();
-                            return;
-                          }
+                          // Email verification is recommended but no longer blocks account creation.
+                          // A verification email is sent after registration.
                           void goWizardNextFromStep2();
                         }}
                         style={{
@@ -2152,7 +2146,7 @@ export default function ClientRegisterPage() {
                           alignItems: "center",
                           justifyContent: "center",
                           gap: 8,
-                          background: signupEmailOk ? "#3b82f6" : "#1e3a5f",
+                          background: "#3b82f6",
                           color: "#fff",
                           borderRadius: 12,
                           padding: "15px 24px",
@@ -2160,11 +2154,11 @@ export default function ClientRegisterPage() {
                           fontWeight: 700,
                           border: "none",
                           cursor: "pointer",
-                          boxShadow: signupEmailOk ? "0 4px 20px rgba(59,130,246,0.35)" : "none",
+                          boxShadow: "0 4px 20px rgba(59,130,246,0.35)",
                           transition: "all 0.2s ease",
                         }}
                       >
-                        {signupEmailOk ? "Continuar →" : "Confirme o email para continuar"}
+                        Continuar →
                       </button>
                     <p style={{ fontSize: 12, color: "#334155", marginTop: 14, textAlign: "center" }}>
                       Os seus dados estão protegidos

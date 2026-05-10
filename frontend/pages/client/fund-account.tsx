@@ -194,7 +194,7 @@ export default function FundAccountPage({
 
   useLayoutEffect(() => {
     if (!isClientLoggedIn()) {
-      window.location.href = "/client/login";
+      window.location.href = "/client/login?next=/client/fund-account";
       return;
     }
     setDepositUnlocked(isClientEligibleToDepositFunds());
