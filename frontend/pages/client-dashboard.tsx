@@ -679,22 +679,27 @@ function scaleEquityCurve(equity:number[], factor:number):number[] {
   }
   return out;
 }
-/* Apply leverage to an equity curve with a daily margin borrowing cost.
-   r_lev = r_base × leverage − (leverage−1) × marginRateAnnual/252        */
-function leverageEquityCurve(equity:number[], leverage:number, marginRateAnnual:number):number[] {
-  if(!equity.length) return equity;
-  const dailyCost=(leverage-1)*marginRateAnnual/252;
+/* Apply variable leverage to an equity curve using per-period breakpoints.
+   Each breakpoint specifies {date, leverage, dailyCost} sorted by date asc.
+   r_lev = r_base × leverage − dailyCost (= (lev-1) × marginRate/252)     */
+function leverageEquityCurveDynamic(
+  equity:number[],
+  dates:string[],
+  periods:{date:string;leverage:number;dailyCost:number}[]
+):number[]{
+  if(!equity.length||!periods.length) return equity;
   const out=new Array(equity.length);
   out[0]=equity[0]||1;
+  let pi=0;
   for(let i=1;i<equity.length;i++){
-    const prev=equity[i-1];
-    if(!prev||!isFinite(prev)){
-      out[i]=out[i-1];
-    } else {
-      const r=(equity[i]-prev)/prev;
-      const next=out[i-1]*(1+r*leverage-dailyCost);
-      out[i]=isFinite(next)&&next>0 ? next : out[i-1];
-    }
+    const d=dates[i]??"";
+    while(pi+1<periods.length&&periods[pi+1]!.date<=d) pi++;
+    const {leverage,dailyCost}=periods[pi]!;
+    const prev=equity[i-1]!;
+    if(!prev||!isFinite(prev)){out[i]=out[i-1]!;continue;}
+    const r=(equity[i]!-prev)/prev;
+    const next=(out[i-1]!)*(1+r*leverage-dailyCost);
+    out[i]=isFinite(next)&&next>0?next:out[i-1]!;
   }
   return out;
 }
@@ -3659,9 +3664,22 @@ export default function ClientDashboardPage() {
 
   // ── Scaled equity curve: vol-rule scale applied to every daily return ─────
   const scaledEquity=useMemo(()=>scaleEquityCurve(equityRaw,volRuleScale),[equityRaw,volRuleScale]);
-  // Illustrative leveraged curve: 1.5× with 4% annual margin cost
-  const MARGIN_LEV=1.5, MARGIN_RATE=0.04;
-  const marginEquity=useMemo(()=>leverageEquityCurve(scaledEquity,MARGIN_LEV,MARGIN_RATE),[scaledEquity]);
+  // Dynamic margin curve: leverage = 100/(100-xeonPct) per rebalance period, capped 2×, 4% pa cost
+  const MARGIN_RATE=0.04;
+  const MAX_LEV=2.0;
+  const marginEquity=useMemo(()=>{
+    if(!scaledEquity.length||!dates.length||!sortedMonths.length) return scaledEquity;
+    const periods=sortedMonths.map(m=>{
+      const date=(m.rebalance_date??m.date??"").slice(0,10);
+      const xeonRow=m.rows.find(r=>r.ticker==="XEON");
+      const xeonPct=m.tbillsTotalPct??xeonRow?.weightPct??0;
+      // With margin we replace XEON cash with borrowed equities → leverage = 100/(100-xeonPct)
+      const lev=xeonPct>=100?1:Math.min(MAX_LEV,100/Math.max(1,100-xeonPct));
+      return {date,leverage:lev,dailyCost:(lev-1)*MARGIN_RATE/252};
+    }).filter(p=>p.date).sort((a,b)=>a.date.localeCompare(b.date));
+    if(!periods.length) return scaledEquity;
+    return leverageEquityCurveDynamic(scaledEquity,dates,periods);
+  },[scaledEquity,dates,sortedMonths]);
   // Active equity: base or leveraged depending on KPI mode selection
   const activeEquity=kpiMode==="margem"?marginEquity:scaledEquity;
 
