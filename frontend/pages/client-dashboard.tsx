@@ -546,6 +546,52 @@ const COMPANY:Record<string,string>={
 };
 const getCompany=(t:string)=>COMPANY[t.toUpperCase()]??"";
 
+/* Strip trailing share-class suffixes for grouping (e.g. "Alphabet A" → "Alphabet") */
+function canonicalCompanyKey(ticker:string):string{
+  const name=(COMPANY[ticker.toUpperCase()]||"").trim();
+  if(!name) return ticker.toUpperCase();
+  return name.replace(/\s+[A-C]$/,"").trim();
+}
+/* Merge {t,w} pairs that belong to the same company; winner ticker = highest individual weight */
+function dedupTW(rows:{t:string;w:number}[]):{t:string;w:number}[]{
+  const seen=new Map<string,{t:string;w:number;topW:number}>();
+  const order:string[]=[];
+  for(const {t,w} of rows){
+    const key=canonicalCompanyKey(t);
+    if(seen.has(key)){
+      const e=seen.get(key)!;
+      e.w+=w;
+      if(w>e.topW){e.topW=w;e.t=t;}
+    }else{
+      seen.set(key,{t,w,topW:w});
+      order.push(key);
+    }
+  }
+  return order.map(k=>{const e=seen.get(k)!;return {t:e.t,w:e.w};});
+}
+/* Merge action rows that belong to the same company */
+function dedupActionRows(rows:{ticker:string;prev:number;cur:number;delta:number;action:string}[],DMIN=1.0):{ticker:string;prev:number;cur:number;delta:number;action:string}[]{
+  const seen=new Map<string,{ticker:string;prev:number;cur:number;topCur:number;action:string}>();
+  const order:string[]=[];
+  for(const r of rows){
+    const key=canonicalCompanyKey(r.ticker);
+    if(seen.has(key)){
+      const e=seen.get(key)!;
+      e.prev+=r.prev;e.cur+=r.cur;
+      if(r.cur>e.topCur){e.topCur=r.cur;e.ticker=r.ticker;}
+    }else{
+      seen.set(key,{ticker:r.ticker,prev:r.prev,cur:r.cur,topCur:r.cur,action:r.action});
+      order.push(key);
+    }
+  }
+  return order.map(k=>{
+    const e=seen.get(k)!;
+    const delta=Math.round((e.cur-e.prev)*100)/100;
+    const action=e.prev===0&&e.cur>0?"Comprar":e.cur===0&&e.prev>0?"Vender":delta>=DMIN?"Aumentar":delta<=-DMIN?"Reduzir":"Manter";
+    return {ticker:e.ticker,prev:Math.round(e.prev*100)/100,cur:Math.round(e.cur*100)/100,delta,action};
+  });
+}
+
 /* ─── Benchmark label (blended: US 60% / EU+UK 25% / JP 10% / CAN 5%) ────── */
 const BENCH_LABEL="Benchmark (60% EUA / 25% EU · UK / 10% JP / 5% CAN)";
 const BENCH_SHORT="Benchmark";
@@ -1812,15 +1858,19 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
       return Math.max(pm.get(t)??0, cm.get(t)??0)>=WMIN;
     });
     type TW={t:string;w:number};
-    const compras:TW[]=[],aumentos:TW[]=[],vendas:TW[]=[],reducoes:TW[]=[],manter:TW[]=[];
+    const comprasRaw:TW[]=[],aumentosRaw:TW[]=[],vendasRaw:TW[]=[],reducoesRaw:TW[]=[],manter:TW[]=[];
     tickers.forEach(t=>{
       const p=pm.get(t)??0,cu=cm.get(t)??0,d=cu-p;
-      if(p<WMIN&&cu>=WMIN) compras.push({t,w:cu});
-      else if(cu<WMIN&&p>=WMIN) vendas.push({t,w:p});
-      else if(d>=DMIN) aumentos.push({t,w:cu});
-      else if(d<=-DMIN) reducoes.push({t,w:cu});
+      if(p<WMIN&&cu>=WMIN) comprasRaw.push({t,w:cu});
+      else if(cu<WMIN&&p>=WMIN) vendasRaw.push({t,w:p});
+      else if(d>=DMIN) aumentosRaw.push({t,w:cu});
+      else if(d<=-DMIN) reducoesRaw.push({t,w:cu});
       else if(cu>=WMIN) manter.push({t,w:cu});
     });
+    const compras=dedupTW(comprasRaw);
+    const vendas=dedupTW(vendasRaw);
+    const aumentos=dedupTW(aumentosRaw);
+    const reducoes=dedupTW(reducoesRaw);
     const rebalDate=raw?new Date(raw):null;
     const getMiniPts=():Array<{date:string;v:number}>|null=>{
       if(!rebalDate||!dates.length) return null;
@@ -1918,49 +1968,49 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
                           {r.compras.length>0&&(
                             <div>
                               <div className="text-emerald-400 font-bold mb-1.5">▲ Comprar</div>
-                              {r.compras.map(({t,w})=>(
+                              {r.compras.map(({t,w})=>{const cn=(COMPANY[t.toUpperCase()]||"").replace(/\s+[A-C]$/,"").trim();return(
                                 <div key={t} className="py-0.5 flex items-baseline gap-1">
                                   <span className="font-mono text-slate-200">{t}</span>
                                   <span className="text-emerald-300 text-[10px] font-semibold">{w.toFixed(1)}%</span>
-                                  {COMPANY[t.toUpperCase()]&&<span className="text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
+                                  {cn&&<span className="text-slate-600 text-[10px]">{cn}</span>}
                                 </div>
-                              ))}
+                              );})}
                             </div>
                           )}
                           {r.aumentos.length>0&&(
                             <div>
                               <div className="text-cyan-400 font-bold mb-1.5">↑ Reforçar</div>
-                              {r.aumentos.map(({t,w})=>(
+                              {r.aumentos.map(({t,w})=>{const cn=(COMPANY[t.toUpperCase()]||"").replace(/\s+[A-C]$/,"").trim();return(
                                 <div key={t} className="py-0.5 flex items-baseline gap-1">
                                   <span className="font-mono text-slate-200">{t}</span>
                                   <span className="text-cyan-300 text-[10px] font-semibold">{w.toFixed(1)}%</span>
-                                  {COMPANY[t.toUpperCase()]&&<span className="text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
+                                  {cn&&<span className="text-slate-600 text-[10px]">{cn}</span>}
                                 </div>
-                              ))}
+                              );})}
                             </div>
                           )}
                           {r.vendas.length>0&&(
                             <div>
                               <div className="text-red-400 font-bold mb-1.5">▼ Vender</div>
-                              {r.vendas.map(({t,w})=>(
+                              {r.vendas.map(({t,w})=>{const cn=(COMPANY[t.toUpperCase()]||"").replace(/\s+[A-C]$/,"").trim();return(
                                 <div key={t} className="py-0.5 flex items-baseline gap-1">
                                   <span className="font-mono text-slate-200">{t}</span>
                                   <span className="text-red-400 text-[10px] font-semibold">{w.toFixed(1)}%</span>
-                                  {COMPANY[t.toUpperCase()]&&<span className="text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
+                                  {cn&&<span className="text-slate-600 text-[10px]">{cn}</span>}
                                 </div>
-                              ))}
+                              );})}
                             </div>
                           )}
                           {r.reducoes.length>0&&(
                             <div>
                               <div className="text-amber-400 font-bold mb-1.5">↓ Reduzir</div>
-                              {r.reducoes.map(({t,w})=>(
+                              {r.reducoes.map(({t,w})=>{const cn=(COMPANY[t.toUpperCase()]||"").replace(/\s+[A-C]$/,"").trim();return(
                                 <div key={t} className="py-0.5 flex items-baseline gap-1">
                                   <span className="font-mono text-slate-200">{t}</span>
                                   <span className="text-amber-300 text-[10px] font-semibold">{w.toFixed(1)}%</span>
-                                  {COMPANY[t.toUpperCase()]&&<span className="text-slate-600 text-[10px]">{COMPANY[t.toUpperCase()]}</span>}
+                                  {cn&&<span className="text-slate-600 text-[10px]">{cn}</span>}
                                 </div>
-                              ))}
+                              );})}
                             </div>
                           )}
                           {r.compras.length===0&&r.aumentos.length===0&&r.vendas.length===0&&r.reducoes.length===0&&(
@@ -3505,19 +3555,27 @@ export default function ClientDashboardPage() {
     const sumPrev=raw.reduce((s,r)=>s+r.prev,0)||1;
     const sumCur=raw.reduce((s,r)=>s+r.cur,0)||1;
 
-    let c=0,au=0,rd=0,v=0,m=0;
-    const rows:{ticker:string;prev:number;cur:number;delta:number;action:string}[]=[];
+    const rowsNorm:{ticker:string;prev:number;cur:number;delta:number;action:string}[]=[];
     raw.forEach(({ticker:t,prev:pRaw,cur:curRaw})=>{
       const p=Math.round((pRaw/sumPrev*100)*100)/100;
       const cur=Math.round((curRaw/sumCur*100)*100)/100;
       const delta=Math.round((cur-p)*100)/100;
       let action="Manter";
-      if(pRaw===0&&curRaw>0){action="Comprar";c++;}
-      else if(curRaw===0&&pRaw>0){action="Vender";v++;}
-      else if(delta>=DMIN){action="Aumentar";au++;}
-      else if(delta<=-DMIN){action="Reduzir";rd++;}
-      else{action="Manter";m++;}
-      rows.push({ticker:t,prev:p,cur,delta,action});
+      if(pRaw===0&&curRaw>0) action="Comprar";
+      else if(curRaw===0&&pRaw>0) action="Vender";
+      else if(delta>=DMIN) action="Aumentar";
+      else if(delta<=-DMIN) action="Reduzir";
+      rowsNorm.push({ticker:t,prev:p,cur,delta,action});
+    });
+    // Merge tickers that belong to the same company (e.g. GOOGL+GOOG, MSBHF+MTSUY)
+    const rows=dedupActionRows(rowsNorm,DMIN);
+    let c=0,au=0,rd=0,v=0,m=0;
+    rows.forEach(r=>{
+      if(r.action==="Comprar") c++;
+      else if(r.action==="Aumentar") au++;
+      else if(r.action==="Reduzir") rd++;
+      else if(r.action==="Vender") v++;
+      else m++;
     });
     const changedRows=rows.filter(r=>r.action!=="Manter").sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta)).slice(0,8);
     const allRows=[...rows].sort((a,b)=>{
