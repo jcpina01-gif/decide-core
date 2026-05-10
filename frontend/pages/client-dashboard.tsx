@@ -1666,6 +1666,18 @@ function AjudaPage() {
     if(chatMsgsRef.current){
       chatMsgsRef.current.scrollTop=chatMsgsRef.current.scrollHeight;
     }
+    // Also ensure the card is in view within the main scroll container
+    const box=chatBoxRef.current;
+    if(!box) return;
+    const main=box.closest("main") as HTMLElement|null;
+    if(main){
+      const boxRect=box.getBoundingClientRect();
+      const mainRect=main.getBoundingClientRect();
+      if(boxRect.top<mainRect.top){
+        const target=main.scrollTop+(boxRect.top-mainRect.top)-16;
+        main.scrollTo({top:Math.max(0,target),behavior:"smooth"});
+      }
+    }
   },[chatMsgs]);
 
   const sendChat=async()=>{
@@ -1674,8 +1686,20 @@ function AjudaPage() {
     const newMsgs:ChatMsg[]=[...chatMsgs,{role:"user",content:q}];
     setChatMsgs(newMsgs);
     setChatInput("");
-    // Scroll page so the AI assistant card is visible at the top
-    setTimeout(()=>chatBoxRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),50);
+    // Scroll the main content container so the chat card top is visible
+    setTimeout(()=>{
+      const box=chatBoxRef.current;
+      if(!box) return;
+      const main=box.closest("main") as HTMLElement|null;
+      if(main){
+        const boxRect=box.getBoundingClientRect();
+        const mainRect=main.getBoundingClientRect();
+        const target=main.scrollTop+(boxRect.top-mainRect.top)-16;
+        main.scrollTo({top:Math.max(0,target),behavior:"smooth"});
+      } else {
+        box.scrollIntoView({behavior:"smooth",block:"start"});
+      }
+    },120);
     setChatLoading(true);
     try{
       const r=await fetch("/api/client/ai-chat",{
