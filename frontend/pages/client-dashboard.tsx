@@ -3588,9 +3588,9 @@ export default function ClientDashboardPage() {
     const ytdIdx=dates.findIndex(d=>d>=ytdStartStr);
     const ytdRet=ytdIdx>=0&&scaledEquity.length>ytdIdx
       ? (scaledEquity[scaledEquity.length-1]/scaledEquity[ytdIdx]-1)*100 : 0;
-    // "20 Anos" metrics — independent of period selector, same method as Performance "20 Anos"
-    const s20=skipWarmup(scaledEquity,periodStart(dates,"20 Anos"));
-    const inception=periodMetrics(scaledEquity.slice(s20),benchRaw.slice(s20),"20 Anos");
+    // Inception metrics — full history from index 0, calendar years → matches v5_kpis overlayed_cagr
+    const calYearsInc=calYearsFromDates(dates)??dates.length/252;
+    const inception=periodMetrics(scaledEquity.slice(0),benchRaw.slice(0),"Desde início",calYearsInc);
     return {chart,m,curVol,curDD,ddChart:dd5,ytdRet,inception};
   },[dates,scaledEquity,benchRaw,period]);
 
@@ -4357,9 +4357,9 @@ export default function ClientDashboardPage() {
                            icon:<div className="text-blue-400 text-lg">📦</div>,c:"text-slate-100"},
                           {label:"Variação (YTD)",val:fmtP(scaledYtd,true),sub:`${scaledYtd>=0?"+ €":"- €"} ${fmtE(Math.abs(aum*scaledYtd/100))} · ${pfLabel}`,
                            icon:<TrendingUp size={16} className="text-emerald-400"/>,c:scaledYtd>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Retorno anual (20 anos)",val:fmtP(perfData?.inception.ann??0,true),sub:`CAGR desde início · ${pfLabel}`,
+                          {label:"Retorno anual (desde início)",val:fmtP(perfData?.inception.ann??0,true),sub:`CAGR · ${pfLabel} · perfil ${profileLabel}`,
                            icon:<Activity size={16} className="text-blue-400"/>,c:(perfData?.inception.ann??0)>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Risco (Volatilidade anual)",val:scaledVol>0?`${scaledVol.toFixed(1)}%`:"—",
+                          {label:"Risco (Volatilidade anual)",val:perfData?.inception.vol?`${(perfData.inception.vol*100).toFixed(1)}%`:"—",
                            sub:`${pfLabel} vol base · Perfil ${profileLabel}`,
                            icon:<ShieldCheck size={16} className="text-amber-400"/>,c:"text-amber-400"},
                           {label:"Máximo drawdown",val:scaledDD!==0?fmtP(scaledDD):"—",
