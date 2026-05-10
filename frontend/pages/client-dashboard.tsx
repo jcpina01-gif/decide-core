@@ -3454,9 +3454,9 @@ export default function ClientDashboardPage() {
     const ytdIdx=dates.findIndex(d=>d>=ytdStartStr);
     const ytdRet=ytdIdx>=0&&scaledEquity.length>ytdIdx
       ? (scaledEquity[scaledEquity.length-1]/scaledEquity[ytdIdx]-1)*100 : 0;
-    // Inception metrics — always from full series start (index 0), independent of period selector
-    // Using full series (including warmup) to match kpi_server CAGR convention (~25% moderado)
-    const inception=periodMetrics(scaledEquity,benchRaw,"Desde início");
+    // "20 Anos" metrics — independent of period selector, same method as Performance "20 Anos"
+    const s20=skipWarmup(scaledEquity,periodStart(dates,"20 Anos"));
+    const inception=periodMetrics(scaledEquity.slice(s20),benchRaw.slice(s20),"20 Anos");
     return {chart,m,curVol,curDD,ddChart:dd5,ytdRet,inception};
   },[dates,scaledEquity,benchRaw,period]);
 
