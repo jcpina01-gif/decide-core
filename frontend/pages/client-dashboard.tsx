@@ -5341,9 +5341,9 @@ export default function ClientDashboardPage() {
 
               {/* ── RISCO ── */}
               {activePage==="risco"&&(()=>{
-                const vol=perfData?.curVol??0;
+                const vol=benchPerfData?.mVol??perfData?.curVol??0;
                 const dd=perfData?.curDD??0;
-                // 20y Sharpe from inception data
+                // Sharpe from inception (s=0, calYears)
                 const sharpe20=perfData?.inception?.shp??riskMetrics?.beta??0;
                 // Needle position: vol mapped to 0-1 (0%=low, 30%=high)
                 const needlePos=Math.min(Math.max(vol/30,0),1);
@@ -5398,7 +5398,7 @@ export default function ClientDashboardPage() {
                         <div>
                           <div className="text-slate-400 text-xs mb-1">Volatilidade anual</div>
                           <div className="text-3xl font-black text-amber-400">{vol?`${vol.toFixed(1)}%`:"—"}</div>
-                          <div className="text-[10px] text-slate-500 mt-1">Alvo: 15–20%</div>
+                          <div className="text-[10px] text-slate-500 mt-1">Alvo: {profileFactor<1?"~14,6%":profileFactor>1?"~24,3%":"~19,4%"} ({profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×"} vol bench)</div>
                         </div>
                         <div>
                           <div className="text-slate-400 text-xs mb-1">Drawdown actual</div>
