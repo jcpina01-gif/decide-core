@@ -3664,17 +3664,20 @@ export default function ClientDashboardPage() {
 
   // ── Scaled equity curve: vol-rule scale applied to every daily return ─────
   const scaledEquity=useMemo(()=>scaleEquityCurve(equityRaw,volRuleScale),[equityRaw,volRuleScale]);
-  // Dynamic margin curve: leverage = 100/(100-xeonPct) per rebalance period, capped 2×, 4% pa cost
+  /* Margin = borrow to invest MORE than 100% in equities.
+     Strategy: apply 1.5× leverage when the model is fully invested (XEON≈0),
+     taper to 1× as XEON rises (model going defensive → don't amplify CAP15).
+     Formula: lev = 1 + 0.5 × max(0, 1 - xeonPct/30)
+       XEON=0%  → 1.50×   XEON=15% → 1.25×   XEON≥30% → 1.00× (no margin)
+     Borrowing cost (4% pa) only on the excess above 1×.                      */
   const MARGIN_RATE=0.04;
-  const MAX_LEV=2.0;
   const marginEquity=useMemo(()=>{
     if(!scaledEquity.length||!dates.length||!sortedMonths.length) return scaledEquity;
     const periods=sortedMonths.map(m=>{
       const date=(m.rebalance_date??m.date??"").slice(0,10);
       const xeonRow=m.rows.find(r=>r.ticker==="XEON");
       const xeonPct=m.tbillsTotalPct??xeonRow?.weightPct??0;
-      // With margin we replace XEON cash with borrowed equities → leverage = 100/(100-xeonPct)
-      const lev=xeonPct>=100?1:Math.min(MAX_LEV,100/Math.max(1,100-xeonPct));
+      const lev=1+0.5*Math.max(0,1-xeonPct/30);   // 1.5→1.0 as XEON goes 0→30%
       return {date,leverage:lev,dailyCost:(lev-1)*MARGIN_RATE/252};
     }).filter(p=>p.date).sort((a,b)=>a.date.localeCompare(b.date));
     if(!periods.length) return scaledEquity;
