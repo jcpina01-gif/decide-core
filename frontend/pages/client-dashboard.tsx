@@ -5218,9 +5218,9 @@ export default function ClientDashboardPage() {
                        mFmt:perfData.m.shp.toFixed(2), bFmt:benchPerfData.shp.toFixed(2),
                        delta:perfData.m.shp-benchPerfData.shp, isVol:false, isDelta:true},
                       {label:"Volatilidade anual",
-                       m:perfData.curVol, b:benchPerfData.vol,
-                       mFmt:`${perfData.curVol.toFixed(1)}%`, bFmt:`${benchPerfData.vol.toFixed(1)}%`,
-                       delta:perfData.curVol-benchPerfData.vol, isVol:true},
+                       m:benchPerfData.mVol, b:benchPerfData.vol,
+                       mFmt:`${benchPerfData.mVol.toFixed(1)}%`, bFmt:`${benchPerfData.vol.toFixed(1)}%`,
+                       delta:benchPerfData.mVol-benchPerfData.vol, isVol:true},
                     ];
                     return(
                       <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
