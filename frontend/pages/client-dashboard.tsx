@@ -681,15 +681,15 @@ function scaleEquityCurve(equity:number[], factor:number):number[] {
 }
 /* Margin equity curve — model-driven dynamic leverage.
    Rules:
-     • XEON > 0 (defensive): NO margin. Keep scaled equity return unchanged.
-     • XEON = 0 (risk-on): apply vol-targeted leverage from rolling 60-day realized vol.
-         leverage = max(1.0, min(MAX_LEV, targetVol / rollingVol60d))
-         borrowing cost on (leverage−1) at annual margin rate.
-   This correctly simulates the model going from 0% to ~180% gross exposure
-   depending on the vol regime, exactly as the model computes month by month.   */
+     • XEON > 0 (defensive): NO margin. Return identical to scaledEquity.
+     • XEON = 0 (risk-on): apply vol-targeted leverage ON TOP of scaledEquity.
+         leverage = max(1.0, min(1.8, targetVol / rollingBenchVol60d))
+         r_margin = r_scaled × leverage − (leverage−1) × marginRate/252
+   Using benchmark rolling vol (not equityRaw) avoids XEON-dampening distortion.
+   This replicates gross_exposure going from 1× (high vol) up to 1.8× (low vol).  */
 function marginEquityCurveVolTargeted(
-  scaledEquity:number[],  // base vol-rule curve — used as-is in XEON months
-  equityRaw:number[],     // raw model curve — used for rolling vol computation
+  scaledEquity:number[],  // base vol-rule curve — base for margin computation
+  benchRaw:number[],      // benchmark curve — used for rolling vol estimation
   dates:string[],
   xeonPeriods:{date:string;xeonPct:number}[],
   targetVol:number,       // benchVol × profileFactor (annualised, e.g. 0.194)
@@ -706,26 +706,25 @@ function marginEquityCurveVolTargeted(
     const d=dates[i]??"";
     while(pi+1<sortedP.length&&sortedP[pi+1]!.date<=d) pi++;
     const xeonPct=sortedP[pi]?.xeonPct??0;
+    const prevSc=scaledEquity[i-1]!;
+    const rScaled=prevSc>0?scaledEquity[i]!/prevSc-1:0;
     if(xeonPct>0.5){
-      // Defensive: XEON present → no margin, copy scaledEquity return
-      const prev=scaledEquity[i-1]!;
-      const r=prev>0?scaledEquity[i]!/prev-1:0;
-      const next=out[i-1]!*(1+r);
+      // Defensive: XEON present → no margin, copy scaledEquity return exactly
+      const next=out[i-1]!*(1+rScaled);
       out[i]=isFinite(next)&&next>0?next:out[i-1]!;
     } else {
-      // Risk-on: dynamic vol-targeted leverage on raw return
+      // Risk-on: vol-targeted leverage applied on top of scaledEquity return
+      // Rolling 60-day bench vol avoids XEON-dampening in the model curve
       let sumSq=0,cnt=0;
       for(let j=Math.max(1,i-60);j<i;j++){
-        const p=equityRaw[j-1]!;
-        const rj=p>0?equityRaw[j]!/p-1:0;
+        const p=benchRaw[j-1]!;
+        const rj=p>0?benchRaw[j]!/p-1:0;
         sumSq+=rj*rj; cnt++;
       }
       const rollingVol=cnt>4?Math.sqrt(sumSq/cnt*252):targetVol;
       const lev=Math.max(1.0,Math.min(MAX_LEV,targetVol/rollingVol));
       const borrow=lev-1.0;
-      const prevRaw=equityRaw[i-1]!;
-      const rRaw=prevRaw>0?equityRaw[i]!/prevRaw-1:0;
-      const rMargin=rRaw*lev-borrow*marginRate/252;
+      const rMargin=rScaled*lev-borrow*marginRate/252;
       const next=out[i-1]!*(1+rMargin);
       out[i]=isFinite(next)&&next>0?next:out[i-1]!;
     }
@@ -3702,7 +3701,7 @@ export default function ClientDashboardPage() {
      up to ~180% max (very low vol) exactly as the model computes each period.     */
   const MARGIN_RATE=0.04;
   const marginEquity=useMemo(()=>{
-    if(!scaledEquity.length||!equityRaw.length||!benchRaw.length||!dates.length||!sortedMonths.length) return scaledEquity;
+    if(!scaledEquity.length||!benchRaw.length||!dates.length||!sortedMonths.length) return scaledEquity;
     const bRets=benchRaw.slice(1).map((v,i)=>benchRaw[i]!>0?v/benchRaw[i]!-1:0);
     const targetVol=annualVol(bRets)*profileFactor;
     if(!targetVol||!isFinite(targetVol)) return scaledEquity;
@@ -3713,8 +3712,8 @@ export default function ClientDashboardPage() {
       return {date,xeonPct};
     }).filter(p=>p.date);
     if(!xeonPeriods.length) return scaledEquity;
-    return marginEquityCurveVolTargeted(scaledEquity,equityRaw,dates,xeonPeriods,targetVol,MARGIN_RATE);
-  },[scaledEquity,equityRaw,benchRaw,dates,sortedMonths,profileFactor]);
+    return marginEquityCurveVolTargeted(scaledEquity,benchRaw,dates,xeonPeriods,targetVol,MARGIN_RATE);
+  },[scaledEquity,benchRaw,dates,sortedMonths,profileFactor]);
   // Active equity: base or leveraged depending on KPI mode selection
   const activeEquity=kpiMode==="margem"?marginEquity:scaledEquity;
 
