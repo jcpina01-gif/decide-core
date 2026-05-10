@@ -4284,7 +4284,8 @@ export default function ClientDashboardPage() {
                 const fmtEur=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0});
                 // Use period-based vol (same as Performance / Dashboard / Risco pages)
                 const reportVol=(benchPerfData?.mVol??0)>0?(benchPerfData?.mVol??0):scaledVol;
-                const sharpeVal=perfData&&reportVol>0?(scaledAnn-2)/reportVol:0;
+                // Use same Sharpe source as Performance/Dashboard (perfData.inception.shp)
+                const sharpeVal=perfData?.inception?.shp??perfData?.m?.shp??0;
                 // Top-5 holdings
                 const top5=(latestMonth?.rows??[])
                   .filter(r=>!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="XEON")
@@ -4308,13 +4309,6 @@ export default function ClientDashboardPage() {
                     {/* ── Report header ── */}
                     <div className="bg-gradient-to-r from-[#0b0f1a] to-[#0f1628] border border-[#1a1f2e] rounded-xl p-6 flex items-start justify-between">
                       <div>
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-blue-600 flex items-center justify-center text-white font-black text-sm">D</div>
-                          <div>
-                            <div className="text-white font-black text-lg tracking-tight">DECIDE</div>
-                            <div className="text-slate-500 text-xs">Advisory quantitativo</div>
-                          </div>
-                        </div>
                         <div className="text-slate-200 font-bold text-2xl mb-1">Relatório de Carteira</div>
                         <div className="text-slate-400 text-sm">Perfil <span className="text-teal-400 font-semibold">{pfLabel}</span> · {reportDate}</div>
                       </div>
