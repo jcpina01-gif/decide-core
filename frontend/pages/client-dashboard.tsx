@@ -1917,7 +1917,8 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
 
   const histRows=useMemo(()=>[...sortedMonths].reverse().map((m,i)=>{
     const raw=m.date??m.rebalance_date??"";
-    const label=raw?new Date(raw).toLocaleDateString("pt-PT",{month:"long",year:"numeric"}):raw;
+    // Show the month the portfolio is applied in (next month after rebalancing date)
+    const label=raw?(()=>{const d=new Date(raw);d.setUTCMonth(d.getUTCMonth()+1,1);return d.toLocaleDateString("pt-PT",{month:"long",year:"numeric"});})():raw;
     const prevM=sortedMonths[sortedMonths.length-1-i-1];
     const pm=new Map((prevM?.rows??[]).map(r=>[r.ticker,r.weightPct??0]));
     const cm=new Map(m.rows.map(r=>[r.ticker,r.weightPct??0]));
