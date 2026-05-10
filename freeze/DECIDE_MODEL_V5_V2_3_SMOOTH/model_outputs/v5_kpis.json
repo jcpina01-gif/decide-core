@@ -1,7 +1,7 @@
 {
   "benchmark_cagr": 0.08925253047103165,
-  "overlayed_cagr": 0.21853083341815505,
-  "overlayed_sharpe": 1.2431888746898214,
+  "overlayed_cagr": 0.25131325176403796,
+  "overlayed_sharpe": 1.2433111143555204,
   "data_start": "2006-03-15",
   "data_end": "2026-05-08",
   "profile": "moderado",
@@ -80,7 +80,7 @@
   "bear_low_vol_hysteresis_entry_edges": 7,
   "pct_days_bear_low_vol_protection_last_12m": 0.0,
   "bear_low_vol_protection_entry_edges_last_12m": 0,
-  "bear_low_vol_explainability_pt": "Em ambientes de bear market com volatilidade anormalmente baixa (frequente antes de stress), reduzimos temporariamente a exposi├º├úo. Usamos histerese para evitar 'pisca-pisca': s├│ entramos quando o sinal ├® forte e s├│ sa├¡mos quando normaliza.",
+  "bear_low_vol_explainability_pt": "Em ambientes de bear market com volatilidade anormalmente baixa (frequente antes de stress), reduzimos temporariamente a exposiâ”œÂºâ”œÃºo. Usamos histerese para evitar 'pisca-pisca': sâ”œâ”‚ entramos quando o sinal â”œÂ® forte e sâ”œâ”‚ saâ”œÂ¡mos quando normaliza.",
   "data_file_used": "C:\\Users\\Joaquim\\Documents\\DECIDE_CORE22_CLONE\\backend\\data\\prices_close_model_filtered.csv",
   "n_obs": 5116,
   "latest_portfolio_date": "2026-05-08",
@@ -307,5 +307,11 @@
   "export_transaction_cost_bps": 5.0,
   "export_slippage_bps": 5.0,
   "export_fx_conversion_bps": 0.0,
-  "export_friction_bps": "5+5+0"
+  "export_friction_bps": "5+5+0",
+  "max_drawdown": -0.2610600332689415,
+  "vol_rule_applied": true,
+  "vol_rule_moderado_mult": 1.0,
+  "vol_rule_conservador_mult": 0.75,
+  "vol_rule_dinamico_mult": 1.25,
+  "vol_rule_bench_vol": 0.194257
 }

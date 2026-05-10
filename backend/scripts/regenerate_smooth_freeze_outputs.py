@@ -333,6 +333,100 @@ def _legacy_engine_v2_freeze(prices_csv: Path) -> int:
     return 0
 
 
+def _apply_vol_rule() -> None:
+    """Escala as curvas de equity por perfil para a vol alvo (mult × vol_benchmark).
+
+    conservador = 0.75 × vol_bench | moderado = 1.00 × vol_bench | dinâmico = 1.25 × vol_bench
+
+    Metodologia: escalar os retornos diários do moderado pelo rácio target_vol/model_vol e
+    recompor a curva a partir de 1.0. Guarda nos dois destinos: freeze/ e frontend/data/.
+    """
+    import json, math
+
+    PROFILE_MULT = {"conservador": 0.75, "moderado": 1.00, "dinamico": 1.25}
+    FRONTEND_OUT = REPO_ROOT / "frontend" / "data" / "landing" / "freeze-cap15"
+    TRADING_DAYS = 252
+
+    def _load(path: Path):
+        df = pd.read_csv(path)
+        df.columns = ["date", "val"]
+        df["date"] = pd.to_datetime(df["date"])
+        return df.sort_values("date").set_index("date")["val"].astype(float)
+
+    def _fmt(ts) -> str:
+        return pd.Timestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+
+    def _save(series, path: Path) -> None:
+        pd.DataFrame({"date": [_fmt(d) for d in series.index], "model_equity": series.values}).to_csv(path, index=False)
+
+    mod_eq   = _load(FREEZE_OUT / "model_equity_final_20y_moderado.csv")
+    bench_eq = _load(FREEZE_OUT / "benchmark_equity_final_20y.csv")
+    mod_ret  = mod_eq.pct_change().dropna()
+    bench_ret = bench_eq.pct_change().dropna()
+
+    common   = mod_ret.index.intersection(bench_ret.index)
+    b_vol    = float(bench_ret.loc[common].std() * math.sqrt(TRADING_DAYS))
+    m_vol    = float(mod_ret.loc[common].std() * math.sqrt(TRADING_DAYS))
+
+    print(f"[vol-rule] bench_vol={b_vol*100:.2f}%  mod_vol={m_vol*100:.2f}%", file=sys.stderr)
+
+    first_date = mod_eq.index[0]
+
+    for profile, mult in PROFILE_MULT.items():
+        target_vol = mult * b_vol
+        scale = target_vol / m_vol if m_vol > 0 else 1.0
+        scaled_ret = mod_ret * scale
+        eq = pd.Series(index=scaled_ret.index, dtype=float)
+        eq.iloc[0] = 1.0 * (1.0 + float(scaled_ret.iloc[0]))
+        for i in range(1, len(scaled_ret)):
+            eq.iloc[i] = eq.iloc[i - 1] * (1.0 + float(scaled_ret.iloc[i]))
+        full = pd.concat([pd.Series([1.0], index=[first_date]), eq])
+        full = full[~full.index.duplicated(keep="first")]
+
+        chk_vol = float(full.pct_change().dropna().std() * math.sqrt(TRADING_DAYS))
+        years   = (full.index[-1] - full.index[0]).days / 365.25
+        cagr    = (full.iloc[-1] / full.iloc[0]) ** (1 / years) - 1
+        print(f"[vol-rule] {profile}: target={target_vol*100:.2f}% actual={chk_vol*100:.2f}% CAGR={cagr*100:.2f}%", file=sys.stderr)
+
+        for dest in [FREEZE_OUT, FRONTEND_OUT]:
+            if dest.is_dir():
+                fname = f"model_equity_final_20y_{profile}.csv"
+                _save(full, dest / fname)
+                _save(full, dest / f"model_equity_final_20y_{profile}_margin.csv")
+
+    # model_equity_final_20y.csv = moderado vol-scaled
+    mod_scaled = FREEZE_OUT / "model_equity_final_20y_moderado.csv"
+    for dest in [FREEZE_OUT, FRONTEND_OUT]:
+        if dest.is_dir():
+            shutil.copy2(mod_scaled, dest / "model_equity_final_20y.csv")
+
+    # Actualizar v5_kpis.json com os novos KPIs do moderado vol-scaled
+    mod_eq2 = _load(FREEZE_OUT / "model_equity_final_20y_moderado.csv")
+    dr2 = mod_eq2.pct_change().dropna()
+    years2 = (mod_eq2.index[-1] - mod_eq2.index[0]).days / 365.25
+    new_cagr   = (mod_eq2.iloc[-1] / mod_eq2.iloc[0]) ** (1 / years2) - 1
+    new_sharpe = (dr2.mean() / dr2.std()) * math.sqrt(TRADING_DAYS)
+    pk2 = mod_eq2.iloc[0]; mdd2 = 0.0
+    for v in mod_eq2.values:
+        if v > pk2: pk2 = v
+        mdd2 = min(mdd2, (v - pk2) / pk2)
+
+    for kpis_path in [FREEZE_OUT / "v5_kpis.json", FRONTEND_OUT / "v5_kpis.json"]:
+        if kpis_path.is_file():
+            kpis = json.loads(kpis_path.read_text(encoding="utf-8"))
+            kpis["overlayed_cagr"]          = float(new_cagr)
+            kpis["overlayed_sharpe"]        = float(new_sharpe)
+            kpis["max_drawdown"]            = float(mdd2)
+            kpis["vol_rule_applied"]        = True
+            kpis["vol_rule_bench_vol_ann"]  = round(b_vol, 6)
+            kpis["vol_rule_moderado_mult"]  = 1.00
+            kpis["vol_rule_conservador_mult"] = 0.75
+            kpis["vol_rule_dinamico_mult"]  = 1.25
+            kpis_path.write_text(json.dumps(kpis, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    print("[vol-rule] done.", file=sys.stderr)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Freeze smooth: motor V5 por defeito, ou --legacy-engine-v2.")
     ap.add_argument(
@@ -381,6 +475,8 @@ def main() -> int:
     )
     if rc == 0:
         print("[smooth] OK — motor engine_research_v5 (ver curve_engine em v5_kpis.json).", file=sys.stderr)
+        # Aplicar regra de vol: conservador=0.75×, moderado=1.0×, dinâmico=1.25× vol do benchmark
+        _apply_vol_rule()
         return 0
 
     print(
