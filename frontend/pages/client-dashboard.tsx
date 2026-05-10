@@ -3437,7 +3437,6 @@ export default function ClientDashboardPage() {
   const [riskProfileLocal,setRiskProfileLocalRaw]=useState<RiskProfile>("moderado");
   const [fxExposure,setFxExposureRaw]=useState<FxExposure>("protegida");
   const [marginEnabled,setMarginEnabledRaw]=useState(false);
-  const [kpiMode,setKpiModeRaw]=useState<KpiMode>("base");
   const [configPanelOpen,setConfigPanelOpen]=useState(false);
 
   // Persist preferences in localStorage
@@ -3450,13 +3449,12 @@ export default function ClientDashboardPage() {
         if(p.riskProfile) setRiskProfileLocalRaw(p.riskProfile);
         if(p.fxExposure)  setFxExposureRaw(p.fxExposure);
         if(typeof p.marginEnabled==="boolean") setMarginEnabledRaw(p.marginEnabled);
-        if(p.kpiMode)     setKpiModeRaw(p.kpiMode);
       }
     }catch{}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
-  const savePrefs=(patch:Partial<{riskProfile:RiskProfile;fxExposure:FxExposure;marginEnabled:boolean;kpiMode:KpiMode}>)=>{
+  const savePrefs=(patch:Partial<{riskProfile:RiskProfile;fxExposure:FxExposure;marginEnabled:boolean}>)=>{
     try{
       const existing=JSON.parse(localStorage.getItem(LS_KEY)??"{}");
       localStorage.setItem(LS_KEY,JSON.stringify({...existing,...patch}));
@@ -3478,7 +3476,8 @@ export default function ClientDashboardPage() {
       return next;
     });
   };
-  const setKpiMode=(v:KpiMode)=>{setKpiModeRaw(v);savePrefs({kpiMode:v});};
+  // kpiMode is derived from marginEnabled — no separate state needed
+  const kpiMode:KpiMode=marginEnabled?"margem":"base";
   const [contactForm,setContactForm]=useState({nome:"",email:"",assunto:"",msg:""});
   const [contactSent,setContactSent]=useState(false);
   const [aum,setAum]=useState(100000); // initialised below from localStorage (decide_onboarding_montante_eur_v1)
@@ -3716,6 +3715,7 @@ export default function ClientDashboardPage() {
   },[scaledEquity,benchRaw,dates,sortedMonths,profileFactor]);
   // Active equity: base or leveraged depending on KPI mode selection
   const activeEquity=kpiMode==="margem"?marginEquity:scaledEquity;
+
 
   // ── Recompute all KPIs from scaled curve ──────────────────────────────────
   const perfData=useMemo(()=>{
@@ -4191,7 +4191,7 @@ export default function ClientDashboardPage() {
                           {id:"base"   as KpiMode, label:"Base (sem margem)", sub:"Mais conservador"},
                           {id:"margem" as KpiMode, label:"Com margem (ilustrativo)", sub:"Maior potencial de retorno"},
                         ]).map(k=>(
-                          <button key={k.id} onClick={()=>setKpiMode(k.id)}
+                          <button key={k.id} onClick={()=>setMarginEnabled(k.id==="margem")}
                             className={`rounded-xl p-3 border-2 text-left transition-all ${kpiMode===k.id?"border-blue-500 bg-blue-500/[0.08]":"border-[#1a1f2e] bg-[#0b0f1a] hover:border-blue-500/30"}`}>
                             <div className={`text-[11px] font-bold mb-0.5 ${kpiMode===k.id?"text-blue-300":"text-slate-200"}`}>{k.label}</div>
                             <div className="text-[9px] text-slate-500">{k.sub}</div>
@@ -4842,7 +4842,7 @@ export default function ClientDashboardPage() {
                       </div>
                       {[
                         {icon:"🎯",label:"Objetivo",val:riskProfileLocal==="conservador"?"Crescimento com menor volatilidade (0,75× vol base)":riskProfileLocal==="dinamico"?"Máximo potencial de retorno (1,25× vol base)":"Equilíbrio risco/retorno (vol base do modelo)"},
-                        {icon:"📊",label:"Volatilidade alvo",val:`~${reportVol.toFixed(1)}% aa (${profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×"} vol do modelo)`},
+                        {icon:"📊",label:"Volatilidade alvo",val:`~${((benchPerfData?.mVol??0)>0?(benchPerfData?.mVol??0):0).toFixed(1)}% aa (${profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×"} vol do modelo)`},
                         {icon:"⏳",label:"Horizonte",val:"Médio / Longo prazo (3+ anos)"},
                         {icon:"🌍",label:"Composição",val:"Ações globais + XEON (MM Euro)"},
                       ].map(x=>(
