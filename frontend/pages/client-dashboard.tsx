@@ -1658,9 +1658,14 @@ function AjudaPage() {
   const [chatInput,setChatInput]=useState("");
   const [chatLoading,setChatLoading]=useState(false);
   const chatEndRef=useRef<HTMLDivElement>(null);
+  const chatBoxRef=useRef<HTMLDivElement>(null);
+  const chatMsgsRef=useRef<HTMLDivElement>(null);
 
   useEffect(()=>{
-    chatEndRef.current?.scrollIntoView({behavior:"smooth"});
+    // Scroll messages container to bottom internally
+    if(chatMsgsRef.current){
+      chatMsgsRef.current.scrollTop=chatMsgsRef.current.scrollHeight;
+    }
   },[chatMsgs]);
 
   const sendChat=async()=>{
@@ -1669,6 +1674,8 @@ function AjudaPage() {
     const newMsgs:ChatMsg[]=[...chatMsgs,{role:"user",content:q}];
     setChatMsgs(newMsgs);
     setChatInput("");
+    // Scroll page so the AI assistant card is visible at the top
+    setTimeout(()=>chatBoxRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),50);
     setChatLoading(true);
     try{
       const r=await fetch("/api/client/ai-chat",{
@@ -1691,7 +1698,7 @@ function AjudaPage() {
     <div className="space-y-5">
 
       {/* ── AI Assistant ── */}
-      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+      <div ref={chatBoxRef} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
         <div className="flex items-center gap-3 px-5 py-4 border-b border-[#1a1f2e] bg-gradient-to-r from-blue-600/10 to-transparent">
           <div className="w-8 h-8 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center shrink-0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 16v-4M12 8h.01"/></svg>
@@ -1723,7 +1730,7 @@ function AjudaPage() {
 
         {/* Messages */}
         {chatMsgs.length>0&&(
-          <div className="px-5 py-4 space-y-4 max-h-72 overflow-y-auto">
+          <div ref={chatMsgsRef} className="px-5 py-4 space-y-4 max-h-72 overflow-y-auto">
             {chatMsgs.map((m,i)=>(
               <div key={i} className={`flex gap-3 ${m.role==="user"?"justify-end":""}`}>
                 {m.role==="assistant"&&(
@@ -1750,7 +1757,6 @@ function AjudaPage() {
                 </div>
               </div>
             )}
-            <div ref={chatEndRef}/>
           </div>
         )}
 
