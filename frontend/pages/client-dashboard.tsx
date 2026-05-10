@@ -5279,11 +5279,12 @@ export default function ClientDashboardPage() {
                             <div className="text-2xl font-black text-amber-400">{ts.avg.toFixed(1)}<span className="text-sm font-semibold text-slate-500">%</span></div>
                             <div className="text-[11px] text-slate-400 mt-1">por rebalanceamento</div>
                           </div>
+                          {(()=>{const cy=calYearsFromDates(dates)??dates.length/252;const ann=cy>0?ts.total/cy:ts.total;return(
                           <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
-                            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Turnover total</div>
-                            <div className="text-2xl font-black text-amber-300">{ts.total.toFixed(0)}<span className="text-sm font-semibold text-slate-500">%</span></div>
-                            <div className="text-[11px] text-slate-400 mt-1">em {ts.n} rebalanceamentos</div>
-                          </div>
+                            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Turnover anual</div>
+                            <div className="text-2xl font-black text-amber-300">{ann.toFixed(0)}<span className="text-sm font-semibold text-slate-500">%</span></div>
+                            <div className="text-[11px] text-slate-400 mt-1">por ano · {ts.n} rebalanceamentos</div>
+                          </div>);})()}
                         </>}
                       </div>
                     );
