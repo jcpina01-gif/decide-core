@@ -1910,10 +1910,31 @@ function AjudaPage() {
 
 /* ─── HistoricoPage sub-component ──────────────────────────── */
 type MonthRec={date?:string;rebalance_date?:string;rows:{ticker:string;weightPct?:number}[];tbillsTotalPct?:number};
-function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];dates:string[];equityRaw:number[]}) {
+const MAX_LEV_H=1.8;
+function computeMonthLev(benchRaw:number[],dates:string[],rebalDateStr:string,targetVol:number):number{
+  if(!benchRaw.length||!dates.length||targetVol<=0) return 1;
+  const idx=dates.findIndex(d=>d>=rebalDateStr);
+  const i=idx<0?dates.length-1:idx;
+  let sumSq=0,cnt=0;
+  for(let j=Math.max(1,i-60);j<i;j++){
+    const p=benchRaw[j-1]!;
+    const rj=p>0?benchRaw[j]!/p-1:0;
+    sumSq+=rj*rj;cnt++;
+  }
+  const rv=cnt>4?Math.sqrt(sumSq/cnt*252):targetVol;
+  return Math.max(1.0,Math.min(MAX_LEV_H,targetVol/rv));
+}
+function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,profileFactor}:{sortedMonths:MonthRec[];dates:string[];equityRaw:number[];benchRaw:number[];marginEnabled:boolean;profileFactor:number}) {
   const [histTab,setHistTab]=useState<"reco"|"ops"|"carteira">("reco");
   const [expandedIdx,setExpandedIdx]=useState<number|null>(null);
   const DMIN=1;
+
+  // Pre-compute targetVol for leverage estimation
+  const targetVol=useMemo(()=>{
+    if(!benchRaw.length) return 0;
+    const bRets=benchRaw.slice(1).map((v,i)=>benchRaw[i]!>0?v/benchRaw[i]!-1:0);
+    return annualVol(bRets)*profileFactor;
+  },[benchRaw,profileFactor]);
 
   const histRows=useMemo(()=>[...sortedMonths].reverse().map((m,i)=>{
     const raw=m.date??m.rebalance_date??"";
@@ -1922,9 +1943,14 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
     const prevM=sortedMonths[sortedMonths.length-1-i-1];
     // XEON (MM Euro) + equities allocation
     const xeonPct=m.tbillsTotalPct??0;
-    const equityPct=100-xeonPct;
+    // When margin is enabled and no XEON, compute vol-targeted leverage
+    const lev=(marginEnabled&&xeonPct<=0.5&&raw)
+      ?computeMonthLev(benchRaw,dates,raw,targetVol):1.0;
+    const equityPct=(100-xeonPct)*lev;
     const prevXeonPct=prevM?.tbillsTotalPct??0;
-    const prevEquityPct=100-prevXeonPct;
+    const prevLev=(marginEnabled&&prevXeonPct<=0.5&&(prevM?.date??prevM?.rebalance_date??""))
+      ?computeMonthLev(benchRaw,dates,prevM?.date??prevM?.rebalance_date??"",targetVol):1.0;
+    const prevEquityPct=(100-prevXeonPct)*prevLev;
     const xeonDelta=xeonPct-prevXeonPct;
     const equityDelta=equityPct-prevEquityPct;
     const pm=new Map((prevM?.rows??[]).map(r=>[r.ticker,r.weightPct??0]));
@@ -1973,8 +1999,8 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
       :reducoes.length
         ?`Reduzir ${reducoes.slice(0,2).map(x=>x.t).join(", ")}${reducoes.length>2?` +${reducoes.length-2}`:""}`
         :"Sem alterações significativas";
-    return {label,compras,aumentos,vendas,reducoes,manter,getMiniPts,isLatest,estado,estadoStyle,resumo,xeonPct,equityPct,xeonDelta,equityDelta};
-  }),[sortedMonths,dates,equityRaw]);
+    return {label,compras,aumentos,vendas,reducoes,manter,getMiniPts,isLatest,estado,estadoStyle,resumo,xeonPct,equityPct,xeonDelta,equityDelta,lev};
+  }),[sortedMonths,dates,equityRaw,benchRaw,marginEnabled,targetVol]);
 
   return (
     <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
@@ -2020,8 +2046,8 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
                           {r.xeonDelta!==0&&<span className={r.xeonDelta>0?"text-amber-300":"text-slate-500"}>{r.xeonDelta>0?"+":""}{r.xeonDelta.toFixed(0)}pp</span>}
                         </span>
                       )}
-                      <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.equityPct>100?"bg-orange-500/15 text-orange-400":r.xeonPct>0?"bg-slate-700/50 text-slate-400":"bg-emerald-500/10 text-emerald-400"}`}>
-                        Acc {r.equityPct.toFixed(0)}%{r.equityPct>100?" ⚡":""}
+                      <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.equityPct>101?"bg-orange-500/15 text-orange-400":r.xeonPct>0?"bg-slate-700/50 text-slate-400":"bg-emerald-500/10 text-emerald-400"}`}>
+                        Acc {r.equityPct.toFixed(0)}%{r.lev>1.01?` ×${r.lev.toFixed(2)}`:""}
                         {r.equityDelta!==0&&<span className={r.equityDelta>0?"text-emerald-300":"text-slate-500"}>{r.equityDelta>0?"+":""}{r.equityDelta.toFixed(0)}pp</span>}
                       </span>
                     </div>
@@ -2062,8 +2088,8 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.xeonPct>0?"bg-amber-500/15 text-amber-400":"bg-slate-700/30 text-slate-600"}`}>
                               MM Euro {r.xeonPct.toFixed(1)}%{r.xeonDelta!==0?` (${r.xeonDelta>0?"+":""}${r.xeonDelta.toFixed(1)}pp)`:""}
                             </span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.equityPct>100?"bg-orange-500/15 text-orange-400":"bg-emerald-500/10 text-emerald-400"}`}>
-                              Acções {r.equityPct.toFixed(1)}%{r.equityPct>100?" ⚡ alavancado":""}{r.equityDelta!==0?` (${r.equityDelta>0?"+":""}${r.equityDelta.toFixed(1)}pp)`:""}
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.equityPct>101?"bg-orange-500/15 text-orange-400":"bg-emerald-500/10 text-emerald-400"}`}>
+                              Acções {r.equityPct.toFixed(1)}%{r.lev>1.01?` ⚡ ×${r.lev.toFixed(2)} alavancado`:""}{r.equityDelta!==0?` (${r.equityDelta>0?"+":""}${r.equityDelta.toFixed(1)}pp)`:""}
                             </span>
                           </div>
                           {r.compras.length>0&&(
@@ -5728,7 +5754,7 @@ export default function ClientDashboardPage() {
               })()}
 
               {/* ── HISTÓRICO ── */}
-              {activePage==="historico"&&<HistoricoPage sortedMonths={sortedMonths} dates={dates} equityRaw={equityRaw}/>}
+              {activePage==="historico"&&<HistoricoPage sortedMonths={sortedMonths} dates={dates} equityRaw={equityRaw} benchRaw={benchRaw} marginEnabled={marginEnabled} profileFactor={profileFactor}/>}
               {activePage==="custos"&&<CustosPage aum={aum}/>}
 
               {/* `u{2500}`u{2500} AJUDA `u{2500}`u{2500} */}
