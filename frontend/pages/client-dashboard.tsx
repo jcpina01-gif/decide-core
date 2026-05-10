@@ -679,32 +679,56 @@ function scaleEquityCurve(equity:number[], factor:number):number[] {
   }
   return out;
 }
-/* Margin equity curve with XEON removal + fixed leverage.
-   Per period: equityFrac = 1 - xeonFrac (fraction of portfolio in equities).
-   r_equity ≈ r_portfolio / equityFrac   (removes XEON cash drag)
-   r_margin  = r_equity × leverage − (leverage−1) × marginRate/252
-   Having XEON and leverage simultaneously makes no sense: XEON is removed first,
-   then the leveraged equity exposure = equityFrac × leverage of original capital.  */
-function leverageEquityCurveDynamic(
-  equity:number[],
+/* Margin equity curve — model-driven dynamic leverage.
+   Rules:
+     • XEON > 0 (defensive): NO margin. Keep scaled equity return unchanged.
+     • XEON = 0 (risk-on): apply vol-targeted leverage from rolling 60-day realized vol.
+         leverage = max(1.0, min(MAX_LEV, targetVol / rollingVol60d))
+         borrowing cost on (leverage−1) at annual margin rate.
+   This correctly simulates the model going from 0% to ~180% gross exposure
+   depending on the vol regime, exactly as the model computes month by month.   */
+function marginEquityCurveVolTargeted(
+  scaledEquity:number[],  // base vol-rule curve — used as-is in XEON months
+  equityRaw:number[],     // raw model curve — used for rolling vol computation
   dates:string[],
-  periods:{date:string;equityFrac:number;leverage:number;dailyCost:number}[]
+  xeonPeriods:{date:string;xeonPct:number}[],
+  targetVol:number,       // benchVol × profileFactor (annualised, e.g. 0.194)
+  marginRate:number       // annual borrowing rate (e.g. 0.04)
 ):number[]{
-  if(!equity.length||!periods.length) return equity;
-  const out=new Array(equity.length);
-  out[0]=equity[0]||1;
+  const MAX_LEV=1.8;
+  const n=scaledEquity.length;
+  if(n===0||!xeonPeriods.length) return scaledEquity;
+  const out=new Array(n);
+  out[0]=scaledEquity[0]||1;
+  const sortedP=[...xeonPeriods].sort((a,b)=>a.date.localeCompare(b.date));
   let pi=0;
-  for(let i=1;i<equity.length;i++){
+  for(let i=1;i<n;i++){
     const d=dates[i]??"";
-    while(pi+1<periods.length&&periods[pi+1]!.date<=d) pi++;
-    const {equityFrac,leverage,dailyCost}=periods[pi]!;
-    const prev=equity[i-1]!;
-    if(!prev||!isFinite(prev)){out[i]=out[i-1]!;continue;}
-    const rPortfolio=(equity[i]!-prev)/prev;
-    // Extract pure equity return (remove XEON drag), then apply leverage
-    const rEquity=equityFrac>0.05?rPortfolio/equityFrac:rPortfolio;
-    const next=(out[i-1]!)*(1+rEquity*leverage-dailyCost);
-    out[i]=isFinite(next)&&next>0?next:out[i-1]!;
+    while(pi+1<sortedP.length&&sortedP[pi+1]!.date<=d) pi++;
+    const xeonPct=sortedP[pi]?.xeonPct??0;
+    if(xeonPct>0.5){
+      // Defensive: XEON present → no margin, copy scaledEquity return
+      const prev=scaledEquity[i-1]!;
+      const r=prev>0?scaledEquity[i]!/prev-1:0;
+      const next=out[i-1]!*(1+r);
+      out[i]=isFinite(next)&&next>0?next:out[i-1]!;
+    } else {
+      // Risk-on: dynamic vol-targeted leverage on raw return
+      let sumSq=0,cnt=0;
+      for(let j=Math.max(1,i-60);j<i;j++){
+        const p=equityRaw[j-1]!;
+        const rj=p>0?equityRaw[j]!/p-1:0;
+        sumSq+=rj*rj; cnt++;
+      }
+      const rollingVol=cnt>4?Math.sqrt(sumSq/cnt*252):targetVol;
+      const lev=Math.max(1.0,Math.min(MAX_LEV,targetVol/rollingVol));
+      const borrow=lev-1.0;
+      const prevRaw=equityRaw[i-1]!;
+      const rRaw=prevRaw>0?equityRaw[i]!/prevRaw-1:0;
+      const rMargin=rRaw*lev-borrow*marginRate/252;
+      const next=out[i-1]!*(1+rMargin);
+      out[i]=isFinite(next)&&next>0?next:out[i-1]!;
+    }
   }
   return out;
 }
@@ -3669,27 +3693,28 @@ export default function ClientDashboardPage() {
 
   // ── Scaled equity curve: vol-rule scale applied to every daily return ─────
   const scaledEquity=useMemo(()=>scaleEquityCurve(equityRaw,volRuleScale),[equityRaw,volRuleScale]);
-  /* Margin simulation — uses exactly what the model allocates to XEON each month.
-     XEON = cash held defensively (CAP15). With margin:
-       • Remove XEON: r_equity ≈ r_portfolio / equityFrac
-       • Borrow exactly the XEON% amount to be 100% in equities
-       • leverage = 100 / (100 - XEON%)   e.g. XEON=20% → 1.25×, XEON=0% → 1.0×
-       • dailyCost = (leverage-1) × 4%/252  (borrowing cost on the XEON-equivalent)
-     No arbitrary factor — the model data drives everything month by month.          */
+  /* Margin simulation — model-driven dynamic leverage via vol-targeting.
+     • XEON > 0: model is defensive → NO margin, keep scaledEquity return.
+     • XEON = 0: model is risk-on → borrow to leverage.
+         leverage(t) = max(1.0, min(1.8, targetVol / rollingVol60d(t)))
+         targetVol = benchVol × profileFactor  (same vol rule as base curve)
+     This replicates the model's gross exposure, which goes from ~100% (low vol)
+     up to ~180% max (very low vol) exactly as the model computes each period.     */
   const MARGIN_RATE=0.04;
   const marginEquity=useMemo(()=>{
-    if(!scaledEquity.length||!dates.length||!sortedMonths.length) return scaledEquity;
-    const periods=sortedMonths.map(m=>{
+    if(!scaledEquity.length||!equityRaw.length||!benchRaw.length||!dates.length||!sortedMonths.length) return scaledEquity;
+    const bRets=benchRaw.slice(1).map((v,i)=>benchRaw[i]!>0?v/benchRaw[i]!-1:0);
+    const targetVol=annualVol(bRets)*profileFactor;
+    if(!targetVol||!isFinite(targetVol)) return scaledEquity;
+    const xeonPeriods=sortedMonths.map(m=>{
       const date=(m.rebalance_date??m.date??"").slice(0,10);
       const xeonRow=m.rows.find(r=>r.ticker==="XEON");
       const xeonPct=m.tbillsTotalPct??xeonRow?.weightPct??0;
-      const equityFrac=Math.max(0.05,(100-xeonPct)/100);
-      const leverage=1/equityFrac;                          // exact: model-driven
-      return {date,equityFrac,leverage,dailyCost:(leverage-1)*MARGIN_RATE/252};
-    }).filter(p=>p.date).sort((a,b)=>a.date.localeCompare(b.date));
-    if(!periods.length) return scaledEquity;
-    return leverageEquityCurveDynamic(scaledEquity,dates,periods);
-  },[scaledEquity,dates,sortedMonths]);
+      return {date,xeonPct};
+    }).filter(p=>p.date);
+    if(!xeonPeriods.length) return scaledEquity;
+    return marginEquityCurveVolTargeted(scaledEquity,equityRaw,dates,xeonPeriods,targetVol,MARGIN_RATE);
+  },[scaledEquity,equityRaw,benchRaw,dates,sortedMonths,profileFactor]);
   // Active equity: base or leveraged depending on KPI mode selection
   const activeEquity=kpiMode==="margem"?marginEquity:scaledEquity;
 
@@ -4470,7 +4495,7 @@ export default function ClientDashboardPage() {
                       Perfil activo: <span className="font-bold text-slate-300">{profileLabel}</span>
                       {" · "}Vol: <span className="font-bold text-amber-400">{(benchPerfData?.mVol??0)>0?(benchPerfData?.mVol??0).toFixed(1)+"%":"—"}</span>
                       {" · "}Factor: <span className="font-bold text-blue-400">{profileFactor}×</span>
-                      {kpiMode==="margem"&&<span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold">×1.5 margem</span>}
+                      {kpiMode==="margem"&&<span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold">com margem (dinâmico)</span>}
                     </div>
                     <button
                       onClick={()=>{ setRiskProfileLocal(riskProfileLocal); }}
@@ -4484,7 +4509,7 @@ export default function ClientDashboardPage() {
                     const fmtP=(v:number,s=false)=>`${s&&v>=0?"+":""}${v.toFixed(2)}%`;
                     const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
                     const pfLabel=profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×";
-                    const marginSub=kpiMode==="margem"?" · ×1.5 margem":"";
+                    const marginSub=kpiMode==="margem"?" · com margem":"";
                     return (
                       <div className="grid grid-cols-5 gap-3">
                         {[
