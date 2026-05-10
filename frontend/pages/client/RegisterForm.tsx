@@ -19,9 +19,11 @@ import {
   setSignupEmailVerifiedFromServerEmail,
   setSignupPhoneVerifiedFromServerPhone,
   loginClientUser,
+  loginClientUserAsync,
   normalizeClientPhone,
   passwordStrengthSummary,
   registerClientUser,
+  registerClientUserAsync,
   requestEmailVerificationSend,
   suggestClientUsernameFromEmail,
   requestEmailVerificationSignupSend,
@@ -1242,6 +1244,16 @@ export default function ClientRegisterPage() {
         setError(res.error || "Falha ao criar conta.");
         return;
       }
+      // Persist to server (fire-and-forget; localStorage is already written by registerClientUser)
+      void registerClientUserAsync({
+        username: u,
+        password,
+        email: email.trim(),
+        phone: normalizeClientPhone(phone).ok
+          ? (normalizeClientPhone(phone) as { ok: true; e164: string }).e164
+          : phone,
+        emailVerified: isSignupEmailVerifiedForInput(email.trim()),
+      });
       setMsg("Conta criada. A iniciar sessão…");
       const loginRes = loginClientUser(u, password);
       if (!loginRes.ok) {

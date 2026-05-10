@@ -682,6 +682,125 @@ export function loginClientUser(username: string, password: string): {
   return { ok: true };
 }
 
+/**
+ * Async login: checks server first, falls back to localStorage.
+ * The server is the source of truth — works across browsers/devices/cache clears.
+ */
+export async function loginClientUserAsync(
+  username: string,
+  password: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const u = normalizeUsername(username);
+  const pw = password || "";
+  if (!u) return { ok: false, error: "User é obrigatório." };
+  if (!pw) return { ok: false, error: "Password é obrigatória." };
+
+  const ph = hashPassword(pw);
+
+  // 1. Try server
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    const r = await fetch("/api/client/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: u, passwordHash: ph }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (r.ok) {
+      // Sync to localStorage so future calls work offline
+      try {
+        const db = readDb();
+        if (!db[u]) {
+          db[u] = { passwordHash: ph, updatedAt: Date.now() };
+          writeDb(db);
+        }
+      } catch { /* ignore */ }
+
+      try {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(SESSION_USER_KEY, u);
+          window.localStorage.setItem(SESSION_OK_KEY, "1");
+          notifyClientSessionChanged();
+        }
+      } catch { /* ignore */ }
+      return { ok: true };
+    }
+
+    if (r.status === 401) {
+      const j = (await r.json()) as { error?: string };
+      const err = j.error === "user_not_found"
+        ? "User não encontrado."
+        : j.error === "wrong_password"
+        ? "Password incorreta."
+        : "Falha ao fazer login.";
+      return { ok: false, error: err };
+    }
+    // Server error — fall through to localStorage
+  } catch {
+    // Network error — fall through to localStorage
+  }
+
+  // 2. Fallback: localStorage (offline / dev)
+  return loginClientUser(username, password);
+}
+
+/**
+ * Async register: saves to server AND localStorage.
+ * Server is the source of truth; localStorage acts as local cache.
+ */
+export async function registerClientUserAsync(params: {
+  username: string;
+  password: string;
+  email: string;
+  phone?: string;
+  emailVerified?: boolean;
+}): Promise<{ ok: boolean; error?: string; field?: RegisterClientUserErrorField }> {
+  const u = normalizeUsername(params.username);
+  const pw = params.password || "";
+  if (!u) return { ok: false, error: "User é obrigatório.", field: "username" };
+  if (!pw) return { ok: false, error: "Password é obrigatória.", field: "password" };
+
+  const ph = hashPassword(pw);
+
+  // Try to persist on server (non-blocking: failure is silent, localStorage still works)
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    await fetch("/api/client/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: u,
+        passwordHash: ph,
+        email: params.email,
+        phone: params.phone,
+        emailVerified: params.emailVerified ?? false,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+  } catch {
+    // Network error — account still saved locally below
+  }
+
+  // Always save to localStorage as well
+  const db = readDb();
+  const existing = db[u];
+  db[u] = {
+    passwordHash: ph,
+    email: params.email || existing?.email || "",
+    phone: params.phone || existing?.phone || "",
+    emailVerified: params.emailVerified ?? existing?.emailVerified ?? false,
+    updatedAt: Date.now(),
+  };
+  writeDb(db);
+
+  return { ok: true };
+}
+
 export function changeClientPassword(params: {
   username: string;
   currentPassword: string;

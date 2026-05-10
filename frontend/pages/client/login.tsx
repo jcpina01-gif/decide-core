@@ -5,6 +5,7 @@ import {
   getCurrentSessionUser,
   isClientLoggedIn,
   loginClientUser,
+  loginClientUserAsync,
   readLoginNextDestinationFromWindow,
 } from "../../lib/clientAuth";
 import { getNextOnboardingHref, isOnboardingFlowComplete } from "../../lib/onboardingProgress";
@@ -42,9 +43,10 @@ export default function ClientLoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string>("");
 
-  function submit() {
+  async function submit() {
     setError("");
-    const res = loginClientUser(username, password);
+    // Try server first (works even after cache clear), then localStorage fallback
+    const res = await loginClientUserAsync(username, password);
     if (!res.ok) {
       setError(res.error || "Falha ao fazer login.");
       return;
@@ -200,6 +202,7 @@ export default function ClientLoginPage() {
                   <input
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") void submit(); }}
                     type="password"
                     style={{
                       width: "100%",
@@ -233,7 +236,7 @@ export default function ClientLoginPage() {
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                   <button
                     type="button"
-                    onClick={submit}
+                    onClick={() => { void submit(); }}
                     style={{
                       background: DECIDE_DASHBOARD.buttonRegister,
                       color: DECIDE_DASHBOARD.kpiMenuMainButtonColor,
