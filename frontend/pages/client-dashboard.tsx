@@ -1657,28 +1657,26 @@ function AjudaPage() {
   const [chatMsgs,setChatMsgs]=useState<ChatMsg[]>([]);
   const [chatInput,setChatInput]=useState("");
   const [chatLoading,setChatLoading]=useState(false);
-  const chatEndRef=useRef<HTMLDivElement>(null);
   const chatBoxRef=useRef<HTMLDivElement>(null);
   const chatMsgsRef=useRef<HTMLDivElement>(null);
+  const textareaRef=useRef<HTMLTextAreaElement>(null);
 
+  // Scroll internal messages container to bottom when messages change
   useEffect(()=>{
-    // Scroll messages container to bottom internally
     if(chatMsgsRef.current){
       chatMsgsRef.current.scrollTop=chatMsgsRef.current.scrollHeight;
     }
-    // Also ensure the card is in view within the main scroll container
-    const box=chatBoxRef.current;
-    if(!box) return;
-    const main=box.closest("main") as HTMLElement|null;
-    if(main){
-      const boxRect=box.getBoundingClientRect();
-      const mainRect=main.getBoundingClientRect();
-      if(boxRect.top<mainRect.top){
-        const target=main.scrollTop+(boxRect.top-mainRect.top)-16;
-        main.scrollTo({top:Math.max(0,target),behavior:"smooth"});
-      }
-    }
   },[chatMsgs]);
+
+  // Scroll main content so the AI card is visible (double rAF = after browser reflow + scroll)
+  const scrollCardIntoView=()=>{
+    requestAnimationFrame(()=>{
+      requestAnimationFrame(()=>{
+        const main=chatBoxRef.current?.closest("main") as HTMLElement|null;
+        if(main) main.scrollTop=0;
+      });
+    });
+  };
 
   const sendChat=async()=>{
     const q=chatInput.trim();
@@ -1686,20 +1684,8 @@ function AjudaPage() {
     const newMsgs:ChatMsg[]=[...chatMsgs,{role:"user",content:q}];
     setChatMsgs(newMsgs);
     setChatInput("");
-    // Scroll the main content container so the chat card top is visible
-    setTimeout(()=>{
-      const box=chatBoxRef.current;
-      if(!box) return;
-      const main=box.closest("main") as HTMLElement|null;
-      if(main){
-        const boxRect=box.getBoundingClientRect();
-        const mainRect=main.getBoundingClientRect();
-        const target=main.scrollTop+(boxRect.top-mainRect.top)-16;
-        main.scrollTo({top:Math.max(0,target),behavior:"smooth"});
-      } else {
-        box.scrollIntoView({behavior:"smooth",block:"start"});
-      }
-    },120);
+    textareaRef.current?.blur(); // prevent browser from re-scrolling to keep input in view
+    scrollCardIntoView();
     setChatLoading(true);
     try{
       const r=await fetch("/api/client/ai-chat",{
@@ -1787,6 +1773,7 @@ function AjudaPage() {
         {/* Input */}
         <div className="px-4 py-3 border-t border-[#0f1420] flex gap-2 items-end">
           <textarea
+            ref={textareaRef}
             value={chatInput}
             onChange={e=>setChatInput(e.target.value)}
             onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat();}}}
