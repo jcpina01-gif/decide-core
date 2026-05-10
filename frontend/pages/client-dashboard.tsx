@@ -632,9 +632,9 @@ function scaleEquityCurve(equity:number[], factor:number):number[] {
 }
 
 function skipWarmup(eq:number[], from:number) {
-  const v0=eq[from]; let i=from;
+  const v0=eq[from]; let i=from+1;
   while(i<eq.length-1&&eq[i]===v0) i++;
-  return i;
+  return i>from+1?i:from;
 }
 function makeChartData(dates:string[], eq:number[], bench:number[], period:Period) {
   const s=skipWarmup(eq,periodStart(dates,period));
@@ -3454,7 +3454,10 @@ export default function ClientDashboardPage() {
     const ytdIdx=dates.findIndex(d=>d>=ytdStartStr);
     const ytdRet=ytdIdx>=0&&scaledEquity.length>ytdIdx
       ? (scaledEquity[scaledEquity.length-1]/scaledEquity[ytdIdx]-1)*100 : 0;
-    return {chart,m,curVol,curDD,ddChart:dd5,ytdRet};
+    // Inception metrics — always from full series start (index 0), independent of period selector
+    // Using full series (including warmup) to match kpi_server CAGR convention (~25% moderado)
+    const inception=periodMetrics(scaledEquity,benchRaw,"Desde início");
+    return {chart,m,curVol,curDD,ddChart:dd5,ytdRet,inception};
   },[dates,scaledEquity,benchRaw,period]);
 
   // Convenience aliases — direct from recomputed curve (no post-hoc multiply)
@@ -4270,8 +4273,8 @@ export default function ClientDashboardPage() {
                            icon:<div className="text-blue-400 text-lg">📦</div>,c:"text-slate-100"},
                           {label:"Variação (YTD)",val:fmtP(scaledYtd,true),sub:`${scaledYtd>=0?"+ €":"- €"} ${fmtE(Math.abs(aum*scaledYtd/100))} · ${pfLabel}`,
                            icon:<TrendingUp size={16} className="text-emerald-400"/>,c:scaledYtd>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Retorno desde início",val:fmtP(scaledTotal,true),sub:`CAGR ${fmtP(scaledAnn,true)} · ${pfLabel}`,
-                           icon:<Activity size={16} className="text-blue-400"/>,c:scaledTotal>=0?"text-emerald-400":"text-red-400"},
+                          {label:"Retorno anual (20 anos)",val:fmtP(perfData?.inception.ann??0,true),sub:`CAGR desde início · ${pfLabel}`,
+                           icon:<Activity size={16} className="text-blue-400"/>,c:(perfData?.inception.ann??0)>=0?"text-emerald-400":"text-red-400"},
                           {label:"Risco (Volatilidade anual)",val:scaledVol>0?`${scaledVol.toFixed(1)}%`:"—",
                            sub:`${pfLabel} vol base · Perfil ${profileLabel}`,
                            icon:<ShieldCheck size={16} className="text-amber-400"/>,c:"text-amber-400"},
@@ -5181,8 +5184,8 @@ export default function ClientDashboardPage() {
               {activePage==="risco"&&(()=>{
                 const vol=perfData?.curVol??0;
                 const dd=perfData?.curDD??0;
-                // 20y Sharpe from full data
-                const sharpe20=perfData?.m?.shp??riskMetrics?.beta??0;
+                // 20y Sharpe from inception data
+                const sharpe20=perfData?.inception?.shp??riskMetrics?.beta??0;
                 // Needle position: vol mapped to 0-1 (0%=low, 30%=high)
                 const needlePos=Math.min(Math.max(vol/30,0),1);
                 const riskLabel=needlePos<0.4?"Baixo":needlePos<0.7?"Moderado":"Elevado";
