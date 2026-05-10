@@ -3601,6 +3601,66 @@ export default function ClientDashboardPage() {
       });
   },[dates,scaledEquity,benchRaw]);
 
+  // Monthly stats scoped to selected period
+  const monthlyStats=useMemo(()=>{
+    if(!dates.length||!scaledEquity.length) return null;
+    const s=skipWarmup(scaledEquity,periodStart(dates,period));
+    const dSlice=dates.slice(s), eSlice=scaledEquity.slice(s), bSlice=benchRaw.slice(s);
+    const byMonth=new Map<string,number[]>(), benchByMonth=new Map<string,number[]>();
+    dSlice.forEach((d,i)=>{
+      const k=d.slice(0,7);
+      if(!byMonth.has(k)){byMonth.set(k,[]);benchByMonth.set(k,[]);}
+      byMonth.get(k)!.push(eSlice[i]);
+      benchByMonth.get(k)!.push(bSlice[i]);
+    });
+    const months=[...byMonth.entries()].map(([k,vals])=>{
+      const bv=benchByMonth.get(k)??[1,1];
+      return{k,m:(vals[vals.length-1]/vals[0]-1)*100,b:(bv[bv.length-1]/bv[0]-1)*100};
+    });
+    const n=months.length;
+    const aboveBench=months.filter(x=>x.m>x.b).length;
+    const positive=months.filter(x=>x.m>0).length;
+    return{n,aboveBench,belowBench:n-aboveBench,positive,negative:n-positive};
+  },[dates,scaledEquity,benchRaw,period]);
+
+  // Turnover from rebalancing history
+  const turnoverStats=useMemo(()=>{
+    if(sortedMonths.length<2) return null;
+    const tvs=sortedMonths.map((m,idx)=>{
+      if(idx===0) return 0;
+      const prev=sortedMonths[idx-1];
+      const pm=new Map(prev.rows.map(r=>[r.ticker,r.weightPct??0]));
+      const cm=new Map(m.rows.map(r=>[r.ticker,r.weightPct??0]));
+      const all=new Set([...pm.keys(),...cm.keys()]);
+      let t=0; all.forEach(tk=>{t+=Math.abs((cm.get(tk)??0)-(pm.get(tk)??0));});
+      return t/2;
+    }).slice(1);
+    const total=tvs.reduce((a,b)=>a+b,0);
+    return{total,avg:tvs.length?total/tvs.length:0,n:tvs.length};
+  },[sortedMonths]);
+
+  // Benchmark period metrics (vol + shp for selected period)
+  const benchPerfData=useMemo(()=>{
+    if(!dates.length||!benchRaw.length) return null;
+    const s=skipWarmup(benchRaw,periodStart(dates,period));
+    const bSlice=benchRaw.slice(s);
+    const eSlice=scaledEquity.slice(s);
+    if(bSlice.length<2) return null;
+    const ret=(bSlice[bSlice.length-1]/bSlice[0]-1)*100;
+    const y=period==="YTD"?(new Date().getMonth()+1)/12
+      :period==="1 Ano"?1:period==="3 Anos"?3:period==="5 Anos"?5
+      :period==="20 Anos"?20:bSlice.length/252;
+    const ann=cagrFn(bSlice[0],bSlice[bSlice.length-1],y)*100;
+    const bRets=bSlice.slice(1).map((v,i)=>v/bSlice[i]-1);
+    const shp=sharpe(bRets);
+    const vol=annualVol(bRets)*100;
+    // Alpha = model ret - bench ret (annualised)
+    const mRets=eSlice.slice(1).map((v,i)=>v/eSlice[i]-1);
+    const mVol=annualVol(mRets)*100;
+    const alpha=((perfData?.m.ann??0)-ann);
+    return{ret,ann,shp,vol,alpha,mVol};
+  },[dates,scaledEquity,benchRaw,period,perfData]);
+
   // Geographic exposure from current positions
   const geoData=useMemo(()=>{
     if(!latestMonth) return [];
@@ -5116,19 +5176,90 @@ export default function ClientDashboardPage() {
               {/* ── PERFORMANCE ── */}
               {activePage==="perf"&&(
                 <div className="space-y-5">
-                  <div className="grid grid-cols-4 gap-4">
-                    {perfData&&[
-                      {label:"Retorno ("+period+")",val:fmt(perfData.m.ret,true),c:perfData.m.ret>=0?"text-emerald-400":"text-red-400"},
-                      {label:"CAGR",val:fmt(perfData.m.ann,true),c:perfData.m.ann>=0?"text-emerald-400":"text-red-400"},
-                      {label:"Sharpe",val:perfData.m.shp.toFixed(2),c:"text-white"},
-                      {label:"Volatilidade anual",val:`${perfData.curVol.toFixed(1)}%`,c:"text-amber-400"},
-                    ].map(({label,val,c})=>(
-                      <div key={label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                        <div className="text-slate-400 text-xs mb-2">{label}</div>
-                        <div className={`text-2xl font-black ${c}`}>{val}</div>
+                  {/* ── KPI comparison: Modelo vs Benchmark ── */}
+                  {perfData&&benchPerfData&&(()=>{
+                    const fmtP=(v:number,s=false)=>`${s&&v>=0?"+":""}${v.toFixed(2)}%`;
+                    const cols=[
+                      {label:"Retorno ("+period+")",
+                       m:perfData.m.ret, b:benchPerfData.ret,
+                       mFmt:fmtP(perfData.m.ret,true), bFmt:fmtP(benchPerfData.ret,true),
+                       delta:perfData.m.ret-benchPerfData.ret, isVol:false},
+                      {label:"CAGR",
+                       m:perfData.m.ann, b:benchPerfData.ann,
+                       mFmt:fmtP(perfData.m.ann,true), bFmt:fmtP(benchPerfData.ann,true),
+                       delta:perfData.m.ann-benchPerfData.ann, isVol:false},
+                      {label:"Sharpe",
+                       m:perfData.m.shp, b:benchPerfData.shp,
+                       mFmt:perfData.m.shp.toFixed(2), bFmt:benchPerfData.shp.toFixed(2),
+                       delta:perfData.m.shp-benchPerfData.shp, isVol:false, isDelta:true},
+                      {label:"Volatilidade anual",
+                       m:perfData.curVol, b:benchPerfData.vol,
+                       mFmt:`${perfData.curVol.toFixed(1)}%`, bFmt:`${benchPerfData.vol.toFixed(1)}%`,
+                       delta:perfData.curVol-benchPerfData.vol, isVol:true},
+                    ];
+                    return(
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+                        {/* Header */}
+                        <div className="grid grid-cols-4 border-b border-[#1a1f2e]">
+                          <div className="px-4 py-2.5 text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Métrica</div>
+                          <div className="px-4 py-2.5 text-[10px] font-semibold text-blue-500 uppercase tracking-wider flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-blue-500"/>Modelo</div>
+                          <div className="px-4 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-500"/>{BENCH_SHORT}</div>
+                          <div className="px-4 py-2.5 text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Alpha</div>
+                        </div>
+                        {cols.map(col=>{
+                          const dPos=col.isVol?col.delta<=0:col.delta>=0;
+                          const dFmt=col.isVol
+                            ?`${col.delta>=0?"+":""}${col.delta.toFixed(1)}pp vol`
+                            :col.label==="Sharpe"
+                              ?`${col.delta>=0?"+":""}${col.delta.toFixed(2)}`
+                              :`${col.delta>=0?"+":""}${col.delta.toFixed(2)}pp`;
+                          return(
+                            <div key={col.label} className="grid grid-cols-4 border-b border-[#0f172a] hover:bg-white/[0.015]">
+                              <div className="px-4 py-3 text-[11px] text-slate-400 font-medium">{col.label}</div>
+                              <div className={`px-4 py-3 text-[14px] font-black ${col.m>=0?"text-emerald-400":"text-red-400"}`}>{col.mFmt}</div>
+                              <div className="px-4 py-3 text-[14px] font-bold text-slate-300">{col.bFmt}</div>
+                              <div className={`px-4 py-3 text-[12px] font-bold ${dPos?"text-emerald-400":"text-red-400"}`}>{dFmt}</div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })()}
+
+                  {/* ── Monthly stats + Turnover ── */}
+                  {(()=>{
+                    const ms=monthlyStats;
+                    const ts=turnoverStats;
+                    if(!ms&&!ts) return null;
+                    return(
+                      <div className="grid grid-cols-4 gap-4">
+                        {ms&&<>
+                          <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
+                            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Meses acima do bench</div>
+                            <div className="text-2xl font-black text-emerald-400">{ms.aboveBench}<span className="text-base font-semibold text-slate-400"> / {ms.n}</span></div>
+                            <div className="text-[11px] text-slate-400 mt-1">{ms.n?((ms.aboveBench/ms.n)*100).toFixed(0):0}% dos meses</div>
+                          </div>
+                          <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
+                            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Meses positivos</div>
+                            <div className="text-2xl font-black text-blue-400">{ms.positive}<span className="text-base font-semibold text-slate-400"> / {ms.n}</span></div>
+                            <div className="text-[11px] text-slate-400 mt-1">{ms.n?((ms.positive/ms.n)*100).toFixed(0):0}% · {ms.negative} negativos</div>
+                          </div>
+                        </>}
+                        {ts&&<>
+                          <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
+                            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Turnover médio</div>
+                            <div className="text-2xl font-black text-amber-400">{ts.avg.toFixed(1)}<span className="text-sm font-semibold text-slate-500">%</span></div>
+                            <div className="text-[11px] text-slate-400 mt-1">por rebalanceamento</div>
+                          </div>
+                          <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
+                            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Turnover total</div>
+                            <div className="text-2xl font-black text-amber-300">{ts.total.toFixed(0)}<span className="text-sm font-semibold text-slate-500">%</span></div>
+                            <div className="text-[11px] text-slate-400 mt-1">em {ts.n} rebalanceamentos</div>
+                          </div>
+                        </>}
+                      </div>
+                    );
+                  })()}
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                     <div className="flex items-center justify-between mb-4">
                       <div className="font-bold text-slate-200 text-sm">Evolução do investimento</div>
