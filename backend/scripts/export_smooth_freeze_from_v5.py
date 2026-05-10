@@ -179,7 +179,12 @@ def main() -> int:
     if str(eng) not in sys.path:
         sys.path.insert(0, str(eng))
 
-    from engine_research_v5 import run_research_v1  # noqa: E402
+    # engine_v7_research = versão do engine que gerou o freeze V7 (Sharpe ~1.24, Vol ~17%)
+    # engine_research_v5 = versão mais recente (mais features, mas Vol ~19% com estes params)
+    try:
+        from engine_v7_research import run_research_v1  # noqa: E402
+    except ImportError:
+        from engine_research_v5 import run_research_v1  # noqa: E402
 
     FREEZE_OUT.mkdir(parents=True, exist_ok=True)
     FREEZE_CLONE.mkdir(parents=True, exist_ok=True)
@@ -233,6 +238,8 @@ def main() -> int:
                     "bear_low_vol_exposure_mult": 0.70,
                     "vol_spike_enabled": True,
                     "benchmark_ma_window": 252,
+                    "convex_power": 2.2,
+                    "vol_scale_floor": 0.7,
                 }
             )
             kwargs["emit_weights_csv"] = str(data_weights)

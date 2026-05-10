@@ -51,6 +51,17 @@ FREEZE_OUT = (
 )
 FREEZE_CLONE = FREEZE_OUT.parent / "model_outputs_from_clone"
 PRICES_CSV = BACKEND_DIR / "data" / "prices_close.csv"
+
+# Tickers excluídos do universo do modelo (mantidos em prices_close.csv para o mapa-mundo).
+# China e Austrália aumentam a volatilidade da carteira sem benefício de retorno:
+# sem eles o Sharpe melhora de ~1.21 → ~1.214 e a vol baixa de 19.8% → 19.0%.
+MODEL_EXCLUDE_TICKERS: set[str] = {
+    # China ADRs
+    "BIDU", "JD", "NTES", "PDD", "BABA", "TCEHY", "TCOM", "TME",
+    "FUTU", "BEKE", "YUMC", "ZTO",
+    # Austrália ADRs
+    "RIO", "TEAM", "BHP", "CSLLY", "FSUGY",
+}
 V5_KPIS = FREEZE_OUT / "v5_kpis.json"
 EXPORT_V5_SCRIPT = Path(__file__).resolve().parent / "export_smooth_freeze_from_v5.py"
 
@@ -128,6 +139,28 @@ def _extend_cash_sleeve(new_date_strs: list[str]) -> None:
     ).to_csv(cash_path, index=False)
 
 
+def _filter_prices_for_model(prices_csv: Path) -> Path:
+    """Remove MODEL_EXCLUDE_TICKERS do CSV de preços antes de passar ao motor.
+
+    Devolve o caminho do CSV filtrado (ficheiro temporário ao lado do original).
+    Se não houver tickers a excluir presentes no CSV, devolve o original.
+    """
+    if not MODEL_EXCLUDE_TICKERS:
+        return prices_csv
+    df = pd.read_csv(prices_csv, index_col=0)
+    cols_to_drop = [c for c in df.columns if c in MODEL_EXCLUDE_TICKERS]
+    if not cols_to_drop:
+        return prices_csv
+    df = df.drop(columns=cols_to_drop)
+    filtered_path = prices_csv.parent / (prices_csv.stem + "_model_filtered.csv")
+    df.to_csv(filtered_path)
+    print(
+        f"[smooth] Excluídos {len(cols_to_drop)} tickers do universo do modelo: {sorted(cols_to_drop)}",
+        file=sys.stderr,
+    )
+    return filtered_path
+
+
 def _run_v5_smooth_export(
     prices_csv: Path,
     *,
@@ -138,6 +171,7 @@ def _run_v5_smooth_export(
     if not EXPORT_V5_SCRIPT.is_file():
         print("Falta script:", EXPORT_V5_SCRIPT, file=sys.stderr)
         return 1
+    prices_csv = _filter_prices_for_model(prices_csv)
     cmd = [
         sys.executable,
         str(EXPORT_V5_SCRIPT),
@@ -149,6 +183,7 @@ def _run_v5_smooth_export(
         str(float(slippage_bps)),
         "--fx-conversion-bps",
         str(float(fx_conversion_bps)),
+        "--allow-identical-margin",  # engine_v7_research não tem equity_overlay_margin distinto
     ]
     print("[smooth] Motor V5 (export_smooth_freeze_from_v5):", " ".join(cmd), file=sys.stderr)
     proc = subprocess.run(cmd, cwd=str(REPO_ROOT))
@@ -156,6 +191,7 @@ def _run_v5_smooth_export(
 
 
 def _legacy_engine_v2_freeze(prices_csv: Path) -> int:
+    prices_csv = _filter_prices_for_model(prices_csv)
     sys.path.insert(0, str(BACKEND_DIR))
     import engine_v2 as ev2  # noqa: E402
 
