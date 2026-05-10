@@ -3183,6 +3183,119 @@ function getActivityLog():ActEntry[] {
   try { return JSON.parse(localStorage.getItem(ACT_KEY)||"[]"); } catch { return []; }
 }
 
+/* ─── ActividadePage sub-component ─────────────────────────────────────── */
+function ActividadePage({sortedMonths}:{sortedMonths:MonthRec[]}) {
+  const [actLog,setActLog]=useState<ActEntry[]>(()=>getActivityLog());
+  const [actFilter,setActFilter]=useState<string>("todos");
+
+  const rebalanceEvents=useMemo(()=>{
+    const evs:ActEntry[]=[];
+    sortedMonths.forEach((m,idx)=>{
+      if(idx===0) return;
+      const prev=sortedMonths[idx-1];
+      const pm=new Map(prev.rows.map(r=>[r.ticker,r.weightPct]));
+      const cm=new Map(m.rows.map(r=>[r.ticker,r.weightPct]));
+      const allT=new Set([...pm.keys(),...cm.keys()]);
+      let comprar=0,vender=0,aumentar=0,reduzir=0;
+      const details:string[]=[];
+      allT.forEach(t=>{
+        if(t.startsWith("TBILL")||t.startsWith("CASH")||t==="XEON") return;
+        const p=pm.get(t)??0, c=cm.get(t)??0, d=c-p;
+        if(Math.abs(d)<0.01) return;
+        const name=getCompany(t)||t;
+        if(p===0&&c>0){comprar++;details.push(`Comprar ${name} (${c.toFixed(1)}%)`);}
+        else if(p>0&&c===0){vender++;details.push(`Vender ${name} (era ${p.toFixed(1)}%)`);}
+        else if(d>0){aumentar++;details.push(`Aumentar ${name} ${p.toFixed(1)}%→${c.toFixed(1)}%`);}
+        else{reduzir++;details.push(`Reduzir ${name} ${p.toFixed(1)}%→${c.toFixed(1)}%`);}
+      });
+      const total=comprar+vender+aumentar+reduzir;
+      if(total===0) return;
+      const parts:string[]=[];
+      if(comprar) parts.push(`${comprar} compra${comprar>1?"s":""}`);
+      if(aumentar) parts.push(`${aumentar} reforço${aumentar>1?"s":""}`);
+      if(reduzir) parts.push(`${reduzir} redução${reduzir>1?"ões":""}`);
+      if(vender) parts.push(`${vender} venda${vender>1?"s":""}`);
+      const dateStr:string=m.date??m.rebalance_date??"1970-01-01";
+      evs.push({
+        id:`reb-${dateStr}`,ts:new Date(dateStr).getTime(),
+        type:"rebalanceamento",
+        label:`Rebalanceamento · ${parts.join(", ")}`,
+        detail:details.slice(0,5).join(" · ")+(details.length>5?` · +${details.length-5} mais`:""),
+        icon:"↺",color:"text-blue-400",
+      });
+    });
+    return evs.reverse();
+  },[sortedMonths]);
+
+  const allEvents=[...actLog,...rebalanceEvents].sort((a,b)=>b.ts-a.ts);
+  const filterTypes=["todos","rebalanceamento","ordens","cancelamento","configuração","login"];
+  const filtered=actFilter==="todos"?allEvents:allEvents.filter(e=>e.type===actFilter);
+  const fmtDate=(ts:number)=>{
+    const d=new Date(ts);
+    return d.toLocaleDateString("pt-PT",{day:"2-digit",month:"short",year:"numeric"})+" "+
+           d.toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"});
+  };
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        {filterTypes.map(f=>(
+          <button key={f} onClick={()=>setActFilter(f)}
+            className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold capitalize transition-colors ${actFilter===f?"bg-blue-600 text-white":"bg-[#0b0f1a] border border-[#1a1f2e] text-slate-400 hover:text-slate-200"}`}>
+            {f==="todos"?`Tudo (${allEvents.length})`:f}
+          </button>
+        ))}
+        <button onClick={()=>{localStorage.removeItem(ACT_KEY);setActLog([]);}}
+          className="ml-auto px-3 py-1.5 rounded-lg text-[11px] font-semibold text-red-500 hover:text-red-400 border border-red-900/40 hover:border-red-700/60 transition-colors">
+          Limpar histórico manual
+        </button>
+      </div>
+      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+        {filtered.length===0?(
+          <div className="p-8 text-center text-slate-600 text-sm">
+            <div className="text-2xl mb-2">📋</div>
+            Sem actividade registada{actFilter!=="todos"?` para "${actFilter}"`:""}
+          </div>
+        ):(
+          <div className="divide-y divide-[#111827]">
+            {filtered.map((e,i)=>(
+              <div key={e.id||i} className="flex items-start gap-4 px-5 py-4 hover:bg-[#0f172a] transition-colors">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 mt-0.5
+                  ${e.type==="rebalanceamento"?"bg-blue-900/40 text-blue-400":
+                    e.type==="ordens"?"bg-emerald-900/40 text-emerald-400":
+                    e.type==="cancelamento"?"bg-red-900/40 text-red-400":
+                    e.type==="configuração"?"bg-amber-900/40 text-amber-400":
+                    e.type==="login"?"bg-slate-800 text-slate-400":
+                    "bg-slate-800 text-slate-400"}`}>
+                  {e.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-slate-200 text-[12px] font-semibold leading-tight">{e.label}</div>
+                      {e.detail&&<div className="text-slate-500 text-[10px] mt-1 leading-relaxed">{e.detail}</div>}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-slate-500 text-[10px]">{fmtDate(e.ts)}</div>
+                      <div className={`text-[9px] font-semibold capitalize mt-0.5 px-1.5 py-0.5 rounded
+                        ${e.type==="rebalanceamento"?"bg-blue-900/20 text-blue-500":
+                          e.type==="ordens"?"bg-emerald-900/20 text-emerald-500":
+                          e.type==="cancelamento"?"bg-red-900/20 text-red-500":
+                          e.type==="configuração"?"bg-amber-900/20 text-amber-500":
+                          "bg-slate-800 text-slate-500"}`}>
+                        {e.type}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ClientDashboardPage() {
   const router=useRouter();
   const {profile}=useSyncedRiskProfileFromOnboarding();
@@ -4128,121 +4241,7 @@ export default function ClientDashboardPage() {
               })()}
 
               {/* ── ACTIVIDADE ── */}
-              {activePage==="actividade"&&(()=>{
-                const [actLog,setActLog]=React.useState<ActEntry[]>(()=>getActivityLog());
-                const [actFilter,setActFilter]=React.useState<string>("todos");
-                // Merge rebalance-derived events with stored events
-                const rebalanceEvents:ActEntry[]=React.useMemo(()=>{
-                  const evs:ActEntry[]=[];
-                  sortedMonths.forEach((m,idx)=>{
-                    if(idx===0) return;
-                    const prev=sortedMonths[idx-1];
-                    const pm=new Map(prev.rows.map(r=>[r.ticker,r.weightPct]));
-                    const cm=new Map(m.rows.map(r=>[r.ticker,r.weightPct]));
-                    const allT=new Set([...pm.keys(),...cm.keys()]);
-                    let comprar=0,vender=0,aumentar=0,reduzir=0;
-                    const details:string[]=[];
-                    allT.forEach(t=>{
-                      if(t.startsWith("TBILL")||t.startsWith("CASH")||t==="XEON") return;
-                      const p=pm.get(t)??0, c=cm.get(t)??0, d=c-p;
-                      if(Math.abs(d)<0.01) return;
-                      const name=getCompany(t)||t;
-                      if(p===0&&c>0){comprar++;details.push(`Comprar ${name} (${c.toFixed(1)}%)`);}
-                      else if(p>0&&c===0){vender++;details.push(`Vender ${name} (era ${p.toFixed(1)}%)`);}
-                      else if(d>0){aumentar++;details.push(`Aumentar ${name} ${p.toFixed(1)}%→${c.toFixed(1)}%`);}
-                      else{reduzir++;details.push(`Reduzir ${name} ${p.toFixed(1)}%→${c.toFixed(1)}%`);}
-                    });
-                    const total=comprar+vender+aumentar+reduzir;
-                    if(total===0) return;
-                    const parts:string[]=[];
-                    if(comprar) parts.push(`${comprar} compra${comprar>1?"s":""}`);
-                    if(aumentar) parts.push(`${aumentar} reforço${aumentar>1?"s":""}`);
-                    if(reduzir) parts.push(`${reduzir} redução${reduzir>1?"ões":""}`);
-                    if(vender) parts.push(`${vender} venda${vender>1?"s":""}`);
-                    const dateStr:string=m.date??m.rebalance_date??"1970-01-01";
-                    evs.push({
-                      id:`reb-${dateStr}`,ts:new Date(dateStr).getTime(),
-                      type:"rebalanceamento",
-                      label:`Rebalanceamento · ${parts.join(", ")}`,
-                      detail:details.slice(0,5).join(" · ")+(details.length>5?` · +${details.length-5} mais`:""),
-                      icon:"↺",color:"text-blue-400",
-                    });
-                  });
-                  return evs.reverse();
-                },[sortedMonths]);
-                const allEvents=[...actLog,...rebalanceEvents].sort((a,b)=>b.ts-a.ts);
-                const filterTypes=["todos","rebalanceamento","ordens","cancelamento","configuração","login"];
-                const filtered=actFilter==="todos"?allEvents:allEvents.filter(e=>e.type===actFilter);
-                const fmtDate=(ts:number)=>{
-                  const d=new Date(ts);
-                  return d.toLocaleDateString("pt-PT",{day:"2-digit",month:"short",year:"numeric"})+" "+
-                         d.toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"});
-                };
-                return (
-                  <div className="space-y-4">
-                    {/* Filter bar */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {filterTypes.map(f=>(
-                        <button key={f} onClick={()=>setActFilter(f)}
-                          className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold capitalize transition-colors ${actFilter===f?"bg-blue-600 text-white":"bg-[#0b0f1a] border border-[#1a1f2e] text-slate-400 hover:text-slate-200"}`}>
-                          {f==="todos"?`Tudo (${allEvents.length})`:f}
-                        </button>
-                      ))}
-                      <button onClick={()=>{localStorage.removeItem(ACT_KEY);setActLog([]);}}
-                        className="ml-auto px-3 py-1.5 rounded-lg text-[11px] font-semibold text-red-500 hover:text-red-400 border border-red-900/40 hover:border-red-700/60 transition-colors">
-                        Limpar histórico manual
-                      </button>
-                    </div>
-
-                    {/* Timeline */}
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
-                      {filtered.length===0?(
-                        <div className="p-8 text-center text-slate-600 text-sm">
-                          <div className="text-2xl mb-2">📋</div>
-                          Sem actividade registada{actFilter!=="todos"?` para "${actFilter}"`:""}
-                        </div>
-                      ):(
-                        <div className="divide-y divide-[#111827]">
-                          {filtered.map((e,i)=>(
-                            <div key={e.id||i} className="flex items-start gap-4 px-5 py-4 hover:bg-[#0f172a] transition-colors">
-                              {/* Icon */}
-                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 mt-0.5
-                                ${e.type==="rebalanceamento"?"bg-blue-900/40 text-blue-400":
-                                  e.type==="ordens"?"bg-emerald-900/40 text-emerald-400":
-                                  e.type==="cancelamento"?"bg-red-900/40 text-red-400":
-                                  e.type==="configuração"?"bg-amber-900/40 text-amber-400":
-                                  e.type==="login"?"bg-slate-800 text-slate-400":
-                                  "bg-slate-800 text-slate-400"}`}>
-                                {e.icon}
-                              </div>
-                              {/* Content */}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-start justify-between gap-4">
-                                  <div>
-                                    <div className="text-slate-200 text-[12px] font-semibold leading-tight">{e.label}</div>
-                                    {e.detail&&<div className="text-slate-500 text-[10px] mt-1 leading-relaxed">{e.detail}</div>}
-                                  </div>
-                                  <div className="shrink-0 text-right">
-                                    <div className="text-slate-500 text-[10px]">{fmtDate(e.ts)}</div>
-                                    <div className={`text-[9px] font-semibold capitalize mt-0.5 px-1.5 py-0.5 rounded
-                                      ${e.type==="rebalanceamento"?"bg-blue-900/20 text-blue-500":
-                                        e.type==="ordens"?"bg-emerald-900/20 text-emerald-500":
-                                        e.type==="cancelamento"?"bg-red-900/20 text-red-500":
-                                        e.type==="configuração"?"bg-amber-900/20 text-amber-500":
-                                        "bg-slate-800 text-slate-500"}`}>
-                                      {e.type}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
+              {activePage==="actividade"&&<ActividadePage sortedMonths={sortedMonths}/>}
 
               {/* ── DASHBOARD ── */}
               {activePage==="dashboard"&&(
