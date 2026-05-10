@@ -4125,7 +4125,9 @@ export default function ClientDashboardPage() {
                 const pfLabel=profileFactor<1?"Conservador":profileFactor>1?"Dinâmico":"Moderado";
                 const fmtPct=(v:number,sign=false)=>`${sign&&v>=0?"+":""}${v.toFixed(2)}%`;
                 const fmtEur=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0});
-                const sharpeVal=perfData&&scaledVol>0?(scaledAnn-2)/scaledVol:0;
+                // Use period-based vol (same as Performance / Dashboard / Risco pages)
+                const reportVol=(benchPerfData?.mVol??0)>0?(benchPerfData?.mVol??0):scaledVol;
+                const sharpeVal=perfData&&reportVol>0?(scaledAnn-2)/reportVol:0;
                 // Top-5 holdings
                 const top5=(latestMonth?.rows??[])
                   .filter(r=>!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="XEON")
@@ -4174,7 +4176,7 @@ export default function ClientDashboardPage() {
                       {[
                         {label:"Retorno YTD",val:fmtPct(scaledYtd,true),c:isUp?"text-emerald-400":"text-red-400",sub:"Ano corrente"},
                         {label:"Retorno total",val:fmtPct(scaledTotal,true),c:scaledTotal>=0?"text-emerald-400":"text-red-400",sub:`CAGR ${fmtPct(scaledAnn,true)}`},
-                        {label:"Volatilidade",val:scaledVol>0?`${scaledVol.toFixed(1)}%`:"—",c:"text-amber-400",sub:"Anualizada (252d)"},
+                        {label:"Volatilidade",val:reportVol>0?`${reportVol.toFixed(1)}%`:"—",c:"text-amber-400",sub:"Período completo"},
                         {label:"Máx. drawdown",val:scaledDD!==0?fmtPct(scaledDD):"—",c:"text-red-400",sub:"Últimos 3 anos"},
                         {label:"Sharpe ratio",val:sharpeVal.toFixed(2),c:sharpeVal>=1?"text-emerald-400":sharpeVal>=0?"text-amber-400":"text-red-400",sub:"Rf = 2%"},
                       ].map(k=>(
@@ -4337,7 +4339,7 @@ export default function ClientDashboardPage() {
                           equivalente a <span className="text-slate-200 font-semibold">{isUp?"+":""}{fmtEur(ytdGain)} €</span> sobre o valor investido.
                         </p>
                         <p>
-                          O modelo mantém uma volatilidade anualizada de <span className="text-amber-400 font-semibold">{scaledVol.toFixed(1)}%</span>,
+                          O modelo mantém uma volatilidade anualizada de <span className="text-amber-400 font-semibold">{reportVol.toFixed(1)}%</span>,
                           reflectindo o nível de risco associado ao perfil {pfLabel.toLowerCase()}.
                           O máximo drawdown nos últimos três anos foi de <span className="text-red-400 font-semibold">{fmtPct(scaledDD)}</span>,
                           o que demonstra a capacidade de contenção de perdas da estratégia quantitativa.
@@ -4368,7 +4370,7 @@ export default function ClientDashboardPage() {
                       <div className="font-bold text-slate-200 text-sm mb-4">Métricas de risco</div>
                       <div className="grid grid-cols-4 gap-4 text-sm">
                         {[
-                          {label:"Volatilidade (252d)",val:`${scaledVol.toFixed(2)}%`,desc:"Desvio padrão anualizado dos retornos diários"},
+                          {label:"Volatilidade (período)",val:`${reportVol.toFixed(2)}%`,desc:"Desvio padrão anualizado dos retornos (período completo)"},
                           {label:"Máx. Drawdown (3a)",val:fmtPct(scaledDD),desc:"Queda máxima pico-a-vale nos últimos 3 anos"},
                           {label:"Sharpe Ratio",val:sharpeVal.toFixed(2),desc:"Retorno anualizado excesso / volatilidade (Rf=2%)"},
                           {label:"CAGR",val:fmtPct(scaledAnn,true),desc:"Taxa de crescimento anual composta desde início"},
@@ -4744,7 +4746,7 @@ export default function ClientDashboardPage() {
                       </div>
                       {[
                         {icon:"🎯",label:"Objetivo",val:riskProfileLocal==="conservador"?"Crescimento com menor volatilidade (0,75× vol base)":riskProfileLocal==="dinamico"?"Máximo potencial de retorno (1,25× vol base)":"Equilíbrio risco/retorno (vol base do modelo)"},
-                        {icon:"📊",label:"Volatilidade alvo",val:`~${scaledVol.toFixed(1)}% aa (${profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×"} vol do modelo)`},
+                        {icon:"📊",label:"Volatilidade alvo",val:`~${reportVol.toFixed(1)}% aa (${profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×"} vol do modelo)`},
                         {icon:"⏳",label:"Horizonte",val:"Médio / Longo prazo (3+ anos)"},
                         {icon:"🌍",label:"Composição",val:"Ações globais + XEON (MM Euro)"},
                       ].map(x=>(
