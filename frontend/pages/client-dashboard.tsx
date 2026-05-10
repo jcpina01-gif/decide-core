@@ -679,6 +679,25 @@ function scaleEquityCurve(equity:number[], factor:number):number[] {
   }
   return out;
 }
+/* Apply leverage to an equity curve with a daily margin borrowing cost.
+   r_lev = r_base × leverage − (leverage−1) × marginRateAnnual/252        */
+function leverageEquityCurve(equity:number[], leverage:number, marginRateAnnual:number):number[] {
+  if(!equity.length) return equity;
+  const dailyCost=(leverage-1)*marginRateAnnual/252;
+  const out=new Array(equity.length);
+  out[0]=equity[0]||1;
+  for(let i=1;i<equity.length;i++){
+    const prev=equity[i-1];
+    if(!prev||!isFinite(prev)){
+      out[i]=out[i-1];
+    } else {
+      const r=(equity[i]-prev)/prev;
+      const next=out[i-1]*(1+r*leverage-dailyCost);
+      out[i]=isFinite(next)&&next>0 ? next : out[i-1];
+    }
+  }
+  return out;
+}
 
 function skipWarmup(eq:number[], from:number) {
   const v0=eq[from]; let i=from+1;
@@ -3640,6 +3659,9 @@ export default function ClientDashboardPage() {
 
   // ── Scaled equity curve: vol-rule scale applied to every daily return ─────
   const scaledEquity=useMemo(()=>scaleEquityCurve(equityRaw,volRuleScale),[equityRaw,volRuleScale]);
+  // Illustrative leveraged curve: 1.5× with 4% annual margin cost
+  const MARGIN_LEV=1.5, MARGIN_RATE=0.04;
+  const marginEquity=useMemo(()=>leverageEquityCurve(scaledEquity,MARGIN_LEV,MARGIN_RATE),[scaledEquity]);
 
   // ── Recompute all KPIs from scaled curve ──────────────────────────────────
   const perfData=useMemo(()=>{
@@ -3678,6 +3700,23 @@ export default function ClientDashboardPage() {
   const scaledYtd  =perfData?.ytdRet??0;
   const scaledTotal=perfData?.m.ret ??0;
   const scaledAnn  =perfData?.m.ann ??0;
+
+  // Illustrative margin KPIs (only used when kpiMode==="margem")
+  const marginKpis=useMemo(()=>{
+    if(!dates.length||!marginEquity.length) return null;
+    const allRets=marginEquity.slice(1).map((v,i)=>v/marginEquity[i]-1);
+    const vol=annualVol(allRets)*100;
+    const calYears=calYearsFromDates(dates)??dates.length/252;
+    const start=marginEquity[0]||1;
+    const end=marginEquity[marginEquity.length-1];
+    const cagr=calYears>0?((end/start)**(1/calYears)-1)*100:0;
+    const now=new Date(); const ytdStr=`${now.getFullYear()}-01-01`;
+    const ytdIdx=dates.findIndex(d=>d>=ytdStr);
+    const ytd=ytdIdx>=0&&marginEquity.length>ytdIdx
+      ?(marginEquity[marginEquity.length-1]/marginEquity[ytdIdx]-1)*100:0;
+    const dd=currentDD(marginEquity.slice(-252*3))*100;
+    return {cagr,vol,ytd,dd};
+  },[dates,marginEquity]);
 
   // Annual returns from equity series
   const annualReturns=useMemo(()=>{
@@ -4415,8 +4454,9 @@ export default function ClientDashboardPage() {
                   <div className="flex items-center justify-between -mb-2">
                     <div className="text-[10px] text-slate-500">
                       Perfil activo: <span className="font-bold text-slate-300">{profileLabel}</span>
-                      {" · "}Vol: <span className="font-bold text-amber-400">{(benchPerfData?.mVol??0)>0?(benchPerfData?.mVol??0).toFixed(1)+"%":"—"}</span>
+                      {" · "}Vol: <span className="font-bold text-amber-400">{kpiMode==="margem"?(marginKpis?.vol??0).toFixed(1)+"%":(benchPerfData?.mVol??0)>0?(benchPerfData?.mVol??0).toFixed(1)+"%":"—"}</span>
                       {" · "}Factor: <span className="font-bold text-blue-400">{profileFactor}×</span>
+                      {kpiMode==="margem"&&<span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold">×1.5 margem</span>}
                     </div>
                     <button
                       onClick={()=>{ setRiskProfileLocal(riskProfileLocal); }}
@@ -4430,20 +4470,26 @@ export default function ClientDashboardPage() {
                     const fmtP=(v:number,s=false)=>`${s&&v>=0?"+":""}${v.toFixed(2)}%`;
                     const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
                     const pfLabel=profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×";
+                    const isMargin=kpiMode==="margem";
+                    const dispYtd  =isMargin?(marginKpis?.ytd??0):scaledYtd;
+                    const dispCagr =isMargin?(marginKpis?.cagr??0):(perfData?.inception.ann??0);
+                    const dispVol  =isMargin?(marginKpis?.vol??0):(benchPerfData?.mVol??0);
+                    const dispDD   =isMargin?(marginKpis?.dd??0):scaledDD;
+                    const marginSub=isMargin?" · ×1.5 margem":"";
                     return (
                       <div className="grid grid-cols-5 gap-3">
                         {[
                           {label:"Valor da carteira",val:`€ ${fmtE(aum)}`,sub:"Património total",
                            icon:<div className="text-blue-400 text-lg">📦</div>,c:"text-slate-100"},
-                          {label:"Variação (YTD)",val:fmtP(scaledYtd,true),sub:`${scaledYtd>=0?"+ €":"- €"} ${fmtE(Math.abs(aum*scaledYtd/100))} · ${pfLabel}`,
-                           icon:<TrendingUp size={16} className="text-emerald-400"/>,c:scaledYtd>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Retorno anual (desde início)",val:fmtP(perfData?.inception.ann??0,true),sub:`CAGR · ${pfLabel} · perfil ${profileLabel}`,
-                           icon:<Activity size={16} className="text-blue-400"/>,c:(perfData?.inception.ann??0)>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Risco (Volatilidade anual)",val:(benchPerfData?.mVol??0)>0?`${(benchPerfData?.mVol??0).toFixed(1)}%`:"—",
-                           sub:`${pfLabel} vol base · Perfil ${profileLabel}`,
+                          {label:"Variação (YTD)",val:fmtP(dispYtd,true),sub:`${dispYtd>=0?"+ €":"- €"} ${fmtE(Math.abs(aum*dispYtd/100))} · ${pfLabel}${marginSub}`,
+                           icon:<TrendingUp size={16} className="text-emerald-400"/>,c:dispYtd>=0?"text-emerald-400":"text-red-400"},
+                          {label:"Retorno anual (desde início)",val:fmtP(dispCagr,true),sub:`CAGR · ${pfLabel} · perfil ${profileLabel}${marginSub}`,
+                           icon:<Activity size={16} className="text-blue-400"/>,c:dispCagr>=0?"text-emerald-400":"text-red-400"},
+                          {label:"Risco (Volatilidade anual)",val:dispVol>0?`${dispVol.toFixed(1)}%`:"—",
+                           sub:`${pfLabel} vol base · Perfil ${profileLabel}${marginSub}`,
                            icon:<ShieldCheck size={16} className="text-amber-400"/>,c:"text-amber-400"},
-                          {label:"Máximo drawdown",val:scaledDD!==0?fmtP(scaledDD):"—",
-                           sub:`${pfLabel} · Perfil ${profileLabel}`,
+                          {label:"Máximo drawdown",val:dispDD!==0?fmtP(dispDD):"—",
+                           sub:`${pfLabel} · Perfil ${profileLabel}${marginSub}`,
                            icon:<TrendingDown size={16} className="text-red-400"/>,c:"text-red-400"},
                         ].map(k=>(
                           <div key={k.label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
