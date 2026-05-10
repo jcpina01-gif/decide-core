@@ -1920,6 +1920,13 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
     // Show the month the portfolio is applied in (next month after rebalancing date)
     const label=raw?(()=>{const d=new Date(raw);d.setUTCMonth(d.getUTCMonth()+1,1);return d.toLocaleDateString("pt-PT",{month:"long",year:"numeric"});})():raw;
     const prevM=sortedMonths[sortedMonths.length-1-i-1];
+    // XEON (MM Euro) + equities allocation
+    const xeonPct=m.tbillsTotalPct??0;
+    const equityPct=100-xeonPct;
+    const prevXeonPct=prevM?.tbillsTotalPct??0;
+    const prevEquityPct=100-prevXeonPct;
+    const xeonDelta=xeonPct-prevXeonPct;
+    const equityDelta=equityPct-prevEquityPct;
     const pm=new Map((prevM?.rows??[]).map(r=>[r.ticker,r.weightPct??0]));
     const cm=new Map(m.rows.map(r=>[r.ticker,r.weightPct??0]));
     const WMIN=0.5; // only count tickers with meaningful weight in either month
@@ -1966,7 +1973,7 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
       :reducoes.length
         ?`Reduzir ${reducoes.slice(0,2).map(x=>x.t).join(", ")}${reducoes.length>2?` +${reducoes.length-2}`:""}`
         :"Sem alterações significativas";
-    return {label,compras,aumentos,vendas,reducoes,manter,getMiniPts,isLatest,estado,estadoStyle,resumo};
+    return {label,compras,aumentos,vendas,reducoes,manter,getMiniPts,isLatest,estado,estadoStyle,resumo,xeonPct,equityPct,xeonDelta,equityDelta};
   }),[sortedMonths,dates,equityRaw]);
 
   return (
@@ -2004,7 +2011,21 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
                   <td className="px-3 py-3 text-center font-bold text-red-400">{r.vendas.length||<span className="text-slate-700">—</span>}</td>
                   <td className="px-3 py-3 text-center font-bold text-amber-400">{r.reducoes.length||<span className="text-slate-700">—</span>}</td>
                   <td className="px-3 py-3 text-center text-slate-500">{r.manter.length||<span className="text-slate-700">—</span>}</td>
-                  <td className="px-5 py-3 text-slate-400 max-w-xs truncate">{r.resumo}</td>
+                  <td className="px-5 py-3 max-w-xs">
+                    <div className="text-slate-400 truncate text-xs">{r.resumo}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      {r.xeonPct>0&&(
+                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[10px] font-semibold">
+                          MM {r.xeonPct.toFixed(0)}%
+                          {r.xeonDelta!==0&&<span className={r.xeonDelta>0?"text-amber-300":"text-slate-500"}>{r.xeonDelta>0?"+":""}{r.xeonDelta.toFixed(0)}pp</span>}
+                        </span>
+                      )}
+                      <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.equityPct>100?"bg-orange-500/15 text-orange-400":r.xeonPct>0?"bg-slate-700/50 text-slate-400":"bg-emerald-500/10 text-emerald-400"}`}>
+                        Acc {r.equityPct.toFixed(0)}%{r.equityPct>100?" ⚡":""}
+                        {r.equityDelta!==0&&<span className={r.equityDelta>0?"text-emerald-300":"text-slate-500"}>{r.equityDelta>0?"+":""}{r.equityDelta.toFixed(0)}pp</span>}
+                      </span>
+                    </div>
+                  </td>
                   <td className="px-5 py-3"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${r.estadoStyle}`}>{r.estado}</span></td>
                 </tr>
                 {expandedIdx===i&&(
@@ -2035,6 +2056,16 @@ function HistoricoPage({sortedMonths,dates,equityRaw}:{sortedMonths:MonthRec[];d
                           })()}
                         </div>
                         <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-[11px] content-start">
+                          {/* Allocation summary row */}
+                          <div className="col-span-2 flex items-center gap-3 mb-1 pb-2 border-b border-[#1a1f2e]">
+                            <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wide">Alocação</div>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.xeonPct>0?"bg-amber-500/15 text-amber-400":"bg-slate-700/30 text-slate-600"}`}>
+                              MM Euro {r.xeonPct.toFixed(1)}%{r.xeonDelta!==0?` (${r.xeonDelta>0?"+":""}${r.xeonDelta.toFixed(1)}pp)`:""}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.equityPct>100?"bg-orange-500/15 text-orange-400":"bg-emerald-500/10 text-emerald-400"}`}>
+                              Acções {r.equityPct.toFixed(1)}%{r.equityPct>100?" ⚡ alavancado":""}{r.equityDelta!==0?` (${r.equityDelta>0?"+":""}${r.equityDelta.toFixed(1)}pp)`:""}
+                            </span>
+                          </div>
                           {r.compras.length>0&&(
                             <div>
                               <div className="text-emerald-400 font-bold mb-1.5">▲ Comprar</div>
