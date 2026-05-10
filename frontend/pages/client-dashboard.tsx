@@ -3541,7 +3541,7 @@ export default function ClientDashboardPage() {
     return [...map.entries()].map(([name,pct])=>({name,value:Math.round(pct/total*100)})).sort((a,b)=>b.value-a.value);
   },[actionCounts]);
 
-  // ── Profile factor (must be before scaledEquity / perfData) ─────────────
+  // ── Profile multiplier (0.75 / 1.0 / 1.25) ──────────────────────────────
   const profileFactor=useMemo(()=>
     riskProfileLocal==="conservador"?0.75:riskProfileLocal==="dinamico"?1.25:1.0
   ,[riskProfileLocal]);
@@ -3549,8 +3549,19 @@ export default function ClientDashboardPage() {
     riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado"
   ,[riskProfileLocal]);
 
-  // ── Scaled equity curve: apply profile factor to every daily return ───────
-  const scaledEquity=useMemo(()=>scaleEquityCurve(equityRaw,profileFactor),[equityRaw,profileFactor]);
+  // ── Vol rule: scale = (bench_vol × multiplier) / model_vol  (full curve) ─
+  // Mirrors Python _apply_vol_rule: annualised vol computed over entire series.
+  const volRuleScale=useMemo(()=>{
+    if(equityRaw.length<2||benchRaw.length<2) return profileFactor;
+    const mRets=equityRaw.slice(1).map((v,i)=>equityRaw[i]>0?v/equityRaw[i]-1:0);
+    const bRets=benchRaw.slice(1).map((v,i)=>benchRaw[i]>0?v/benchRaw[i]-1:0);
+    const mVol=annualVol(mRets);
+    const bVol=annualVol(bRets);
+    return mVol>0?(bVol*profileFactor)/mVol:profileFactor;
+  },[equityRaw,benchRaw,profileFactor]);
+
+  // ── Scaled equity curve: vol-rule scale applied to every daily return ─────
+  const scaledEquity=useMemo(()=>scaleEquityCurve(equityRaw,volRuleScale),[equityRaw,volRuleScale]);
 
   // ── Recompute all KPIs from scaled curve ──────────────────────────────────
   const perfData=useMemo(()=>{
