@@ -3662,22 +3662,24 @@ export default function ClientDashboardPage() {
   // Illustrative leveraged curve: 1.5× with 4% annual margin cost
   const MARGIN_LEV=1.5, MARGIN_RATE=0.04;
   const marginEquity=useMemo(()=>leverageEquityCurve(scaledEquity,MARGIN_LEV,MARGIN_RATE),[scaledEquity]);
+  // Active equity: base or leveraged depending on KPI mode selection
+  const activeEquity=kpiMode==="margem"?marginEquity:scaledEquity;
 
   // ── Recompute all KPIs from scaled curve ──────────────────────────────────
   const perfData=useMemo(()=>{
-    if(!dates.length||!scaledEquity.length) return null;
+    if(!dates.length||!activeEquity.length) return null;
     // "Desde início": start at index 0 (including warmup) + calendar years to match
     // Python _apply_vol_rule methodology → CAGR consistent with v5_kpis overlayed_cagr (25.13%)
     const isInception=period==="Desde início";
-    const s=isInception?0:skipWarmup(scaledEquity,periodStart(dates,period));
+    const s=isInception?0:skipWarmup(activeEquity,periodStart(dates,period));
     const calYears=isInception?calYearsFromDates(dates):undefined;
-    const chart=makeChartData(dates,scaledEquity,benchRaw,period);
-    const m=periodMetrics(scaledEquity.slice(s),benchRaw.slice(s),period,calYears);
-    const allRets=scaledEquity.slice(1).map((v,i)=>v/scaledEquity[i]-1);
+    const chart=makeChartData(dates,activeEquity,benchRaw,period);
+    const m=periodMetrics(activeEquity.slice(s),benchRaw.slice(s),period,calYears);
+    const allRets=activeEquity.slice(1).map((v,i)=>v/activeEquity[i]-1);
     const curVol=annualVol(allRets.slice(-252))*100;
-    const curDD=currentDD(scaledEquity.slice(-252*3))*100;
-    const dd5Start=skipWarmup(scaledEquity,periodStart(dates,"20 Anos"));
-    const modelDD=rollingDD(dates.slice(dd5Start),scaledEquity.slice(dd5Start),10);
+    const curDD=currentDD(activeEquity.slice(-252*3))*100;
+    const dd5Start=skipWarmup(activeEquity,periodStart(dates,"20 Anos"));
+    const modelDD=rollingDD(dates.slice(dd5Start),activeEquity.slice(dd5Start),10);
     let bpk=benchRaw[dd5Start]??1;
     const dd5=modelDD.map((pt,j)=>{
       const bv=benchRaw[dd5Start+j*10]??benchRaw[benchRaw.length-1];
@@ -3686,13 +3688,13 @@ export default function ClientDashboardPage() {
     });
     const now=new Date(); const ytdStartStr=`${now.getFullYear()}-01-01`;
     const ytdIdx=dates.findIndex(d=>d>=ytdStartStr);
-    const ytdRet=ytdIdx>=0&&scaledEquity.length>ytdIdx
-      ? (scaledEquity[scaledEquity.length-1]/scaledEquity[ytdIdx]-1)*100 : 0;
+    const ytdRet=ytdIdx>=0&&activeEquity.length>ytdIdx
+      ? (activeEquity[activeEquity.length-1]/activeEquity[ytdIdx]-1)*100 : 0;
     // Inception metrics — full history from index 0, calendar years → matches v5_kpis overlayed_cagr
     const calYearsInc=calYearsFromDates(dates)??dates.length/252;
-    const inception=periodMetrics(scaledEquity.slice(0),benchRaw.slice(0),"Desde início",calYearsInc);
+    const inception=periodMetrics(activeEquity.slice(0),benchRaw.slice(0),"Desde início",calYearsInc);
     return {chart,m,curVol,curDD,ddChart:dd5,ytdRet,inception};
-  },[dates,scaledEquity,benchRaw,period]);
+  },[dates,activeEquity,benchRaw,period]);
 
   // Convenience aliases — direct from recomputed curve (no post-hoc multiply)
   const scaledVol  =perfData?.curVol??0;
@@ -3701,28 +3703,12 @@ export default function ClientDashboardPage() {
   const scaledTotal=perfData?.m.ret ??0;
   const scaledAnn  =perfData?.m.ann ??0;
 
-  // Illustrative margin KPIs (only used when kpiMode==="margem")
-  const marginKpis=useMemo(()=>{
-    if(!dates.length||!marginEquity.length) return null;
-    const allRets=marginEquity.slice(1).map((v,i)=>v/marginEquity[i]-1);
-    const vol=annualVol(allRets)*100;
-    const calYears=calYearsFromDates(dates)??dates.length/252;
-    const start=marginEquity[0]||1;
-    const end=marginEquity[marginEquity.length-1];
-    const cagr=calYears>0?((end/start)**(1/calYears)-1)*100:0;
-    const now=new Date(); const ytdStr=`${now.getFullYear()}-01-01`;
-    const ytdIdx=dates.findIndex(d=>d>=ytdStr);
-    const ytd=ytdIdx>=0&&marginEquity.length>ytdIdx
-      ?(marginEquity[marginEquity.length-1]/marginEquity[ytdIdx]-1)*100:0;
-    const dd=currentDD(marginEquity.slice(-252*3))*100;
-    return {cagr,vol,ytd,dd};
-  },[dates,marginEquity]);
 
   // Annual returns from equity series
   const annualReturns=useMemo(()=>{
-    if(!dates.length||!scaledEquity.length) return [];
+    if(!dates.length||!activeEquity.length) return [];
     const byYear=new Map<number,number[]>();
-    dates.forEach((d,i)=>{ const y=new Date(d).getFullYear(); if(!byYear.has(y))byYear.set(y,[]); byYear.get(y)!.push(scaledEquity[i]); });
+    dates.forEach((d,i)=>{ const y=new Date(d).getFullYear(); if(!byYear.has(y))byYear.set(y,[]); byYear.get(y)!.push(activeEquity[i]); });
     const benchByYear=new Map<number,number[]>();
     dates.forEach((d,i)=>{ const y=new Date(d).getFullYear(); if(!benchByYear.has(y))benchByYear.set(y,[]); benchByYear.get(y)!.push(benchRaw[i]); });
     const curY=new Date().getFullYear();
@@ -3737,13 +3723,13 @@ export default function ClientDashboardPage() {
           bench:+((bVals[bVals.length-1]/bVals[0]-1)*100).toFixed(1),
         };
       });
-  },[dates,scaledEquity,benchRaw]);
+  },[dates,activeEquity,benchRaw]);
 
   // Monthly stats scoped to selected period
   const monthlyStats=useMemo(()=>{
-    if(!dates.length||!scaledEquity.length) return null;
-    const s=skipWarmup(scaledEquity,periodStart(dates,period));
-    const dSlice=dates.slice(s), eSlice=scaledEquity.slice(s), bSlice=benchRaw.slice(s);
+    if(!dates.length||!activeEquity.length) return null;
+    const s=skipWarmup(activeEquity,periodStart(dates,period));
+    const dSlice=dates.slice(s), eSlice=activeEquity.slice(s), bSlice=benchRaw.slice(s);
     const byMonth=new Map<string,number[]>(), benchByMonth=new Map<string,number[]>();
     dSlice.forEach((d,i)=>{
       const k=d.slice(0,7);
@@ -3759,7 +3745,7 @@ export default function ClientDashboardPage() {
     const aboveBench=months.filter(x=>x.m>x.b).length;
     const positive=months.filter(x=>x.m>0).length;
     return{n,aboveBench,belowBench:n-aboveBench,positive,negative:n-positive};
-  },[dates,scaledEquity,benchRaw,period]);
+  },[dates,activeEquity,benchRaw,period]);
 
   // Turnover from rebalancing history
   const turnoverStats=useMemo(()=>{
@@ -3782,9 +3768,9 @@ export default function ClientDashboardPage() {
     if(!dates.length||!benchRaw.length) return null;
     // Use same starting index as model so model vs bench comparison is over identical period
     const isInception=period==="Desde início";
-    const s=isInception?0:skipWarmup(scaledEquity,periodStart(dates,period));
+    const s=isInception?0:skipWarmup(activeEquity,periodStart(dates,period));
     const bSlice=benchRaw.slice(s);
-    const eSlice=scaledEquity.slice(s);
+    const eSlice=activeEquity.slice(s);
     if(bSlice.length<2) return null;
     const ret=(bSlice[bSlice.length-1]/bSlice[0]-1)*100;
     const calYears=isInception?calYearsFromDates(dates):undefined;
@@ -3801,7 +3787,7 @@ export default function ClientDashboardPage() {
     const mVol=annualVol(mRets)*100;
     const alpha=((perfData?.m.ann??0)-ann);
     return{ret,ann,shp,vol,alpha,mVol};
-  },[dates,scaledEquity,benchRaw,period,perfData]);
+  },[dates,activeEquity,benchRaw,period,perfData]);
 
   // Geographic exposure from current positions
   const geoData=useMemo(()=>{
@@ -3818,11 +3804,11 @@ export default function ClientDashboardPage() {
 
   // Return distribution histogram (monthly returns)
   const returnDist=useMemo(()=>{
-    if(scaledEquity.length<24) return [];
+    if(activeEquity.length<24) return [];
     const step=21;
     const monthlyRets:number[]=[];
-    for(let i=step;i<scaledEquity.length;i+=step){
-      monthlyRets.push((scaledEquity[i]!/scaledEquity[i-step]!-1)*100);
+    for(let i=step;i<activeEquity.length;i+=step){
+      monthlyRets.push((activeEquity[i]!/activeEquity[i-step]!-1)*100);
     }
     const BIN_W=2,MIN=-20,MAX=30;
     const bins:number[]=[];
@@ -3831,7 +3817,7 @@ export default function ClientDashboardPage() {
       const count=monthlyRets.filter(r=>r>=b&&r<b+BIN_W).length;
       return {bin:`${b>0?"+":""}${b}%`, count, mid:b+BIN_W/2};
     });
-  },[scaledEquity]);
+  },[activeEquity]);
 
   // Sector allocation + risk contribution
   const SECTOR_BETA:Record<string,number>={
@@ -3867,8 +3853,8 @@ export default function ClientDashboardPage() {
   },[actionCounts.allRows]);
 
   const riskMetrics=useMemo(()=>{
-    if(scaledEquity.length<252) return {var95:0,beta:0};
-    const mRets=scaledEquity.slice(1).map((v,i)=>v/scaledEquity[i]-1);
+    if(activeEquity.length<252) return {var95:0,beta:0};
+    const mRets=activeEquity.slice(1).map((v,i)=>v/activeEquity[i]-1);
     const bRets=benchRaw.slice(1).map((v,i)=>v/(benchRaw[i]||1)-1);
     const sorted=[...mRets].sort((a,b)=>a-b);
     const var95=sorted[Math.floor(sorted.length*0.05)]??0;
@@ -3877,7 +3863,7 @@ export default function ClientDashboardPage() {
     const bVar=bRets.slice(0,n).reduce((a,b)=>a+(b-bMean)**2,0)/n;
     const cov=mRets.slice(0,n).reduce((a,m,i)=>a+(m-mRets.slice(0,n).reduce((x,y)=>x+y,0)/n)*(bRets[i]!-bMean),0)/n;
     return {var95:var95*100,beta:bVar>0?+(cov/bVar).toFixed(2):0};
-  },[scaledEquity,benchRaw]);
+  },[activeEquity,benchRaw]);
 
   const recoLabel=useMemo(()=>{
     const raw=latestMonth?.date??latestMonth?.rebalance_date??"";
@@ -4454,7 +4440,7 @@ export default function ClientDashboardPage() {
                   <div className="flex items-center justify-between -mb-2">
                     <div className="text-[10px] text-slate-500">
                       Perfil activo: <span className="font-bold text-slate-300">{profileLabel}</span>
-                      {" · "}Vol: <span className="font-bold text-amber-400">{kpiMode==="margem"?(marginKpis?.vol??0).toFixed(1)+"%":(benchPerfData?.mVol??0)>0?(benchPerfData?.mVol??0).toFixed(1)+"%":"—"}</span>
+                      {" · "}Vol: <span className="font-bold text-amber-400">{(benchPerfData?.mVol??0)>0?(benchPerfData?.mVol??0).toFixed(1)+"%":"—"}</span>
                       {" · "}Factor: <span className="font-bold text-blue-400">{profileFactor}×</span>
                       {kpiMode==="margem"&&<span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold">×1.5 margem</span>}
                     </div>
@@ -4470,25 +4456,20 @@ export default function ClientDashboardPage() {
                     const fmtP=(v:number,s=false)=>`${s&&v>=0?"+":""}${v.toFixed(2)}%`;
                     const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
                     const pfLabel=profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×";
-                    const isMargin=kpiMode==="margem";
-                    const dispYtd  =isMargin?(marginKpis?.ytd??0):scaledYtd;
-                    const dispCagr =isMargin?(marginKpis?.cagr??0):(perfData?.inception.ann??0);
-                    const dispVol  =isMargin?(marginKpis?.vol??0):(benchPerfData?.mVol??0);
-                    const dispDD   =isMargin?(marginKpis?.dd??0):scaledDD;
-                    const marginSub=isMargin?" · ×1.5 margem":"";
+                    const marginSub=kpiMode==="margem"?" · ×1.5 margem":"";
                     return (
                       <div className="grid grid-cols-5 gap-3">
                         {[
                           {label:"Valor da carteira",val:`€ ${fmtE(aum)}`,sub:"Património total",
                            icon:<div className="text-blue-400 text-lg">📦</div>,c:"text-slate-100"},
-                          {label:"Variação (YTD)",val:fmtP(dispYtd,true),sub:`${dispYtd>=0?"+ €":"- €"} ${fmtE(Math.abs(aum*dispYtd/100))} · ${pfLabel}${marginSub}`,
-                           icon:<TrendingUp size={16} className="text-emerald-400"/>,c:dispYtd>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Retorno anual (desde início)",val:fmtP(dispCagr,true),sub:`CAGR · ${pfLabel} · perfil ${profileLabel}${marginSub}`,
-                           icon:<Activity size={16} className="text-blue-400"/>,c:dispCagr>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Risco (Volatilidade anual)",val:dispVol>0?`${dispVol.toFixed(1)}%`:"—",
+                          {label:"Variação (YTD)",val:fmtP(scaledYtd,true),sub:`${scaledYtd>=0?"+ €":"- €"} ${fmtE(Math.abs(aum*scaledYtd/100))} · ${pfLabel}${marginSub}`,
+                           icon:<TrendingUp size={16} className="text-emerald-400"/>,c:scaledYtd>=0?"text-emerald-400":"text-red-400"},
+                          {label:"Retorno anual (desde início)",val:fmtP(perfData?.inception.ann??0,true),sub:`CAGR · ${pfLabel} · perfil ${profileLabel}${marginSub}`,
+                           icon:<Activity size={16} className="text-blue-400"/>,c:(perfData?.inception.ann??0)>=0?"text-emerald-400":"text-red-400"},
+                          {label:"Risco (Volatilidade anual)",val:(benchPerfData?.mVol??0)>0?`${(benchPerfData?.mVol??0).toFixed(1)}%`:"—",
                            sub:`${pfLabel} vol base · Perfil ${profileLabel}${marginSub}`,
                            icon:<ShieldCheck size={16} className="text-amber-400"/>,c:"text-amber-400"},
-                          {label:"Máximo drawdown",val:dispDD!==0?fmtP(dispDD):"—",
+                          {label:"Máximo drawdown",val:scaledDD!==0?fmtP(scaledDD):"—",
                            sub:`${pfLabel} · Perfil ${profileLabel}${marginSub}`,
                            icon:<TrendingDown size={16} className="text-red-400"/>,c:"text-red-400"},
                         ].map(k=>(
