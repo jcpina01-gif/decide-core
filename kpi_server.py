@@ -7701,14 +7701,24 @@ def compute_sharpe_ratio(
     return float(mu / sigma * sqrt(float(periods_per_year)))
 
 
-def compute_kpis(equity):
+def compute_kpis(equity, dates=None):
     start_val = float(equity.iloc[0])
     end_val = float(equity.iloc[-1])
     num_days = len(equity)
 
     returns = equity.pct_change().dropna()
 
-    cagr = (end_val / start_val) ** (TRADING_DAYS_PER_YEAR / num_days) - 1.0
+    # Prefer calendar years (aligns with _apply_vol_rule); fall back to trading-day estimate.
+    if dates is not None and len(dates) >= 2:
+        try:
+            d0 = pd.to_datetime(dates.iloc[0] if hasattr(dates, "iloc") else dates[0])
+            dn = pd.to_datetime(dates.iloc[-1] if hasattr(dates, "iloc") else dates[-1])
+            cal_years = (dn - d0).days / 365.25
+            cagr = (end_val / start_val) ** (1.0 / cal_years) - 1.0 if cal_years > 0 else 0.0
+        except Exception:
+            cagr = (end_val / start_val) ** (TRADING_DAYS_PER_YEAR / num_days) - 1.0
+    else:
+        cagr = (end_val / start_val) ** (TRADING_DAYS_PER_YEAR / num_days) - 1.0
     vol_daily = returns.std()
     vol_annual = float(vol_daily * sqrt(TRADING_DAYS_PER_YEAR))
     sharpe = compute_sharpe_ratio(returns, risk_free_annual=RISK_FREE_ANNUAL)
@@ -9647,8 +9657,8 @@ def try_model_kpis_for_profile(model_key: str, profile_key: str):
     tup = load_scaled_model_equity_series(model_key, profile_key)
     if tup is None:
         return None
-    model_eq, _, _ = tup
-    kpis, _ = compute_kpis(model_eq)
+    model_eq, dates, _ = tup
+    kpis, _ = compute_kpis(model_eq, dates)
     return kpis
 
 
@@ -10467,9 +10477,9 @@ def index():
                 "total_return": float(raw_kpis_snapshot.get("total_return", raw_kpis.total_return)),
             },
         )()
-    model_kpis, model_drawdowns = compute_kpis(model_eq)
-    model_kpis_investible, _ = compute_kpis(model_eq_investible)
-    bench_kpis, bench_drawdowns = compute_kpis(bench_eq)
+    model_kpis, model_drawdowns = compute_kpis(model_eq, dates)
+    model_kpis_investible, _ = compute_kpis(model_eq_investible, dates)
+    bench_kpis, bench_drawdowns = compute_kpis(bench_eq, dates)
     # Por defeito, o cartão principal usa SEMPRE os KPIs calculados da curva activa (single source of truth).
     # Compat legado: activar override por sumário externo apenas se explicitamente pedido por env.
     preview_summary_kpis = None

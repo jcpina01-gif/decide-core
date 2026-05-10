@@ -3309,7 +3309,7 @@ export default function ClientDashboardPage() {
   const [sessionUser,setSessionUser]=useState<string|null>(null);
   const [loggedIn,setLoggedIn]=useState(false);
   const [showRegModal,setShowRegModal]=useState(false);
-  const [period,setPeriod]=useState<Period>("20 Anos");
+  const [period,setPeriod]=useState<Period>("Desde início");
   const [regSuccess,setRegSuccess]=useState(false);
   const [activePage,setActivePage]=useState<Page>("dashboard");
   const [riskProfileLocal,setRiskProfileLocalRaw]=useState<RiskProfile>("moderado");
