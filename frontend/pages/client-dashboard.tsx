@@ -576,8 +576,11 @@ type KpiMode="base"|"margem";
 function cagrFn(s: number, e: number, y: number) { return s > 0 && y > 0 ? Math.pow(e/s,1/y)-1 : 0; }
 function annualVol(r: number[]) {
   if (r.length < 5) return 0;
-  const m = r.reduce((a,b)=>a+b,0)/r.length;
-  return Math.sqrt(r.reduce((a,b)=>a+(b-m)**2,0)/(r.length-1)*252);
+  const clean = r.filter(x => Number.isFinite(x));
+  if (clean.length < 5) return 0;
+  const m = clean.reduce((a,b)=>a+b,0)/clean.length;
+  const v = Math.sqrt(clean.reduce((a,b)=>a+(b-m)**2,0)/(clean.length-1)*252);
+  return Number.isFinite(v) ? v : 0;
 }
 function sharpe(r: number[]) {
   const v = annualVol(r)/Math.sqrt(252); return v ? (r.reduce((a,b)=>a+b,0)/r.length/v)*Math.sqrt(252) : 0;
@@ -4335,7 +4338,7 @@ export default function ClientDashboardPage() {
                   <div className="flex items-center justify-between -mb-2">
                     <div className="text-[10px] text-slate-500">
                       Perfil activo: <span className="font-bold text-slate-300">{profileLabel}</span>
-                      {" · "}Vol: <span className="font-bold text-amber-400">{scaledVol>0?scaledVol.toFixed(1)+"%":"—"}</span>
+                      {" · "}Vol: <span className="font-bold text-amber-400">{(benchPerfData?.mVol??0)>0?(benchPerfData?.mVol??0).toFixed(1)+"%":"—"}</span>
                       {" · "}Factor: <span className="font-bold text-blue-400">{profileFactor}×</span>
                     </div>
                     <button
@@ -4359,7 +4362,7 @@ export default function ClientDashboardPage() {
                            icon:<TrendingUp size={16} className="text-emerald-400"/>,c:scaledYtd>=0?"text-emerald-400":"text-red-400"},
                           {label:"Retorno anual (desde início)",val:fmtP(perfData?.inception.ann??0,true),sub:`CAGR · ${pfLabel} · perfil ${profileLabel}`,
                            icon:<Activity size={16} className="text-blue-400"/>,c:(perfData?.inception.ann??0)>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Risco (Volatilidade anual)",val:perfData?.inception.vol?`${(perfData.inception.vol*100).toFixed(1)}%`:"—",
+                          {label:"Risco (Volatilidade anual)",val:(benchPerfData?.mVol??0)>0?`${(benchPerfData?.mVol??0).toFixed(1)}%`:"—",
                            sub:`${pfLabel} vol base · Perfil ${profileLabel}`,
                            icon:<ShieldCheck size={16} className="text-amber-400"/>,c:"text-amber-400"},
                           {label:"Máximo drawdown",val:scaledDD!==0?fmtP(scaledDD):"—",
