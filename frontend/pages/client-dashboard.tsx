@@ -794,7 +794,7 @@ function Sidebar({user,profile,loggedIn,onRegister,activePage,onNavigate}:{
     <aside className="flex flex-col w-56 min-h-screen bg-[#07090f] border-r border-[#1a1f2e] shrink-0">
       <div className="border-b border-[#1a1f2e]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/images/logo-decide.png" alt="DECIDE" className="w-full h-16 object-cover object-left" />
+        <img src="/images/logo-decide.png" alt="DECIDE" className="w-full h-20 object-cover object-left" />
       </div>
       <nav className="flex-1 px-3 py-4 space-y-0.5">
         {NAV.map(({id,label,Icon})=>(
