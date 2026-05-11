@@ -649,13 +649,13 @@ function rollingDD(dates: string[], eq: number[], step=10) {
 }
 
 /* â”€â”€â”€ period slice â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-type Period="YTD"|"1 Ano"|"3 Anos"|"5 Anos"|"20 Anos"|"Desde início";
-const PERIODS:Period[]=["YTD","1 Ano","3 Anos","5 Anos","20 Anos","Desde início"];
+type Period="YTD"|"1 Ano"|"3 Anos"|"5 Anos"|"20 Anos";
+const PERIODS:Period[]=["YTD","1 Ano","3 Anos","5 Anos","20 Anos"];
 
 function periodStart(dates:string[], period:Period) {
-  if(period==="Desde início") return 0;
+  if(period==="20 Anos") return 0;
   const last=new Date(dates[dates.length-1]);
-  const yrs=period==="YTD"?0:period==="1 Ano"?1:period==="3 Anos"?3:period==="5 Anos"?5:20;
+  const yrs=period==="YTD"?0:period==="1 Ano"?1:period==="3 Anos"?3:5;
   const cut=period==="YTD"
     ? new Date(last.getFullYear(),0,1)
     : new Date(last.getFullYear()-yrs,last.getMonth(),last.getDate());
@@ -754,7 +754,7 @@ function periodMetrics(eq:number[], bench:number[], period:Period, calYearsOverr
   const y=calYearsOverride!==undefined?calYearsOverride
     :period==="YTD"?(new Date().getMonth()+1)/12
     :period==="1 Ano"?1:period==="3 Anos"?3:period==="5 Anos"?5
-    :period==="20 Anos"?20:eq.length/252;
+    :eq.length/252;
   if(eq.length<2) return {ret:0,ann:0,shp:0,bench:0};
   const ret=(eq[eq.length-1]/eq[0]-1)*100;
   const ann=cagrFn(eq[0],eq[eq.length-1],y)*100;
@@ -1514,7 +1514,7 @@ function CustosPage({aum}:{aum:number}) {
             EVOLUÇÃO DO CUSTO TOTAL (%)<Info size={11} className="text-slate-600"/>
           </div>
           <div className="flex gap-1 mb-4 flex-wrap">
-            {([["ytd","YTD"],["1a","1 Ano"],["3a","3 Anos"],["5a","5 Anos"],["all","Desde início"]] as [string,string][]).map(([k,l])=>(
+            {([["ytd","YTD"],["1a","1 Ano"],["3a","3 Anos"],["5a","5 Anos"],["all","20 Anos"]] as [string,string][]).map(([k,l])=>(
               <button key={k} onClick={()=>setCostPeriod(k as typeof costPeriod)} className={`px-2.5 py-1 text-[10px] font-semibold rounded transition-colors ${costPeriod===k?"bg-blue-600 text-white":"text-slate-500 hover:text-slate-300"}`}>{l}</button>
             ))}
           </div>
@@ -3740,7 +3740,7 @@ export default function ClientDashboardPage() {
   const [sessionUser,setSessionUser]=useState<string|null>(null);
   const [loggedIn,setLoggedIn]=useState(false);
   const [showRegModal,setShowRegModal]=useState(false);
-  const [period,setPeriod]=useState<Period>("Desde início");
+  const [period,setPeriod]=useState<Period>("20 Anos");
   const [regSuccess,setRegSuccess]=useState(false);
   const [activePage,setActivePage]=useState<Page>("dashboard");
   const [riskProfileLocal,setRiskProfileLocalRaw]=useState<RiskProfile>("moderado");
@@ -4045,17 +4045,15 @@ export default function ClientDashboardPage() {
       return {...pt,bench:+(((bv-bpk)/bpk)*100).toFixed(2)};
     });
     const calYearsInc=calYearsFromDates(dates)??dates.length/252;
-    const inception=periodMetrics(activeEquity.slice(0),benchRaw.slice(0),"Desde início",calYearsInc);
+    const inception=periodMetrics(activeEquity.slice(0),benchRaw.slice(0),"20 Anos",calYearsInc);
     return {vol20y,benchVol20y,curVol,curDD,ddChart,inception};
   },[dates,activeEquity,benchRaw]);
 
   const perfData=useMemo(()=>{
     if(!dates.length||!activeEquity.length) return null;
-    // "Desde início": start at index 0 (including warmup) + calendar years to match
-    // Python _apply_vol_rule methodology → CAGR consistent with v5_kpis overlayed_cagr (25.13%)
-    const isInception=period==="Desde início";
-    const s=isInception?0:skipWarmup(activeEquity,periodStart(dates,period));
-    const calYears=isInception?calYearsFromDates(dates):undefined;
+    // "20 Anos" = full history from index 0 with real calendar years (same as former "Desde início")
+    const s=period==="20 Anos"?0:skipWarmup(activeEquity,periodStart(dates,period));
+    const calYears=period==="20 Anos"?calYearsFromDates(dates):undefined;
     const chart=makeChartData(dates,activeEquity,benchRaw,period);
     const m=periodMetrics(activeEquity.slice(s),benchRaw.slice(s),period,calYears);
     const now=new Date(); const ytdStartStr=`${now.getFullYear()}-01-01`;
@@ -4143,17 +4141,16 @@ export default function ClientDashboardPage() {
   const benchPerfData=useMemo(()=>{
     if(!dates.length||!benchRaw.length) return null;
     // Use same starting index as model so model vs bench comparison is over identical period
-    const isInception=period==="Desde início";
-    const s=isInception?0:skipWarmup(activeEquity,periodStart(dates,period));
+    const s=period==="20 Anos"?0:skipWarmup(activeEquity,periodStart(dates,period));
     const bSlice=benchRaw.slice(s);
     const eSlice=activeEquity.slice(s);
     if(bSlice.length<2) return null;
     const ret=(bSlice[bSlice.length-1]/bSlice[0]-1)*100;
-    const calYears=isInception?calYearsFromDates(dates):undefined;
+    const calYears=period==="20 Anos"?calYearsFromDates(dates):undefined;
     const y=calYears!==undefined?calYears
       :period==="YTD"?(new Date().getMonth()+1)/12
       :period==="1 Ano"?1:period==="3 Anos"?3:period==="5 Anos"?5
-      :period==="20 Anos"?20:bSlice.length/252;
+      :bSlice.length/252;
     const ann=cagrFn(bSlice[0],bSlice[bSlice.length-1],y)*100;
     const bRets=bSlice.slice(1).map((v,i)=>v/bSlice[i]-1);
     const shp=sharpe(bRets);
@@ -4961,9 +4958,9 @@ export default function ClientDashboardPage() {
                             </div>
                           )}
                           <div className="flex gap-1">
-                            {(["YTD","1 Ano","3 Anos","20 Anos"] as Period[]).map(p=>(
+                            {PERIODS.map(p=>(
                               <button key={p} onClick={()=>setPeriod(p)}
-                                className={`px-2 py-1 text-[10px] font-semibold rounded transition-colors ${period===p?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>{p==="20 Anos"?"Início":p}</button>
+                                className={`px-2 py-1 text-[10px] font-semibold rounded transition-colors ${period===p?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>{p}</button>
                             ))}
                           </div>
                         </div>
