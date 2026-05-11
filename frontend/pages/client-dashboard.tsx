@@ -2411,6 +2411,12 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     finally{setIbkrLoading(false);}
   }
 
+  // Auto-fetch IB positions + open orders every time this page mounts, so:
+  // • adjustedOrderRows always deducts existing holdings
+  // • pendingBuyTickers always reflects submitted-but-unfilled orders
+  // This is the primary protection against duplicate order submission.
+  React.useEffect(()=>{ void fetchIbkrPositions(); },[]);
+
   async function cancelPendingOrders(){
     setCancelSending(true);setCancelResult(null);setIbkrErr("");
     try{
@@ -3329,17 +3335,30 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             </div>
           )}
 
-          {/* Mandatory: load IB positions before sending in ANY mode */}
-          {!ibkrPos&&!done&&(
+          {/* Mandatory: load IB positions + open orders before sending — auto-fetched on mount */}
+          {ibkrLoading&&!ibkrPos&&(
+            <div className="flex items-center gap-3 bg-sky-500/10 border border-sky-500/30 rounded-xl px-4 py-3 text-[11px] text-sky-300">
+              <span className="animate-spin text-sm">⟳</span>
+              <span className="font-semibold">A verificar carteira e ordens pendentes na IB…</span>
+              <span className="text-sky-400/60">O botão de envio só fica disponível após verificação — evita duplicação de ordens.</span>
+            </div>
+          )}
+          {!ibkrPos&&!ibkrLoading&&!done&&(
             <div className="flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-[11px] text-amber-300">
               <span className="text-base shrink-0">⚠</span>
               <div>
-                <span className="font-semibold">Carregar posições IB antes de enviar</span>
-                <span className="text-amber-400/70"> — Obrigatório em ambos os modos. O sistema calcula as ordens em função do que já tens em carteira; sem carregar, pode duplicar posições existentes.</span>
+                <span className="font-semibold">Não foi possível verificar a carteira IB automaticamente.</span>
+                <span className="text-amber-400/70"> O sistema calcula as ordens em função do que já existe em carteira e das ordens pendentes; sem verificação pode duplicar posições.</span>
                 <button onClick={fetchIbkrPositions} disabled={ibkrLoading} className="mt-1.5 block text-xs font-semibold text-white bg-amber-600 hover:bg-amber-500 disabled:opacity-50 px-3 py-1 rounded-lg transition-colors">
-                  {ibkrLoading?"A verificar…":"→ Verificar carteira IB agora"}
+                  {ibkrLoading?"A verificar…":"→ Tentar de novo"}
                 </button>
               </div>
+            </div>
+          )}
+          {ibkrPos&&ibkrOpenOrders.length>0&&!done&&(
+            <div className="flex items-center gap-2.5 bg-sky-500/10 border border-sky-500/30 rounded-xl px-4 py-3 text-[11px] text-sky-300">
+              <span className="text-sm">ℹ</span>
+              <span><strong>{ibkrOpenOrders.filter(o=>o.side==="BUY").length} ordem(ns) BUY pendente(s)</strong> já submetidas — excluídas do novo cálculo automaticamente.</span>
             </div>
           )}
           {/* Warn if portfolio is too far from model target to safely rebalance */}
@@ -3400,7 +3419,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             </button>
             <button
               onClick={()=>setShowSendConfirm(true)}
-              disabled={sending||nOrdens===0||done||aum<=0||paperMode||!ibkrPos||showSendConfirm||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0)>aum*1.5)}
+              disabled={sending||ibkrLoading||nOrdens===0||done||aum<=0||paperMode||!ibkrPos||showSendConfirm||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0)>aum*1.5)}
               className={`flex-1 flex items-center justify-center gap-2 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all ${paperMode?"bg-slate-700 cursor-not-allowed":recentlySent?"bg-amber-700 hover:bg-amber-600 shadow-lg shadow-amber-900/30":"bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30"}`}>
               <Send size={15}/>
               {paperMode?"Desliga 'Simulação local' para enviar à IB →":recentlySent?"⚠ Já enviou — confirmar 2.º envio?":"Confirmar e enviar ordens para IB →"}
