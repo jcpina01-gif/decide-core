@@ -2322,6 +2322,14 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [done,setDone]=React.useState(false);
   const [errMsg,setErrMsg]=React.useState("");
   const [orderRef,setOrderRef]=React.useState("");
+  // Persist last submission across navigations — prevents accidental double-send
+  const ORDERS_SENT_KEY="decide_orders_last_sent_v1";
+  const [lastSent,setLastSent]=React.useState<{ref:string;ts:number;mode:string}|null>(()=>{
+    try{const r=localStorage.getItem(ORDERS_SENT_KEY);return r?JSON.parse(r):null;}catch{return null;}
+  });
+  const [showSendConfirm,setShowSendConfirm]=React.useState(false);
+  // Block re-send within 4 hours of a confirmed submission
+  const recentlySent=React.useMemo(()=>lastSent?Date.now()-lastSent.ts<4*3600*1000:false,[lastSent]);
   type FillRow={ticker:string;action:string;requested_qty:number;filled:number;avg_fill_price?:number|null;status:string;message?:string|null;ib_order_id?:number|null;ib_perm_id?:number|null;executed_as?:string|null;fx_hedge_attached?:boolean};
   const [fills,setFills]=React.useState<FillRow[]>([]);
   const [paperMode,setPaperMode]=React.useState(false);
@@ -2572,6 +2580,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
 
   async function submitOrders() {
     setErrMsg("");
+    setShowSendConfirm(false);
     setSending(true);
     try {
       if(paperMode){
@@ -2614,6 +2623,10 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         setFills(j.fills??[]);
         setPollCount(0);
         setDone(true);
+        // Persist submission so re-mount/navigation shows the warning
+        const sent={ref,ts:Date.now(),mode:execMode};
+        try{localStorage.setItem(ORDERS_SENT_KEY,JSON.stringify(sent));}catch{}
+        setLastSent(sent);
         const fills:Array<{ticker:string;side:string;qty:number}>=j.fills??[];
         const buys=fills.filter((f)=>f.side==="BUY");
         const sells=fills.filter((f)=>f.side==="SELL");
@@ -3345,13 +3358,52 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
           })()}
 
           {/* Action buttons */}
+          {/* ── Re-send warning banner ── */}
+          {recentlySent&&!done&&lastSent&&(
+            <div className="bg-red-950/60 border border-red-700/60 rounded-xl px-4 py-3 flex items-start gap-3">
+              <AlertTriangle size={16} className="text-red-400 shrink-0 mt-0.5"/>
+              <div className="flex-1 text-xs leading-relaxed">
+                <span className="font-bold text-red-300">Atenção: ordens já enviadas recentemente.</span>
+                <span className="text-red-200/80"> Enviou ordens há {Math.round((Date.now()-lastSent.ts)/60000)} min (ref: <code className="font-mono">{lastSent.ref}</code>). Enviar de novo irá <strong>duplicar posições</strong> na sua conta IB. Só prossiga se tiver cancelado as ordens anteriores.</span>
+              </div>
+              <button onClick={()=>{try{localStorage.removeItem(ORDERS_SENT_KEY);}catch{}setLastSent(null);}} className="text-[10px] text-red-400 hover:text-red-300 shrink-0 font-semibold underline">Ignorar aviso</button>
+            </div>
+          )}
+
+          {/* ── Confirmation modal ── */}
+          {showSendConfirm&&(
+            <div className="bg-[#0b0f1a] border-2 border-amber-500/60 rounded-xl px-5 py-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={16} className="text-amber-400 shrink-0"/>
+                <span className="text-sm font-bold text-amber-300">Confirmar envio de {nOrdens} {nOrdens===1?"ordem":"ordens"} à Interactive Brokers</span>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Esta acção é <strong className="text-slate-200">irreversível</strong> após execução. As ordens serão enviadas ao mercado e executadas ao melhor preço disponível. Verifique a lista de ordens antes de confirmar.
+              </p>
+              {recentlySent&&lastSent&&(
+                <p className="text-xs text-red-300 font-semibold">⚠ Já enviou ordens há {Math.round((Date.now()-lastSent.ts)/60000)} min. Confirma que quer enviar de novo?</p>
+              )}
+              <div className="flex gap-3">
+                <button onClick={()=>setShowSendConfirm(false)} className="flex-1 py-2.5 text-sm font-bold bg-slate-800 hover:bg-slate-700 border border-slate-600/50 text-slate-300 rounded-xl transition-colors">
+                  Cancelar
+                </button>
+                <button onClick={submitOrders} className="flex-1 py-2.5 text-sm font-bold bg-red-700 hover:bg-red-600 text-white rounded-xl transition-colors flex items-center justify-center gap-2">
+                  <Send size={14}/>Confirmar — enviar ordens agora
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3">
             <button onClick={onBack} className="px-6 py-3 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">
               Cancelar
             </button>
-            <button onClick={submitOrders} disabled={sending||nOrdens===0||done||aum<=0||paperMode||!ibkrPos||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0)>aum*1.5)}
-              className={`flex-1 flex items-center justify-center gap-2 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all ${paperMode?"bg-slate-700 cursor-not-allowed":"bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30"}`}>
-              <Send size={15}/>{paperMode?"Desliga 'Simulação local' para enviar à IB →":"Confirmar e enviar ordens para IB →"}
+            <button
+              onClick={()=>setShowSendConfirm(true)}
+              disabled={sending||nOrdens===0||done||aum<=0||paperMode||!ibkrPos||showSendConfirm||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0)>aum*1.5)}
+              className={`flex-1 flex items-center justify-center gap-2 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all ${paperMode?"bg-slate-700 cursor-not-allowed":recentlySent?"bg-amber-700 hover:bg-amber-600 shadow-lg shadow-amber-900/30":"bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30"}`}>
+              <Send size={15}/>
+              {paperMode?"Desliga 'Simulação local' para enviar à IB →":recentlySent?"⚠ Já enviou — confirmar 2.º envio?":"Confirmar e enviar ordens para IB →"}
             </button>
           </div>
           <p className="text-center text-[10px] text-slate-600 flex items-center justify-center gap-1">
