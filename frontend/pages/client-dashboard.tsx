@@ -339,15 +339,18 @@ const getZone=(t:string)=>COUNTRY[t.toUpperCase()]??"EUA";
 const ISO_TO_COUNTRY:Record<string,string>={
   "840":"EUA","124":"Canadá","826":"Reino Unido","276":"Alemanha",
   "528":"Países Baixos","756":"Suíça","380":"Itália","724":"Espanha",
-  "246":"Finlândia","208":"Dinamarca","578":"Noruega","036":"Austrália",
-  "392":"Japão","156":"China","076":"Brasil","250":"França",
+  "246":"Finlândia","208":"Dinamarca","578":"Noruega",
+  "392":"Japão","076":"Brasil","250":"França",
   "752":"Suécia","442":"Luxemburgo","372":"Irlanda","040":"Áustria",
   "620":"Portugal",
 };
 const COUNTRY_TO_ISO:Record<string,string>={};
 Object.entries(ISO_TO_COUNTRY).forEach(([iso,c])=>{COUNTRY_TO_ISO[c]=iso;});
 // Countries that have at least one ticker in the database (for map colouring)
-const DB_COUNTRIES:Set<string>=new Set(Object.values(COUNTRY));
+// Only include countries that are also in ISO_TO_COUNTRY (have a map entry) to avoid
+// highlighting countries we don't want shown (e.g. China, Australia ADRs).
+const _mappedCountries=new Set(Object.values(ISO_TO_COUNTRY));
+const DB_COUNTRIES:Set<string>=new Set(Object.values(COUNTRY).filter(c=>_mappedCountries.has(c)));
 
 // Tickers that are foreign companies but trade on US exchanges (NYSE/NASDAQ/OTC via SMART/USD).
 // These are orderable through IB despite getZone() returning a non-EUA country.
@@ -2528,45 +2531,65 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     return s;
   },[ibkrOpenOrders]);
 
-  const adjustedOrderRows:AdjRow[]=React.useMemo(()=>orderRows.map(r=>{
-    const isFullExit=r.action==="Vender";
-    const isSell=execMode==="full"?isFullExit:(r.action==="Vender"||r.action==="Reduzir");
-    const targetEur=execMode==="full"
-      ? (isFullExit?r.prev/100*aum:r.cur/100*aum)
-      : Math.abs(r.delta)/100*aum;
-    // Look up by IB ticker (e.g. BATS→BTI) since ibkrHoldingsMap is keyed by IB ticker
-    const ibTicker=toIbTicker(r.ticker);
-    const heldEur=ibkrHoldingsMap.get(ibTicker)??ibkrHoldingsMap.get(r.ticker.toUpperCase())??0;
-    let adjEur=targetEur;
-    let skipReason:string|undefined;
-    if(!isSell){
-      // Skip if there's already an active BUY order for this ticker in IB (any mode)
-      if(pendingBuyTickers.has(ibTicker.toUpperCase())||pendingBuyTickers.has(r.ticker.toUpperCase())){
-        adjEur=0;
-        skipReason="Ordem de compra em curso na IB";
-      } else if(heldEur>0){
-        // Both modes: only buy/increase up to the shortfall vs current holding.
-        // In delta mode this prevents amplifying already-overweight positions.
-        // Target for delta mode: last month weight + delta = this month's target weight
-        const effectiveTarget=execMode==="full"?targetEur:(r.cur/100*aum);
-        adjEur=Math.max(0, effectiveTarget-heldEur);
-        if(adjEur<MIN_ORDER_EUR)skipReason=adjEur<=0?"Já no alvo ou acima":"Incremento < €"+MIN_ORDER_EUR;
+  // Hard cash cap for BUY orders.
+  // Total BUY notional is capped at BUY_SAFETY_FACTOR × AUM regardless of model weights.
+  // This covers:
+  //   • leveraged models whose weights sum to >100%
+  //   • price movements between calculation and execution
+  //   • bid-ask spread + whole-share rounding
+  // Clients without a margin account will never overshoot their cash balance.
+  // SELL orders are NOT reduced.
+  const BUY_SAFETY_FACTOR = 0.97;
+
+  const adjustedOrderRows:AdjRow[]=React.useMemo(()=>{
+    // ── Pass 1: compute raw targets & held amounts ──────────────────────────
+    const rows = orderRows.map(r=>{
+      const isFullExit=r.action==="Vender";
+      const isSell=execMode==="full"?isFullExit:(r.action==="Vender"||r.action==="Reduzir");
+      const rawTarget=execMode==="full"
+        ? (isFullExit?r.prev/100*aum:r.cur/100*aum)
+        : Math.abs(r.delta)/100*aum;
+      const ibTicker=toIbTicker(r.ticker);
+      const heldEur=ibkrHoldingsMap.get(ibTicker)??ibkrHoldingsMap.get(r.ticker.toUpperCase())??0;
+      return {r, isSell, rawTarget, ibTicker, heldEur};
+    });
+
+    // ── Pass 2: compute scale factor so total BUY ≤ BUY_SAFETY_FACTOR × AUM ─
+    // Sum raw buy targets (ignoring already-held & pending — we'll deduct below)
+    const rawBuyTotal = rows.reduce((s,{isSell,rawTarget})=>isSell?s:s+rawTarget, 0);
+    const budgetEur = aum * BUY_SAFETY_FACTOR;
+    // If model has leverage (rawBuyTotal > budgetEur), scale every buy proportionally
+    const buyScale = rawBuyTotal > budgetEur ? budgetEur / rawBuyTotal : 1;
+
+    // ── Pass 3: apply scale, deduct holdings, apply skip rules ───────────────
+    return rows.map(({r, isSell, rawTarget, ibTicker, heldEur})=>{
+      const targetEur = isSell ? rawTarget : rawTarget * buyScale;
+      let adjEur=targetEur;
+      let skipReason:string|undefined;
+      if(!isSell){
+        if(pendingBuyTickers.has(ibTicker.toUpperCase())||pendingBuyTickers.has(r.ticker.toUpperCase())){
+          adjEur=0;
+          skipReason="Ordem de compra em curso na IB";
+        } else if(heldEur>0){
+          const effectiveTarget=execMode==="full"?targetEur:(r.cur/100*aum*buyScale);
+          adjEur=Math.max(0, effectiveTarget-heldEur);
+          if(adjEur<MIN_ORDER_EUR)skipReason=adjEur<=0?"Já no alvo ou acima":"Incremento < €"+MIN_ORDER_EUR;
+        }
       }
-    }
-    // SELL: in delta mode, cap sell qty to what we actually hold (avoid shorting)
-    if(isSell&&execMode==="delta"&&heldEur>0){
-      adjEur=Math.min(targetEur, heldEur);
-    }
-    return {
-      ...r,
-      estEur:adjEur,
-      heldEur,
-      targetEur,
-      adjEur,
-      skipReason,
-    };
+      if(isSell&&execMode==="delta"&&heldEur>0){
+        adjEur=Math.min(targetEur, heldEur);
+      }
+      return {
+        ...r,
+        estEur:adjEur,
+        heldEur,
+        targetEur,
+        adjEur,
+        skipReason,
+      };
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }),[orderRows,execMode,aum,ibkrHoldingsMap,pendingBuyTickers]);
+  },[orderRows,execMode,aum,ibkrHoldingsMap,pendingBuyTickers]);
 
   const activeOrderRows=adjustedOrderRows.filter(r=>!r.skipReason&&r.adjEur>=MIN_ORDER_EUR||r.action==="Vender");
   const nOrdens=activeOrderRows.length;
@@ -2739,10 +2762,14 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                 </div>
               </div>
             </div>
-            <div className="text-[10px] text-slate-500 mb-3">
+            <div className="text-[10px] text-slate-500 mb-1">
               {execMode==="full"
                 ? `Construção inicial: ${nOrdens} ordens BUY ao peso-alvo (para conta vazia ou reset completo)`
                 : `Rebalanceamento: ${nOrdens} ordens com alteração ≥ 1 pp face ao mês anterior`}
+            </div>
+            <div className="text-[10px] text-sky-400/80 mb-3 flex items-center gap-1">
+              <span>ℹ</span>
+              <span>Total de compras limitado a <strong>{Math.round(BUY_SAFETY_FACTOR*100)}% do plano (≤ {fmtE(aum*BUY_SAFETY_FACTOR)} €)</strong> — reserva de {Math.round((1-BUY_SAFETY_FACTOR)*100)}% em cash para cobrir variações de preço, spread e arredondamento. Evita exceder o saldo disponível em contas sem margem.</span>
             </div>
             <table className="w-full text-xs">
               <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
@@ -3473,6 +3500,10 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                 <div className="flex items-center justify-between text-xs border-t border-[#1a1f2e] pt-2 mt-2">
                   <span className="text-slate-300 font-semibold">Total ordens</span>
                   <span className="font-bold text-blue-300">€ {fmtE(investEur+reduceEur)}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-slate-500 mt-1">
+                  <span title="Reserva mínima para cobrir variações de preço e spread — evita exceder saldo em contas sem margem">Reserva cash (cap {Math.round(BUY_SAFETY_FACTOR*100)}%) ℹ</span>
+                  <span>≥ € {fmtE(Math.max(0, aum - investEur))}</span>
                 </div>
               </div>
             </div>
@@ -4981,7 +5012,7 @@ export default function ClientDashboardPage() {
                       "Japão":[138,37],"Alemanha":[10,51],"Países Baixos":[5,52],
                       "Noruega":[15,65],"Dinamarca":[10,56],"Finlândia":[25,64],
                       "Itália":[12,43],"Espanha":[-4,40],"Suíça":[8,47],
-                      "Austrália":[134,-27],"China":[104,35],"França":[2,46],
+                      "França":[2,46],
                       "Suécia":[17,62],"Irlanda":[-8,53],"Áustria":[14,47],
                       "Brasil":[-52,-10],"Luxemburgo":[6,49.6],
                       "Portugal":[-8,39],
@@ -5011,7 +5042,14 @@ export default function ClientDashboardPage() {
                               <ZoomableGroup zoom={1} center={[10,10]} disablePanning>
                                 <Geographies geography="https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json">
                                   {({geographies})=>geographies.map(geo=>{
+                                    // Australia=36, China=156, AU territories=162/166/334/574
+                                    const geoNum=Number(geo.id);
                                     const isoId=String(geo.id).padStart(3,"0");
+                                    // DEBUG — remove after confirming IDs
+                                    if(typeof window!=="undefined"&&(geoNum===36||geoNum===156||isoId==="036"||isoId==="156"))console.log("[MAP DEBUG] geo.id=",geo.id,"geoNum=",geoNum,"isoId=",isoId,"name=",geo.properties?.name);
+                                    if([36,156,162,166,334,574].includes(geoNum)||["036","156","162","166","334","574"].includes(isoId))return(
+                                      <Geography key={geo.rsmKey} geography={geo} fill="#111827" stroke="#1e293b" strokeWidth={0.5} style={{default:{outline:"none"},hover:{outline:"none",fill:"#111827"},pressed:{outline:"none"}}}/>
+                                    );
                                     const cName=ISO_TO_COUNTRY[isoId];
                                     const pct=cName?countryAlloc.get(cName)??0:0;
                                     const inDb=cName?DB_COUNTRIES.has(cName):false;
