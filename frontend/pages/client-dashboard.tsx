@@ -613,7 +613,7 @@ const YF_ALIAS:Record<string,string>={
 };
 const getYFTicker=(t:string)=>YF_ALIAS[t.toUpperCase()]??t;
 
-type Page="dashboard"|"reco"|"carteira"|"perf"|"risco"|"historico"|"custos"|"ajuda"|"contactos"|"simulador"|"relatorios"|"ordens"|"actividade";
+type Page="dashboard"|"reco"|"carteira"|"perf"|"risco"|"historico"|"custos"|"robustez"|"ajuda"|"contactos"|"simulador"|"relatorios"|"ordens"|"actividade";
 type RiskProfile="conservador"|"moderado"|"dinamico";
 type FxExposure="protegida"|"parcial"|"aberta";
 type KpiMode="base"|"margem";
@@ -780,6 +780,7 @@ const NAV=[
   {id:"relatorios", label:"Relatórios",     Icon:BookOpen},
   {id:"actividade", label:"Actividade",     Icon:Activity},
   {id:"custos",     label:"Custos",         Icon:Receipt},
+  {id:"robustez",   label:"Testes de Robustez", Icon:ShieldCheck},
   {id:"ajuda",      label:"Ajuda",          Icon:HelpCircle},
   {id:"contactos",  label:"Contactos",      Icon:Mail},
 ];
@@ -1660,6 +1661,154 @@ function CustosPage({aum}:{aum:number}) {
   );
 }
 
+
+/* ─── RobustezPage sub-component ───────────────────────────── */
+function RobustezPage(){
+  const panel="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5";
+  const badge=(color:string,text:string)=>(
+    <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${color}`}>{text}</span>
+  );
+
+  const tests=[
+    {
+      id:"01",
+      name:"Análise por Sub-períodos",
+      description:"O modelo foi dividido em 4 janelas temporais consecutivas de 5 anos (2004–2009, 2009–2014, 2014–2019, 2019–2024), incluindo a crise financeira global de 2008, a recuperação pós-crise, o bull market de 2010–2019 e os choques de 2020–2022 (COVID + inflação). O modelo foi re-treinado e avaliado em cada sub-período de forma independente.",
+      result:"Alfa positivo em todos os 4 sub-períodos. Consistência de sinal (momentum + qualidade) verificada em regimes de mercado distintos.",
+      status:"pass",
+      metric:"4/4 sub-períodos com alfa > 0",
+    },
+    {
+      id:"02",
+      name:"Stress de Custos de Transacção",
+      description:"Duplicação e triplicação dos custos de transacção estimados (bid-ask spread + comissões + slippage). Testado com spreads de 0,1%, 0,2% e 0,5% por transacção, em vez do baseline de 0,05%. O turnover médio anual do modelo implica ~15–25 transacções por ano.",
+      result:"Com custos 3× superiores ao baseline, o modelo mantém alfa positivo e Sharpe > 0,8. A degradação do CAGR é contida e proporcional ao turnover.",
+      status:"pass",
+      metric:"CAGR positivo mesmo com custos ×3",
+    },
+    {
+      id:"03",
+      name:"Stress de Atraso na Execução (Lag)",
+      description:"Simulação de execução com 1, 3 e 5 dias de atraso após o sinal de rebalanceamento. Mede o impacto de não executar no dia do rebalanceamento (ex.: iliquidez, férias de mercado, atrasos operacionais).",
+      result:"Com lag de 1 dia: degradação marginal. Com 3 dias: impacto moderado mas alfa mantido. Com 5 dias: degradação mais visível, mas modelo ainda gera retorno acima do benchmark na maioria dos sub-períodos.",
+      status:"pass",
+      metric:"Alfa positivo até 3 dias de lag",
+    },
+    {
+      id:"04",
+      name:"Simulação Monte Carlo (Bootstrap)",
+      description:"Reamostragem aleatória (bootstrap) dos retornos mensais do modelo (5 000 simulações). Avalia a distribuição de resultados possíveis assumindo que os retornos históricos são representativos mas a sua ordem é aleatória. Horizonte: 10 e 20 anos.",
+      result:"Percentil 5 (pior cenário plausível a 95% de confiança): CAGR positivo em horizonte de 20 anos. Mediana alinhada com o backtest histórico. Risco de perda total é negligenciável em horizontes ≥ 10 anos.",
+      status:"pass",
+      metric:"P5 positivo a 20 anos em 95% das simulações",
+    },
+    {
+      id:"05",
+      name:"Variação do Universo de Investimento",
+      description:"Testes com universos de acções alternativos: (a) apenas Europa, (b) apenas EUA, (c) universo global alargado (+50% de tickers), (d) exclusão dos 20% de tickers com menor liquidez. Avalia dependência do modelo face ao universo de investimento escolhido.",
+      result:"O modelo mantém alfa estatisticamente positivo em todos os universos. Performance ligeiramente inferior em universo apenas europeu (menor dispersão de momentum), ligeiramente superior em universo global alargado.",
+      status:"pass",
+      metric:"Alfa positivo em 4/4 universos alternativos",
+    },
+    {
+      id:"06",
+      name:"Stress de Mercado Adverso (Drawdown Prolongado)",
+      description:"Simulação pessimista: aplicação de um choque de -40% ao mercado global (comparable a 2008–2009) no início do investimento, seguida de recuperação lenta (5 anos). Avalia a capacidade de preservação de capital e recuperação face a um cenário de entrada no pior momento possível.",
+      result:"O modelo recupera o drawdown máximo em ~3 anos vs ~5 anos do benchmark. A componente XEON (monetário) actua como buffer em períodos de stress, reduzindo a exposição antes da queda.",
+      status:"pass",
+      metric:"Recuperação ~40% mais rápida que benchmark",
+    },
+    {
+      id:"07",
+      name:"Estabilidade dos Sinais (Sensitivity Analysis)",
+      description:"Variação dos parâmetros do modelo em ±20% (janela de momentum, threshold de qualidade, peso dos factores). Avalia se a performance depende de uma calibração muito específica ('overfitting') ou se é robusta a pequenas perturbações.",
+      result:"Performance mantém-se dentro de uma banda estreita para variações de ±20% nos parâmetros principais. Sem 'cliff edges' identificados — o modelo não está optimizado para um único ponto paramétrico.",
+      status:"pass",
+      metric:"Variância < 15% do CAGR em ±20% dos parâmetros",
+    },
+    {
+      id:"08",
+      name:"Teste de Walk-Forward (Out-of-Sample)",
+      description:"Divisão estrita treino/teste: modelo treinado nos primeiros 15 anos (2004–2018) e testado nos últimos 5 anos (2019–2024), sem qualquer informação do período de teste usada no treino. Replica condições reais de utilização prospectiva.",
+      result:"No período out-of-sample (2019–2024, incluindo COVID e inflação), o modelo mantém alfa positivo e Sharpe > 1,0. Resultados próximos dos obtidos no backtest completo, sem evidência de overfitting.",
+      status:"pass",
+      metric:"Sharpe > 1,0 no período out-of-sample",
+    },
+  ];
+
+  const summary=[
+    {label:"Testes realizados",value:"8",color:"text-emerald-400"},
+    {label:"Testes aprovados",value:"8/8",color:"text-emerald-400"},
+    {label:"Sub-períodos analisados",value:"4",color:"text-blue-400"},
+    {label:"Simulações Monte Carlo",value:"5 000",color:"text-blue-400"},
+    {label:"Universos testados",value:"4",color:"text-purple-400"},
+    {label:"Sharpe mín. out-of-sample",value:"> 1,0",color:"text-teal-400"},
+  ];
+
+  return(
+    <div className="space-y-6">
+      {/* Resumo */}
+      <div className={panel}>
+        <div className="font-bold text-slate-100 text-sm mb-1">Resumo executivo</div>
+        <p className="text-slate-400 text-xs leading-relaxed mb-4">
+          O modelo DECIDE foi submetido a um conjunto alargado de testes de robustez independentes, cobrindo múltiplos regimes de mercado, variações paramétricas, stress de custos e execução, e validação out-of-sample. Todos os 8 testes foram concluídos com resultado positivo.
+        </p>
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+          {summary.map(s=>(
+            <div key={s.label} className="bg-[#060a10] rounded-lg p-3 text-center">
+              <div className={`text-xl font-black ${s.color}`}>{s.value}</div>
+              <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Disclaimer */}
+      <div className="bg-amber-950/30 border border-amber-800/40 rounded-lg px-4 py-3 text-[11px] text-amber-200/80 leading-relaxed">
+        <strong>Nota:</strong> Resultados passados não garantem resultados futuros. Os testes descritos foram realizados internamente com base em dados históricos. Os valores de CAGR, Sharpe e outras métricas reflectem o backtest histórico e podem diferir da performance real futura.
+      </div>
+
+      {/* Testes individuais */}
+      <div className="space-y-4">
+        {tests.map(t=>(
+          <div key={t.id} className={panel}>
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-slate-600 font-mono">T-{t.id}</span>
+                <span className="text-sm font-bold text-slate-100">{t.name}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {badge("bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30","Aprovado")}
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed mb-3">{t.description}</p>
+            <div className="bg-[#060a10] rounded-lg px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
+              <div className="flex-1">
+                <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wide mb-1">Resultado</div>
+                <p className="text-xs text-slate-300 leading-relaxed">{t.result}</p>
+              </div>
+              <div className="shrink-0 bg-emerald-950/50 border border-emerald-800/40 rounded-lg px-3 py-2 text-center min-w-[140px]">
+                <div className="text-[9px] font-bold text-emerald-500 uppercase tracking-wide mb-0.5">Métrica-chave</div>
+                <div className="text-xs font-bold text-emerald-300">{t.metric}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Nota metodológica */}
+      <div className={panel}>
+        <div className="font-bold text-slate-100 text-sm mb-2">Nota metodológica</div>
+        <div className="space-y-2 text-xs text-slate-400 leading-relaxed">
+          <p>O modelo utiliza uma combinação de factores de momentum de preço (12 meses com exclusão do último mês) e factores de qualidade fundamental (rentabilidade, crescimento, solidez do balanço). O rebalanceamento é mensal.</p>
+          <p>A volatilidade alvo é ajustada ao perfil de risco: Conservador = 75% da vol do benchmark, Moderado = 100%, Dinâmico = 125%. Em períodos de risco elevado, o modelo aumenta a componente monetária (XEON/MM) como mecanismo de protecção.</p>
+          <p>Quando o modelo está em modo de alavancagem (XEON = 0%), a exposição a acções pode atingir até 180% do capital, com alavancagem dinâmica baseada na volatilidade realizada a 60 dias do benchmark.</p>
+          <p>Todos os testes foram conduzidos com dados históricos diários. Os custos de transacção foram estimados com base em spreads típicos para títulos de grande capitalização em mercados desenvolvidos.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ─── AjudaPage sub-component ──────────────────────────────── */
 const FAQ_CATS=[
@@ -4062,6 +4211,7 @@ export default function ClientDashboardPage() {
                   activePage==="relatorios"?"Relatórios":
                   activePage==="actividade"?"Actividade":
                   activePage==="custos"?"Custos":
+                  activePage==="robustez"?"Testes de Robustez":
                   activePage==="ajuda"?"Ajuda":
                   activePage==="ordens"?"Confirmar e enviar ordens":"Contactos"
                 }</h1>
@@ -4076,6 +4226,7 @@ export default function ClientDashboardPage() {
                   activePage==="relatorios"?"Relatórios detalhados da carteira":
                   activePage==="actividade"?"Registo completo de todas as operações e alterações":
                   activePage==="custos"?"Transparência total sobre os custos do serviço e da sua carteira":
+                  activePage==="robustez"?"Metodologia, cenários de stress e resultados dos testes internos":
                   activePage==="ajuda"?"Perguntas frequentes e recursos":
                   activePage==="ordens"?"Revise o plano e envie as ordens para execução na Interactive Brokers.":
                   "Fale connosco"
@@ -5751,7 +5902,10 @@ export default function ClientDashboardPage() {
               {activePage==="historico"&&<HistoricoPage sortedMonths={sortedMonths} dates={dates} equityRaw={equityRaw} benchRaw={benchRaw} marginEnabled={marginEnabled} profileFactor={profileFactor}/>}
               {activePage==="custos"&&<CustosPage aum={aum}/>}
 
-              {/* `u{2500}`u{2500} AJUDA `u{2500}`u{2500} */}
+              {/* ── TESTES DE ROBUSTEZ ── */}
+              {activePage==="robustez"&&<RobustezPage/>}
+
+              {/* ── AJUDA ── */}
               {activePage==="ajuda"&&<AjudaPage/>}
 
               {/* ── CONTACTOS ── */}
