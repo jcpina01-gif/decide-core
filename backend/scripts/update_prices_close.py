@@ -37,7 +37,7 @@ SIBLING_DASHBOARD = REPO_ROOT.parent / "decideai_dashboard" / "backend" / "data"
 
 
 def _load_yf_module():
-    path = SCRIPTS_DIR / "update_prices_close_yf.py"
+    path = SCRIPTS_DIR / "update_prices_close_yfinance.py"
     spec = importlib.util.spec_from_file_location("decide_update_prices_yf", path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Não foi possível carregar {path}")

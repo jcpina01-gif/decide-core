@@ -84,6 +84,53 @@ def _download_chunk(symbols: list[str], start: str) -> pd.DataFrame:
     return out
 
 
+def download_all_closes(
+    tickers: list[str],
+    period: str = "5y",
+    chunk: int = CHUNK,
+    raise_on_empty: bool = True,
+) -> pd.DataFrame:
+    """Interface esperada por update_prices_close.py.
+
+    Descarrega fechos diários via Yahoo Finance para todos os tickers indicados
+    e devolve um DataFrame wide com índice datetime e colunas = nomes originais
+    dos tickers (tal como no CSV, com ponto em vez de hífen).
+    """
+    _PERIOD_DAYS = {
+        "1mo": 35, "3mo": 95, "6mo": 185, "1y": 370, "2y": 740,
+        "3y": 1095, "5y": 1830, "10y": 3650, "20y": 7300,
+    }
+    days = _PERIOD_DAYS.get(period.lower(), 1830)
+    start = (pd.Timestamp.today() - pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+
+    pieces: list[pd.DataFrame] = []
+    for i in range(0, len(tickers), chunk):
+        batch = tickers[i : i + chunk]
+        yahoo_syms = [_yahoo_symbol(t) or t for t in batch]
+        try:
+            block = _download_chunk(yahoo_syms, start)
+            if not block.empty:
+                rename = {}
+                for orig, yname in zip(batch, yahoo_syms):
+                    if yname in block.columns:
+                        rename[yname] = orig
+                block = block.rename(columns=rename)
+                pieces.append(block)
+        except Exception as exc:  # noqa: BLE001
+            print(f"Aviso: chunk falhou: {batch[:3]}... {exc}", file=sys.stderr)
+        time.sleep(SLEEP_SEC)
+
+    if not pieces:
+        if raise_on_empty:
+            raise RuntimeError("Nenhum dado Yahoo obtido.")
+        return pd.DataFrame()
+
+    result = pd.concat(pieces, axis=1)
+    result = result.loc[:, ~pd.Index(result.columns).duplicated(keep="last")]
+    result = result.loc[~result.index.duplicated(keep="last")].sort_index()
+    return result
+
+
 def _yahoo_to_csv_col(y: str, csv_cols: list[str]) -> str | None:
     cand_dot = y.replace("-", ".")
     if cand_dot in csv_cols:
