@@ -5045,8 +5045,6 @@ export default function ClientDashboardPage() {
                                     // Australia=36, China=156, AU territories=162/166/334/574
                                     const geoNum=Number(geo.id);
                                     const isoId=String(geo.id).padStart(3,"0");
-                                    // DEBUG — remove after confirming IDs
-                                    if(typeof window!=="undefined"&&(geoNum===36||geoNum===156||isoId==="036"||isoId==="156"))console.log("[MAP DEBUG] geo.id=",geo.id,"geoNum=",geoNum,"isoId=",isoId,"name=",geo.properties?.name);
                                     if([36,156,162,166,334,574].includes(geoNum)||["036","156","162","166","334","574"].includes(isoId))return(
                                       <Geography key={geo.rsmKey} geography={geo} fill="#111827" stroke="#1e293b" strokeWidth={0.5} style={{default:{outline:"none"},hover:{outline:"none",fill:"#111827"},pressed:{outline:"none"}}}/>
                                     );
