@@ -4027,6 +4027,28 @@ export default function ClientDashboardPage() {
 
 
   // ── Recompute all KPIs from scaled curve ──────────────────────────────────
+  // Period-independent risk data — deps deliberately exclude `period`
+  const riskData=useMemo(()=>{
+    if(!dates.length||!activeEquity.length) return null;
+    const allRets=activeEquity.slice(1).map((v,i)=>v/activeEquity[i]-1);
+    const allBRets=benchRaw.slice(1).map((v,i)=>v/benchRaw[i]-1);
+    const vol20y=annualVol(allRets)*100;
+    const benchVol20y=annualVol(allBRets)*100;
+    const curVol=annualVol(allRets.slice(-252))*100;
+    const curDD=currentDD(activeEquity.slice(-252*3))*100;
+    const dd5Start=skipWarmup(activeEquity,periodStart(dates,"20 Anos"));
+    const modelDD=rollingDD(dates.slice(dd5Start),activeEquity.slice(dd5Start),10);
+    let bpk=benchRaw[dd5Start]??1;
+    const ddChart=modelDD.map((pt,j)=>{
+      const bv=benchRaw[dd5Start+j*10]??benchRaw[benchRaw.length-1];
+      if(bv>bpk)bpk=bv;
+      return {...pt,bench:+(((bv-bpk)/bpk)*100).toFixed(2)};
+    });
+    const calYearsInc=calYearsFromDates(dates)??dates.length/252;
+    const inception=periodMetrics(activeEquity.slice(0),benchRaw.slice(0),"Desde início",calYearsInc);
+    return {vol20y,benchVol20y,curVol,curDD,ddChart,inception};
+  },[dates,activeEquity,benchRaw]);
+
   const perfData=useMemo(()=>{
     if(!dates.length||!activeEquity.length) return null;
     // "Desde início": start at index 0 (including warmup) + calendar years to match
@@ -4036,26 +4058,19 @@ export default function ClientDashboardPage() {
     const calYears=isInception?calYearsFromDates(dates):undefined;
     const chart=makeChartData(dates,activeEquity,benchRaw,period);
     const m=periodMetrics(activeEquity.slice(s),benchRaw.slice(s),period,calYears);
-    const allRets=activeEquity.slice(1).map((v,i)=>v/activeEquity[i]-1);
-    const curVol=annualVol(allRets.slice(-252))*100;
-    const curDD=currentDD(activeEquity.slice(-252*3))*100;
-    const dd5Start=skipWarmup(activeEquity,periodStart(dates,"20 Anos"));
-    const modelDD=rollingDD(dates.slice(dd5Start),activeEquity.slice(dd5Start),10);
-    let bpk=benchRaw[dd5Start]??1;
-    const dd5=modelDD.map((pt,j)=>{
-      const bv=benchRaw[dd5Start+j*10]??benchRaw[benchRaw.length-1];
-      if(bv>bpk)bpk=bv;
-      return {...pt,bench:+(((bv-bpk)/bpk)*100).toFixed(2)};
-    });
     const now=new Date(); const ytdStartStr=`${now.getFullYear()}-01-01`;
     const ytdIdx=dates.findIndex(d=>d>=ytdStartStr);
     const ytdRet=ytdIdx>=0&&activeEquity.length>ytdIdx
       ? (activeEquity[activeEquity.length-1]/activeEquity[ytdIdx]-1)*100 : 0;
-    // Inception metrics — full history from index 0, calendar years → matches v5_kpis overlayed_cagr
-    const calYearsInc=calYearsFromDates(dates)??dates.length/252;
-    const inception=periodMetrics(activeEquity.slice(0),benchRaw.slice(0),"Desde início",calYearsInc);
-    return {chart,m,curVol,curDD,ddChart:dd5,ytdRet,inception};
-  },[dates,activeEquity,benchRaw,period]);
+    return {chart,m,ytdRet,
+      // forward risk fields for backwards-compat references
+      curVol:riskData?.curVol??0,
+      vol20y:riskData?.vol20y??0,
+      benchVol20y:riskData?.benchVol20y??0,
+      curDD:riskData?.curDD??0,
+      ddChart:riskData?.ddChart??[],
+      inception:riskData?.inception??{ret:0,ann:0,shp:0,vol:0,alpha:0,mVol:0}};
+  },[dates,activeEquity,benchRaw,period,riskData]);
 
   // Convenience aliases — direct from recomputed curve (no post-hoc multiply)
   const scaledVol  =perfData?.curVol??0;
@@ -4262,7 +4277,7 @@ export default function ClientDashboardPage() {
           desc:`${tickers.join(", ")}.`,
         });
       });
-    items.push({icon:"wave",title:"Volatilidade controlada",desc:`Vol actual ${perfData?.curVol?.toFixed(1)??"—"}% anual — nível Moderado.`});
+    items.push({icon:"wave",title:"Volatilidade controlada",desc:`Vol histórica ${riskData?.vol20y?.toFixed(1)??riskData?.curVol?.toFixed(1)??"—"}% anual (20a) — nível Moderado.`});
     return (items as {icon:string;title:string;desc:string}[]).slice(0,4);
   },[actionCounts.rows,perfData]);
 
@@ -5812,10 +5827,11 @@ export default function ClientDashboardPage() {
 
               {/* ── RISCO ── */}
               {activePage==="risco"&&(()=>{
-                const vol=benchPerfData?.mVol??perfData?.curVol??0;
-                const dd=perfData?.curDD??0;
-                // Sharpe from inception (s=0, calYears)
-                const sharpe20=perfData?.inception?.shp??riskMetrics?.beta??0;
+                const vol=riskData?.vol20y??riskData?.curVol??0;
+                const benchVolTarget=(riskData?.benchVol20y??0)*profileFactor;
+                const dd=riskData?.curDD??0;
+                // Sharpe from inception (s=0, calYears) — period-independent
+                const sharpe20=riskData?.inception?.shp??0;
                 // Needle position: vol mapped to 0-1 (0%=low, 30%=high)
                 const needlePos=Math.min(Math.max(vol/30,0),1);
                 const riskLabel=needlePos<0.4?"Baixo":needlePos<0.7?"Moderado":"Elevado";
@@ -5868,8 +5884,8 @@ export default function ClientDashboardPage() {
                       <div className="flex-1 grid grid-cols-3 gap-6">
                         <div>
                           <div className="text-slate-400 text-xs mb-1">Volatilidade anual</div>
-                          <div className="text-3xl font-black text-amber-400">{vol?`${vol.toFixed(1)}%`:"—"}</div>
-                          <div className="text-[10px] text-slate-500 mt-1">Alvo: {profileFactor<1?"~14,6%":profileFactor>1?"~24,3%":"~19,4%"} ({profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×"} vol bench)</div>
+                          <div className={`text-3xl font-black ${vol>benchVolTarget*1.1?"text-amber-400":vol<benchVolTarget*0.9?"text-sky-400":"text-emerald-400"}`}>{vol?`${vol.toFixed(1)}%`:"—"}</div>
+                          <div className="text-[10px] text-slate-500 mt-1">Alvo: {benchVolTarget>0?`~${benchVolTarget.toFixed(1)}%`:(profileFactor<1?"~14,6%":profileFactor>1?"~24,3%":"~19,4%")} ({profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×"} vol bench) · 20 anos</div>
                         </div>
                         <div>
                           <div className="text-slate-400 text-xs mb-1">Drawdown actual</div>
@@ -5900,7 +5916,7 @@ export default function ClientDashboardPage() {
                     <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                       <div className="font-bold text-slate-200 text-sm mb-3">Drawdown histórico</div>
                       <ResponsiveContainer width="100%" height={180}>
-                        <AreaChart data={perfData?.ddChart??[]} margin={{top:4,right:8,left:0,bottom:0}}>
+                        <AreaChart data={riskData?.ddChart??[]} margin={{top:4,right:8,left:0,bottom:0}}>
                           <defs>
                             <linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1">
                               <stop offset="5%" stopColor="#f87171" stopOpacity={0.3}/>
@@ -5910,7 +5926,7 @@ export default function ClientDashboardPage() {
                           <CartesianGrid vertical={false} stroke="#1a1f2e"/>
                           <XAxis dataKey="date" tick={{fontSize:10,fill:"#e2e8f0"}} tickLine={false} axisLine={false}
                             tickFormatter={d=>d.slice(0,4)}
-                            interval={Math.floor((perfData?.ddChart.length??1)/8)}/>
+                            interval={Math.floor((riskData?.ddChart.length??1)/8)}/>
                           <YAxis tick={{fontSize:10,fill:"#e2e8f0"}} tickLine={false} axisLine={false}
                             tickFormatter={v=>`${Number(v).toFixed(0)}%`} domain={["dataMin",0]} width={42}/>
                           <Tooltip
