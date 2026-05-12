@@ -72,6 +72,7 @@ next-cache/
 !/backend/routers/cancel_open_orders_paper.py
 !/backend/routers/sync_paper_exec_lines.py
 !/backend/routers/ibkr_orders.py
+!/backend/routers/client_auth.py
 # Pipeline KPI: regenerar freeze / sync preços / tarefa diária (whitelisted)
 !/backend/scripts/
 /backend/scripts/*
