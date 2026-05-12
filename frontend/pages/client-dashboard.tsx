@@ -32,8 +32,8 @@ import { KPI_IFRAME_SRC_REV } from "../lib/kpiFlaskBuildGate";
 
 /* ─── native simulator ──────────────────────────────────────── */
 const PRAZO_OPTS=[1,3,5,10,15,20] as const; // v2
-function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
-  dates:string[];equity:number[];bench:number[];onRegister:()=>void;loggedIn:boolean;
+function NativeSimulator({dates,equity,bench,onRegister,loggedIn,volScale=1}:{
+  dates:string[];equity:number[];bench:number[];onRegister:()=>void;loggedIn:boolean;volScale?:number;
 }) {
   const [capital,setCapital]=React.useState(10000);
   const [capInput,setCapInput]=React.useState("10000");
@@ -52,22 +52,35 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn}:{
     return {eq:equity.slice(s),bch:bench.slice(s),dts:dates.slice(s)};
   },[equity,bench,dates,prazo]);
 
-  // CAGR usa o prazo seleccionado como denominador (igual ao gráfico de performance)
+  // Apply volScale: scale each period's excess return by the profile multiplier
+  const scaledEq=React.useMemo(()=>{
+    if(volScale===1||slice.eq.length<2) return slice.eq;
+    const out:number[]=new Array(slice.eq.length);
+    out[0]=slice.eq[0];
+    for(let i=1;i<slice.eq.length;i++){
+      const r=(slice.eq[i]/slice.eq[i-1])-1; // period return
+      const sr=r*volScale;                    // scaled return
+      out[i]=out[i-1]*(1+sr);
+    }
+    return out;
+  },[slice.eq,volScale]);
+
+  // CAGR usa o prazo seleccionado + scaledEq
   const cagrHist=React.useMemo(()=>
-    slice.eq.length>1?cagrFn(slice.eq[0],slice.eq[slice.eq.length-1],prazo)*100:0
-  ,[slice,prazo]);
+    scaledEq.length>1?cagrFn(scaledEq[0],scaledEq[scaledEq.length-1],prazo)*100:0
+  ,[scaledEq,prazo]);
 
   const simData=React.useMemo(()=>{
-    if(!slice.eq.length||!slice.dts.length) return [];
-    const step=Math.max(1,Math.floor(slice.eq.length/300));
-    const base=slice.eq[0]||1;
-    const bbase=slice.bch[0]||1; // base separada para benchmark
+    if(!scaledEq.length||!slice.dts.length) return [];
+    const step=Math.max(1,Math.floor(scaledEq.length/300));
+    const base=scaledEq[0]||1;
+    const bbase=slice.bch[0]||1;
     return slice.dts.filter((_,i)=>i%step===0).map((d,i)=>({
       date:d.slice(0,10),
-      modelo:Math.round((slice.eq[i*step]/base)*capital),
+      modelo:Math.round((scaledEq[i*step]/base)*capital),
       bench: Math.round((slice.bch[i*step]/bbase)*capital),
     }));
-  },[slice,capital]);
+  },[scaledEq,slice.dts,slice.bch,capital]);
 
   const finalVal=simData[simData.length-1]?.modelo??capital;
   const benchFinal=simData[simData.length-1]?.bench??capital;
@@ -5281,7 +5294,8 @@ export default function ClientDashboardPage() {
                     </div>
                     <div className="px-5 py-4">
                       <NativeSimulator dates={dates} equity={equityRaw} bench={benchRaw}
-                        onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}/>
+                        onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}
+                        volScale={profileFactor}/>
                     </div>
                   </div>
 
