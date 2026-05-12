@@ -5768,81 +5768,144 @@ export default function ClientDashboardPage() {
                   )}
 
                   {/* ── TAB: Plano modelo ── */}
-                  {cartTab==="plano"&&<div className="space-y-5">
-                  {/* Plano modelo header */}
-                  <div className="bg-gradient-to-r from-teal-950/40 to-[#0b0f1a] border border-teal-500/20 rounded-xl px-6 py-4 flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] text-teal-500 uppercase tracking-widest font-semibold mb-1">Comité de Investimento Digital</div>
-                      <div className="text-slate-100 font-bold text-sm">Plano modelo recomendado — {recoLabel}</div>
-                      <div className="text-slate-500 text-xs mt-1">Alocação óptima calculada pelo modelo quantitativo DECIDE V5</div>
+                  {cartTab==="plano"&&(()=>{
+                    const equityPct=latestMonth?(100-(latestMonth.tbillsTotalPct??0)):0;
+                    const cashPct=latestMonth?(latestMonth.tbillsTotalPct??0):0;
+                    const nChanges=actionCounts.comprar+actionCounts.aumentar+actionCounts.reduzir+actionCounts.vender;
+                    const SECTOR_COLORS=["#14b8a6","#3b82f6","#f59e0b","#8b5cf6","#22c55e","#ef4444","#64748b"];
+                    return <div className="space-y-5">
+
+                  {/* ── Comité header — full narrative ── */}
+                  <div className="bg-gradient-to-br from-teal-950/50 via-[#0b0f1a] to-[#0b0f1a] border border-teal-500/15 rounded-2xl p-6">
+                    <div className="flex items-start justify-between gap-6 mb-5">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse"/>
+                          <span className="text-[10px] text-teal-500 uppercase tracking-widest font-bold">Comité de Investimento Digital · {recoLabel}</span>
+                        </div>
+                        <div className="text-slate-100 font-bold text-base mb-1">Plano modelo recomendado</div>
+                        <div className="text-slate-500 text-xs">Alocação óptima calculada pelo modelo quantitativo DECIDE V5 · {actionCounts.allRows.length} posições</div>
+                      </div>
+                      <button onClick={()=>setActivePage("reco")} className="shrink-0 bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all hover:scale-[1.02] shadow-lg shadow-teal-900/30">
+                        <CheckCircle2 size={14}/> Aprovar plano
+                      </button>
                     </div>
-                    <button onClick={()=>setActivePage("reco")} className="shrink-0 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 transition-colors">
-                      <CheckCircle2 size={13}/> Aprovar plano
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 hover:border-slate-700/60 transition-colors">
-                      <div className="text-slate-500 text-xs mb-3 uppercase tracking-wide font-medium">Nº de posições</div>
-                      <div className="text-3xl font-black text-white tabular-nums">{actionCounts.comprar+actionCounts.aumentar+actionCounts.reduzir+actionCounts.vender+actionCounts.manter||20}</div>
-                      <div className="text-slate-600 text-[10px] mt-1">acções + liquidez</div>
+
+                    {/* Status strip */}
+                    <div className="grid grid-cols-4 gap-3 mb-5">
+                      {[
+                        {label:"Acções", val:`${equityPct.toFixed(0)}%`, c:"text-teal-400"},
+                        {label:"Liquidez", val:`${cashPct.toFixed(0)}%`, c:"text-slate-400"},
+                        {label:"Alterações", val:nChanges, c:nChanges>0?"text-amber-400":"text-slate-400"},
+                        {label:"Manter", val:actionCounts.manter, c:"text-slate-400"},
+                      ].map(x=>(
+                        <div key={x.label} className="bg-white/[0.03] rounded-xl px-4 py-3 border border-white/[0.05]">
+                          <div className="text-[10px] text-slate-600 uppercase tracking-wide mb-1">{x.label}</div>
+                          <div className={`text-xl font-black ${x.c}`}>{x.val}</div>
+                        </div>
+                      ))}
                     </div>
-                    <div className="bg-[#0b0f1a] border border-teal-500/15 rounded-xl p-5 hover:border-teal-500/25 transition-colors">
-                      <div className="text-slate-500 text-xs mb-3 uppercase tracking-wide font-medium">Acções</div>
-                      <div className="text-3xl font-black text-teal-400 tabular-nums">{latestMonth?`${(100-(latestMonth.tbillsTotalPct??0)).toFixed(0)}%`:"—"}</div>
-                      <div className="text-slate-600 text-[10px] mt-1">{latestMonth?`${(latestMonth.tbillsTotalPct??0).toFixed(0)}% em liquidez`:"—"}</div>
-                    </div>
-                    <div className="bg-[#0b0f1a] border border-blue-500/15 rounded-xl p-5 hover:border-blue-500/25 transition-colors">
-                      <div className="text-slate-500 text-xs mb-3 uppercase tracking-wide font-medium">Rebalanceamento</div>
-                      <div className="text-xl font-black text-blue-400">{recoLabel}</div>
-                      <div className="text-slate-600 text-[10px] mt-1">última actualização</div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-5">
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="font-bold text-slate-200 text-sm mb-4">Alocação por setor</div>
-                      <div className="flex gap-4">
-                        <ResponsiveContainer width={140} height={140}>
-                          <PieChart><Pie data={sectorData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" paddingAngle={2}>
-                            {sectorData.map((_,i)=><Cell key={i} fill={["#60a5fa","#34d399","#f59e0b","#f87171","#a78bfa","#22d3ee"][i%6]!}/>)}
-                          </Pie></PieChart>
-                        </ResponsiveContainer>
-                        <div className="space-y-2 flex-1">
-                          {sectorData.filter(s=>s.value>=1).map((s,i)=>(
-                            <div key={s.name} className="flex items-center justify-between text-xs">
-                              <div className="flex items-center gap-2">
-                                <div className="w-2.5 h-2.5 rounded-sm" style={{background:["#60a5fa","#34d399","#f59e0b","#f87171","#a78bfa","#22d3ee"][i%6]}}/>
-                                <span className="text-slate-300">{s.name}</span>
+
+                    {/* Narrative: O que mudou */}
+                    {whatChanged.length>0&&(
+                      <div className="border-t border-white/[0.06] pt-4">
+                        <div className="text-[10px] text-slate-600 uppercase tracking-wide mb-3">O que mudou este mês</div>
+                        <div className="grid grid-cols-2 gap-3">
+                          {whatChanged.map((b,i)=>(
+                            <div key={i} className="flex items-start gap-3">
+                              <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${b.icon==="up"?"bg-teal-500/15":"b.icon==="down"?"bg-red-500/15":"bg-slate-700/40"}`}>
+                                {b.icon==="up"&&<TrendingUp size={12} className="text-teal-400"/>}
+                                {b.icon==="down"&&<TrendingDown size={12} className="text-red-400"/>}
+                                {b.icon==="globe"&&<Globe size={12} className="text-blue-400"/>}
+                                {b.icon==="wave"&&<Activity size={12} className="text-slate-400"/>}
                               </div>
-                              <span className="text-slate-400 font-semibold">{s.value}%</span>
+                              <div>
+                                <div className="text-xs font-semibold text-slate-300">{b.title}</div>
+                                <div className="text-[11px] text-slate-600 mt-0.5">{b.desc}</div>
+                              </div>
                             </div>
                           ))}
                         </div>
                       </div>
-                    </div>
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="font-bold text-slate-200 text-sm mb-4 flex items-center gap-2">Exposição geográfica <span className="text-[10px] font-normal text-slate-500">· % das acções recomendadas</span></div>
-                      <div className="space-y-3">
-                        {geoData.map(g=>(
-                          <div key={g.name}>
-                            <div className="flex justify-between text-xs mb-1">
-                              <span className="text-slate-300">{g.name}</span>
-                              <span className="text-slate-400 font-semibold">{g.value}%</span>
+                    )}
+
+                    {/* Impact: Se aprovar */}
+                    {nChanges>0&&(
+                      <div className="border-t border-white/[0.06] pt-4 mt-4">
+                        <div className="text-[10px] text-slate-600 uppercase tracking-wide mb-3">Se aprovar este plano</div>
+                        <div className="flex flex-wrap gap-2">
+                          {actionCounts.comprar>0&&<span className="px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-400 text-[11px] font-semibold">{actionCounts.comprar} nova(s) posição(ões)</span>}
+                          {actionCounts.aumentar>0&&<span className="px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[11px] font-semibold">{actionCounts.aumentar} posição(ões) reforçadas</span>}
+                          {actionCounts.reduzir>0&&<span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[11px] font-semibold">{actionCounts.reduzir} posição(ões) reduzidas</span>}
+                          {actionCounts.vender>0&&<span className="px-3 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 text-[11px] font-semibold">{actionCounts.vender} encerrada(s)</span>}
+                          <span className="px-3 py-1 rounded-full bg-slate-700/30 border border-slate-600/20 text-slate-400 text-[11px]">volatilidade mantém-se alinhada com perfil {profileLabel}</span>
+                          <span className="px-3 py-1 rounded-full bg-slate-700/30 border border-slate-600/20 text-slate-400 text-[11px]">{actionCounts.manter} posições mantidas sem alteração</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Composição: sector + geo ── */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Sector — horizontal bars premium */}
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e]/60 rounded-xl p-5">
+                      <div className="text-xs font-bold text-slate-300 mb-4">Composição sectorial</div>
+                      <div className="space-y-2.5">
+                        {sectorData.filter(s=>s.value>=1).map((s,i)=>(
+                          <div key={s.name}>
+                            <div className="flex justify-between text-xs mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full shrink-0" style={{background:SECTOR_COLORS[i%SECTOR_COLORS.length]}}/>
+                                <span className="text-slate-400">{s.name}</span>
+                              </div>
+                              <span className={`font-bold tabular-nums ${i===0?"text-slate-100":"text-slate-400"}`}>{s.value}%</span>
                             </div>
-                            <div className="h-1.5 rounded-full bg-[#1a1f2e]">
-                              <div className="h-full rounded-full bg-blue-500" style={{width:`${g.value}%`}}/>
+                            <div className="h-1.5 rounded-full bg-[#111827] overflow-hidden">
+                              <div className="h-full rounded-full transition-all duration-500"
+                                style={{width:`${s.value}%`,background:SECTOR_COLORS[i%SECTOR_COLORS.length],opacity:i===0?1:0.65}}/>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Geography — bars with teal gradient */}
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e]/60 rounded-xl p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="text-xs font-bold text-slate-300">Exposição geográfica</div>
+                        <span className="text-[10px] text-slate-600">% das acções</span>
+                      </div>
+                      <div className="space-y-2.5">
+                        {geoData.map((g,i)=>(
+                          <div key={g.name}>
+                            <div className="flex justify-between text-xs mb-1.5">
+                              <span className="text-slate-400">{g.name}</span>
+                              <span className={`font-bold tabular-nums ${i===0?"text-slate-100":"text-slate-400"}`}>{g.value}%</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-[#111827] overflow-hidden">
+                              <div className="h-full rounded-full transition-all duration-500"
+                                style={{width:`${g.value}%`,background:i===0?"#14b8a6":i===1?"#3b82f6":"#64748b",opacity:i===0?1:0.6}}/>
                             </div>
                           </div>
                         ))}
                       </div>
                     </div>
                   </div>
-                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                  {(()=>{const [showManter,setShowManter]=React.useState(false); return(
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e]/60 rounded-xl p-5">
                     <div className="flex items-center justify-between mb-4">
-                      <div className="font-bold text-slate-200 text-sm">Posições actuais</div>
+                      <div>
+                        <div className="font-bold text-slate-200 text-sm">Posições do plano</div>
+                        <div className="text-[10px] text-slate-600 mt-0.5">{actionCounts.allRows.length} posições · {nChanges} com alteração · {actionCounts.manter} sem alteração</div>
+                      </div>
                       <div className="flex items-center gap-3">
+                        <button onClick={()=>setShowManter(v=>!v)}
+                          className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-colors ${showManter?"bg-slate-700 border-slate-600 text-slate-300":"border-slate-700/50 text-slate-600 hover:text-slate-400"}`}>
+                          {showManter?"Ocultar":"Mostrar"} posições sem alteração ({actionCounts.manter})
+                        </button>
                         {pricesLoading&&<span className="text-slate-500 text-[10px]">A carregar preços…</span>}
-                        <label className="flex items-center gap-2 text-xs text-slate-400">
-                          Montante plano (€)
+                        <label className="flex items-center gap-2 text-xs text-slate-500">
+                          Montante (€)
                           <input type="number" value={aum} onChange={e=>setAum(Number(e.target.value)||100000)}
                             onBlur={e=>{
                               const v=Number(e.target.value)||100000;
@@ -5850,7 +5913,7 @@ export default function ClientDashboardPage() {
                               try{window.localStorage.setItem("decide_onboarding_montante_eur_v1",String(Math.round(v)));}catch{}
                               logActivity({type:"configuração",label:`Montante do plano alterado para €${v.toLocaleString("pt-PT")}`,icon:"⚙",color:"text-amber-400"});
                             }}
-                            className="w-28 bg-[#111827] border border-[#252a3a] text-slate-200 text-xs rounded-lg px-2 py-1 outline-none focus:border-blue-500"
+                            className="w-24 bg-[#111827] border border-[#252a3a] text-slate-200 text-xs rounded-lg px-2 py-1 outline-none focus:border-teal-500"
                             min={1000} step={1000}/>
                         </label>
                       </div>
@@ -5859,17 +5922,14 @@ export default function ClientDashboardPage() {
                       <thead><tr className="text-slate-500 border-b border-[#1a1f2e] font-semibold">
                         <th className="text-left pb-2">Ativo</th>
                         <th className="text-left pb-2">Nome</th>
-                        <th className="text-left pb-2">Setor</th>
-                        <th className="text-left pb-2">País</th>
-                        <th className="text-right pb-2">
-                          <span title="Peso no plano do mês anterior">Mês ant.</span>
-                        </th>
-                        <th className="text-right pb-2">
-                          <span title="Peso no plano deste mês">Este mês</span>
-                        </th>
-                        <th className="text-right pb-2">&#916;</th>
+                        <th className="text-left pb-2 text-slate-600 font-medium">Setor</th>
+                        <th className="text-left pb-2 text-slate-600 font-medium">País</th>
+                        <th className="text-right pb-2">Mês ant.</th>
+                        <th className="text-right pb-2">Este mês</th>
+                        <th className="text-right pb-2">Δ</th>
                         <th className="text-right pb-2">Preço</th>
-                        <th className="text-right pb-2">Nº Acções</th>
+                        <th className="text-right pb-2">Acções</th>
+                        <th className="text-right pb-2">Acção</th>
                       </tr></thead>
                       <tbody>
                         {(()=>{
@@ -5899,35 +5959,44 @@ export default function ClientDashboardPage() {
                             {ticker:"EURUSD",cur:usdExposure,prev:usdExposure,action:"Manter",special:true},
                           ];
 
-                          return allRows.map(r=>{
+                          return allRows
+                            .filter(r=>showManter||r.action!=="Manter"||r.special)
+                            .map(r=>{
                             const delta=r.cur-r.prev;
                             const isXeon=r.ticker==="XEON";
                             const isHedge=r.ticker==="EURUSD";
+                            const actionLabel2=(a:string)=>a==="Comprar"?"Nova":a==="Aumentar"?"Reforçar":a==="Vender"?"Encerrar":a==="Reduzir"?"Reduzir":"—";
+                            const actionColor2=(a:string)=>a==="Comprar"?"text-teal-400":a==="Aumentar"?"text-blue-400":a==="Vender"?"text-red-400":a==="Reduzir"?"text-amber-400":"text-slate-600";
                             return (
-                              <tr key={r.ticker} className={`border-b border-[#0f1420] hover:bg-white/[0.02] ${r.special?"bg-slate-800/20":""}`}>
-                                <td className="py-2 font-bold">
+                              <tr key={r.ticker} className={`border-b border-[#0d1220] hover:bg-white/[0.025] transition-colors duration-100 ${r.special?"opacity-60":""}`}>
+                                <td className="py-2.5 font-bold">
                                   {isXeon||isHedge?(
-                                    <span className="text-slate-300">{isHedge?"EUR/USD":r.ticker}</span>
+                                    <span className="text-slate-500 text-[11px]">{isHedge?"EUR/USD":r.ticker}</span>
                                   ):(
                                     <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
-                                      className="text-blue-400 hover:text-blue-300 hover:underline">{displayTicker(r.ticker)}</a>
+                                      className="inline-flex items-center gap-1 text-slate-200 hover:text-teal-400 hover:underline underline-offset-2 transition-colors">
+                                      {displayTicker(r.ticker)}<ArrowUpRight size={10} className="opacity-40"/>
+                                    </a>
                                   )}
                                 </td>
-                                <td className="py-2 text-slate-400">
+                                <td className="py-2.5 text-slate-500 text-[11px]">
                                   {isHedge?"Hedge Cambial":isXeon?"MM Euro":getCompany(r.ticker)||"—"}
                                 </td>
-                                <td className="py-2 text-slate-400">
+                                <td className="py-2.5 text-slate-600 text-[11px]">
                                   {isHedge?"Cambial":getSector(r.ticker)}
                                 </td>
-                                <td className="py-2 text-slate-400">
+                                <td className="py-2.5 text-slate-600 text-[11px]">
                                   {isHedge?"Global":getZone(r.ticker)}
                                 </td>
-                                <td className="py-2 text-right text-slate-300">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
-                                <td className="py-2 text-right text-white font-semibold">
-                                  {isHedge?<span className="text-slate-500 font-normal italic text-[10px]">derivado (~{r.cur.toFixed(0)}% USD)</span>:`${r.cur.toFixed(1)}%`}
+                                <td className="py-2.5 text-right text-slate-500 tabular-nums">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
+                                <td className="py-2.5 text-right text-slate-200 font-semibold tabular-nums">
+                                  {isHedge?<span className="text-slate-600 font-normal italic text-[10px]">~{r.cur.toFixed(0)}%</span>:`${r.cur.toFixed(1)}%`}
                                 </td>
-                                <td className={`py-2 text-right font-semibold ${isHedge?"text-slate-500":delta>0?"text-emerald-400":delta<0?"text-red-400":"text-slate-500"}`}>
+                                <td className={`py-2.5 text-right font-semibold tabular-nums ${isHedge?"text-slate-600":delta>0?"text-teal-400":delta<0?"text-red-400":"text-slate-600"}`}>
                                   {isHedge?"—":Math.abs(delta)>=0.05?`${delta>0?"+":""}${delta.toFixed(1)}pp`:"—"}
+                                </td>
+                                <td className="py-2.5 text-right">
+                                  {!isHedge&&!isXeon&&r.action!=="Manter"&&<span className={`text-[10px] font-semibold ${actionColor2(r.action)}`}>{actionLabel2(r.action)}</span>}
                                 </td>
                                 {(()=>{
                                   if(isHedge||isXeon) return <><td className="py-2 text-right text-slate-600">—</td><td className="py-2 text-right text-slate-600">—</td></>;
@@ -5962,7 +6031,8 @@ export default function ClientDashboardPage() {
                       </tbody>
                     </table>
                   </div>
-                  </div>}{/* end cartTab==="plano" */}
+                  );})()} {/* end showManter IIFE */}
+                  </div>}{/* end cartTab==="plano" IIFE */}
                 </div>
               )}
 
