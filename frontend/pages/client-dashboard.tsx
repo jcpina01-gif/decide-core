@@ -5050,7 +5050,10 @@ export default function ClientDashboardPage() {
                               return (
                                 <tr key={r.ticker} className="border-b border-[#0d1220] hover:bg-white/[0.03] transition-colors duration-100">
                                   <td className="py-2.5">
-                                    <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer" className="font-bold text-slate-200 hover:text-teal-400 transition-colors">{displayTicker(r.ticker)}</a>
+                                    <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 font-bold text-teal-400 hover:text-teal-300 hover:underline underline-offset-2 transition-colors">
+                                      {displayTicker(r.ticker)}<ArrowUpRight size={10} className="opacity-60"/>
+                                    </a>
                                     {getCompany(r.ticker)&&<span className="ml-1.5 text-slate-600 text-[10px]">{getCompany(r.ticker)}</span>}
                                   </td>
                                   <td className="py-2">
