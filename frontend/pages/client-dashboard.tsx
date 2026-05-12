@@ -4279,21 +4279,22 @@ export default function ClientDashboardPage() {
 
   // Geographic exposure from current positions
   const geoData=useMemo(()=>{
-    if(!latestMonth) return [];
+    // Use actionCounts.allRows (top-20 plan, same source as operations table)
+    // so the geo chart only shows countries for positions that will actually be traded.
+    if(!actionCounts.allRows.length) return [];
     const map=new Map<string,number>();
-    latestMonth.rows.forEach(r=>{
-      // Exclude monetary instruments — show equity geography only
-      if(r.ticker==="TBILL_PROXY"||r.ticker==="XEON") return;
+    actionCounts.allRows.forEach(r=>{
+      if(r.ticker==="XEON") return;
       const z=getZone(r.ticker);
       if(z==="Eurozona") return;
-      map.set(z,(map.get(z)??0)+r.weightPct);
+      map.set(z,(map.get(z)??0)+r.cur);
     });
     const total=[...map.values()].reduce((a,b)=>a+b,0)||1;
     return [...map.entries()]
       .map(([name,pct])=>({name,value:Math.round(pct/total*100)}))
       .filter(d=>d.value>=1)
       .sort((a,b)=>b.value-a.value);
-  },[latestMonth]);
+  },[actionCounts.allRows]);
 
   // Return distribution histogram (monthly returns)
   const returnDist=useMemo(()=>{
