@@ -10,6 +10,7 @@ import OnboardingFlowBar, {
 import InlineLoadingDots from "../../components/InlineLoadingDots";
 import { syncFeeSegmentFromNavEur } from "../../lib/clientSegment";
 import { isFxHedgeGateOk, syncHedgeOnboardingDoneFromPrefs } from "../../lib/fxHedgePrefs";
+import { isFxHedgeOnboardingApplicable } from "../../lib/clientSegment";
 import { getHrefAfterTradePlanApprovalStep } from "../../lib/onboardingProgress";
 import { DECIDE_DASHBOARD, ONBOARDING_SHELL_MAX_WIDTH_PX } from "../../lib/decideClientTheme";
 import { DECIDE_MIN_INVEST_EUR } from "../../lib/decideInvestPrefill";
@@ -402,6 +403,12 @@ export default function ApprovePage({
       setKycDone(kyc);
       setIbkrPrepDone(ibkrPrep);
       setHedgeGateOk(hedgeOk);
+
+      // Auto-redirect: se hedge aplicável e não concluído, enviar de volta para o passo 5
+      if (kyc && mifid && !hedgeOk && isFxHedgeOnboardingApplicable()) {
+        window.location.replace("/client/fx-hedge-onboarding");
+        return;
+      }
 
       const allowed = hasTradePlan && mifid && kyc && hedgeOk && ibkrPrep;
       if (!allowed) {
@@ -810,7 +817,14 @@ export default function ApprovePage({
                 {!mifidDone && "Falta confirmar o Teste MiFID."}
                 {!kycDone && " Falta confirmar o KYC (Persona)."}
                 {mifidDone && kycDone && !hedgeGateOk
-                  ? " Falta concluir o hedge cambial (0%, 50% ou 100% nos indicadores)."
+                  ? (
+                    <span>
+                      {" "}Falta concluir o passo de hedge cambial (0%, 50% ou 100% nos indicadores).{" "}
+                      <Link href="/client/fx-hedge-onboarding" style={{ color: "#fcd34d", textDecoration: "underline" }}>
+                        Ir para Hedge Cambial →
+                      </Link>
+                    </span>
+                  )
                   : null}
                 {mifidDone && kycDone && hedgeGateOk && !ibkrPrepDone
                   ? (
