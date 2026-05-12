@@ -5534,30 +5534,86 @@ export default function ClientDashboardPage() {
               {/* ── CARTEIRA ── */}
               {activePage==="carteira"&&(
                 <div className="space-y-5">
+
+                  {/* ── Summary strip ── */}
+                  {(()=>{
+                    const planMap=new Map<string,number>();
+                    actionCounts.allRows.forEach(r=>{
+                      planMap.set(r.ticker.toUpperCase(),r.cur);
+                      planMap.set(toIbTicker(r.ticker),r.cur);
+                    });
+                    const equityPct=latestMonth?(100-(latestMonth.tbillsTotalPct??0)):0;
+                    const cashPct=latestMonth?(latestMonth.tbillsTotalPct??0):0;
+                    const topSector=sectorData[0];
+                    // Alignment score from IB positions vs plan
+                    const aligned=cartIbPos&&cartIbPos.length>0&&aum>0?(()=>{
+                      const sumDev=cartIbPos.reduce((s,p)=>{
+                        const pct=(p.value_eur??p.value)/aum*100;
+                        const tgt=planMap.get(p.ticker.toUpperCase())??0;
+                        return s+Math.abs(pct-tgt);
+                      },0);
+                      const missingDev=actionCounts.allRows.reduce((s,r)=>{
+                        const ibAlias=toIbTicker(r.ticker);
+                        const has=(cartIbPos??[]).some(p=>p.ticker.toUpperCase()===r.ticker.toUpperCase()||p.ticker.toUpperCase()===ibAlias);
+                        return r.cur>0&&!has?s+r.cur:s;
+                      },0);
+                      return Math.max(0,100-(sumDev+missingDev)/2);
+                    })():null;
+                    const nDevRel=cartIbPos?cartIbPos.filter(p=>{
+                      const pct=(p.value_eur??p.value)/aum*100;
+                      const tgt=planMap.get(p.ticker.toUpperCase())??0;
+                      return Math.abs(pct-tgt)>=1;
+                    }).length:0;
+                    return(
+                      <div className="grid grid-cols-4 gap-3">
+                        {[
+                          {label:"Acções", val:`${equityPct.toFixed(0)}%`, sub:"exposição a acções", c:"text-teal-400", acc:"border-teal-500/20", bg:"bg-teal-500/5"},
+                          {label:"Liquidez (MM)", val:`${cashPct.toFixed(0)}%`, sub:"XEON / cash", c:"text-slate-300", acc:"border-slate-600/30", bg:"bg-slate-800/20"},
+                          {label:"Sector principal", val:topSector?.name??"—", sub:`${topSector?.value??0}% do portfolio`, c:"text-blue-400", acc:"border-blue-500/20", bg:"bg-blue-500/5"},
+                          aligned!==null
+                            ?{label:"Alinhamento c/ plano", val:`${aligned.toFixed(0)}%`, sub:`${nDevRel} posição(ões) com desvio ≥1pp`, c:aligned>=90?"text-teal-400":aligned>=70?"text-amber-400":"text-red-400", acc:aligned>=90?"border-teal-500/20":aligned>=70?"border-amber-500/20":"border-red-500/20", bg:aligned>=90?"bg-teal-500/5":aligned>=70?"bg-amber-500/5":"bg-red-500/5"}
+                            :{label:"Alinhamento c/ plano", val:"—", sub:"carregue posições IB", c:"text-slate-500", acc:"border-slate-700/30", bg:"bg-slate-800/20"},
+                        ].map(k=>(
+                          <div key={k.label} className={`rounded-xl px-4 py-4 border ${k.acc} ${k.bg}`}>
+                            <div className="text-[10px] text-slate-500 font-medium mb-2 uppercase tracking-wide">{k.label}</div>
+                            <div className={`text-xl font-black ${k.c}`}>{k.val}</div>
+                            <div className="text-[10px] text-slate-600 mt-1">{k.sub}</div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
                   {/* Tab bar */}
-                  <div className="flex gap-1 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-1 w-fit">
-                    {([["ib","Carteira real (IB)"],["plano","Plano modelo"]] as const).map(([k,l])=>(
-                      <button key={k} onClick={()=>setCartTab(k)}
-                        className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${cartTab===k?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>
-                        {l}
-                      </button>
-                    ))}
+                  <div className="flex gap-0 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-1 w-fit">
+                    <button onClick={()=>setCartTab("ib")}
+                      className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all duration-150 ${cartTab==="ib"?"bg-[#1a1f2e] text-slate-100":"text-slate-500 hover:text-slate-300"}`}>
+                      Carteira real (IB)
+                    </button>
+                    <button onClick={()=>setCartTab("plano")}
+                      className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all duration-150 flex items-center gap-2 ${cartTab==="plano"?"bg-teal-600 text-white":"text-slate-500 hover:text-slate-300"}`}>
+                      Plano modelo
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-black ${cartTab==="plano"?"bg-white/20 text-white":"bg-teal-500/20 text-teal-400"}`}>
+                        {recoLabel}
+                      </span>
+                    </button>
                   </div>
 
                   {/* ── TAB: Carteira real IB ── */}
                   {cartTab==="ib"&&(
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <div className="text-slate-400 text-xs">
+                        <div className="text-slate-500 text-xs">
                           {cartIbPos!==null&&!cartIbErr&&(
                             <span>
-                            {cartIbPos.length} posições · investido {cartIbPos.reduce((s,p)=>s+(p.value_eur??p.value),0).toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} EUR
+                            <span className="text-slate-300 font-semibold">{cartIbPos.length}</span> posições
+                            {" · "}investido <span className="text-teal-400 font-semibold">{cartIbPos.reduce((s,p)=>s+(p.value_eur??p.value),0).toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} €</span>
                             {cartIbNav.value>0&&<span className="text-slate-600 ml-2">(conta paper: {cartIbNav.value.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} {cartIbNav.ccy})</span>}
                           </span>
                           )}
                         </div>
                         <button onClick={fetchCartIbPositions} disabled={cartIbLoading}
-                          className="flex items-center gap-1.5 bg-[#0b0f1a] border border-[#1a1f2e] hover:border-blue-500 text-slate-300 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                          className="flex items-center gap-1.5 bg-[#0b0f1a] border border-[#1a1f2e] hover:border-teal-500/50 text-slate-400 hover:text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
                           {cartIbLoading?<span className="animate-spin text-xs">⟳</span>:null}
                           {cartIbLoading?"A carregar…":"↻ Actualizar"}
                         </button>
@@ -5600,32 +5656,40 @@ export default function ClientDashboardPage() {
                                   const pctOfPlan=aum>0?(valEur/aum*100):0;
                                   const planTarget=planMap.get(p.ticker.toUpperCase())??0;
                                   const desvio=pctOfPlan-planTarget;
-                                  const desvioTxt=desvio===0?"—":`${desvio>0?"+":""}${desvio.toFixed(1)}pp`;
-                                  const devColor=Math.abs(desvio)<1?"text-slate-500":desvio>0?"text-amber-400":"text-sky-400";
+                                  const isOrphan=planTarget===0&&p.ticker!=="MM Euro";
+                                  const absD=Math.abs(desvio);
+                                  const devBadge=isOrphan
+                                    ?"text-red-400 bg-red-500/10 border-red-500/25"
+                                    :absD<0.5?"text-slate-600 bg-transparent border-transparent"
+                                    :absD<1?"text-slate-400 bg-slate-700/30 border-slate-600/30"
+                                    :desvio>0?"text-amber-400 bg-amber-500/10 border-amber-500/25"
+                                    :"text-blue-400 bg-blue-500/10 border-blue-500/25";
+                                  const desvioTxt=isOrphan?"fora do plano":absD<0.5?"alinhado":`${desvio>0?"+":""}${desvio.toFixed(1)}pp`;
                                   return(
-                                    <tr key={p.ticker} className={`border-b border-[#1a1f2e] hover:bg-[#111827] transition-colors ${i%2===0?"":"bg-[#080c14]"}`}>
-                                      <td className="px-4 py-2.5 font-bold text-blue-400">
-                                        <a href={`https://finance.yahoo.com/quote/${p.ticker}`} target="_blank" rel="noopener noreferrer" className="hover:text-blue-300 hover:underline transition-colors" title={`Ver ${displayTicker(p.ticker)} no Yahoo Finance`}>
-                                          {displayTicker(p.ticker)}
+                                    <tr key={p.ticker} className="border-b border-[#0d1220] hover:bg-white/[0.02] transition-colors duration-100">
+                                      <td className="px-4 py-3">
+                                        <a href={`https://finance.yahoo.com/quote/${p.ticker}`} target="_blank" rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1 font-bold text-slate-200 hover:text-teal-400 hover:underline underline-offset-2 transition-colors">
+                                          {displayTicker(p.ticker)}<ArrowUpRight size={10} className="opacity-40"/>
                                         </a>
                                       </td>
-                                      <td className="px-2 py-2.5 text-slate-300">{(p as any).name||"—"}</td>
-                                      <td className="px-2 py-2.5 text-slate-400">{(p as any).sector||"—"}</td>
-                                      <td className="px-2 py-2.5 text-slate-400">{COUNTRY[p.ticker.toUpperCase()]||(p as any).country||"—"}</td>
-                                      <td className="px-2 py-2.5 text-right text-slate-300">{p.qty.toLocaleString("pt-PT",{maximumFractionDigits:4})}</td>
-                                      <td className="px-2 py-2.5 text-right text-slate-300">
-                                        {(p.value_eur??p.value).toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})} EUR
-                                        {p.currency&&p.currency!=="EUR"&&p.value_eur==null&&<span className="text-slate-600 ml-1 text-[10px]">({p.currency})</span>}
-                                        {p.currency&&p.currency!=="EUR"&&p.value_eur!=null&&<span className="text-slate-600 ml-1 text-[10px]" title={`Valor nativo: ${p.value.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})} ${p.currency}`}>≈€</span>}
+                                      <td className="px-2 py-3 text-slate-500 text-[11px]">{(p as any).name||"—"}</td>
+                                      <td className="px-2 py-3 text-slate-500 text-[11px]">{getSector(p.ticker)||(p as any).sector||"—"}</td>
+                                      <td className="px-2 py-3 text-slate-500 text-[11px]">{COUNTRY[p.ticker.toUpperCase()]||(p as any).country||"—"}</td>
+                                      <td className="px-2 py-3 text-right text-slate-400 tabular-nums">{p.qty.toLocaleString("pt-PT",{maximumFractionDigits:2})}</td>
+                                      <td className="px-2 py-3 text-right text-slate-300 font-medium tabular-nums">
+                                        {(p.value_eur??p.value).toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} €
+                                        {p.currency&&p.currency!=="EUR"&&p.value_eur!=null&&<span className="text-slate-700 ml-1 text-[9px]">≈€</span>}
                                       </td>
-                                      <td className="px-2 py-2.5 text-right">
-                                        <span className={`font-semibold ${pctOfPlan>5?"text-emerald-400":pctOfPlan>2?"text-blue-400":"text-slate-400"}`}>
-                                          {pctOfPlan.toFixed(2)}%
+                                      <td className="px-2 py-3 text-right">
+                                        <span className={`font-bold tabular-nums ${pctOfPlan>8?"text-teal-300":pctOfPlan>4?"text-teal-400":pctOfPlan>1?"text-slate-300":"text-slate-500"}`}>
+                                          {pctOfPlan.toFixed(1)}%
                                         </span>
                                       </td>
-                                      <td className={`px-4 py-2.5 text-right text-[11px] font-semibold ${devColor}`} title={planTarget>0?`Alvo no plano: ${planTarget.toFixed(1)}%`:"Não está no plano (posição órfã)"}>
-                                        {desvioTxt}
-                                        {planTarget===0&&p.ticker!=="MM Euro"&&<span className="ml-1 text-[9px] text-red-400/70">fora</span>}
+                                      <td className="px-4 py-3 text-right" title={planTarget>0?`Alvo no plano: ${planTarget.toFixed(1)}%`:"Não está no plano"}>
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${devBadge}`}>
+                                          {desvioTxt}
+                                        </span>
                                       </td>
                                     </tr>
                                   );
@@ -5705,18 +5769,32 @@ export default function ClientDashboardPage() {
 
                   {/* ── TAB: Plano modelo ── */}
                   {cartTab==="plano"&&<div className="space-y-5">
+                  {/* Plano modelo header */}
+                  <div className="bg-gradient-to-r from-teal-950/40 to-[#0b0f1a] border border-teal-500/20 rounded-xl px-6 py-4 flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] text-teal-500 uppercase tracking-widest font-semibold mb-1">Comité de Investimento Digital</div>
+                      <div className="text-slate-100 font-bold text-sm">Plano modelo recomendado — {recoLabel}</div>
+                      <div className="text-slate-500 text-xs mt-1">Alocação óptima calculada pelo modelo quantitativo DECIDE V5</div>
+                    </div>
+                    <button onClick={()=>setActivePage("reco")} className="shrink-0 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 transition-colors">
+                      <CheckCircle2 size={13}/> Aprovar plano
+                    </button>
+                  </div>
                   <div className="grid grid-cols-3 gap-4">
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="text-slate-400 text-xs mb-2">Nº de posições</div>
-                      <div className="text-3xl font-black text-white">{actionCounts.comprar+actionCounts.aumentar+actionCounts.reduzir+actionCounts.vender+actionCounts.manter||20}</div>
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 hover:border-slate-700/60 transition-colors">
+                      <div className="text-slate-500 text-xs mb-3 uppercase tracking-wide font-medium">Nº de posições</div>
+                      <div className="text-3xl font-black text-white tabular-nums">{actionCounts.comprar+actionCounts.aumentar+actionCounts.reduzir+actionCounts.vender+actionCounts.manter||20}</div>
+                      <div className="text-slate-600 text-[10px] mt-1">acções + liquidez</div>
                     </div>
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="text-slate-400 text-xs mb-2">Alocação em acções</div>
-                      <div className="text-3xl font-black text-emerald-400">{latestMonth?`${(100-(latestMonth.tbillsTotalPct??0)).toFixed(0)}%`:"—"}</div>
+                    <div className="bg-[#0b0f1a] border border-teal-500/15 rounded-xl p-5 hover:border-teal-500/25 transition-colors">
+                      <div className="text-slate-500 text-xs mb-3 uppercase tracking-wide font-medium">Acções</div>
+                      <div className="text-3xl font-black text-teal-400 tabular-nums">{latestMonth?`${(100-(latestMonth.tbillsTotalPct??0)).toFixed(0)}%`:"—"}</div>
+                      <div className="text-slate-600 text-[10px] mt-1">{latestMonth?`${(latestMonth.tbillsTotalPct??0).toFixed(0)}% em liquidez`:"—"}</div>
                     </div>
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="text-slate-400 text-xs mb-2">Rebalanceamento</div>
-                      <div className="text-3xl font-black text-blue-400">{recoLabel}</div>
+                    <div className="bg-[#0b0f1a] border border-blue-500/15 rounded-xl p-5 hover:border-blue-500/25 transition-colors">
+                      <div className="text-slate-500 text-xs mb-3 uppercase tracking-wide font-medium">Rebalanceamento</div>
+                      <div className="text-xl font-black text-blue-400">{recoLabel}</div>
+                      <div className="text-slate-600 text-[10px] mt-1">última actualização</div>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-5">
