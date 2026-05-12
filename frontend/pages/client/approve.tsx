@@ -10,6 +10,7 @@ import OnboardingFlowBar, {
 import InlineLoadingDots from "../../components/InlineLoadingDots";
 import { syncFeeSegmentFromNavEur } from "../../lib/clientSegment";
 import { isFxHedgeGateOk, syncHedgeOnboardingDoneFromPrefs } from "../../lib/fxHedgePrefs";
+import { repairSessionFromOnboardingFlags } from "../../lib/clientAuth";
 import { isFxHedgeOnboardingApplicable } from "../../lib/clientSegment";
 import { getHrefAfterTradePlanApprovalStep } from "../../lib/onboardingProgress";
 import { DECIDE_DASHBOARD, ONBOARDING_SHELL_MAX_WIDTH_PX } from "../../lib/decideClientTheme";
@@ -393,6 +394,7 @@ export default function ApprovePage({
   // - resetamos o passo "approve" se ainda não for permitido
   // - e só marcamos "ordens aprovadas" depois do utilizador clicar.
   const syncApprovalGatesFromLocalStorage = useCallback(() => {
+    repairSessionFromOnboardingFlags();
     try {
       const mifid = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.mifid) === "1";
       const kyc = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.kyc) === "1";
@@ -749,7 +751,7 @@ export default function ApprovePage({
           {flowReady ? (
             <OnboardingFlowBar
               currentStepId="approve"
-              authStepHref="/client/login"
+              authStepHref="/client/register"
               currentStepAlwaysActive
             />
           ) : null}

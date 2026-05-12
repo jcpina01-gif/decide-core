@@ -350,7 +350,7 @@ export default function FundAccountPage({
       >
         <div className="mx-auto px-6 py-10" style={{ maxWidth: ONBOARDING_SHELL_MAX_WIDTH_PX, width: "100%" }}>
           {mounted && !onboardingFlowComplete ? (
-            <OnboardingFlowBar currentStepId="approve" authStepHref="/client/login" currentStepAlwaysActive />
+            <OnboardingFlowBar currentStepId="approve" authStepHref="/client/register" currentStepAlwaysActive />
           ) : null}
 
           <header className="mb-9 border-b border-slate-800 pb-6">

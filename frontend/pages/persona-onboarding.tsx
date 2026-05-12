@@ -1090,7 +1090,7 @@ export default function PersonaOnboardingPage({
       <Head>
         <title>DECIDE — Verificação de identidade</title>
       </Head>
-      <OnboardingFlowBar currentStepId="kyc" authStepHref="/client/login" />
+      <OnboardingFlowBar currentStepId="kyc" authStepHref="/client/register" />
 
       <div
         style={{

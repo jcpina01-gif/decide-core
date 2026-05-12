@@ -154,8 +154,14 @@ export async function syncPrefsFromServer(username: string, passwordHash: string
         try { window.localStorage.setItem(k, v); } catch { /* ignore */ }
       }
     }
+    // Ensure session is marked active after successful server sync
+    try {
+      window.localStorage.setItem(SESSION_USER_KEY, username);
+      window.localStorage.setItem(SESSION_OK_KEY, "1");
+    } catch { /* ignore */ }
     // Notify dashboard to re-read preferences
     window.dispatchEvent(new Event("decide_onboarding_ls_changed_v1"));
+    notifyClientSessionChanged();
   } catch {
     // Non-critical — user can still use the app with defaults
   }
@@ -177,6 +183,34 @@ export async function pushPrefsToServer(username: string, passwordHash: string):
     });
   } catch {
     // Non-critical
+  }
+}
+
+/**
+ * Auto-repair: if the user has completed onboarding steps but lost the session flag
+ * (e.g. new browser, cache clear), restore session_ok so they don't hit login walls.
+ * Safe to call on every onboarding page mount.
+ */
+export function repairSessionFromOnboardingFlags(): void {
+  try {
+    if (typeof window === "undefined") return;
+    if (window.localStorage.getItem(SESSION_OK_KEY) === "1") return;
+    const ONBOARDING_STEP_KEYS = [
+      "decide_onboarding_step1_done",
+      "decide_onboarding_step2_done",
+      "decide_onboarding_step3_done",
+      "decide_onboarding_step4_done",
+      "decide_onboarding_stripe_checkout_v1",
+      "decide_ibkr_prep_done_v1",
+    ];
+    const hasProgress = ONBOARDING_STEP_KEYS.some(
+      k => window.localStorage.getItem(k) === "1",
+    );
+    if (!hasProgress) return;
+    window.localStorage.setItem(SESSION_OK_KEY, "1");
+    notifyClientSessionChanged();
+  } catch {
+    // ignore
   }
 }
 

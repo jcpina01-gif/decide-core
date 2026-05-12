@@ -1036,7 +1036,7 @@ export default function MifidTestPage() {
           fontSize: "clamp(14px, 1.05vw, 15px)",
         }}
       >
-        <OnboardingFlowBar currentStepId="mifid" authStepHref="/client/login" shellMaxWidthPx={MIFID_PAGE_MAX_WIDTH_PX} />
+        <OnboardingFlowBar currentStepId="mifid" authStepHref="/client/register" shellMaxWidthPx={MIFID_PAGE_MAX_WIDTH_PX} />
 
         {/* Heading */}
         <div style={{ maxWidth: 560, margin: "0 auto 20px", textAlign: "center" }}>

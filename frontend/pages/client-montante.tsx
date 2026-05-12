@@ -101,7 +101,7 @@ export default function ClientMontantePage() {
       </Head>
 
       {/* Sticky header (logo + progress) */}
-      <OnboardingFlowBar currentStepId="onboarding" authStepHref="/client/login" />
+      <OnboardingFlowBar currentStepId="onboarding" authStepHref="/client/register" />
 
       {/* Page body */}
       <div style={{

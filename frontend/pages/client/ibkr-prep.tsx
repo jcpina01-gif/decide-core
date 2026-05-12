@@ -9,7 +9,7 @@ import OnboardingFlowBar, {
 } from "../../components/OnboardingFlowBar";
 import { buildPersonaReferenceIdFromSession } from "../../lib/personaReference";
 import { extractDisplayNameFromPersonaRecord } from "../../lib/personaDisplayName";
-import { isClientLoggedIn } from "../../lib/clientAuth";
+import { isClientLoggedIn, repairSessionFromOnboardingFlags } from "../../lib/clientAuth";
 import {
   getClientSegment,
   isFxHedgeOnboardingApplicable,
@@ -227,6 +227,7 @@ export default function IbkrPrepPage() {
   const router = useRouter();
 
   const refreshOnboardingFlagsFromLs = useCallback(() => {
+    repairSessionFromOnboardingFlags();
     repairKycMifidLsIfFunnelImpliesIt();
     repairOnboardingStep1IfFunnelImpliesIt();
     try {
@@ -693,7 +694,7 @@ export default function IbkrPrepPage() {
       <Head>
         <title>DECIDE — {ONBOARDING_STEP_6_LABEL}</title>
       </Head>
-      <OnboardingFlowBar currentStepId="approve" authStepHref="/client/login" />
+      <OnboardingFlowBar currentStepId="approve" authStepHref="/client/register" />
       <main className="min-h-screen bg-zinc-950 text-zinc-50">
         <div className="mx-auto max-w-6xl px-6 py-10">
 

@@ -69,7 +69,21 @@ function readStepDone(stepId: OnboardingStepId): boolean {
 
 function authOkFromLs(): boolean {
   try {
-    return typeof window !== "undefined" && window.localStorage.getItem("decide_client_session_ok") === "1";
+    if (typeof window === "undefined") return false;
+    if (window.localStorage.getItem("decide_client_session_ok") === "1") return true;
+    // Infer session from completed onboarding steps — user clearly registered
+    const ONBOARDING_KEYS = [
+      "decide_onboarding_step1_done",
+      "decide_onboarding_step2_done",
+      "decide_onboarding_step3_done",
+      "decide_onboarding_step4_done",
+    ];
+    if (ONBOARDING_KEYS.some(k => window.localStorage.getItem(k) === "1")) {
+      // Auto-repair: set session so other checks don't redirect to login
+      try { window.localStorage.setItem("decide_client_session_ok", "1"); } catch { /* ignore */ }
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }

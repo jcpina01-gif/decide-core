@@ -144,7 +144,7 @@ export default function FxHedgeOnboardingPage() {
         <title>Hedge cambial — DECIDE</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
-      <OnboardingFlowBar currentStepId="hedge" authStepHref="/client/login" />
+      <OnboardingFlowBar currentStepId="hedge" authStepHref="/client/register" />
 
       <DecideClientShell
         showClientNav={false}
