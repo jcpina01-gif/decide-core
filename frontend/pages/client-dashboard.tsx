@@ -2628,6 +2628,8 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const totalBuyPct=investEur/aum*100;
   const totalSellPct=reduceEur/aum*100;
   const tradeCost=Math.max(2.0,nOrdens*0.7);
+  const budgetEurForDisplay=aum*BUY_SAFETY_FACTOR;
+  const investOverBudget=investEur>budgetEurForDisplay+100; // >€100 tolerance
 
   async function submitOrders() {
     setErrMsg("");
@@ -3501,10 +3503,10 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             </button>
             <button
               onClick={()=>setShowSendConfirm(true)}
-              disabled={sending||ibkrLoading||nOrdens===0||done||aum<=0||paperMode||!ibkrPos||showSendConfirm||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0)>aum*1.5)}
-              className={`flex-1 flex items-center justify-center gap-2 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all ${paperMode?"bg-slate-700 cursor-not-allowed":recentlySent?"bg-amber-700 hover:bg-amber-600 shadow-lg shadow-amber-900/30":"bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30"}`}>
+              disabled={sending||ibkrLoading||nOrdens===0||done||aum<=0||paperMode||!ibkrPos||showSendConfirm||investOverBudget||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0)>aum*1.5)}
+              className={`flex-1 flex items-center justify-center gap-2 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all ${paperMode?"bg-slate-700 cursor-not-allowed":investOverBudget?"bg-red-900 cursor-not-allowed":recentlySent?"bg-amber-700 hover:bg-amber-600 shadow-lg shadow-amber-900/30":"bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30"}`}>
               <Send size={15}/>
-              {paperMode?"Desliga 'Simulação local' para enviar à IB →":recentlySent?"⚠ Já enviou — confirmar 2.º envio?":"Confirmar e enviar ordens para IB →"}
+              {paperMode?"Desliga 'Simulação local' para enviar à IB →":investOverBudget?`⛔ Bloqueado: total €${Math.round(investEur).toLocaleString("pt-PT")} > budget €${Math.round(budgetEurForDisplay).toLocaleString("pt-PT")} — vê diagnóstico acima`:recentlySent?"⚠ Já enviou — confirmar 2.º envio?":"Confirmar e enviar ordens para IB →"}
             </button>
           </div>
           <p className="text-center text-[10px] text-slate-600 flex items-center justify-center gap-1">
