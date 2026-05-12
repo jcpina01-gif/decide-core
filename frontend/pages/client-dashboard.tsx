@@ -4282,8 +4282,10 @@ export default function ClientDashboardPage() {
     if(!latestMonth) return [];
     const map=new Map<string,number>();
     latestMonth.rows.forEach(r=>{
-      if(r.ticker==="TBILL_PROXY") return;
+      // Exclude monetary instruments — show equity geography only
+      if(r.ticker==="TBILL_PROXY"||r.ticker==="XEON") return;
       const z=getZone(r.ticker);
+      if(z==="Eurozona") return;
       map.set(z,(map.get(z)??0)+r.weightPct);
     });
     const total=[...map.values()].reduce((a,b)=>a+b,0)||1;
@@ -4330,13 +4332,17 @@ export default function ClientDashboardPage() {
 
   // Risk metrics: VaR 95%, Beta
   const countryAlloc=useMemo(()=>{
-    const m=new Map<string,number>();
+    const raw=new Map<string,number>();
     actionCounts.allRows.forEach(r=>{
       if(r.ticker==="XEON") return;
       const c=getZone(r.ticker);
       if(c==="Eurozona") return;
-      m.set(c,(m.get(c)??0)+r.cur);
+      raw.set(c,(raw.get(c)??0)+r.cur);
     });
+    // Normalize to % of equity-only (exclude XEON weight so values sum to ~100%)
+    const total=[...raw.values()].reduce((a,b)=>a+b,0)||1;
+    const m=new Map<string,number>();
+    raw.forEach((v,k)=>m.set(k,v/total*100));
     return m;
   },[actionCounts.allRows]);
 
@@ -5181,6 +5187,7 @@ export default function ClientDashboardPage() {
                       <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                         <div className="font-bold text-slate-200 text-sm mb-3 flex items-center gap-2">
                           Exposição geográfica
+                          <span className="text-[10px] font-normal text-slate-500">· % das acções actuais</span>
                           {hoveredCountry&&(
                             <span className="ml-2 text-xs font-normal text-blue-300">
                               {hoveredCountry.name}:{" "}
@@ -5700,7 +5707,7 @@ export default function ClientDashboardPage() {
                       </div>
                     </div>
                     <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="font-bold text-slate-200 text-sm mb-4">Exposição geográfica</div>
+                      <div className="font-bold text-slate-200 text-sm mb-4 flex items-center gap-2">Exposição geográfica <span className="text-[10px] font-normal text-slate-500">· % das acções recomendadas</span></div>
                       <div className="space-y-3">
                         {geoData.map(g=>(
                           <div key={g.name}>
