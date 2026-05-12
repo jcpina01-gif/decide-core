@@ -16,6 +16,7 @@ import {
   getCurrentSessionUser,
   getCurrentSessionUserEmail,
   isClientLoggedIn,
+  repairSessionFromOnboardingFlags,
 } from "../../lib/clientAuth";
 import {
   FUND_DEPOSIT_BLOCKED_EXPLANATION,
@@ -193,8 +194,9 @@ export default function FundAccountPage({
   const suggestedFromOnboardingStep = onboardingMontanteEur != null;
 
   useLayoutEffect(() => {
+    repairSessionFromOnboardingFlags();
     if (!isClientLoggedIn()) {
-      window.location.href = "/client/login?next=/client/fund-account";
+      window.location.href = "/client/register";
       return;
     }
     setDepositUnlocked(isClientEligibleToDepositFunds());

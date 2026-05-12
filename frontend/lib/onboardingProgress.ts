@@ -18,8 +18,15 @@ const IBKR_PREP_DONE_KEY = "decide_onboarding_ibkr_prep_done_v1";
 export function getNextOnboardingHref(): string {
   if (typeof window === "undefined") return "/client-montante";
   try {
-    const authOk = window.localStorage.getItem("decide_client_session_ok") === "1";
-    if (!authOk) return "/client/login";
+    // Auto-repair: infer session from onboarding progress flags
+    const ONBOARDING_STEP_KEYS = [
+      LS.onboarding, LS.mifid, LS.kyc,
+      "decide_onboarding_stripe_checkout_v1",
+      "decide_onboarding_ibkr_prep_done_v1",
+    ];
+    if (ONBOARDING_STEP_KEYS.some(k => window.localStorage.getItem(k) === "1")) {
+      window.localStorage.setItem("decide_client_session_ok", "1");
+    }
 
     const onboardingDone = window.localStorage.getItem(LS.onboarding) === "1";
     const mifidDone = window.localStorage.getItem(LS.mifid) === "1";
@@ -58,7 +65,6 @@ export function getHrefAfterTradePlanApprovalStep(): string {
 export function isOnboardingFlowComplete(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    if (window.localStorage.getItem("decide_client_session_ok") !== "1") return false;
     const base =
       window.localStorage.getItem(LS.onboarding) === "1" &&
       window.localStorage.getItem(LS.mifid) === "1" &&

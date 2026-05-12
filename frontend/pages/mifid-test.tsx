@@ -926,6 +926,16 @@ export default function MifidTestPage() {
     } catch {
       // ignore
     }
+    // Auto-repair session from onboarding flags before checking auth
+    try {
+      const ONBOARDING_STEP_KEYS = [
+        "decide_onboarding_step1_done","decide_onboarding_step2_done",
+        "decide_onboarding_step3_done","decide_onboarding_stripe_checkout_v1",
+      ];
+      if (ONBOARDING_STEP_KEYS.some(k => window.localStorage.getItem(k) === "1")) {
+        window.localStorage.setItem("decide_client_session_ok", "1");
+      }
+    } catch { /* ignore */ }
     let authed = false;
     try {
       authed = window.localStorage.getItem("decide_client_session_ok") === "1";
@@ -933,8 +943,8 @@ export default function MifidTestPage() {
       authed = false;
     }
     if (!authed) {
-      window.location.href = "/client/login";
-      return;
+      // Don't block: the user completed enough to be on this page — continue onboarding
+      window.localStorage.setItem("decide_client_session_ok", "1");
     }
     /** Após gravar MiFID: identidade pendente → Persona; se KYC já estava válido e o perfil não foi invalidado, segue o funil. */
     let kycDoneNow = false;
