@@ -5295,9 +5295,9 @@ export default function ClientDashboardPage() {
                       )}
                     </div>
                     <div className="px-5 py-4">
-                      <NativeSimulator dates={dates} equity={equityRaw} bench={benchRaw}
+                      <NativeSimulator dates={dates} equity={activeEquity} bench={benchRaw}
                         onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}
-                        volScale={profileFactor}/>
+                        volScale={1}/>
                     </div>
                   </div>
 
