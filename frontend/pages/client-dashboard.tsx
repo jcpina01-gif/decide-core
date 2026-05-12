@@ -4385,6 +4385,38 @@ export default function ClientDashboardPage() {
     return {var95:var95*100,beta:bVar>0?+(cov/bVar).toFixed(2):0};
   },[activeEquity,benchRaw]);
 
+  // Worst periods for Risk page
+  const worstPeriods=useMemo(()=>{
+    const step21=21;
+    if(activeEquity.length<step21*2||dates.length<step21*2) return null;
+    // Monthly returns (approx 21-day windows)
+    const monthly:{ret:number,date:string}[]=[];
+    for(let i=step21;i<activeEquity.length&&i<dates.length;i+=step21){
+      const r=(activeEquity[i]!/activeEquity[i-step21]!-1)*100;
+      monthly.push({ret:r,date:dates[i]!});
+    }
+    // Quarterly (approx 63-day)
+    const step63=63;
+    const quarterly:{ret:number,date:string}[]=[];
+    for(let i=step63;i<activeEquity.length&&i<dates.length;i+=step63){
+      const r=(activeEquity[i]!/activeEquity[i-step63]!-1)*100;
+      quarterly.push({ret:r,date:dates[i]!});
+    }
+    // Annual (approx 252-day)
+    const step252=252;
+    const annual:{ret:number,date:string}[]=[];
+    for(let i=step252;i<activeEquity.length&&i<dates.length;i+=step252){
+      const r=(activeEquity[i]!/activeEquity[i-step252]!-1)*100;
+      annual.push({ret:r,date:dates[i]!.slice(0,4)});
+    }
+    const wm=monthly.sort((a,b)=>a.ret-b.ret)[0];
+    const wq=quarterly.sort((a,b)=>a.ret-b.ret)[0];
+    const wy=annual.sort((a,b)=>a.ret-b.ret)[0];
+    // Best month (for context)
+    const bm=[...monthly].sort((a,b)=>b.ret-a.ret)[0];
+    return{wm,wq,wy,bm};
+  },[activeEquity,dates]);
+
   const recoLabel=useMemo(()=>{
     const raw=latestMonth?.date??latestMonth?.rebalance_date??"";
     if(!raw) return "Última recomendação";
@@ -6271,83 +6303,115 @@ export default function ClientDashboardPage() {
                 const nb1=pt(needlePos-0.06,RI+2),nb2=pt(needlePos+0.06,RI+2);
                 const date=latestMonth?.date??latestMonth?.rebalance_date??"";
                 const dateLabel=date?new Date(date).toLocaleDateString("pt-PT",{month:"short",year:"numeric"}):"";
+                // Advisory narrative
+                const volOk=vol>0&&benchVolTarget>0&&Math.abs(vol-benchVolTarget)/benchVolTarget<0.15;
+                const ddSevere=dd<-15;
+                const topSectorName=sectorAlloc[0]?.name??"Tecnologia";
+                const topSectorPct=sectorAlloc[0]?.pct??0;
+                const topSectorRisk=sectorAlloc[0]?.risk??0;
+                const sectorConcentrated=topSectorPct>30;
+                const advisory=[
+                  volOk
+                    ?`A volatilidade actual (${vol.toFixed(1)}%) está alinhada com o alvo do perfil ${profileLabel}.`
+                    :`A volatilidade actual (${vol.toFixed(1)}%) está ${vol>benchVolTarget?"acima":"abaixo"} do alvo para o perfil ${profileLabel} (${benchVolTarget.toFixed(1)}%).`,
+                  ddSevere
+                    ?`O drawdown actual de ${dd.toFixed(1)}% merece acompanhamento — o modelo está em fase de recuperação.`
+                    :`O drawdown actual é controlado (${dd.toFixed(1)}%), sem sinais de deterioração relevante.`,
+                  sectorConcentrated
+                    ?`A concentração em ${topSectorName} (${topSectorPct.toFixed(0)}% da carteira) é o principal factor de risco a monitorizar.`
+                    :`A exposição sectorial está bem distribuída — ${topSectorName} representa ${topSectorPct.toFixed(0)}% da carteira.`,
+                ].filter(Boolean);
+
                 return (
                   <div className="space-y-4">
-                    {/* ── Top: gauge + metrics ── */}
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 flex items-center gap-8">
-                      {/* Gauge */}
-                      <div className="flex-shrink-0 w-56">
-                        <div className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Nível de risco <span className="ml-1 text-slate-600">{dateLabel}</span></div>
-                        <svg viewBox="0 0 220 115" className="w-full">
-                          {/* Background arc */}
-                          <path d={arc(0,1,R,RI)} fill="#1e293b"/>
-                          {/* Coloured segments */}
-                          <path d={arc(0,0.38,R,RI)} fill="#22c55e" opacity={0.85}/>
-                          <path d={arc(0.38,0.67,R,RI)} fill="#f59e0b" opacity={0.85}/>
-                          <path d={arc(0.67,1,R,RI)} fill="#ef4444" opacity={0.85}/>
-                          {/* Needle shaft */}
-                          <line x1={CX} y1={CY} x2={np.x} y2={np.y} stroke="white" strokeWidth={2.5} strokeLinecap="round" opacity={0.9}/>
-                          {/* Needle arrowhead */}
-                          <polygon points={`${np.x},${np.y} ${nb1.x},${nb1.y} ${nb2.x},${nb2.y}`} fill="white" opacity={0.95}/>
-                          <circle cx={CX} cy={CY} r={6} fill="#0b0f1a" stroke="white" strokeWidth={2}/>
-                          {/* Labels */}
-                          <text x={CX-R+4} y={CY+14} fontSize={9} fill="#22c55e" textAnchor="middle">Baixo</text>
-                          <text x={CX} y={CY-R-6} fontSize={9} fill="#f59e0b" textAnchor="middle">Médio</text>
-                          <text x={CX+R-4} y={CY+14} fontSize={9} fill="#ef4444" textAnchor="middle">Alto</text>
-                          {/* Level label */}
-                          <text x={CX} y={CY+32} fontSize={15} fontWeight="bold" fill={riskColor} textAnchor="middle">{riskLabel}</text>
-                        </svg>
-                      </div>
-                      {/* Vertical divider */}
-                      <div className="w-px self-stretch bg-[#1a1f2e]"/>
-                      {/* KPIs */}
-                      <div className="flex-1 grid grid-cols-3 gap-6">
-                        <div>
-                          <div className="text-slate-400 text-xs mb-1">Volatilidade anual</div>
-                          <div className={`text-3xl font-black ${vol>benchVolTarget*1.1?"text-amber-400":vol<benchVolTarget*0.9?"text-sky-400":"text-emerald-400"}`}>{vol?`${vol.toFixed(1)}%`:"—"}</div>
-                          <div className="text-[10px] text-slate-500 mt-1">Alvo: {benchVolTarget>0?`~${benchVolTarget.toFixed(1)}%`:(profileFactor<1?"~14,6%":profileFactor>1?"~24,3%":"~19,4%")} ({profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×"} vol bench) · 20 anos</div>
-                        </div>
-                        <div>
-                          <div className="text-slate-400 text-xs mb-1">Drawdown actual</div>
-                          <div className="text-3xl font-black text-red-400">{dd?`${dd.toFixed(1)}%`:"—"}</div>
-                          <div className="text-[10px] text-slate-500 mt-1">vs pico</div>
-                        </div>
-                        <div>
-                          <div className="text-slate-400 text-xs mb-1">Sharpe (20 anos)</div>
-                          <div className="text-3xl font-black text-white">{perfData?sharpe20.toFixed(2):"—"}</div>
-                          <div className="text-[10px] text-slate-500 mt-1">Rf = 0%</div>
-                        </div>
-                        <div>
-                          <div className="text-slate-400 text-xs mb-1">VaR 95% (diário)</div>
-                          <div className="text-2xl font-black text-red-300">{riskMetrics?`${riskMetrics.var95.toFixed(2)}%`:"—"}</div>
-                        </div>
-                        <div>
-                          <div className="text-slate-400 text-xs mb-1">Beta vs {BENCH_SHORT}</div>
-                          <div className="text-2xl font-black text-slate-200">{riskMetrics?riskMetrics.beta:"—"}</div>
-                        </div>
-                        <div>
-                          <div className="text-slate-400 text-xs mb-1">Perfil</div>
-                          <div className="text-2xl font-black text-amber-400">Moderado</div>
+
+                    {/* ── Advisory narrative ── */}
+                    <div className="bg-gradient-to-r from-teal-950/30 to-[#0b0f1a] border border-teal-500/15 rounded-xl px-5 py-4 flex items-start gap-4">
+                      <div className="text-teal-500 mt-0.5 shrink-0"><ShieldCheck size={16}/></div>
+                      <div>
+                        <div className="text-[10px] text-teal-600 uppercase tracking-widest font-bold mb-2">Avaliação de risco · {dateLabel}</div>
+                        <div className="space-y-1">
+                          {advisory.map((line,i)=>(
+                            <div key={i} className="text-[12px] text-slate-300 leading-relaxed">{line}</div>
+                          ))}
                         </div>
                       </div>
                     </div>
 
-                    {/* ── Drawdown histórico (full width) ── */}
+                    {/* ── Top: gauge + metrics ── */}
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 flex items-center gap-8">
+                      {/* Gauge */}
+                      <div className="flex-shrink-0 w-52">
+                        <div className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Nível de risco</div>
+                        <svg viewBox="0 0 220 115" className="w-full">
+                          <path d={arc(0,1,R,RI)} fill="#1e293b"/>
+                          <path d={arc(0,0.38,R,RI)} fill="#22c55e" opacity={0.75}/>
+                          <path d={arc(0.38,0.67,R,RI)} fill="#f59e0b" opacity={0.75}/>
+                          <path d={arc(0.67,1,R,RI)} fill="#ef4444" opacity={0.75}/>
+                          <line x1={CX} y1={CY} x2={np.x} y2={np.y} stroke="white" strokeWidth={2.5} strokeLinecap="round" opacity={0.9}/>
+                          <polygon points={`${np.x},${np.y} ${nb1.x},${nb1.y} ${nb2.x},${nb2.y}`} fill="white" opacity={0.95}/>
+                          <circle cx={CX} cy={CY} r={6} fill="#0b0f1a" stroke="white" strokeWidth={2}/>
+                          <text x={CX-R+4} y={CY+14} fontSize={9} fill="#22c55e" textAnchor="middle">Baixo</text>
+                          <text x={CX} y={CY-R-6} fontSize={9} fill="#f59e0b" textAnchor="middle">Médio</text>
+                          <text x={CX+R-4} y={CY+14} fontSize={9} fill="#ef4444" textAnchor="middle">Alto</text>
+                          <text x={CX} y={CY+32} fontSize={15} fontWeight="bold" fill={riskColor} textAnchor="middle">{riskLabel}</text>
+                        </svg>
+                      </div>
+                      <div className="w-px self-stretch bg-[#1a1f2e]"/>
+                      {/* KPIs — drawdown/vol first, Sharpe secondary */}
+                      <div className="flex-1 grid grid-cols-3 gap-6">
+                        <div>
+                          <div className="text-slate-500 text-[10px] mb-1 uppercase tracking-wide">Volatilidade anual</div>
+                          <div className={`text-3xl font-black ${volOk?"text-emerald-400":vol>benchVolTarget*1.1?"text-amber-400":"text-sky-400"}`}>{vol?`${vol.toFixed(1)}%`:"—"}</div>
+                          <div className="text-[10px] text-slate-600 mt-1">Alvo ~{benchVolTarget>0?benchVolTarget.toFixed(1):(profileFactor<1?"14.6":profileFactor>1?"24.3":"19.4")}% · 20 anos</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-500 text-[10px] mb-1 uppercase tracking-wide">Drawdown actual</div>
+                          <div className={`text-3xl font-black ${dd<-15?"text-rose-400":dd<-5?"text-amber-400":"text-slate-300"}`}>{dd?`${dd.toFixed(1)}%`:"—"}</div>
+                          <div className="text-[10px] text-slate-600 mt-1">vs pico histórico</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-500 text-[10px] mb-1 uppercase tracking-wide">VaR 95% (diário)</div>
+                          <div className="text-3xl font-black text-slate-300">{riskMetrics?`${riskMetrics.var95.toFixed(2)}%`:"—"}</div>
+                          <div className="text-[10px] text-slate-600 mt-1">perda máxima esperada diária</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-500 text-[10px] mb-1 uppercase tracking-wide">Beta vs {BENCH_SHORT}</div>
+                          <div className="text-2xl font-black text-slate-300">{riskMetrics?riskMetrics.beta:"—"}</div>
+                          <div className="text-[10px] text-slate-600 mt-1">sensibilidade ao mercado</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-500 text-[10px] mb-1 uppercase tracking-wide">Perfil activo</div>
+                          <div className="text-2xl font-black text-amber-400">{profileLabel}</div>
+                          <div className="text-[10px] text-slate-600 mt-1">nível de risco seleccionado</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-500 text-[10px] mb-1 uppercase tracking-wide">Sharpe (20 anos)</div>
+                          <div className="text-xl font-bold text-slate-400">{perfData?sharpe20.toFixed(2):"—"}</div>
+                          <div className="text-[10px] text-slate-600 mt-1">retorno / vol · Rf = 0%</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── Drawdown histórico ── */}
                     <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="font-bold text-slate-200 text-sm mb-3">Drawdown histórico</div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="font-bold text-slate-200 text-sm">Drawdown histórico</div>
+                        <div className="text-[10px] text-slate-600">Queda máxima pico-a-vale em cada momento</div>
+                      </div>
                       <ResponsiveContainer width="100%" height={180}>
                         <AreaChart data={riskData?.ddChart??[]} margin={{top:4,right:8,left:0,bottom:0}}>
                           <defs>
                             <linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#f87171" stopOpacity={0.3}/>
-                              <stop offset="95%" stopColor="#f87171" stopOpacity={0.0}/>
+                              <stop offset="5%" stopColor="#be6b7a" stopOpacity={0.22}/>
+                              <stop offset="95%" stopColor="#be6b7a" stopOpacity={0.0}/>
                             </linearGradient>
                           </defs>
-                          <CartesianGrid vertical={false} stroke="#1a1f2e"/>
-                          <XAxis dataKey="date" tick={{fontSize:10,fill:"#e2e8f0"}} tickLine={false} axisLine={false}
+                          <CartesianGrid vertical={false} stroke="#111827"/>
+                          <XAxis dataKey="date" tick={{fontSize:10,fill:"#64748b"}} tickLine={false} axisLine={false}
                             tickFormatter={d=>d.slice(0,4)}
                             interval={Math.floor((riskData?.ddChart.length??1)/8)}/>
-                          <YAxis tick={{fontSize:10,fill:"#e2e8f0"}} tickLine={false} axisLine={false}
+                          <YAxis tick={{fontSize:10,fill:"#64748b"}} tickLine={false} axisLine={false}
                             tickFormatter={v=>`${Number(v).toFixed(0)}%`} domain={["dataMin",0]} width={42}/>
                           <Tooltip
                             formatter={(v:number,name:string)=>[`${Number(v).toFixed(1)}%`, name==="dd"?"Modelo":BENCH_SHORT]}
@@ -6355,87 +6419,107 @@ export default function ClientDashboardPage() {
                             contentStyle={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,fontSize:12,color:"#f1f5f9"}}
                             itemStyle={{color:"#f1f5f9"}}
                           />
-                          <ReferenceLine y={0} stroke="#334155"/>
-                          <Area type="monotone" dataKey="dd" stroke="#f87171" strokeWidth={1.5} fill="url(#ddGrad)" dot={false} name="dd"/>
-                          <Line type="monotone" dataKey="bench" stroke="#64748b" strokeWidth={1} dot={false} name="bench" strokeDasharray="4 2"/>
+                          <ReferenceLine y={0} stroke="#1e293b"/>
+                          <Area type="monotone" dataKey="dd" stroke="#9d7080" strokeWidth={1.5} fill="url(#ddGrad)" dot={false} name="dd"/>
+                          <Line type="monotone" dataKey="bench" stroke="#334155" strokeWidth={1.5} dot={false} name="bench" strokeDasharray="4 2"/>
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
+
+                    {/* ── Worst periods table ── */}
+                    {worstPeriods&&(
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="font-bold text-slate-200 text-sm mb-4">Piores períodos históricos</div>
+                      <div className="grid grid-cols-4 gap-4">
+                        {[
+                          {label:"Pior mês",val:worstPeriods.wm?.ret,date:worstPeriods.wm?.date?.slice(0,7)},
+                          {label:"Pior trimestre",val:worstPeriods.wq?.ret,date:worstPeriods.wq?.date?.slice(0,7)},
+                          {label:"Pior ano",val:worstPeriods.wy?.ret,date:worstPeriods.wy?.date},
+                          {label:"Melhor mês",val:worstPeriods.bm?.ret,date:worstPeriods.bm?.date?.slice(0,7),good:true},
+                        ].map(x=>(
+                          <div key={x.label} className="bg-[#080c14] rounded-xl p-4 border border-[#111827]">
+                            <div className="text-[10px] text-slate-600 uppercase tracking-wide mb-2">{x.label}</div>
+                            <div className={`text-2xl font-black tabular-nums ${x.good?"text-emerald-400":"text-rose-400"}`}>
+                              {x.val!=null?`${x.val>=0?"+":""}${x.val.toFixed(1)}%`:"—"}
+                            </div>
+                            <div className="text-[10px] text-slate-600 mt-1">{x.date??"—"}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 text-[10px] text-slate-700">Calculado sobre retornos históricos simulados · janelas de 21/63/252 dias de negociação</div>
+                    </div>
+                    )}
 
                     {/* ── Bottom: sector alloc + return distribution ── */}
                     <div className="grid grid-cols-2 gap-4">
                       <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                         <div className="font-bold text-slate-200 text-sm mb-4">Exposição por sector</div>
-                        <div className="space-y-2">
-                          {sectorAlloc.map(({name,pct})=>(
+                        <div className="space-y-2.5">
+                          {(()=>{const maxP=sectorAlloc[0]?.pct||1; return sectorAlloc.map(({name,pct,risk})=>{
+                            const over=risk-pct>1;
+                            return(
                             <div key={name} className="flex items-center gap-3">
-                              <div className="w-24 text-xs text-slate-400 text-right shrink-0">{name}</div>
-                              <div className="flex-1 bg-[#1e293b] rounded-full h-2.5 overflow-hidden">
-                                <div className="h-full rounded-full bg-blue-500" style={{width:`${pct}%`}}/>
+                              <div className="w-20 text-[11px] text-slate-500 text-right shrink-0">{name}</div>
+                              <div className="flex-1 relative h-2 bg-[#111827] rounded-full overflow-hidden">
+                                <div className="absolute inset-y-0 left-0 rounded-full bg-blue-500/60 transition-all"
+                                  style={{width:`${(pct/maxP)*100}%`}}/>
                               </div>
-                              <div className="w-10 text-xs text-white font-semibold text-right shrink-0">{pct}%</div>
+                              <div className="flex items-center gap-1.5 w-20 shrink-0">
+                                <span className="text-[11px] text-slate-300 font-semibold tabular-nums w-10 text-right">{pct.toFixed(1)}%</span>
+                                {over&&<span className="text-[9px] text-amber-500 font-bold">↑risco</span>}
+                              </div>
                             </div>
-                          ))}
+                          );}); })()}
                         </div>
                       </div>
                       <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                         <div className="font-bold text-slate-200 text-sm mb-3">Distribuição de retornos mensais</div>
                         <ResponsiveContainer width="100%" height={200}>
                           <BarChart data={returnDist} margin={{top:4,right:4,left:-8,bottom:0}} barCategoryGap="5%">
-                            <CartesianGrid vertical={false} stroke="#1a1f2e"/>
-                            <XAxis dataKey="bin" tick={{fontSize:8,fill:"#e2e8f0"}} axisLine={false} tickLine={false} interval={3}/>
-                            <YAxis tick={{fontSize:9,fill:"#e2e8f0"}} axisLine={false} tickLine={false}/>
+                            <CartesianGrid vertical={false} stroke="#111827"/>
+                            <XAxis dataKey="bin" tick={{fontSize:8,fill:"#64748b"}} axisLine={false} tickLine={false} interval={3}/>
+                            <YAxis tick={{fontSize:9,fill:"#64748b"}} axisLine={false} tickLine={false}/>
                             <Tooltip
                               formatter={(v:number)=>[`${v} meses`,"Frequência"]}
                               labelFormatter={(l:string)=>`Retorno: ${l}`}
                               labelStyle={{color:"#ffffff",fontWeight:700,fontSize:13}}
-                              contentStyle={{background:"#0f172a",border:"1px solid #3b82f6",borderRadius:8,fontSize:12,color:"#f1f5f9",boxShadow:"0 4px 24px rgba(0,0,0,0.6)"}}
+                              contentStyle={{background:"#0f172a",border:"1px solid #334155",borderRadius:8,fontSize:12,color:"#f1f5f9"}}
                               itemStyle={{color:"#93c5fd",fontWeight:600}}
-                              cursor={{fill:"rgba(255,255,255,0.06)"}}
+                              cursor={{fill:"rgba(255,255,255,0.04)"}}
                             />
                             <Bar dataKey="count" name="Frequência" radius={[2,2,0,0]} maxBarSize={20}>
-                              {returnDist.map((r,i)=><Cell key={i} fill={r.mid>=0?"#3b82f6":"#f87171"}/>)}
+                              {returnDist.map((r,i)=><Cell key={i} fill={r.mid>=0?"#3b82f6":"#9d7080"}/>)}
                             </Bar>
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
                     </div>
 
-                    {/* ── Risk contribution by sector (full width) ── */}
+                    {/* ── Risk contribution (simplified) ── */}
                     <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="flex items-center gap-3 mb-1">
-                        <div className="font-bold text-slate-200 text-sm">Contribuição para o risco por sector</div>
-                        <div className="text-[10px] text-slate-500">(peso ajustado pelo beta estimado do sector)</div>
-                      </div>
-                      <div className="flex gap-4 text-[10px] mb-4">
-                        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-500 inline-block"/><span className="text-slate-400">Peso em carteira</span></span>
-                        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block"/><span className="text-slate-400">Contribuição para o risco</span></span>
-                      </div>
-                      <ResponsiveContainer width="100%" height={Math.max(180, sectorAlloc.length*36)}>
-                        <BarChart data={sectorAlloc} layout="vertical" margin={{top:0,right:48,left:80,bottom:0}} barGap={3} barCategoryGap="28%">
-                          <CartesianGrid horizontal={false} stroke="#1a1f2e"/>
-                          <XAxis type="number" tick={{fontSize:10,fill:"#e2e8f0"}} axisLine={false} tickLine={false} tickFormatter={v=>`${v}%`} domain={[0,"dataMax+5"]}/>
-                          <YAxis type="category" dataKey="name" tick={{fontSize:11,fill:"#e2e8f0"}} axisLine={false} tickLine={false} width={76}/>
+                      <div className="font-bold text-slate-200 text-sm mb-1">Concentração de risco por sector</div>
+                      <div className="text-[10px] text-slate-600 mb-4">Sectores onde o risco excede o peso indicam exposição acima da média</div>
+                      <ResponsiveContainer width="100%" height={Math.max(160, sectorAlloc.length*34)}>
+                        <BarChart data={sectorAlloc} layout="vertical" margin={{top:0,right:48,left:80,bottom:0}} barGap={3} barCategoryGap="30%">
+                          <CartesianGrid horizontal={false} stroke="#111827"/>
+                          <XAxis type="number" tick={{fontSize:10,fill:"#64748b"}} axisLine={false} tickLine={false} tickFormatter={v=>`${v}%`} domain={[0,"dataMax+5"]}/>
+                          <YAxis type="category" dataKey="name" tick={{fontSize:11,fill:"#64748b"}} axisLine={false} tickLine={false} width={76}/>
                           <Tooltip
-                            formatter={(v:number,name:string)=>[`${Number(v).toFixed(1)}%`, name==="pct"?"Peso carteira":"Risco (β-adj.)"]}
+                            formatter={(v:number,name:string)=>[`${Number(v).toFixed(1)}%`, name==="pct"?"Peso carteira":"Risco relativo"]}
                             labelStyle={{color:"#fff",fontWeight:700,fontSize:13}}
-                            contentStyle={{background:"#0f172a",border:"1px solid #f59e0b",borderRadius:8,fontSize:12,color:"#f1f5f9",boxShadow:"0 4px 24px rgba(0,0,0,0.6)"}}
+                            contentStyle={{background:"#0f172a",border:"1px solid #334155",borderRadius:8,fontSize:12,color:"#f1f5f9"}}
                             itemStyle={{color:"#f1f5f9",fontWeight:600}}
-                            cursor={{fill:"rgba(255,255,255,0.04)"}}
+                            cursor={{fill:"rgba(255,255,255,0.03)"}}
                           />
-                          <Bar dataKey="pct" name="pct" fill="#3b82f6" radius={[0,3,3,0]} maxBarSize={14}/>
-                          <Bar dataKey="risk" name="risk" fill="#f59e0b" radius={[0,3,3,0]} maxBarSize={14}>
+                          <Bar dataKey="pct" name="pct" fill="#3b82f6" fillOpacity={0.6} radius={[0,3,3,0]} maxBarSize={12}/>
+                          <Bar dataKey="risk" name="risk" radius={[0,3,3,0]} maxBarSize={12}>
                             {sectorAlloc.map((_,i)=>{
-                              const s=sectorAlloc[i]!;
-                              const diff=s.risk-s.pct;
-                              return <Cell key={i} fill={diff>1?"#ef4444":diff<-1?"#22c55e":"#f59e0b"}/>;
+                              const diff=sectorAlloc[i]!.risk-sectorAlloc[i]!.pct;
+                              return <Cell key={i} fill={diff>1?"#c9965a":diff<-1?"#4ade80":"#64748b"} fillOpacity={0.8}/>;
                             })}
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
-                      <div className="mt-2 text-[10px] text-slate-500">
-                        Vermelho = sector sobrepondera no risco vs peso · Verde = subpondera no risco · Sectores com beta estimado: Tec. 1.35 · Com. 1.15 · Ene. 1.05 · Ind. 1.00 · Mat. 0.90 · Fin. 1.10 · Saúde 0.75 · Cons. 0.70
-                      </div>
                     </div>
                   </div>
                 );
