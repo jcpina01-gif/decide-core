@@ -77,10 +77,29 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn,volScale=1,prof
     return out;
   },[slice.eq,volScale]);
 
-  // CAGR usa o prazo seleccionado + scaledEq
-  const cagrHist=React.useMemo(()=>
-    scaledEq.length>1?cagrFn(scaledEq[0],scaledEq[scaledEq.length-1],prazo)*100:0
-  ,[scaledEq,prazo]);
+  // Actual years spanned by the data slice (calendar, not user-selected prazo).
+  // Using real calendar years makes CAGR accurate when the slice is shorter than prazo
+  // (e.g. warmup skip or data starts after the cut date).
+  const actualYears=React.useMemo(()=>{
+    if(slice.dts.length<2) return prazo;
+    const ms=new Date(slice.dts[slice.dts.length-1]).getTime()-new Date(slice.dts[0]).getTime();
+    const y=ms/(365.25*24*3600*1000);
+    return y>0.5?y:prazo;
+  },[slice.dts,prazo]);
+
+  // CAGR da série base (sem escalagem) — retorno histórico real do modelo
+  const cagrBase=React.useMemo(()=>
+    slice.eq.length>1?cagrFn(slice.eq[0],slice.eq[slice.eq.length-1],actualYears)*100:0
+  ,[slice.eq,actualYears]);
+
+  // CAGR da série escalada (com perfil/margem aplicados)
+  const cagrSim=React.useMemo(()=>
+    scaledEq.length>1?cagrFn(scaledEq[0],scaledEq[scaledEq.length-1],actualYears)*100:0
+  ,[scaledEq,actualYears]);
+
+  const isScaled=Math.abs(volScale-1)>0.01;
+  const cagrLabel=isScaled?"CAGR simulado":"CAGR hist\u00f3rico";
+  const cagrVal=isScaled?cagrSim:cagrBase;
 
   const simData=React.useMemo(()=>{
     if(!scaledEq.length||!slice.dts.length) return [];
@@ -142,12 +161,14 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn,volScale=1,prof
           {[
             {l:"Ganho total",v:`${gain>=0?"+":""}${fmt(gain)}`,c:gain>=0?"text-emerald-400":"text-red-400"},
             {l:"Valor final",v:fmt(finalVal),c:"text-white"},
-            {l:"CAGR hist\u00f3rico",v:`+${cagrHist.toFixed(1)}%/ano`,c:"text-blue-400"},
+            {l:cagrLabel,v:`+${cagrVal.toFixed(1)}%/ano`,c:"text-blue-400",
+             sub:isScaled?`base: +${cagrBase.toFixed(1)}%/ano`:undefined},
             {l:`vs ${BENCH_SHORT}`,v:fmt(benchFinal),c:"text-slate-400"},
-          ].map(({l,v,c})=>(
+          ].map(({l,v,c,sub})=>(
             <div key={l}>
               <div className="text-slate-500 text-[10px] uppercase tracking-wide mb-0.5">{l}</div>
               <div className={`text-lg font-black ${c}`}>{v}</div>
+              {sub&&<div className="text-slate-600 text-[9px] mt-0.5">{sub}</div>}
             </div>
           ))}
         </div>
