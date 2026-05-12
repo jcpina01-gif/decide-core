@@ -2177,17 +2177,30 @@ function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,prof
     const aumentos=dedupTW(aumentosRaw);
     const reducoes=dedupTW(reducoesRaw);
     const rebalDate=raw?new Date(raw):null;
-    const getMiniPts=():Array<{date:string;v:number}>|null=>{
-      if(!rebalDate||!dates.length) return null;
+    // Regime label based on equity allocation
+    const regime=equityPct>105?"Alavancado":equityPct>=90?"Ofensivo":equityPct>=70?"Neutro":"Defensivo";
+    const regimeStyle=equityPct>105?"bg-orange-500/15 text-orange-400":equityPct>=90?"bg-teal-500/15 text-teal-400":equityPct>=70?"bg-blue-500/15 text-blue-400":"bg-amber-500/15 text-amber-400";
+
+    // Mini chart: model + benchmark ±3 months around rebalDate
+    const getMiniPts=():{pts:Array<{date:string;v:number;b:number}>|null;result3m:{model:number;bench:number}|null}=>{
+      if(!rebalDate||!dates.length) return {pts:null,result3m:null};
       const idx=dates.findIndex(d=>new Date(d)>=rebalDate);
+      if(idx<0) return {pts:null,result3m:null};
       const start=Math.max(0,idx-63);
       const end=Math.min(dates.length-1,idx+63);
       const base=equityRaw[start]??1;
-      const pts:Array<{date:string;v:number}>=[];
+      const baseBench=benchRaw[start]??1;
+      const pts:Array<{date:string;v:number;b:number}>=[];
       for(let j=start;j<=end;j++){
-        pts.push({date:dates[j]!.slice(0,10),v:+((equityRaw[j]??base)/base*100).toFixed(2)});
+        pts.push({date:dates[j]!.slice(0,10),v:+((equityRaw[j]??base)/base*100).toFixed(2),b:+((benchRaw[j]??baseBench)/baseBench*100).toFixed(2)});
       }
-      return pts;
+      // Post-rebalancing 3m result (idx → idx+63)
+      const endFwd=Math.min(dates.length-1,idx+63);
+      const result3m=endFwd>idx&&(equityRaw[idx]??0)>0?{
+        model:+((equityRaw[endFwd]!/equityRaw[idx]!-1)*100).toFixed(1),
+        bench:+((benchRaw[endFwd]!/(benchRaw[idx]||1)-1)*100).toFixed(1),
+      }:null;
+      return {pts:pts.length>=2?pts:null,result3m};
     };
     const isLatest=i===0;
     const estado=isLatest?"Recente":"Aprovado";
@@ -2201,7 +2214,7 @@ function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,prof
       :reducoes.length
         ?`Reduzir ${reducoes.slice(0,2).map(x=>x.t).join(", ")}${reducoes.length>2?` +${reducoes.length-2}`:""}`
         :"Sem alterações significativas";
-    return {label,compras,aumentos,vendas,reducoes,manter,getMiniPts,isLatest,estado,estadoStyle,resumo,xeonPct,equityPct,xeonDelta,equityDelta,lev};
+    return {label,compras,aumentos,vendas,reducoes,manter,getMiniPts,isLatest,estado,estadoStyle,resumo,xeonPct,equityPct,xeonDelta,equityDelta,lev,regime,regimeStyle};
   }),[sortedMonths,dates,equityRaw,benchRaw,marginEnabled,targetVol]);
 
   return (
@@ -2233,123 +2246,154 @@ function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,prof
               <React.Fragment key={i}>
                 <tr className={`border-b border-[#0f1420] cursor-pointer transition-colors select-none ${expandedIdx===i?"bg-white/[0.04]":"hover:bg-white/[0.02]"}`}
                   onClick={()=>setExpandedIdx(expandedIdx===i?null:i)}>
-                  <td className="px-5 py-3 font-semibold text-slate-200 capitalize">{r.label}</td>
-                  <td className="px-3 py-3 text-center font-bold text-emerald-400">{r.compras.length||<span className="text-slate-700">—</span>}</td>
-                  <td className="px-3 py-3 text-center font-bold text-cyan-400">{r.aumentos.length||<span className="text-slate-700">—</span>}</td>
-                  <td className="px-3 py-3 text-center font-bold text-red-400">{r.vendas.length||<span className="text-slate-700">—</span>}</td>
-                  <td className="px-3 py-3 text-center font-bold text-amber-400">{r.reducoes.length||<span className="text-slate-700">—</span>}</td>
-                  <td className="px-3 py-3 text-center text-slate-500">{r.manter.length||<span className="text-slate-700">—</span>}</td>
-                  <td className="px-5 py-3 max-w-xs">
-                    <div className="text-slate-400 truncate text-xs">{r.resumo}</div>
-                    <div className="flex items-center gap-2 mt-1">
+                  <td className="px-5 py-3.5">
+                    <div className="font-semibold text-slate-200 capitalize text-sm">{r.label}</div>
+                    <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${r.regimeStyle}`}>{r.regime}</span>
+                  </td>
+                  <td className="px-3 py-3.5 text-center font-bold text-emerald-400 text-sm">{r.compras.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-3 py-3.5 text-center font-bold text-cyan-400 text-sm">{r.aumentos.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-3 py-3.5 text-center font-bold text-rose-400 text-sm">{r.vendas.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-3 py-3.5 text-center font-bold text-amber-400 text-sm">{r.reducoes.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-3 py-3.5 text-center text-slate-600 text-sm">{r.manter.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-5 py-3.5 max-w-xs">
+                    <div className="text-slate-300 truncate text-xs">{r.resumo}</div>
+                    <div className="flex items-center gap-2 mt-1.5">
                       {r.xeonPct>0&&(
-                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[10px] font-semibold">
-                          MM {r.xeonPct.toFixed(0)}%
-                          {r.xeonDelta!==0&&<span className={r.xeonDelta>0?"text-amber-300":"text-slate-500"}>{r.xeonDelta>0?"+":""}{r.xeonDelta.toFixed(0)}pp</span>}
+                        <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[10px] font-semibold">
+                          MM {r.xeonPct.toFixed(0)}%{r.xeonDelta!==0?` ${r.xeonDelta>0?"+":""}${r.xeonDelta.toFixed(0)}pp`:""}
                         </span>
                       )}
-                      <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.equityPct>101?"bg-orange-500/15 text-orange-400":r.xeonPct>0?"bg-slate-700/50 text-slate-400":"bg-emerald-500/10 text-emerald-400"}`}>
-                        Acc {r.equityPct.toFixed(0)}%{r.lev>1.01?` ×${r.lev.toFixed(2)}`:""}
-                        {r.equityDelta!==0&&<span className={r.equityDelta>0?"text-emerald-300":"text-slate-500"}>{r.equityDelta>0?"+":""}{r.equityDelta.toFixed(0)}pp</span>}
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${r.equityPct>101?"bg-orange-500/15 text-orange-400":"bg-slate-700/40 text-slate-500"}`}>
+                        Acções {r.equityPct.toFixed(0)}%{r.lev>1.01?` ×${r.lev.toFixed(2)}`:""}
+                        {r.equityDelta!==0?` ${r.equityDelta>0?"+":""}${r.equityDelta.toFixed(0)}pp`:""}
                       </span>
                     </div>
                   </td>
-                  <td className="px-5 py-3"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${r.estadoStyle}`}>{r.estado}</span></td>
+                  <td className="px-5 py-3.5"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${r.estadoStyle}`}>{r.estado}</span></td>
                 </tr>
-                {expandedIdx===i&&(
-                  <tr className="border-b border-[#0f1420] bg-[#060a12]">
-                    <td colSpan={8} className="px-6 py-5">
-                      <div className="grid grid-cols-2 gap-6">
-                        <div>
-                          <div className="text-[10px] text-slate-500 mb-2 font-semibold uppercase tracking-wide">Evolução ±3 meses</div>
-                          {(()=>{
-                            const pts=r.getMiniPts();
-                            if(!pts||pts.length<2) return <div className="text-slate-600 text-xs italic">Sem dados de gráfico</div>;
-                            return (
-                              <ResponsiveContainer width="100%" height={110}>
-                                <LineChart data={pts} margin={{top:4,right:4,left:-20,bottom:0}}>
+                {expandedIdx===i&&(()=>{
+                  const {pts,result3m}=r.getMiniPts();
+                  return(
+                  <tr className="border-b border-[#0a0e18] bg-[#060a12]">
+                    <td colSpan={8} className="px-6 py-6">
+                      <div className="space-y-5">
+
+                        {/* ── Section 1: Allocation + Result ── */}
+                        <div className="flex items-center gap-4 flex-wrap">
+                          <span className={`px-3 py-1 rounded-lg text-xs font-bold ${r.regimeStyle}`}>{r.regime}</span>
+                          {r.xeonPct>0&&(
+                            <span className="px-3 py-1 rounded-lg text-xs font-bold bg-amber-500/10 text-amber-400">
+                              Liquidez {r.xeonPct.toFixed(1)}%{r.xeonDelta!==0?` (${r.xeonDelta>0?"+":""}${r.xeonDelta.toFixed(1)}pp)`:""}
+                            </span>
+                          )}
+                          <span className={`px-3 py-1 rounded-lg text-xs font-bold ${r.equityPct>101?"bg-orange-500/15 text-orange-400":"bg-slate-700/40 text-slate-400"}`}>
+                            Acções {r.equityPct.toFixed(1)}%{r.lev>1.01?` ⚡ ×${r.lev.toFixed(2)}`:""}
+                            {r.equityDelta!==0?` (${r.equityDelta>0?"+":""}${r.equityDelta.toFixed(1)}pp)`:""}
+                          </span>
+                          {result3m&&!r.isLatest&&(
+                            <span className={`ml-auto px-3 py-1 rounded-lg text-xs font-bold border ${result3m.model>=result3m.bench?"border-teal-500/30 bg-teal-950/30 text-teal-400":"border-slate-600/30 bg-slate-800/30 text-slate-400"}`}>
+                              Resultado 3m: Modelo {result3m.model>=0?"+":""}{result3m.model}% · Bench {result3m.bench>=0?"+":""}{result3m.bench}%
+                              {result3m.model>result3m.bench&&<span className="text-teal-300 ml-1">+{(result3m.model-result3m.bench).toFixed(1)}pp vs bench</span>}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* ── Section 2: Mini-chart + Actions ── */}
+                        <div className="grid grid-cols-2 gap-6">
+                          {/* Mini chart with benchmark */}
+                          <div>
+                            <div className="text-[10px] text-slate-600 mb-2 font-semibold uppercase tracking-wide">Evolução ±3 meses</div>
+                            {pts&&pts.length>=2?(
+                              <ResponsiveContainer width="100%" height={120}>
+                                <LineChart data={pts} margin={{top:4,right:4,left:-16,bottom:0}}>
+                                  <defs>
+                                    <linearGradient id={`miniGrad${i}`} x1="0" y1="0" x2="0" y2="1">
+                                      <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.15}/>
+                                      <stop offset="95%" stopColor="#14b8a6" stopOpacity={0}/>
+                                    </linearGradient>
+                                  </defs>
                                   <XAxis dataKey="date" tick={{fontSize:8,fill:"#475569"}} tickLine={false} axisLine={false}
-                                    interval={Math.floor(pts.length/4)}
-                                    tickFormatter={(d:string)=>d.slice(5)}/>
-                                  <YAxis tick={{fontSize:8,fill:"#475569"}} tickLine={false} axisLine={false} tickFormatter={v=>`${Number(v).toFixed(0)}`} domain={["dataMin-1","dataMax+1"]}/>
-                                  <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3"/>
-                                  <Tooltip formatter={(v:number)=>[`${Number(v).toFixed(1)}`,"Modelo (base 100)"]}
+                                    interval={Math.floor(pts.length/4)} tickFormatter={(d:string)=>d.slice(5)}/>
+                                  <YAxis tick={{fontSize:8,fill:"#475569"}} tickLine={false} axisLine={false}
+                                    tickFormatter={v=>`${Number(v).toFixed(0)}`} domain={["dataMin-1","dataMax+1"]}/>
+                                  <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="2 2"/>
+                                  <Tooltip
+                                    formatter={(v:number,name:string)=>[`${Number(v).toFixed(1)}`,name==="v"?"Modelo":"Benchmark"]}
                                     labelFormatter={(d:string)=>d}
-                                    contentStyle={{background:"#0f172a",border:"1px solid #3b82f6",borderRadius:6,fontSize:10,color:"#e2e8f0"}}
+                                    contentStyle={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,fontSize:10,color:"#e2e8f0"}}
                                     labelStyle={{color:"#94a3b8"}} itemStyle={{color:"#60a5fa"}}/>
-                                  <Line type="monotone" dataKey="v" stroke="#60a5fa" strokeWidth={1.5} dot={false}/>
+                                  <Line type="monotone" dataKey="v" stroke="#14b8a6" strokeWidth={2} dot={false} name="v"/>
+                                  <Line type="monotone" dataKey="b" stroke="#334155" strokeWidth={1} dot={false} strokeDasharray="3 2" name="b"/>
                                 </LineChart>
                               </ResponsiveContainer>
-                            );
-                          })()}
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-[11px] content-start">
-                          {/* Allocation summary row */}
-                          <div className="col-span-2 flex items-center gap-3 mb-1 pb-2 border-b border-[#1a1f2e]">
-                            <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wide">Alocação</div>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.xeonPct>0?"bg-amber-500/15 text-amber-400":"bg-slate-700/30 text-slate-600"}`}>
-                              MM Euro {r.xeonPct.toFixed(1)}%{r.xeonDelta!==0?` (${r.xeonDelta>0?"+":""}${r.xeonDelta.toFixed(1)}pp)`:""}
-                            </span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.equityPct>101?"bg-orange-500/15 text-orange-400":"bg-emerald-500/10 text-emerald-400"}`}>
-                              Acções {r.equityPct.toFixed(1)}%{r.lev>1.01?` ⚡ ×${r.lev.toFixed(2)} alavancado`:""}{r.equityDelta!==0?` (${r.equityDelta>0?"+":""}${r.equityDelta.toFixed(1)}pp)`:""}
-                            </span>
+                            ):(
+                              <div className="text-slate-700 text-xs italic h-[120px] flex items-center">Sem dados de gráfico</div>
+                            )}
+                            <div className="flex items-center gap-3 mt-1">
+                              <div className="flex items-center gap-1.5 text-[10px] text-slate-600"><div className="w-4 h-0.5 bg-teal-500 rounded"/>Modelo</div>
+                              <div className="flex items-center gap-1.5 text-[10px] text-slate-700"><div className="w-4 h-px bg-slate-600 rounded"/>Benchmark</div>
+                            </div>
                           </div>
-                          {r.compras.length>0&&(
-                            <div>
-                              <div className="text-emerald-400 font-bold mb-1.5">▲ Comprar</div>
-                              {r.compras.map(({t,w})=>{const cn=(COMPANY[t.toUpperCase()]||"").replace(/\s+[A-C]$/,"").trim();return(
-                                <div key={t} className="py-0.5 flex items-baseline gap-1">
-                                  <span className="font-mono text-slate-200">{t}</span>
-                                  <span className="text-emerald-300 text-[10px] font-semibold">{w.toFixed(1)}%</span>
-                                  {cn&&<span className="text-slate-600 text-[10px]">{cn}</span>}
-                                </div>
-                              );})}
-                            </div>
-                          )}
-                          {r.aumentos.length>0&&(
-                            <div>
-                              <div className="text-cyan-400 font-bold mb-1.5">↑ Reforçar</div>
-                              {r.aumentos.map(({t,w})=>{const cn=(COMPANY[t.toUpperCase()]||"").replace(/\s+[A-C]$/,"").trim();return(
-                                <div key={t} className="py-0.5 flex items-baseline gap-1">
-                                  <span className="font-mono text-slate-200">{t}</span>
-                                  <span className="text-cyan-300 text-[10px] font-semibold">{w.toFixed(1)}%</span>
-                                  {cn&&<span className="text-slate-600 text-[10px]">{cn}</span>}
-                                </div>
-                              );})}
-                            </div>
-                          )}
-                          {r.vendas.length>0&&(
-                            <div>
-                              <div className="text-red-400 font-bold mb-1.5">▼ Vender</div>
-                              {r.vendas.map(({t,w})=>{const cn=(COMPANY[t.toUpperCase()]||"").replace(/\s+[A-C]$/,"").trim();return(
-                                <div key={t} className="py-0.5 flex items-baseline gap-1">
-                                  <span className="font-mono text-slate-200">{t}</span>
-                                  <span className="text-red-400 text-[10px] font-semibold">{w.toFixed(1)}%</span>
-                                  {cn&&<span className="text-slate-600 text-[10px]">{cn}</span>}
-                                </div>
-                              );})}
-                            </div>
-                          )}
-                          {r.reducoes.length>0&&(
-                            <div>
-                              <div className="text-amber-400 font-bold mb-1.5">↓ Reduzir</div>
-                              {r.reducoes.map(({t,w})=>{const cn=(COMPANY[t.toUpperCase()]||"").replace(/\s+[A-C]$/,"").trim();return(
-                                <div key={t} className="py-0.5 flex items-baseline gap-1">
-                                  <span className="font-mono text-slate-200">{t}</span>
-                                  <span className="text-amber-300 text-[10px] font-semibold">{w.toFixed(1)}%</span>
-                                  {cn&&<span className="text-slate-600 text-[10px]">{cn}</span>}
-                                </div>
-                              );})}
-                            </div>
-                          )}
-                          {r.compras.length===0&&r.aumentos.length===0&&r.vendas.length===0&&r.reducoes.length===0&&(
-                            <div className="col-span-2 text-slate-600 italic">Sem alterações significativas</div>
-                          )}
+
+                          {/* Actions grid */}
+                          <div className="grid grid-cols-2 gap-x-6 gap-y-4 content-start">
+                            {r.compras.length>0&&(
+                              <div>
+                                <div className="text-[10px] text-emerald-500 font-bold mb-2 uppercase tracking-wide">▲ Nova posição</div>
+                                {r.compras.map(({t,w})=>{const cn=(COMPANY[t.toUpperCase()]||"").replace(/\s+[A-C]$/,"").trim();return(
+                                  <div key={t} className="py-1 flex items-baseline gap-2">
+                                    <span className="font-semibold text-slate-100 text-xs">{t}</span>
+                                    <span className="text-emerald-400 text-[11px] font-semibold">{w.toFixed(1)}%</span>
+                                    {cn&&<span className="text-slate-600 text-[10px] truncate">{cn}</span>}
+                                  </div>
+                                );})}
+                              </div>
+                            )}
+                            {r.aumentos.length>0&&(
+                              <div>
+                                <div className="text-[10px] text-blue-400 font-bold mb-2 uppercase tracking-wide">↑ Reforçar</div>
+                                {r.aumentos.map(({t,w})=>{const cn=(COMPANY[t.toUpperCase()]||"").replace(/\s+[A-C]$/,"").trim();return(
+                                  <div key={t} className="py-1 flex items-baseline gap-2">
+                                    <span className="font-semibold text-slate-100 text-xs">{t}</span>
+                                    <span className="text-blue-300 text-[11px] font-semibold">{w.toFixed(1)}%</span>
+                                    {cn&&<span className="text-slate-600 text-[10px] truncate">{cn}</span>}
+                                  </div>
+                                );})}
+                              </div>
+                            )}
+                            {r.vendas.length>0&&(
+                              <div>
+                                <div className="text-[10px] text-rose-500 font-bold mb-2 uppercase tracking-wide">▼ Encerrar</div>
+                                {r.vendas.map(({t,w})=>{const cn=(COMPANY[t.toUpperCase()]||"").replace(/\s+[A-C]$/,"").trim();return(
+                                  <div key={t} className="py-1 flex items-baseline gap-2">
+                                    <span className="font-semibold text-slate-100 text-xs">{t}</span>
+                                    <span className="text-rose-400 text-[11px] font-semibold">{w.toFixed(1)}%</span>
+                                    {cn&&<span className="text-slate-600 text-[10px] truncate">{cn}</span>}
+                                  </div>
+                                );})}
+                              </div>
+                            )}
+                            {r.reducoes.length>0&&(
+                              <div>
+                                <div className="text-[10px] text-amber-500 font-bold mb-2 uppercase tracking-wide">↓ Reduzir</div>
+                                {r.reducoes.map(({t,w})=>{const cn=(COMPANY[t.toUpperCase()]||"").replace(/\s+[A-C]$/,"").trim();return(
+                                  <div key={t} className="py-1 flex items-baseline gap-2">
+                                    <span className="font-semibold text-slate-100 text-xs">{t}</span>
+                                    <span className="text-amber-300 text-[11px] font-semibold">{w.toFixed(1)}%</span>
+                                    {cn&&<span className="text-slate-600 text-[10px] truncate">{cn}</span>}
+                                  </div>
+                                );})}
+                              </div>
+                            )}
+                            {r.compras.length===0&&r.aumentos.length===0&&r.vendas.length===0&&r.reducoes.length===0&&(
+                              <div className="col-span-2 text-slate-600 text-xs italic pt-2">Sem alterações significativas nesta revisão</div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
                   </tr>
-                )}
+                );})()}
               </React.Fragment>
             ))}
           </tbody>
