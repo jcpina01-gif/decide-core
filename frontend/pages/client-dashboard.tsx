@@ -4940,10 +4940,10 @@ export default function ClientDashboardPage() {
                     </div>
                     <div className="px-5 py-4">
                       <NativeSimulator dates={dates}
-                        equity={kpiMode==="margem"?marginEquity:equityRaw}
+                        equity={equityRaw}
                         bench={benchRaw}
                         onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}
-                        volScale={kpiMode==="margem"?1:volRuleScale}
+                        volScale={kpiMode==="margem"?profileFactor*1.35:profileFactor}
                         profileKey={`${riskProfileLocal}-${kpiMode}`}/>
                     </div>
                   </div>
@@ -5349,10 +5349,10 @@ export default function ClientDashboardPage() {
                     </div>
                     <div className="px-5 py-4">
                       <NativeSimulator dates={dates}
-                        equity={kpiMode==="margem"?marginEquity:equityRaw}
+                        equity={equityRaw}
                         bench={benchRaw}
                         onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}
-                        volScale={kpiMode==="margem"?1:volRuleScale}
+                        volScale={kpiMode==="margem"?profileFactor*1.35:profileFactor}
                         profileKey={`${riskProfileLocal}-${kpiMode}`}/>
                     </div>
                   </div>
