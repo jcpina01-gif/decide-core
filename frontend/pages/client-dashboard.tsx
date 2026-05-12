@@ -59,15 +59,20 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn,volScale=1,prof
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[equity,bench,dates,prazo,profileKey]);
 
-  // Apply volScale: scale each period's excess return by the profile multiplier
+  // Apply volScale: scale each period's return by the vol-rule factor.
+  // volScale comes from the parent: volRuleScale for base mode, 1 for margin mode.
+  // Using a primitive number ensures React always detects profile changes.
   const scaledEq=React.useMemo(()=>{
-    if(volScale===1||slice.eq.length<2) return slice.eq;
+    if(slice.eq.length<2) return slice.eq;
+    if(volScale===1) return slice.eq;
     const out:number[]=new Array(slice.eq.length);
-    out[0]=slice.eq[0];
+    out[0]=slice.eq[0]||1;
     for(let i=1;i<slice.eq.length;i++){
-      const r=(slice.eq[i]/slice.eq[i-1])-1; // period return
-      const sr=r*volScale;                    // scaled return
-      out[i]=out[i-1]*(1+sr);
+      const prev=slice.eq[i-1]!;
+      if(!prev||!isFinite(prev)){out[i]=out[i-1]!;continue;}
+      const r=(slice.eq[i]!-prev)/prev;
+      const next=out[i-1]!*(1+r*volScale);
+      out[i]=isFinite(next)&&next>0?next:out[i-1]!;
     }
     return out;
   },[slice.eq,volScale]);
@@ -4934,9 +4939,12 @@ export default function ClientDashboardPage() {
                       )}
                     </div>
                     <div className="px-5 py-4">
-                      <NativeSimulator dates={dates} equity={activeEquity} bench={benchRaw}
+                      <NativeSimulator dates={dates}
+                        equity={kpiMode==="margem"?marginEquity:equityRaw}
+                        bench={benchRaw}
                         onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}
-                        volScale={1} profileKey={`${riskProfileLocal}-${kpiMode}`}/>
+                        volScale={kpiMode==="margem"?1:volRuleScale}
+                        profileKey={`${riskProfileLocal}-${kpiMode}`}/>
                     </div>
                   </div>
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4 text-xs text-slate-500">
@@ -5340,9 +5348,12 @@ export default function ClientDashboardPage() {
                       )}
                     </div>
                     <div className="px-5 py-4">
-                      <NativeSimulator dates={dates} equity={activeEquity} bench={benchRaw}
+                      <NativeSimulator dates={dates}
+                        equity={kpiMode==="margem"?marginEquity:equityRaw}
+                        bench={benchRaw}
                         onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}
-                        volScale={1} profileKey={`${riskProfileLocal}-${kpiMode}`}/>
+                        volScale={kpiMode==="margem"?1:volRuleScale}
+                        profileKey={`${riskProfileLocal}-${kpiMode}`}/>
                     </div>
                   </div>
 
