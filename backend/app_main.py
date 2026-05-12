@@ -21,6 +21,7 @@ from routers.cancel_open_orders_paper import (
 )
 from routers.sync_paper_exec_lines import router as sync_paper_exec_lines_router, sync_paper_exec_lines_probe
 from routers.ibkr_orders import router as ibkr_orders_router
+from routers.client_auth import router as client_auth_router
 
 app = FastAPI()
 
@@ -72,6 +73,7 @@ app.include_router(ibkr_orders_router)
 app.include_router(sync_paper_exec_lines_router)
 app.include_router(ibkr_snapshot_router)
 app.include_router(performance_router)
+app.include_router(client_auth_router)
 
 # Rotas registadas directamente na app (evita 404 se include_router do sub-router falhar em alguns arranques).
 @app.post("/api/flatten-paper-portfolio", tags=["flatten-portfolio"])
