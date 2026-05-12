@@ -4965,15 +4965,15 @@ export default function ClientDashboardPage() {
                     </div>
                     <div className="px-5 py-4">
                       <NativeSimulator dates={dates}
-                        equity={equityRaw}
+                        equity={activeEquity}
                         bench={benchRaw}
                         onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}
                         volScale={1}
-                        profileKey=""/>
+                        profileKey={`${riskProfileLocal}-${kpiMode}`}/>
                     </div>
                   </div>
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4 text-xs text-slate-500">
-                    O simulador usa dados históricos reais dos últimos 20 anos (sem escalagem de perfil).
+                    O simulador usa dados históricos reais com o perfil e modo de margem activos (vol-rule aplicada).
                     Rendimentos passados não garantem resultados futuros.
                   </div>
                 </div>
@@ -5375,11 +5375,11 @@ export default function ClientDashboardPage() {
                     </div>
                     <div className="px-5 py-4">
                       <NativeSimulator dates={dates}
-                        equity={equityRaw}
+                        equity={activeEquity}
                         bench={benchRaw}
                         onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}
                         volScale={1}
-                        profileKey=""/>
+                        profileKey={`${riskProfileLocal}-${kpiMode}`}/>
                     </div>
                   </div>
 
