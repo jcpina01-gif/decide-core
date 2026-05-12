@@ -2454,6 +2454,8 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [cancelSending,setCancelSending]=React.useState(false);
   const [cancelResult,setCancelResult]=React.useState<string|null>(null);
   const [pollCount,setPollCount]=React.useState(0);
+  const [confirmChecks,setConfirmChecks]=React.useState([false,false,false]);
+  const allChecked=confirmChecks.every(Boolean);
 
   const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtEm=(v:number)=>Math.abs(v).toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -2827,10 +2829,15 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         ))}
       </div>
 
-      {/* Info banner */}
-      <div className="flex items-center gap-2 bg-blue-500/[0.07] border border-blue-500/20 rounded-xl px-4 py-3">
-        <Info size={14} className="text-blue-400 shrink-0"/>
-        <span className="text-xs text-slate-300">Ao aprovar, as ordens serão enviadas para a <span className="font-bold text-blue-300">Interactive Brokers</span> para execução ao melhor preço disponível.</span>
+      {/* Info banner — informativo, não crítico */}
+      <div className="flex items-center gap-3 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-5 py-3.5">
+        <div className="w-7 h-7 rounded-lg bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
+          <ShieldCheck size={14} className="text-teal-400"/>
+        </div>
+        <div>
+          <div className="text-xs font-semibold text-slate-200">Execução controlada via Interactive Brokers</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">As ordens serão enviadas ao mercado só após revisão e confirmação explícita. Pode cancelar a qualquer momento antes do envio final.</div>
+        </div>
       </div>
 
       {/* Main 2-col layout */}
@@ -3600,21 +3607,79 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             </div>
           )}
 
+          {/* ── Final Review Card ── */}
+          {!done&&!showSendConfirm&&(
+            <div className="bg-gradient-to-br from-[#0d1628] to-[#0b0f1a] border border-[#1a2540] rounded-2xl p-6 space-y-5">
+              <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Resumo executivo</div>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  {label:"Ordens",val:nOrdens,c:"text-blue-300"},
+                  {label:"A investir",val:`€${Math.round(investEur).toLocaleString("pt-PT")}`,c:"text-teal-400"},
+                  {label:"Perfil",val:profileLabel,c:"text-amber-400"},
+                ].map(x=>(
+                  <div key={x.label} className="bg-white/[0.03] rounded-xl px-4 py-3 border border-white/[0.05] text-center">
+                    <div className="text-[10px] text-slate-600 mb-1">{x.label}</div>
+                    <div className={`text-lg font-black ${x.c}`}>{x.val}</div>
+                  </div>
+                ))}
+              </div>
+              {latestMonth&&(
+                <div className="flex items-center gap-3 flex-wrap text-[11px]">
+                  <span className="px-2.5 py-1 rounded-lg bg-teal-500/10 border border-teal-500/20 text-teal-400 font-semibold">Acções {(100-(latestMonth.tbillsTotalPct??0)).toFixed(0)}%</span>
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-700/30 border border-slate-600/20 text-slate-400">Liquidez {(latestMonth.tbillsTotalPct??0).toFixed(0)}%</span>
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-700/30 border border-slate-600/20 text-slate-400">Via Interactive Brokers</span>
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-700/30 border border-slate-600/20 text-slate-400">Melhor preço disponível</span>
+                </div>
+              )}
+              {/* Checklist */}
+              <div className="border-t border-white/[0.06] pt-4 space-y-3">
+                <div className="text-[10px] text-slate-600 uppercase tracking-wide mb-1">Antes de prosseguir</div>
+                {[
+                  "Revi a lista de ordens e confirmo que reflecte as minhas intenções de investimento.",
+                  "Compreendo que os preços de execução podem diferir dos valores estimados.",
+                  "Aceito que as ordens serão enviadas ao mercado e não podem ser canceladas após execução.",
+                ].map((text,ci)=>(
+                  <label key={ci} className="flex items-start gap-3 cursor-pointer group">
+                    <div
+                      onClick={()=>setConfirmChecks(prev=>prev.map((v,j)=>j===ci?!v:v))}
+                      className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${confirmChecks[ci]?"bg-teal-600 border-teal-500":"border-slate-600 bg-[#111827] group-hover:border-slate-500"}`}>
+                      {confirmChecks[ci]&&<CheckCircle2 size={12} className="text-white"/>}
+                    </div>
+                    <span className={`text-xs leading-relaxed transition-colors ${confirmChecks[ci]?"text-slate-300":"text-slate-500 group-hover:text-slate-400"}`}>{text}</span>
+                  </label>
+                ))}
+              </div>
+              {/* Hero CTA */}
+              <button
+                onClick={()=>setShowSendConfirm(true)}
+                disabled={sending||ibkrLoading||nOrdens===0||done||aum<=0||paperMode||!ibkrPos||showSendConfirm||investOverBudget||!allChecked||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value_eur??p.value),0)>aum*1.5)}
+                className={`w-full flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black py-4 rounded-xl transition-all text-base ${
+                  !allChecked?"bg-slate-700 cursor-not-allowed":
+                  paperMode?"bg-slate-700 cursor-not-allowed":
+                  investOverBudget?"bg-red-900 cursor-not-allowed":
+                  recentlySent?"bg-amber-600 hover:bg-amber-500 shadow-xl shadow-amber-900/40 hover:scale-[1.01]":
+                  "bg-teal-600 hover:bg-teal-500 shadow-xl shadow-teal-900/40 hover:scale-[1.01]"}`}>
+                <Send size={18}/>
+                {!allChecked?"Confirme os 3 pontos acima para prosseguir":
+                 paperMode?"Desliga 'Simulação local' para enviar à IB →":
+                 investOverBudget?`⛔ Bloqueado — total excede budget`:
+                 recentlySent?"⚠ Já enviou recentemente — confirmar envio?":
+                 `Enviar ${nOrdens} ordem${nOrdens===1?"":"ns"} à Interactive Brokers →`}
+              </button>
+              <p className="text-center text-[10px] text-slate-700 flex items-center justify-center gap-1">
+                <ShieldCheck size={10}/> Conexão segura · Execução controlada pelo DECIDE
+              </p>
+            </div>
+          )}
+
+          {/* Legacy cancel button for when review card is hidden */}
+          {(done||showSendConfirm)&&(
           <div className="flex gap-3">
             <button onClick={onBack} className="px-6 py-3 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">
               Cancelar
             </button>
-            <button
-              onClick={()=>setShowSendConfirm(true)}
-              disabled={sending||ibkrLoading||nOrdens===0||done||aum<=0||paperMode||!ibkrPos||showSendConfirm||investOverBudget||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value_eur??p.value),0)>aum*1.5)}
-              className={`flex-1 flex items-center justify-center gap-2 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all ${paperMode?"bg-slate-700 cursor-not-allowed":investOverBudget?"bg-red-900 cursor-not-allowed":recentlySent?"bg-amber-700 hover:bg-amber-600 shadow-lg shadow-amber-900/30":"bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30"}`}>
-              <Send size={15}/>
-              {paperMode?"Desliga 'Simulação local' para enviar à IB →":investOverBudget?`⛔ Bloqueado: total €${Math.round(investEur).toLocaleString("pt-PT")} > budget €${Math.round(budgetEurForDisplay).toLocaleString("pt-PT")} — vê diagnóstico acima`:recentlySent?"⚠ Já enviou — confirmar 2.º envio?":"Confirmar e enviar ordens para IB →"}
-            </button>
           </div>
-          <p className="text-center text-[10px] text-slate-600 flex items-center justify-center gap-1">
-            <ShieldCheck size={11}/> Conexão segura com a Interactive Brokers
-          </p>
+          )}
         </div>
 
         {/* RIGHT: summary */}
