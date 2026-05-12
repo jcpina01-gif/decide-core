@@ -4353,10 +4353,11 @@ export default function ClientDashboardPage() {
       const s=getSector(r.ticker)||"Outros";
       m.set(s,(m.get(s)??0)+r.cur);
     });
-    const total=[...m.values()].reduce((a,b)=>a+b,0)||1;
-    const raw=[...m.entries()].sort((a,b)=>b[1]-a[1]).map(([name,v])=>({name,alloc:+((v/total)*100).toFixed(1),riskW:(v/total)*(SECTOR_BETA[name]??1)}));
+    // Raw plan weights — same base as sectorData (no equity-only renormalization)
+    const totalPlan=[...m.values()].reduce((a,b)=>a+b,0)||1;
+    const raw=[...m.entries()].sort((a,b)=>b[1]-a[1]).map(([name,v])=>({name,alloc:+(v).toFixed(1),riskW:v*(SECTOR_BETA[name]??1)}));
     const riskTotal=raw.reduce((s,r)=>s+r.riskW,0)||1;
-    return raw.map(r=>({name:r.name,pct:r.alloc,risk:+((r.riskW/riskTotal)*100).toFixed(1)}));
+    return raw.map(r=>({name:r.name,pct:r.alloc,risk:+((r.riskW/riskTotal)*totalPlan).toFixed(1)}));
   },[actionCounts.allRows]);
 
   // Risk metrics: VaR 95%, Beta
