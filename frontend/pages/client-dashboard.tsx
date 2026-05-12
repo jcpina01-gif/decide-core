@@ -4425,6 +4425,9 @@ export default function ClientDashboardPage() {
     return (items as {icon:string;title:string;desc:string}[]).slice(0,4);
   },[actionCounts.rows,perfData]);
 
+  const nChanges=actionCounts.comprar+actionCounts.aumentar+actionCounts.reduzir+actionCounts.vender;
+  const SECTOR_COLORS=["#14b8a6","#3b82f6","#f59e0b","#8b5cf6","#22c55e","#ef4444","#64748b"];
+
   const simulatorSrc=useMemo(()=>mounted?buildSimulatorSrc(profile):"",[mounted,profile]);
 
   const handleRegisterSuccess=(user:string)=>{
@@ -5769,12 +5772,10 @@ export default function ClientDashboardPage() {
                   )}
 
                   {/* ── TAB: Plano modelo ── */}
-                  {cartTab==="plano"&&(()=>{
+                  {cartTab==="plano"&&<div className="space-y-5">{(()=>{
                     const equityPct=latestMonth?(100-(latestMonth.tbillsTotalPct??0)):0;
                     const cashPct=latestMonth?(latestMonth.tbillsTotalPct??0):0;
-                    const nChanges=actionCounts.comprar+actionCounts.aumentar+actionCounts.reduzir+actionCounts.vender;
-                    const SECTOR_COLORS=["#14b8a6","#3b82f6","#f59e0b","#8b5cf6","#22c55e","#ef4444","#64748b"];
-                    return <div className="space-y-5">
+                    return <>
 
                   {/* ── Comité header — full narrative ── */}
                   <div className="bg-gradient-to-br from-teal-950/50 via-[#0b0f1a] to-[#0b0f1a] border border-teal-500/15 rounded-2xl p-6">
@@ -6031,8 +6032,7 @@ export default function ClientDashboardPage() {
                       </tbody>
                     </table>
                   </div>
-                  </div>
-                  </div>}{/* end cartTab==="plano" IIFE */}
+                  </>;})()}</div>}{/* end cartTab==="plano" */}
                 </div>
               )}
 
