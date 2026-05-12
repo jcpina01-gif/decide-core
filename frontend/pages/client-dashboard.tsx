@@ -19,7 +19,7 @@ import {
 import {
   isClientLoggedIn, getCurrentSessionUser,
   registerClientUser, loginClientUser,
-  normalizeClientPhone,
+  normalizeClientPhone, pushCurrentSessionPrefs,
   setSignupEmailVerifiedFromServerEmail,
   setSignupPhoneVerifiedFromServerPhone,
   isSignupEmailVerifiedForInput,
@@ -3859,6 +3859,8 @@ export default function ClientDashboardPage() {
     try{
       const existing=JSON.parse(localStorage.getItem(LS_KEY)??"{}");
       localStorage.setItem(LS_KEY,JSON.stringify({...existing,...patch}));
+      // Push all prefs to server so they're available across browsers
+      pushCurrentSessionPrefs();
     }catch{}
   };
   const setRiskProfileLocal=(v:RiskProfile)=>{

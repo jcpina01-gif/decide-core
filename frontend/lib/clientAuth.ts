@@ -124,6 +124,80 @@ function hashPassword(pw: string): string {
   return `h_${Math.abs(h >>> 0).toString(36)}`;
 }
 
+// ── Server prefs sync ─────────────────────────────────────────────────────────
+
+const LS_PREFS_KEYS = [
+  "decide_prefs_v1",
+  "decide_fx_hedge_prefs_v1",
+  "decide_onboarding_step5_hedge_done",
+  "decide_client_segment_v1",
+  "decide_client_fee_segment_v1",
+  "decide_onboarding_montante_eur_v1",
+  "decide_mifid_done_v1",
+  "decide_kyc_done_v1",
+  "decide_ibkr_prep_done_v1",
+  "decide_onboarding_approved_v1",
+];
+
+/** Pull prefs from server and populate localStorage. Called after login. */
+export async function syncPrefsFromServer(username: string, passwordHash: string): Promise<void> {
+  try {
+    const r = await fetch(
+      `/api/client/prefs?username=${encodeURIComponent(username)}&passwordHash=${encodeURIComponent(passwordHash)}`,
+      { signal: AbortSignal.timeout(8000) },
+    );
+    if (!r.ok) return;
+    const j = (await r.json()) as { prefs?: Record<string, string> };
+    if (!j.prefs || typeof j.prefs !== "object") return;
+    for (const [k, v] of Object.entries(j.prefs)) {
+      if (typeof v === "string" && v) {
+        try { window.localStorage.setItem(k, v); } catch { /* ignore */ }
+      }
+    }
+    // Notify dashboard to re-read preferences
+    window.dispatchEvent(new Event("decide_onboarding_ls_changed_v1"));
+  } catch {
+    // Non-critical — user can still use the app with defaults
+  }
+}
+
+/** Push current localStorage prefs to server. Fire-and-forget. */
+export async function pushPrefsToServer(username: string, passwordHash: string): Promise<void> {
+  try {
+    const prefs: Record<string, string> = {};
+    for (const k of LS_PREFS_KEYS) {
+      const v = window.localStorage.getItem(k);
+      if (v) prefs[k] = v;
+    }
+    await fetch("/api/client/prefs", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, passwordHash, prefs }),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch {
+    // Non-critical
+  }
+}
+
+/**
+ * Convenience: push prefs for the current session user.
+ * Reads credentials from localStorage — call this whenever prefs change.
+ */
+export function pushCurrentSessionPrefs(): void {
+  try {
+    if (typeof window === "undefined") return;
+    const u = window.localStorage.getItem(SESSION_USER_KEY);
+    if (!u) return;
+    const db = readDb();
+    const ph = db[u]?.passwordHash;
+    if (!ph) return;
+    pushPrefsToServer(u, ph).catch(() => {/* ignore */});
+  } catch {
+    // ignore
+  }
+}
+
 function readDb(): ClientUsersDb {
   try {
     if (typeof window === "undefined") return {};
@@ -724,6 +798,8 @@ export async function loginClientUserAsync(
           window.localStorage.setItem(SESSION_USER_KEY, u);
           window.localStorage.setItem(SESSION_OK_KEY, "1");
           notifyClientSessionChanged();
+          // Pull user preferences from server into localStorage
+          syncPrefsFromServer(u, ph).catch(() => {/* ignore */});
         }
       } catch { /* ignore */ }
       return { ok: true };
@@ -744,7 +820,11 @@ export async function loginClientUserAsync(
   }
 
   // 2. Fallback: localStorage (offline / dev)
-  return loginClientUser(username, password);
+  const localResult = loginClientUser(username, password);
+  if (localResult.ok && typeof window !== "undefined") {
+    syncPrefsFromServer(u, ph).catch(() => {/* ignore */});
+  }
+  return localResult;
 }
 
 /**

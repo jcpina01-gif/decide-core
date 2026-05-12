@@ -54,6 +54,43 @@ class RegisterRequest(BaseModel):
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
+class PrefsRequest(BaseModel):
+    username: str
+    passwordHash: str
+    prefs: dict
+
+
+@router.get("/api/client/prefs")
+def client_prefs_get(username: str, passwordHash: str):
+    u = username.strip().lower()
+    with _lock:
+        db = _read()
+    rec = db.get(u)
+    if rec is None:
+        return JSONResponse(status_code=401, content={"error": "user_not_found"})
+    if rec.get("passwordHash") != passwordHash.strip():
+        return JSONResponse(status_code=401, content={"error": "wrong_password"})
+    return {"ok": True, "prefs": rec.get("prefs", {})}
+
+
+@router.put("/api/client/prefs")
+def client_prefs_put(req: PrefsRequest):
+    u = req.username.strip().lower()
+    h = req.passwordHash.strip()
+    with _lock:
+        db = _read()
+        rec = db.get(u)
+        if rec is None:
+            return JSONResponse(status_code=401, content={"error": "user_not_found"})
+        if rec.get("passwordHash") != h:
+            return JSONResponse(status_code=401, content={"error": "wrong_password"})
+        rec["prefs"] = req.prefs
+        rec["updatedAt"] = int(__import__("time").time() * 1000)
+        db[u] = rec
+        _write(db)
+    return {"ok": True}
+
+
 @router.post("/api/client/auth/login")
 def client_auth_login(req: LoginRequest):
     u = req.username.strip().lower()
