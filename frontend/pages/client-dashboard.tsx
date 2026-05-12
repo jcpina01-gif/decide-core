@@ -5,7 +5,7 @@ import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from "re
 import { displayTicker } from "../lib/tickerDisplay";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, ReferenceLine,
+  PieChart, Pie, Cell, ReferenceLine, ReferenceArea,
   BarChart, Bar, CartesianGrid,
   AreaChart, Area,
 } from "recharts";
@@ -3927,6 +3927,8 @@ export default function ClientDashboardPage() {
   // Carteira page: tab (real IB vs plano modelo) + IB snapshot state
   const [cartTab,setCartTab]=useState<"ib"|"plano">("ib");
   const [showManterRows,setShowManterRows]=useState(false);
+  const [showStressPeriods,setShowStressPeriods]=useState(false);
+  const [showMethodModal,setShowMethodModal]=useState(false);
   const [hoveredCountry,setHoveredCountry]=useState<{name:string;pct:number}|null>(null);
   const [cartIbPos,setCartIbPos]=useState<{ticker:string;qty:number;value:number;value_eur?:number;weight_pct:number;currency:string;name?:string;sector?:string;country?:string}[]|null>(null);
   const [cartIbLoading,setCartIbLoading]=useState(false);
@@ -6069,7 +6071,7 @@ export default function ClientDashboardPage() {
                           <div className="px-4 py-2.5 text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Métrica</div>
                           <div className="px-4 py-2.5 text-[10px] font-semibold text-blue-500 uppercase tracking-wider flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-blue-500"/>Modelo</div>
                           <div className="px-4 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-500"/>{BENCH_SHORT}</div>
-                          <div className="px-4 py-2.5 text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Alpha</div>
+                          <div className="px-4 py-2.5 text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Excesso de retorno</div>
                         </div>
                         {cols.map(col=>{
                           const dPos=col.isVol?col.delta<=0:col.delta>=0;
@@ -6112,44 +6114,100 @@ export default function ClientDashboardPage() {
                         </>}
                         {ts&&<>
                           <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
-                            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Turnover médio</div>
+                            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Rotação média</div>
                             <div className="text-2xl font-black text-amber-400">{ts.avg.toFixed(1)}<span className="text-sm font-semibold text-slate-500">%</span></div>
-                            <div className="text-[11px] text-slate-400 mt-1">por rebalanceamento</div>
+                            <div className="text-[11px] text-slate-400 mt-1">da carteira por revisão</div>
                           </div>
-                          {(()=>{const cy=calYearsFromDates(dates)??dates.length/252;const ann=cy>0?ts.total/cy:ts.total;return(
                           <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
-                            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Turnover anual</div>
-                            <div className="text-2xl font-black text-amber-300">{ann.toFixed(0)}<span className="text-sm font-semibold text-slate-500">%</span></div>
-                            <div className="text-[11px] text-slate-400 mt-1">por ano · {ts.n} rebalanceamentos</div>
-                          </div>);})()}
+                            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Revisões históricas</div>
+                            <div className="text-2xl font-black text-slate-300">{ts.n}</div>
+                            <div className="text-[11px] text-slate-400 mt-1">rebalanceamentos · frequência mensal</div>
+                          </div>
                         </>}
                       </div>
                     );
                   })()}
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="font-bold text-slate-200 text-sm">Evolução do investimento</div>
-                      <div className="flex gap-1">{PERIODS.map(p=>(
-                        <button key={p} onClick={()=>setPeriod(p)}
-                          className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${period===p?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>{p}</button>
-                      ))}</div>
-                    </div>
-                    <ResponsiveContainer width="100%" height={220}>
-                      <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
-                        <XAxis dataKey="date" tick={{fontSize:10,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}
-                          tickFormatter={(d:string)=>{const dt=new Date(d);return `${dt.toLocaleString("pt-PT",{month:"short"})} ${String(dt.getFullYear()).slice(2)}`;}}/>
-                        <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}}/>
-                        <Tooltip content={<PerfTooltip/>}/>
-                        <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
-                        <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2} dot={false} name="Modelo"/>
-                        <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name="Benchmark" strokeDasharray="4 2"/>
-                      </LineChart>
-                    </ResponsiveContainer>
-                    <div className="flex items-center gap-4 mt-3 flex-wrap">
-                      <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-0.5 bg-blue-400 rounded"/>Modelo</div>
-                      <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-px bg-slate-400 rounded"/>{BENCH_SHORT}</div>
-                      <div className="ml-auto text-[10px] text-slate-600 italic">{BENCH_LABEL}</div>
-                    </div>
+                    {(()=>{
+                      // Stress period reference bands (start, end, label, color)
+                      const stressPeriods=[
+                        {label:"GFC 2008",start:"2007-10-01",end:"2009-03-31",color:"#ef4444"},
+                        {label:"COVID",start:"2020-02-01",end:"2020-04-30",color:"#f59e0b"},
+                        {label:"Bear 2022",start:"2022-01-01",end:"2022-12-31",color:"#a78bfa"},
+                      ];
+                      // Map dates to chart indexes for reference areas
+                      const chartDates=(perfData?.chart??[]).map(c=>c.date);
+                      const stressAreas=showStressPeriods?stressPeriods.map(sp=>{
+                        const s=chartDates.find(d=>d>=sp.start)||sp.start;
+                        const e=[...chartDates].reverse().find(d=>d<=sp.end)||sp.end;
+                        return{...sp,s,e};
+                      }):[];
+                      return <>
+                      {showMethodModal&&(
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                          <div className="absolute inset-0 bg-black/70" onClick={()=>setShowMethodModal(false)}/>
+                          <div className="relative bg-[#0f1421] border border-[#1a2540] rounded-2xl p-8 max-w-lg w-full shadow-2xl">
+                            <button onClick={()=>setShowMethodModal(false)} className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 text-lg">✕</button>
+                            <div className="text-teal-500 text-[10px] uppercase tracking-widest font-bold mb-3">Metodologia</div>
+                            <div className="text-slate-100 font-bold text-base mb-4">DECIDE V5 — Modelo quantitativo</div>
+                            <div className="space-y-3 text-[12px] text-slate-400 leading-relaxed">
+                              <p><span className="text-slate-300 font-semibold">Dados históricos:</span> Simulação retrospectiva (backtest) sobre preços ajustados de dividendos desde Julho de 2005. Os resultados históricos não garantem performance futura.</p>
+                              <p><span className="text-slate-300 font-semibold">Universo:</span> Selecção mensal das melhores 20 acções por modelo de momentum e qualidade. Liquidez (XEON/T-Bills) usada como amortecedor de risco.</p>
+                              <p><span className="text-slate-300 font-semibold">Regra de volatilidade:</span> A exposição a acções é ajustada mensalmente para manter a volatilidade alvo próxima da do benchmark. Permite redução automática em períodos de stress.</p>
+                              <p><span className="text-slate-300 font-semibold">Custos:</span> Incluídas estimativas de bid-ask spread (0.05%), comissões e slippage. Custos fiscais não incluídos.</p>
+                              <p><span className="text-slate-300 font-semibold">Benchmark:</span> {BENCH_LABEL} — índice de referência de acções globais (MSCI World). Não inclui dividendos reinvestidos.</p>
+                              <p className="text-slate-600 text-[11px] border-t border-slate-800 pt-3">Este material é fornecido apenas para fins informativos e não constitui aconselhamento de investimento. Investir envolve risco de perda de capital.</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <div className="font-bold text-slate-200 text-sm">Evolução do investimento</div>
+                          <div className="text-[10px] text-slate-600 mt-0.5">Simulação histórica · dados desde 2005</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={()=>setShowStressPeriods(v=>!v)}
+                            className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-colors flex items-center gap-1.5 ${showStressPeriods?"bg-red-900/30 border-red-500/30 text-red-400":"border-slate-700/50 text-slate-600 hover:text-slate-400"}`}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-current"/>Períodos de stress
+                          </button>
+                          <button onClick={()=>setShowMethodModal(true)}
+                            className="px-3 py-1.5 text-[10px] font-semibold rounded-lg border border-teal-500/30 text-teal-500 hover:bg-teal-500/10 transition-colors">
+                            Metodologia
+                          </button>
+                          <div className="flex gap-1">{PERIODS.map(p=>(
+                            <button key={p} onClick={()=>setPeriod(p)}
+                              className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${period===p?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>{p}</button>
+                          ))}</div>
+                        </div>
+                      </div>
+                      <ResponsiveContainer width="100%" height={240}>
+                        <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
+                          <XAxis dataKey="date" tick={{fontSize:10,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}
+                            tickFormatter={(d:string)=>{const dt=new Date(d);return `${dt.toLocaleString("pt-PT",{month:"short"})} ${String(dt.getFullYear()).slice(2)}`;}}/>
+                          <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}}/>
+                          <Tooltip content={<PerfTooltip/>}/>
+                          <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
+                          {stressAreas.map(sp=>(
+                            <ReferenceArea key={sp.label} x1={sp.s} x2={sp.e} fill={sp.color} fillOpacity={0.08} stroke={sp.color} strokeOpacity={0.3} strokeWidth={1}/>
+                          ))}
+                          <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2} dot={false} name="Modelo"/>
+                          <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name="Benchmark" strokeDasharray="4 2"/>
+                        </LineChart>
+                      </ResponsiveContainer>
+                      <div className="flex items-center gap-4 mt-3 flex-wrap">
+                        <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-0.5 bg-blue-400 rounded"/>Modelo</div>
+                        <div className="flex items-center gap-2 text-xs text-slate-400"><div className="w-5 h-px bg-slate-400 rounded"/>{BENCH_SHORT}</div>
+                        {showStressPeriods&&stressPeriods.map(sp=>(
+                          <div key={sp.label} className="flex items-center gap-1.5 text-[10px]" style={{color:sp.color}}>
+                            <div className="w-2.5 h-2.5 rounded-sm opacity-60" style={{background:sp.color}}/>
+                            {sp.label}
+                          </div>
+                        ))}
+                        <div className="ml-auto text-[10px] text-slate-600 italic">{BENCH_LABEL}</div>
+                      </div>
+                      </>;
+                    })()}
                   </div>
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                     <div className="font-bold text-slate-200 text-sm mb-4">Retornos anuais</div>
@@ -6172,6 +6230,17 @@ export default function ClientDashboardPage() {
                         <Bar dataKey="bench" name={BENCH_SHORT} fill="#334155" radius={[2,2,0,0]} maxBarSize={24}/>
                       </BarChart>
                     </ResponsiveContainer>
+                  </div>
+
+                  {/* Disclaimer regulatório */}
+                  <div className="flex items-start gap-3 bg-slate-900/50 border border-slate-800/60 rounded-xl px-5 py-4">
+                    <div className="text-slate-600 mt-0.5 shrink-0">⚠</div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      <span className="text-slate-500 font-semibold">Simulação histórica (backtest).</span>{" "}
+                      Os resultados apresentados referem-se a uma simulação retrospectiva com dados históricos ajustados de dividendos desde Julho de 2005.
+                      Performance passada não garante resultados futuros. Os retornos incluem estimativas de custos de transacção mas não incluem custos fiscais.
+                      Este conteúdo é fornecido apenas para fins informativos e não constitui aconselhamento de investimento.
+                    </p>
                   </div>
                 </div>
               )}
