@@ -4107,8 +4107,8 @@ export default function ClientDashboardPage() {
       const s=getSector(r.ticker);
       map.set(s,(map.get(s)??0)+r.cur);
     });
-    const total=[...map.values()].reduce((a,b)=>a+b,0)||1;
-    return [...map.entries()].map(([name,pct])=>({name,value:Math.round(pct/total*100)})).sort((a,b)=>b.value-a.value);
+    // Raw plan weights — consistent with "Este mês" column so sector % matches table
+    return [...map.entries()].map(([name,pct])=>({name,value:Math.round(pct*10)/10})).sort((a,b)=>b.value-a.value);
   },[actionCounts]);
 
   // ── Profile multiplier (0.75 / 1.0 / 1.25) ──────────────────────────────
@@ -4311,10 +4311,11 @@ export default function ClientDashboardPage() {
       if(z==="Eurozona") return;
       map.set(z,(map.get(z)??0)+r.cur);
     });
-    const total=[...map.values()].reduce((a,b)=>a+b,0)||1;
+    // Use raw plan weights (same base as the "Este mês" column in the table)
+    // so geo bars match what the user sees in the positions table.
     return [...map.entries()]
-      .map(([name,pct])=>({name,value:Math.round(pct/total*100)}))
-      .filter(d=>d.value>=1)
+      .map(([name,pct])=>({name,value:Math.round(pct*10)/10}))
+      .filter(d=>d.value>=0.5)
       .sort((a,b)=>b.value-a.value);
   },[actionCounts.allRows]);
 
@@ -4365,11 +4366,8 @@ export default function ClientDashboardPage() {
       if(c==="Eurozona") return;
       raw.set(c,(raw.get(c)??0)+r.cur);
     });
-    // Normalize to % of equity-only (exclude XEON weight so values sum to ~100%)
-    const total=[...raw.values()].reduce((a,b)=>a+b,0)||1;
-    const m=new Map<string,number>();
-    raw.forEach((v,k)=>m.set(k,v/total*100));
-    return m;
+    // Use raw plan weights — consistent with the "Este mês" column in the table
+    return raw;
   },[actionCounts.allRows]);
 
   const riskMetrics=useMemo(()=>{
@@ -5852,23 +5850,25 @@ export default function ClientDashboardPage() {
                     {/* Sector — horizontal bars premium */}
                     <div className="bg-[#0b0f1a] border border-[#1a1f2e]/60 rounded-xl p-5">
                       <div className="text-xs font-bold text-slate-300 mb-4">Composição sectorial</div>
+                      {(()=>{const maxSec=sectorData[0]?.value||1; return(
                       <div className="space-y-2.5">
-                        {sectorData.filter(s=>s.value>=1).map((s,i)=>(
+                        {sectorData.filter(s=>s.value>=0.5).map((s,i)=>(
                           <div key={s.name}>
                             <div className="flex justify-between text-xs mb-1.5">
                               <div className="flex items-center gap-2">
                                 <div className="w-2 h-2 rounded-full shrink-0" style={{background:SECTOR_COLORS[i%SECTOR_COLORS.length]}}/>
                                 <span className="text-slate-400">{s.name}</span>
                               </div>
-                              <span className={`font-bold tabular-nums ${i===0?"text-slate-100":"text-slate-400"}`}>{s.value}%</span>
+                              <span className={`font-bold tabular-nums ${i===0?"text-slate-100":"text-slate-400"}`}>{s.value.toFixed(1)}%</span>
                             </div>
                             <div className="h-1.5 rounded-full bg-[#111827] overflow-hidden">
                               <div className="h-full rounded-full transition-all duration-500"
-                                style={{width:`${s.value}%`,background:SECTOR_COLORS[i%SECTOR_COLORS.length],opacity:i===0?1:0.65}}/>
+                                style={{width:`${(s.value/maxSec)*100}%`,background:SECTOR_COLORS[i%SECTOR_COLORS.length],opacity:i===0?1:0.65}}/>
                             </div>
                           </div>
                         ))}
                       </div>
+                      );})()}
                     </div>
 
                     {/* Geography — bars with teal gradient */}
@@ -5877,20 +5877,22 @@ export default function ClientDashboardPage() {
                         <div className="text-xs font-bold text-slate-300">Exposição geográfica</div>
                         <span className="text-[10px] text-slate-600">% das acções</span>
                       </div>
+                      {(()=>{const maxGeo=geoData[0]?.value||1; return(
                       <div className="space-y-2.5">
                         {geoData.map((g,i)=>(
                           <div key={g.name}>
                             <div className="flex justify-between text-xs mb-1.5">
                               <span className="text-slate-400">{g.name}</span>
-                              <span className={`font-bold tabular-nums ${i===0?"text-slate-100":"text-slate-400"}`}>{g.value}%</span>
+                              <span className={`font-bold tabular-nums ${i===0?"text-slate-100":"text-slate-400"}`}>{g.value.toFixed(1)}%</span>
                             </div>
                             <div className="h-1.5 rounded-full bg-[#111827] overflow-hidden">
                               <div className="h-full rounded-full transition-all duration-500"
-                                style={{width:`${g.value}%`,background:i===0?"#14b8a6":i===1?"#3b82f6":"#64748b",opacity:i===0?1:0.6}}/>
+                                style={{width:`${(g.value/maxGeo)*100}%`,background:i===0?"#14b8a6":i===1?"#3b82f6":"#64748b",opacity:i===0?1:0.6}}/>
                             </div>
                           </div>
                         ))}
                       </div>
+                      );})()}
                     </div>
                   </div>
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e]/60 rounded-xl p-5">
