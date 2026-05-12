@@ -2793,6 +2793,20 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
               <span>ℹ</span>
               <span>Total de compras limitado a <strong>{Math.round(BUY_SAFETY_FACTOR*100)}% do plano (≤ {fmtE(aum*BUY_SAFETY_FACTOR)} €)</strong> — reserva de {Math.round((1-BUY_SAFETY_FACTOR)*100)}% em cash para cobrir variações de preço, spread e arredondamento. Evita exceder o saldo disponível em contas sem margem.</span>
             </div>
+            {/* Budget diagnostic bar */}
+            <div className="mb-3 rounded-lg border border-slate-700/50 bg-slate-800/40 px-3 py-2 text-[10px] space-y-1">
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="font-semibold text-slate-300">Diagnóstico de budget</span>
+                <span className="text-slate-500">Soma pesos: {adjustedOrderRows.reduce((s,r)=>s+r.cur,0).toFixed(1)}%</span>
+              </div>
+              <div className="flex gap-4 flex-wrap">
+                <span>Plano: <strong className="text-slate-200">€{aum.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
+                <span>Budget (97%): <strong className="text-slate-200">€{(aum*BUY_SAFETY_FACTOR).toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
+                <span>Σ pesos×AUM: <strong className={adjustedOrderRows.reduce((s,r)=>s+r.cur,0)>100.5?"text-amber-400":"text-slate-200"}>€{(adjustedOrderRows.reduce((s,r)=>s+r.cur,0)/100*aum).toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
+                <span>Σ est_eur activo: <strong className={investEur>aum*BUY_SAFETY_FACTOR?"text-red-400":"text-emerald-400"}>€{investEur.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
+                <span>Já investido: <strong className={totalHeldEur>aum*BUY_SAFETY_FACTOR?"text-amber-400":"text-slate-200"}>€{totalHeldEur.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
+              </div>
+            </div>
             <table className="w-full text-xs">
               <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
                 <th className="pb-2 font-semibold">Ativo</th>
