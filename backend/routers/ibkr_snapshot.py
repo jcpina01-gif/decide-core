@@ -430,6 +430,11 @@ def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
         # Margin accounts have SMA, RegTEquity, and buying power > cash balance
         _is_margin = _has_sma or _has_reg_t or (_buying_power > _cash_balance * 1.05 and _buying_power > 1000)
 
+        # EUR/USD rate used to convert USD position values to EUR for display/calculation.
+        # IB returns marketValue in the position's native currency (USD for US stocks),
+        # not in the account base currency, so we must convert manually.
+        _fx_eurusd_env = float(os.environ.get("DECIDE_EURUSD_ESTIMATE", "1.17") or "1.17")
+
         positions: list[dict] = []
         enrich_attempted = 0
         enrich_named = 0
@@ -452,10 +457,20 @@ def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
             curr = str(getattr(c, "currency", nav_ccy) or nav_ccy).upper()
             if abs(mval) < 1e-9 and mpx != 0.0:
                 mval = qty * mpx
-            weight_pct = (mval / nav * 100.0) if nav else 0.0
+            # Convert native value to EUR for cross-currency positions (e.g. USD stocks in EUR account)
+            if curr == nav_ccy or nav_ccy == "":
+                mval_eur = mval
+            elif curr == "USD" and nav_ccy == "EUR":
+                mval_eur = mval / _fx_eurusd_env
+            elif curr == "GBp":
+                mval_eur = mval / 100.0 / _fx_eurusd_env * 1.17  # rough GBP→EUR (acceptable fallback)
+            else:
+                mval_eur = mval  # unknown cross — keep native
+            weight_pct = (mval_eur / nav * 100.0) if nav else 0.0
             row: dict[str, Any] = {
                 "ticker": display_sym, "qty": qty, "market_price": mpx,
-                "value": mval, "currency": curr, "weight_pct": weight_pct,
+                "value": mval, "value_eur": round(mval_eur, 2),
+                "currency": curr, "weight_pct": weight_pct,
             }
             if IBKR_SNAPSHOT_ENRICH_METADATA:
                 try:
@@ -521,12 +536,22 @@ def _run_snapshot(ib_host: str, ib_port: int, ib_client_id: int) -> dict:
                 break
         cash_weight_pct = (cash_val / nav * 100.0) if nav else 0.0
 
+        # FX hedge (FXCONV / IDEALPRO EURUSD) does NOT require a margin account — cash accounts
+        # can buy EUR vs USD for hedging. Previously fx_supported mirrored _is_margin, which
+        # incorrectly forced fx_exposure="aberta" on the frontend and skipped all FX orders.
+        _fx_force = os.environ.get("DECIDE_IBKR_FX_SUPPORTED", "").strip().lower()
+        if _fx_force in ("0", "false", "no"):
+            fx_supported_flag = False
+        elif _fx_force in ("1", "true", "yes"):
+            fx_supported_flag = True
+        else:
+            fx_supported_flag = True
+
         return {
             "status": "ok",
             "net_liquidation": nav, "net_liquidation_ccy": nav_ccy, "account_code": acct_code,
             "account_type": acct_type,
-            # fx_supported: only True if confirmed Margin (SMA/RegTEquity present, or buying power > cash)
-            "fx_supported": _is_margin,
+            "fx_supported": fx_supported_flag,
             "positions": positions,
             "open_orders": open_orders_data,
             "meta": {

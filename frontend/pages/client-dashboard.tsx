@@ -2340,7 +2340,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   // "full" = send entire plan (all positions); "delta" = send only this month's changes
   const [execMode,setExecMode]=React.useState<"full"|"delta">("full");
   // IB live positions (for orphan detection and "vender tudo")
-  const [ibkrPos,setIbkrPos]=React.useState<{ticker:string;qty:number;value:number;weight_pct:number}[]|null>(null);
+  const [ibkrPos,setIbkrPos]=React.useState<{ticker:string;qty:number;value:number;value_eur?:number;currency?:string;weight_pct:number}[]|null>(null);
   const [ibkrOpenOrders,setIbkrOpenOrders]=React.useState<{ticker:string;side:string;remaining_qty:number;status:string}[]>([]);
   const [ibkrFxSupported,setIbkrFxSupported]=React.useState<boolean|null>(null);
   const [ibkrFxManualOverride,setIbkrFxManualOverride]=React.useState<boolean>(
@@ -2516,7 +2516,8 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const MIN_ORDER_EUR=20; // minimum incremental buy to bother sending
   const ibkrHoldingsMap=React.useMemo(()=>{
     const m=new Map<string,number>();
-    (ibkrPos??[]).forEach(p=>m.set(p.ticker.toUpperCase(),p.value));
+    // Use value_eur (EUR-converted) when available; fall back to native value (pre-fix snapshots)
+    (ibkrPos??[]).forEach(p=>m.set(p.ticker.toUpperCase(), p.value_eur ?? p.value));
     return m;
   },[ibkrPos]);
   const totalHeldEur=React.useMemo(()=>
@@ -3438,7 +3439,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
           )}
           {/* Warn if portfolio is too far from model target to safely rebalance */}
           {ibkrPos&&!done&&(()=>{
-            const ibNav=ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0);
+            const ibNav=ibkrPos.reduce((s,p)=>s+Math.abs(p.value_eur??p.value),0);
             if(ibNav<=aum*1.5) return null;
             return (
               <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/40 rounded-xl px-4 py-3 text-[11px] text-red-300">
@@ -3511,7 +3512,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             </button>
             <button
               onClick={()=>setShowSendConfirm(true)}
-              disabled={sending||ibkrLoading||nOrdens===0||done||aum<=0||paperMode||!ibkrPos||showSendConfirm||investOverBudget||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0)>aum*1.5)}
+              disabled={sending||ibkrLoading||nOrdens===0||done||aum<=0||paperMode||!ibkrPos||showSendConfirm||investOverBudget||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value_eur??p.value),0)>aum*1.5)}
               className={`flex-1 flex items-center justify-center gap-2 disabled:opacity-50 text-white text-sm font-bold py-3 rounded-xl transition-all ${paperMode?"bg-slate-700 cursor-not-allowed":investOverBudget?"bg-red-900 cursor-not-allowed":recentlySent?"bg-amber-700 hover:bg-amber-600 shadow-lg shadow-amber-900/30":"bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30"}`}>
               <Send size={15}/>
               {paperMode?"Desliga 'Simulação local' para enviar à IB →":investOverBudget?`⛔ Bloqueado: total €${Math.round(investEur).toLocaleString("pt-PT")} > budget €${Math.round(budgetEurForDisplay).toLocaleString("pt-PT")} — vê diagnóstico acima`:recentlySent?"⚠ Já enviou — confirmar 2.º envio?":"Confirmar e enviar ordens para IB →"}
@@ -3608,7 +3609,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
               </div>
               {/* Warn if IB NAV is known and differs significantly from aum */}
               {ibkrPos!==null&&(()=>{
-                const ibNav=ibkrPos.reduce((s,p)=>s+Math.abs(p.value),0);
+                const ibNav=ibkrPos.reduce((s,p)=>s+Math.abs(p.value_eur??p.value),0);
                 const diff=Math.abs(ibNav-aum);
                 const pct=aum>0?diff/aum*100:0;
                 const isHugelyOver=ibNav>aum*1.5;
@@ -3861,7 +3862,7 @@ export default function ClientDashboardPage() {
   // Carteira page: tab (real IB vs plano modelo) + IB snapshot state
   const [cartTab,setCartTab]=useState<"ib"|"plano">("ib");
   const [hoveredCountry,setHoveredCountry]=useState<{name:string;pct:number}|null>(null);
-  const [cartIbPos,setCartIbPos]=useState<{ticker:string;qty:number;value:number;weight_pct:number;currency:string;name?:string;sector?:string;country?:string}[]|null>(null);
+  const [cartIbPos,setCartIbPos]=useState<{ticker:string;qty:number;value:number;value_eur?:number;weight_pct:number;currency:string;name?:string;sector?:string;country?:string}[]|null>(null);
   const [cartIbLoading,setCartIbLoading]=useState(false);
   const [cartIbErr,setCartIbErr]=useState("");
   const [cartIbNav,setCartIbNav]=useState<{value:number;ccy:string}>({value:0,ccy:""});
@@ -5423,7 +5424,7 @@ export default function ClientDashboardPage() {
                         <div className="text-slate-400 text-xs">
                           {cartIbPos!==null&&!cartIbErr&&(
                             <span>
-                            {cartIbPos.length} posições · investido {cartIbPos.reduce((s,p)=>s+p.value,0).toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} EUR
+                            {cartIbPos.length} posições · investido {cartIbPos.reduce((s,p)=>s+(p.value_eur??p.value),0).toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} EUR
                             {cartIbNav.value>0&&<span className="text-slate-600 ml-2">(conta paper: {cartIbNav.value.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} {cartIbNav.ccy})</span>}
                           </span>
                           )}
@@ -5468,7 +5469,8 @@ export default function ClientDashboardPage() {
                                   if(ibAlias!==r.ticker.toUpperCase()) planMap.set(ibAlias,r.cur);
                                 });
                                 return cartIbPos.map((p,i)=>{
-                                  const pctOfPlan=aum>0?(p.value/aum*100):0;
+                                  const valEur=p.value_eur??p.value;
+                                  const pctOfPlan=aum>0?(valEur/aum*100):0;
                                   const planTarget=planMap.get(p.ticker.toUpperCase())??0;
                                   const desvio=pctOfPlan-planTarget;
                                   const desvioTxt=desvio===0?"—":`${desvio>0?"+":""}${desvio.toFixed(1)}pp`;
@@ -5481,8 +5483,9 @@ export default function ClientDashboardPage() {
                                       <td className="px-2 py-2.5 text-slate-400">{COUNTRY[p.ticker.toUpperCase()]||(p as any).country||"—"}</td>
                                       <td className="px-2 py-2.5 text-right text-slate-300">{p.qty.toLocaleString("pt-PT",{maximumFractionDigits:4})}</td>
                                       <td className="px-2 py-2.5 text-right text-slate-300">
-                                        {p.value.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})} EUR
-                                        {p.currency&&p.currency!=="EUR"&&<span className="text-slate-600 ml-1 text-[10px]">({p.currency})</span>}
+                                        {(p.value_eur??p.value).toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})} EUR
+                                        {p.currency&&p.currency!=="EUR"&&p.value_eur==null&&<span className="text-slate-600 ml-1 text-[10px]">({p.currency})</span>}
+                                        {p.currency&&p.currency!=="EUR"&&p.value_eur!=null&&<span className="text-slate-600 ml-1 text-[10px]" title={`Valor nativo: ${p.value.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})} ${p.currency}`}>≈€</span>}
                                       </td>
                                       <td className="px-2 py-2.5 text-right">
                                         <span className={`font-semibold ${pctOfPlan>5?"text-emerald-400":pctOfPlan>2?"text-blue-400":"text-slate-400"}`}>
@@ -5500,7 +5503,7 @@ export default function ClientDashboardPage() {
                             </tbody>
                             <tfoot>
                               {(()=>{
-                                const totalInvestedEur=cartIbPos.reduce((s,p)=>s+p.value,0);
+                                const totalInvestedEur=cartIbPos.reduce((s,p)=>s+(p.value_eur??p.value),0);
                                 const pctInvested=aum>0?(totalInvestedEur/aum*100):0;
                                 // Sum of absolute deviations vs plan (same alias-aware map)
                                 const planMap2=new Map<string,number>();
@@ -5510,7 +5513,7 @@ export default function ClientDashboardPage() {
                                   if(ibAlias!==r.ticker.toUpperCase()) planMap2.set(ibAlias,r.cur);
                                 });
                                 const sumAbsDesvio=cartIbPos.reduce((s,p)=>{
-                                  const pct=aum>0?(p.value/aum*100):0;
+                                  const pct=aum>0?((p.value_eur??p.value)/aum*100):0;
                                   const tgt=planMap2.get(p.ticker.toUpperCase())??0;
                                   return s+Math.abs(pct-tgt);
                                 },0);
