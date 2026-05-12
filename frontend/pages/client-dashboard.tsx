@@ -32,14 +32,20 @@ import { KPI_IFRAME_SRC_REV } from "../lib/kpiFlaskBuildGate";
 
 /* ─── native simulator ──────────────────────────────────────── */
 const PRAZO_OPTS=[1,3,5,10,15,20] as const; // v2
-function NativeSimulator({dates,equity,bench,onRegister,loggedIn,volScale=1}:{
-  dates:string[];equity:number[];bench:number[];onRegister:()=>void;loggedIn:boolean;volScale?:number;
+function NativeSimulator({dates,equity,bench,onRegister,loggedIn,volScale=1,profileKey=""}:{
+  dates:string[];equity:number[];bench:number[];onRegister:()=>void;loggedIn:boolean;
+  /** Pre-computed vol-rule scale (profile+margin). When this changes, useMemos recompute. */
+  volScale?:number;
+  /** Opaque string that changes with profile+margin mode. Forces slice recompute. */
+  profileKey?:string;
 }) {
   const [capital,setCapital]=React.useState(10000);
   const [capInput,setCapInput]=React.useState("10000");
   const [prazo,setPrazo]=React.useState(20); // anos de horizonte
 
   // Slice de dados para o prazo seleccionado (com skipWarmup)
+  // profileKey is in deps so that switching profile always invalidates the slice
+  // even when equity has the same array reference (e.g. factor===1 returns equityRaw as-is).
   const slice=React.useMemo(()=>{
     if(!equity.length||!dates.length) return {eq:equity,bch:bench,dts:dates};
     const last=new Date(dates[dates.length-1]);
@@ -50,7 +56,8 @@ function NativeSimulator({dates,equity,bench,onRegister,loggedIn,volScale=1}:{
     const v0=equity[s];
     while(s<equity.length-1&&equity[s]===v0) s++;
     return {eq:equity.slice(s),bch:bench.slice(s),dts:dates.slice(s)};
-  },[equity,bench,dates,prazo]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[equity,bench,dates,prazo,profileKey]);
 
   // Apply volScale: scale each period's excess return by the profile multiplier
   const scaledEq=React.useMemo(()=>{
@@ -4929,7 +4936,7 @@ export default function ClientDashboardPage() {
                     <div className="px-5 py-4">
                       <NativeSimulator dates={dates} equity={activeEquity} bench={benchRaw}
                         onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}
-                        volScale={1}/>
+                        volScale={1} profileKey={`${riskProfileLocal}-${kpiMode}`}/>
                     </div>
                   </div>
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4 text-xs text-slate-500">
@@ -5335,7 +5342,7 @@ export default function ClientDashboardPage() {
                     <div className="px-5 py-4">
                       <NativeSimulator dates={dates} equity={activeEquity} bench={benchRaw}
                         onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}
-                        volScale={1}/>
+                        volScale={1} profileKey={`${riskProfileLocal}-${kpiMode}`}/>
                     </div>
                   </div>
 
