@@ -2333,7 +2333,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [showSendConfirm,setShowSendConfirm]=React.useState(false);
   // Block re-send within 4 hours of a confirmed submission
   const recentlySent=React.useMemo(()=>lastSent?Date.now()-lastSent.ts<4*3600*1000:false,[lastSent]);
-  type FillRow={ticker:string;action:string;requested_qty:number;filled:number;avg_fill_price?:number|null;status:string;message?:string|null;ib_order_id?:number|null;ib_perm_id?:number|null;executed_as?:string|null;fx_hedge_attached?:boolean};
+  type FillRow={ticker:string;action:string;requested_qty:number;filled:number;avg_fill_price?:number|null;currency?:string;value_eur?:number|null;status:string;message?:string|null;ib_order_id?:number|null;ib_perm_id?:number|null;executed_as?:string|null;fx_hedge_attached?:boolean};
   const [fills,setFills]=React.useState<FillRow[]>([]);
   const [paperMode,setPaperMode]=React.useState(false);
   const [showDiag,setShowDiag]=React.useState(false);
@@ -3318,7 +3318,8 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                           const isFilled=f.status==="Filled";
                           const isSubmitted=["Submitted","PreSubmitted","PendingSubmit"].includes(f.status);
                           const isError=f.status==="error";
-                          const valorExec=f.filled&&f.avg_fill_price?f.filled*f.avg_fill_price:null;
+                          // value_eur: backend already converts USD→EUR; fallback assumes EUR
+                          const valorExec=f.value_eur!=null?f.value_eur:f.filled&&f.avg_fill_price?f.filled*f.avg_fill_price:null;
                           const rowBg=isFx?"bg-violet-950/30":i%2===0?"":"bg-[#080c14]";
                           const statusBadge=isFilled
                             ?"bg-emerald-900/50 text-emerald-300 border-emerald-700/40"
@@ -3378,7 +3379,14 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                             {fills.reduce((s,f)=>s+(f.filled||0),0).toLocaleString("pt-PT",{maximumFractionDigits:0})}
                           </td>
                           <td colSpan={2} className="px-2 py-2 text-right text-[10px] font-bold text-emerald-400 tabular-nums">
-                            {(()=>{const tot=fills.reduce((s,f)=>s+(f.filled&&f.avg_fill_price?f.filled*f.avg_fill_price:0),0); return tot>0?tot.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2}):"—";})()}
+                            {(()=>{
+                              // Use value_eur (EUR-converted) if available, else native price × qty (fallback)
+                              const tot=fills.filter(f=>f.ticker!=="EUR/USD"&&f.ticker!=="EURUSD").reduce((s,f)=>{
+                                if(f.value_eur!=null) return s+f.value_eur;
+                                return s+(f.filled&&f.avg_fill_price?f.filled*f.avg_fill_price:0);
+                              },0);
+                              return tot>0?"€ "+tot.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2}):"—";
+                            })()}
                           </td>
                           <td colSpan={2} className="px-3 py-2"/>
                         </tr>

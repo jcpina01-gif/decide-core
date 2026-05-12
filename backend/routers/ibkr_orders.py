@@ -435,10 +435,15 @@ def _execute_ib_orders(
                 and "Falha" not in fx_note
                 and "não qualificado" not in fx_note.lower()
             )
+            is_eur_stock = _is_eur_mm_ucits_symbol(sym)
+            value_native = (filled * ap) if filled > 0 and ap > 0 else None
+            value_eur_fill = (value_native / fx_eurusd if not is_eur_stock else value_native) if value_native else None
             fills.append({
                 "ticker": sym, "action": side,
                 "requested_qty": float(qty), "filled": filled,
                 "avg_fill_price": ap if ap > 0 else None,
+                "currency": "EUR" if is_eur_stock else "USD",
+                "value_eur": round(value_eur_fill, 2) if value_eur_fill else None,
                 "status": st, "message": fx_note,
                 "ib_order_id": oid or None,
                 **({"fx_hedge_attached": True} if fx_attached_ok else {}),
