@@ -60,7 +60,11 @@ export function isFxHedgeGateOk(): boolean {
     if (typeof window === "undefined") return false;
     if (!isFxHedgeOnboardingApplicable()) return true;
     if (window.localStorage.getItem(STEP_KEY) === "1") return true;
-    return readFxHedgePrefs() !== null;
+    if (readFxHedgePrefs() !== null) return true;
+    // Also accept if dashboard prefs have a valid fxExposure (user configured via settings panel)
+    const dashPrefs = JSON.parse(window.localStorage.getItem("decide_prefs_v1") ?? "{}");
+    if (["protegida", "parcial", "aberta"].includes(dashPrefs.fxExposure ?? "")) return true;
+    return false;
   } catch {
     return false;
   }

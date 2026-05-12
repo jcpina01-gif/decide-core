@@ -823,6 +823,20 @@ export default function ApprovePage({
                       <Link href="/client/fx-hedge-onboarding" style={{ color: "#fcd34d", textDecoration: "underline" }}>
                         Ir para Hedge Cambial →
                       </Link>
+                      {" · "}
+                      <button
+                        type="button"
+                        style={{ color: "#86efac", textDecoration: "underline", background: "none", border: "none", cursor: "pointer", fontSize: "inherit", padding: 0 }}
+                        onClick={() => {
+                          try {
+                            window.localStorage.setItem("decide_fx_hedge_prefs_v1", JSON.stringify({ pair: "EURUSD", pct: 0, residenceCountry: "PT" }));
+                            window.localStorage.setItem("decide_onboarding_step5_hedge_done", "1");
+                            window.dispatchEvent(new Event("decide_onboarding_ls_changed_v1"));
+                          } catch { /* ignore */ }
+                        }}
+                      >
+                        Definir agora como «Sem hedge» e continuar →
+                      </button>
                     </span>
                   )
                   : null}
