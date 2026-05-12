@@ -5385,38 +5385,44 @@ export default function ClientDashboardPage() {
               {/* ── RECOMENDAÇÕES ── */}
               {activePage==="reco"&&(
               <>{/* 1. recomendação */}
-              <div data-section="reco" className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                <SH title="Recomendação deste mês"/>
-                <div className="flex items-start gap-8">
-                  <div className="flex gap-8">
-                    <ActionBadge label="COMPRAR"  count={recoLoading?0:actionCounts.comprar}  color="text-emerald-400"/>
-                    <ActionBadge label="AUMENTAR" count={recoLoading?0:actionCounts.aumentar} color="text-cyan-400"/>
-                    <ActionBadge label="REDUZIR"  count={recoLoading?0:actionCounts.reduzir}  color="text-amber-400"/>
-                    <ActionBadge label="VENDER"   count={recoLoading?0:actionCounts.vender}   color="text-red-400"/>
-                    <ActionBadge label="MANTER"   count={recoLoading?0:actionCounts.manter}   color="text-slate-300"/>
+              <div data-section="reco" className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-6">
+                <div className="flex items-start justify-between gap-8">
+                  {/* Action counts */}
+                  <div>
+                    <div className="text-xs text-slate-500 font-medium mb-4 uppercase tracking-widest">Recomendação · {recoLabel}</div>
+                    <div className="flex gap-6">
+                      {[
+                        {label:"Nova posição", count:recoLoading?0:actionCounts.comprar,  c:"text-teal-400",  bg:"bg-teal-500/10",  b:"border-teal-500/20"},
+                        {label:"Reforçar",     count:recoLoading?0:actionCounts.aumentar, c:"text-blue-400",  bg:"bg-blue-500/10",  b:"border-blue-500/20"},
+                        {label:"Reduzir",      count:recoLoading?0:actionCounts.reduzir,  c:"text-amber-400", bg:"bg-amber-500/10", b:"border-amber-500/20"},
+                        {label:"Encerrar",     count:recoLoading?0:actionCounts.vender,   c:"text-red-400",   bg:"bg-red-500/10",   b:"border-red-500/20"},
+                        {label:"Manter",       count:recoLoading?0:actionCounts.manter,   c:"text-slate-400", bg:"bg-slate-800/40", b:"border-slate-700/30"},
+                      ].map(x=>(
+                        <div key={x.label} className={`flex flex-col items-center gap-1.5 rounded-xl px-5 py-4 ${x.bg} border ${x.b} min-w-[80px]`}>
+                          <span className={`text-3xl font-black tabular-nums ${x.c}`}>{x.count}</span>
+                          <span className={`text-[10px] font-semibold ${x.c} opacity-80`}>{x.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 flex items-center gap-4 text-xs text-slate-500 pt-4 border-t border-[#1a1f2e]">
+                      <span>Risco estimado: <span className="text-teal-400 font-semibold">↓ Ligeiro</span></span>
+                      <span className="text-slate-700">·</span>
+                      <span>Retorno esperado: <span className="text-blue-400 font-semibold">↑ Moderado</span></span>
+                      <span className="text-slate-700">·</span>
+                      <span>Perfil: <span className="text-slate-300 font-semibold">{profileLabel}</span></span>
+                    </div>
                   </div>
-                  <div className="ml-auto flex flex-col gap-2 min-w-[220px]">
-                    {loggedIn ? (
-                      <button onClick={()=>setActivePage("ordens")}
-                        className="relative bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-900/50 ring-1 ring-emerald-500/40 hover:shadow-emerald-800/60 hover:scale-[1.02] active:scale-100">
-                        <CheckCircle2 size={16}/> Aprovar Plano
-                      </button>
-                    ) : (
-                      <button onClick={()=>setShowRegModal(true)}
-                        className="relative bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-900/50 ring-1 ring-emerald-500/40 hover:shadow-emerald-800/60 hover:scale-[1.02] active:scale-100">
-                        <CheckCircle2 size={16}/> Aprovar Plano
-                      </button>
-                    )}
-                    <button onClick={()=>setActivePage("carteira")} className="bg-[#111827] border border-[#252a3a] hover:bg-[#151929] text-slate-300 text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors">
+                  {/* CTA */}
+                  <div className="flex flex-col gap-2 min-w-[200px] shrink-0">
+                    <button onClick={()=>setActivePage(loggedIn?"ordens":"reco")}
+                      onClickCapture={!loggedIn?()=>setShowRegModal(true):undefined}
+                      className="bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold px-6 py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-teal-900/40 ring-1 ring-teal-500/30 hover:scale-[1.02] active:scale-100">
+                      <CheckCircle2 size={16}/> Aprovar Plano
+                    </button>
+                    <button onClick={()=>setActivePage("carteira")} className="bg-[#111827] border border-[#252a3a] hover:bg-[#151929] text-slate-400 text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors">
                       Ver carteira completa
                     </button>
                   </div>
-                </div>
-                <div className="mt-4 flex items-center gap-4 text-xs text-slate-400 pt-4 border-t border-[#1a1f2e]">
-                  <span className="font-semibold">Impacto esperado</span>
-                  <span>Risco: <span className="text-emerald-400">↓ Ligeiro</span></span>
-                  <span className="text-slate-600">|</span>
-                  <span>Retorno esperado: <span className="text-blue-400">↑ Moderado</span></span>
                 </div>
               </div>
 
@@ -5464,31 +5470,45 @@ export default function ClientDashboardPage() {
                       <th className="text-right pb-2 font-semibold">Ação</th>
                     </tr></thead>
                     <tbody>
-                      {actionCounts.allRows.map(r=>{
-                        const ac=r.action==="Comprar"?"text-emerald-400":r.action==="Aumentar"?"text-cyan-400":r.action==="Vender"?"text-red-400":r.action==="Reduzir"?"text-amber-400":"text-slate-400";
-                        const dc=r.delta>0?"text-emerald-400":r.delta<0?"text-red-400":"text-slate-500";
-                        const isXeon=r.ticker==="XEON";
-                        const rowBg=isXeon?"bg-slate-800/30 border-t border-[#1a1f2e]":r.action==="Comprar"?"bg-emerald-950/20":r.action==="Aumentar"?"bg-cyan-950/20":r.action==="Vender"?"bg-red-950/20":r.action==="Reduzir"?"bg-amber-950/10":"";
-                        return (
-                          <tr key={r.ticker} className={`border-b border-[#111520] hover:bg-white/[0.03] ${rowBg}`}>
-                            <td className="py-2">
-                              {isXeon?(
-                                <span className="font-bold text-slate-300">{r.ticker}</span>
-                              ):(
-                                <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
-                                  className="font-bold text-blue-400 hover:text-blue-300 hover:underline">{r.ticker}</a>
-                              )}
-                              {getCompany(r.ticker)&&<span className="ml-1.5 text-slate-500 font-normal">{getCompany(r.ticker)}</span>}
-                            </td>
-                            <td className="py-2 text-slate-400">{getSector(r.ticker)}</td>
-                            <td className="py-2 text-slate-400">{getZone(r.ticker)}</td>
-                            <td className="py-2 text-right text-slate-300">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
-                            <td className="py-2 text-right text-slate-200 font-semibold">{r.cur>0?`${r.cur.toFixed(1)}%`:"—"}</td>
-                            <td className={`py-2 text-right font-semibold ${dc}`}>{r.delta!==0?`${r.delta>0?"+":""}${r.delta.toFixed(1)}%`:"—"}</td>
-                            <td className={`py-2 text-right font-bold ${ac}`}>{r.action}</td>
-                          </tr>
-                        );
-                      })}
+                      {(()=>{
+                        // Advisory display labels
+                        const actionLabel=(a:string)=>a==="Comprar"?"Nova posição":a==="Aumentar"?"Reforçar":a==="Vender"?"Encerrar":a;
+                        const actionColor=(a:string)=>a==="Comprar"?"text-teal-400 bg-teal-500/10 border-teal-500/25":a==="Aumentar"?"text-blue-400 bg-blue-500/10 border-blue-500/25":a==="Vender"?"text-red-400 bg-red-500/10 border-red-500/25":a==="Reduzir"?"text-amber-400 bg-amber-500/10 border-amber-500/25":"text-slate-500 bg-slate-800/40 border-slate-700/30";
+                        const rowAccent=(a:string)=>a==="Comprar"?"border-l-2 border-l-teal-500/40":a==="Aumentar"?"border-l-2 border-l-blue-500/40":a==="Vender"?"border-l-2 border-l-red-500/40":a==="Reduzir"?"border-l-2 border-l-amber-500/40":"border-l-2 border-l-transparent";
+                        let lastAction="";
+                        return actionCounts.allRows.map(r=>{
+                          const dc=r.delta>0?"text-teal-400":r.delta<0?"text-red-400":"text-slate-600";
+                          const isXeon=r.ticker==="XEON";
+                          const showGroupSep=!isXeon&&r.action!==lastAction&&lastAction!=="";
+                          if(!isXeon) lastAction=r.action;
+                          return (
+                            <React.Fragment key={r.ticker}>
+                              {showGroupSep&&<tr><td colSpan={7} className="h-px bg-[#1a1f2e] p-0"/></tr>}
+                              <tr className={`border-b border-[#0d1220] hover:bg-white/[0.025] transition-colors duration-100 ${isXeon?"opacity-60":""} ${!isXeon?rowAccent(r.action):""}`}>
+                                <td className="py-2.5 pl-3">
+                                  {isXeon?(
+                                    <span className="font-bold text-slate-400">XEON</span>
+                                  ):(
+                                    <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 font-bold text-slate-200 hover:text-teal-400 hover:underline underline-offset-2 transition-colors">
+                                      {displayTicker(r.ticker)}<ArrowUpRight size={10} className="opacity-40"/>
+                                    </a>
+                                  )}
+                                  {getCompany(r.ticker)&&<span className="ml-1.5 text-slate-600 font-normal text-[10px]">{getCompany(r.ticker)}</span>}
+                                </td>
+                                <td className="py-2.5 text-slate-500 text-[11px]">{getSector(r.ticker)}</td>
+                                <td className="py-2.5 text-slate-500 text-[11px]">{getZone(r.ticker)}</td>
+                                <td className="py-2.5 text-right text-slate-500">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
+                                <td className="py-2.5 text-right text-slate-200 font-semibold">{r.cur>0?`${r.cur.toFixed(1)}%`:"—"}</td>
+                                <td className={`py-2.5 text-right font-semibold ${dc}`}>{r.delta!==0?`${r.delta>0?"+":""}${r.delta.toFixed(1)}%`:"—"}</td>
+                                <td className="py-2.5 text-right pr-3">
+                                  {!isXeon&&<span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${actionColor(r.action)}`}>{actionLabel(r.action)}</span>}
+                                </td>
+                              </tr>
+                            </React.Fragment>
+                          );
+                        });
+                      })()}
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 border-[#252a3a] bg-[#0b0f1a]">
