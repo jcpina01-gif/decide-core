@@ -2560,8 +2560,9 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     const buyScale = rawBuyTotal > budgetEur ? budgetEur / rawBuyTotal : 1;
 
     // ── Pass 2.5: total currently held across ALL IB positions ───────────────
+    // Use Math.abs so short positions count as held, not as negative budget.
     // If already invested ≥ plan budget, remaining cash budget = 0 → no new buys.
-    const totalHeldEur = Array.from(ibkrHoldingsMap.values()).reduce((s,v)=>s+v, 0);
+    const totalHeldEur = Array.from(ibkrHoldingsMap.values()).reduce((s,v)=>s+Math.abs(v), 0);
     const remainingBudget = Math.max(0, budgetEur - totalHeldEur);
 
     // ── Pass 3: apply scale, deduct holdings, apply skip rules ───────────────
