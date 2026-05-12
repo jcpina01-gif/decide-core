@@ -3819,12 +3819,25 @@ export default function ClientDashboardPage() {
   useEffect(()=>{
     try{
       const raw=localStorage.getItem(LS_KEY);
-      if(raw){
-        const p=JSON.parse(raw);
-        if(p.riskProfile) setRiskProfileLocalRaw(p.riskProfile);
-        if(p.fxExposure)  setFxExposureRaw(p.fxExposure);
-        if(typeof p.marginEnabled==="boolean") setMarginEnabledRaw(p.marginEnabled);
+      const p=raw?JSON.parse(raw):{};
+      // Risk profile: saved pref → onboarding profile → default "moderado"
+      if(p.riskProfile){
+        setRiskProfileLocalRaw(p.riskProfile);
+      } else if(profile){
+        setRiskProfileLocalRaw(profile as RiskProfile);
       }
+      // FX exposure: saved pref → map from onboarding hedge pct → default "protegida"
+      if(p.fxExposure){
+        setFxExposureRaw(p.fxExposure);
+      } else {
+        try{
+          const hp=JSON.parse(localStorage.getItem("decide_fx_hedge_prefs_v1")??"{}");
+          if(hp.pct===0)   setFxExposureRaw("aberta");
+          else if(hp.pct===50) setFxExposureRaw("parcial");
+          else if(hp.pct===100) setFxExposureRaw("protegida");
+        }catch{}
+      }
+      if(typeof p.marginEnabled==="boolean") setMarginEnabledRaw(p.marginEnabled);
     }catch{}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
