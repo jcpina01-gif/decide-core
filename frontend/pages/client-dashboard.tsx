@@ -2794,18 +2794,20 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
               <span>Total de compras limitado a <strong>{Math.round(BUY_SAFETY_FACTOR*100)}% do plano (≤ {fmtE(aum*BUY_SAFETY_FACTOR)} €)</strong> — reserva de {Math.round((1-BUY_SAFETY_FACTOR)*100)}% em cash para cobrir variações de preço, spread e arredondamento. Evita exceder o saldo disponível em contas sem margem.</span>
             </div>
             {/* Budget diagnostic bar */}
-            <div className="mb-3 rounded-lg border border-slate-700/50 bg-slate-800/40 px-3 py-2 text-[10px] space-y-1">
-              <div className="flex items-center justify-between text-slate-400">
-                <span className="font-semibold text-slate-300">Diagnóstico de budget</span>
-                <span className="text-slate-500">Soma pesos: {adjustedOrderRows.reduce((s,r)=>s+r.cur,0).toFixed(1)}%</span>
+            <div className={`mb-3 rounded-lg border px-3 py-2 text-[10px] space-y-1.5 ${investEur>aum*BUY_SAFETY_FACTOR+50?"border-red-600/60 bg-red-950/30":"border-slate-700/50 bg-slate-800/40"}`}>
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-300 text-[11px]">Diagnóstico de budget</span>
+                <span className="text-slate-500">pesos modelo: {adjustedOrderRows.reduce((s,r)=>s+r.cur,0).toFixed(1)}%</span>
               </div>
-              <div className="flex gap-4 flex-wrap">
-                <span>Plano: <strong className="text-slate-200">€{aum.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
-                <span>Budget (97%): <strong className="text-slate-200">€{(aum*BUY_SAFETY_FACTOR).toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
-                <span>Σ pesos×AUM: <strong className={adjustedOrderRows.reduce((s,r)=>s+r.cur,0)>100.5?"text-amber-400":"text-slate-200"}>€{(adjustedOrderRows.reduce((s,r)=>s+r.cur,0)/100*aum).toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
-                <span>Σ est_eur activo: <strong className={investEur>aum*BUY_SAFETY_FACTOR?"text-red-400":"text-emerald-400"}>€{investEur.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
-                <span>Já investido: <strong className={totalHeldEur>aum*BUY_SAFETY_FACTOR?"text-amber-400":"text-slate-200"}>€{totalHeldEur.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                <span className="text-slate-400">Montante plano (AUM): <strong className="text-slate-100">€{aum.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
+                <span className="text-slate-400">Budget 97%: <strong className="text-slate-200">€{(aum*BUY_SAFETY_FACTOR).toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
+                <span className="text-slate-400">Total a investir: <strong className={investEur>aum*BUY_SAFETY_FACTOR+50?"text-red-400 font-black":"text-emerald-400"}>€{investEur.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong>{investEur>aum*BUY_SAFETY_FACTOR+50&&<span className="text-red-400 ml-1">⚠ acima do budget!</span>}</span>
+                <span className="text-slate-400">Já na IB: <strong className={totalHeldEur>aum*1.05?"text-amber-400":"text-slate-200"}>€{totalHeldEur.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
               </div>
+              {investEur>aum*BUY_SAFETY_FACTOR+50&&(
+                <p className="text-red-300 text-[10px] font-semibold">⚠ O total a investir excede o budget. Verifica o campo "Montante plano (€)" na página Carteira e confirma que está correcto (ex: €25 000).</p>
+              )}
             </div>
             <table className="w-full text-xs">
               <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
@@ -5620,7 +5622,12 @@ export default function ClientDashboardPage() {
                         <label className="flex items-center gap-2 text-xs text-slate-400">
                           Montante plano (€)
                           <input type="number" value={aum} onChange={e=>setAum(Number(e.target.value)||100000)}
-                            onBlur={e=>{const v=Number(e.target.value)||100000;logActivity({type:"configuração",label:`Montante do plano alterado para €${v.toLocaleString("pt-PT")}`,icon:"⚙",color:"text-amber-400"});}}
+                            onBlur={e=>{
+                              const v=Number(e.target.value)||100000;
+                              setAum(v);
+                              try{window.localStorage.setItem("decide_onboarding_montante_eur_v1",String(Math.round(v)));}catch{}
+                              logActivity({type:"configuração",label:`Montante do plano alterado para €${v.toLocaleString("pt-PT")}`,icon:"⚙",color:"text-amber-400"});
+                            }}
                             className="w-28 bg-[#111827] border border-[#252a3a] text-slate-200 text-xs rounded-lg px-2 py-1 outline-none focus:border-blue-500"
                             min={1000} step={1000}/>
                         </label>
