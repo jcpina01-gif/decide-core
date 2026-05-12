@@ -4981,51 +4981,41 @@ export default function ClientDashboardPage() {
 
               {/* ── DASHBOARD ── */}
               {activePage==="dashboard"&&(
-                <div className="space-y-4">
-                  {/* ── KPI header with refresh button ── */}
-                  <div className="flex items-center justify-between -mb-2">
-                    <div className="text-[10px] text-slate-500">
-                      Perfil activo: <span className="font-bold text-slate-300">{profileLabel}</span>
-                      {" · "}Vol: <span className="font-bold text-amber-400">{(benchPerfData?.mVol??0)>0?(benchPerfData?.mVol??0).toFixed(1)+"%":"—"}</span>
-                      {" · "}Factor: <span className="font-bold text-blue-400">{profileFactor}×</span>
-                      {kpiMode==="margem"&&<span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold">com margem (dinâmico)</span>}
-                    </div>
-                    <button
-                      onClick={()=>{ setRiskProfileLocal(riskProfileLocal); }}
-                      className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-semibold text-slate-400 hover:text-slate-200 border border-[#1a1f2e] hover:border-blue-500/40 rounded-lg bg-[#0b0f1a] transition-colors">
-                      ↻ Actualizar KPIs
-                    </button>
-                  </div>
+                <div className="space-y-5">
 
-                  {/* ── 5 KPI cards — profileFactor applied at component level ── */}
+                  {/* ── 5 KPI cards ── */}
                   {(()=>{
                     const fmtP=(v:number,s=false)=>`${s&&v>=0?"+":""}${v.toFixed(2)}%`;
-                    const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
-                    const pfLabel=profileFactor<1?"0,75×":profileFactor>1?"1,25×":"1×";
-                    const marginSub=kpiMode==="margem"?" · com margem":"";
+                    const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0});
+                    const annVal=perfData?.inception.ann??0;
                     return (
                       <div className="grid grid-cols-5 gap-3">
                         {[
-                          {label:"Valor da carteira",val:`€ ${fmtE(aum)}`,sub:"Património total",
-                           icon:<div className="text-blue-400 text-lg">📦</div>,c:"text-slate-100"},
-                          {label:"Variação (YTD)",val:fmtP(scaledYtd,true),sub:`${scaledYtd>=0?"+ €":"- €"} ${fmtE(Math.abs(aum*scaledYtd/100))} · ${pfLabel}${marginSub}`,
-                           icon:<TrendingUp size={16} className="text-emerald-400"/>,c:scaledYtd>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Retorno anual (desde início)",val:fmtP(perfData?.inception.ann??0,true),sub:`CAGR · ${pfLabel} · perfil ${profileLabel}${marginSub}`,
-                           icon:<Activity size={16} className="text-blue-400"/>,c:(perfData?.inception.ann??0)>=0?"text-emerald-400":"text-red-400"},
-                          {label:"Risco (Volatilidade anual)",val:(benchPerfData?.mVol??0)>0?`${(benchPerfData?.mVol??0).toFixed(1)}%`:"—",
-                           sub:`${pfLabel} vol base · Perfil ${profileLabel}${marginSub}`,
-                           icon:<ShieldCheck size={16} className="text-amber-400"/>,c:"text-amber-400"},
-                          {label:"Máximo drawdown",val:scaledDD!==0?fmtP(scaledDD):"—",
-                           sub:`${pfLabel} · Perfil ${profileLabel}${marginSub}`,
-                           icon:<TrendingDown size={16} className="text-red-400"/>,c:"text-red-400"},
+                          {label:"Património",val:`€ ${fmtE(aum)}`,sub:"valor actual",
+                           icon:<div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center"><Briefcase size={15} className="text-blue-400"/></div>,
+                           c:"text-white",accent:"border-blue-500/20"},
+                          {label:"Retorno YTD",val:fmtP(scaledYtd,true),sub:`€ ${fmtE(Math.abs(aum*scaledYtd/100))} este ano`,
+                           icon:<div className={`w-8 h-8 rounded-lg flex items-center justify-center ${scaledYtd>=0?"bg-teal-500/10":"bg-red-500/10"}`}><TrendingUp size={15} className={scaledYtd>=0?"text-teal-400":"text-red-400"}/></div>,
+                           c:scaledYtd>=0?"text-teal-400":"text-red-400",accent:scaledYtd>=0?"border-teal-500/20":"border-red-500/20"},
+                          {label:"CAGR (20 anos)",val:fmtP(annVal,true),sub:`perfil ${profileLabel}`,
+                           icon:<div className={`w-8 h-8 rounded-lg flex items-center justify-center ${annVal>=0?"bg-teal-500/10":"bg-red-500/10"}`}><Activity size={15} className={annVal>=0?"text-teal-400":"text-red-400"}/></div>,
+                           c:annVal>=0?"text-teal-400":"text-red-400",accent:annVal>=0?"border-teal-500/20":"border-red-500/20"},
+                          {label:"Volatilidade anual",val:(benchPerfData?.mVol??0)>0?`${(benchPerfData?.mVol??0).toFixed(1)}%`:"—",
+                           sub:"vol. benchmark ajustada",
+                           icon:<div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center"><ShieldCheck size={15} className="text-amber-400"/></div>,
+                           c:"text-amber-400",accent:"border-amber-500/20"},
+                          {label:"Drawdown máx.",val:scaledDD!==0?fmtP(scaledDD):"—",
+                           sub:"pior queda histórica",
+                           icon:<div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center"><TrendingDown size={15} className="text-red-400"/></div>,
+                           c:"text-red-400",accent:"border-red-500/20"},
                         ].map(k=>(
-                          <div key={k.label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="text-[10px] text-slate-500 font-semibold leading-tight">{k.label}</div>
+                          <div key={k.label} className={`bg-[#0b0f1a] border ${k.accent} rounded-xl p-4 hover:bg-[#0d1220] transition-colors duration-200`}>
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="text-xs text-slate-500 font-medium leading-tight">{k.label}</div>
                               {k.icon}
                             </div>
-                            <div className={`text-xl font-black mb-0.5 ${k.c}`}>{k.val}</div>
-                            <div className="text-[10px] text-slate-500">{k.sub}</div>
+                            <div className={`text-2xl font-black tracking-tight mb-1 ${k.c}`}>{k.val}</div>
+                            <div className="text-[11px] text-slate-600">{k.sub}</div>
                           </div>
                         ))}
                       </div>
@@ -5036,10 +5026,10 @@ export default function ClientDashboardPage() {
                   <div className="grid grid-cols-3 gap-4">
 
                     {/* Últimas recomendações (2/3) */}
-                    <div className="col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="font-bold text-slate-200 text-sm flex items-center gap-2">Últimas recomendações<Info size={12} className="text-slate-600"/></div>
-                        <button onClick={()=>setActivePage("reco")} className="text-[10px] text-blue-400 hover:underline flex items-center gap-1">Ver todas<ArrowUpRight size={11}/></button>
+                    <div className="col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 hover:border-slate-700/60 transition-colors duration-200">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="font-bold text-slate-100 text-sm">Últimas recomendações</div>
+                        <button onClick={()=>setActivePage("reco")} className="text-[11px] text-teal-400 hover:text-teal-300 flex items-center gap-1 transition-colors">Ver todas<ArrowUpRight size={12}/></button>
                       </div>
                       {recoLoading?(
                         <div className="text-slate-500 text-sm text-center py-4">A carregar…</div>
@@ -5055,13 +5045,13 @@ export default function ClientDashboardPage() {
                             {actionCounts.rows.slice(0,7).map(r=>{
                               const isBuy=r.action==="Comprar"; const isUp=r.action==="Aumentar";
                               const isSell=r.action==="Vender"; const isDown=r.action==="Reduzir";
-                              const acColor=isBuy?"bg-emerald-500/20 text-emerald-300 border border-emerald-500/30":isUp?"bg-cyan-500/20 text-cyan-300 border border-cyan-500/30":isSell?"bg-red-500/20 text-red-300 border border-red-500/30":isDown?"bg-amber-500/20 text-amber-300 border border-amber-500/30":"bg-slate-700/40 text-slate-400";
+                              const acColor=isBuy?"bg-teal-500/15 text-teal-300 border border-teal-500/30":isUp?"bg-blue-500/15 text-blue-300 border border-blue-500/30":isSell?"bg-red-500/15 text-red-300 border border-red-500/30":isDown?"bg-amber-500/15 text-amber-300 border border-amber-500/30":"bg-slate-700/30 text-slate-500";
                               const acIcon=isBuy?"↑":isUp?"↗":isSell?"↓":isDown?"↙":"→";
                               return (
-                                <tr key={r.ticker} className="border-b border-[#111520] hover:bg-white/[0.02]">
-                                  <td className="py-2">
-                                    <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer" className="font-bold text-blue-400 hover:underline">{displayTicker(r.ticker)}</a>
-                                    {getCompany(r.ticker)&&<span className="ml-1 text-slate-500 text-[10px]">{getCompany(r.ticker)}</span>}
+                                <tr key={r.ticker} className="border-b border-[#0d1220] hover:bg-white/[0.03] transition-colors duration-100">
+                                  <td className="py-2.5">
+                                    <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer" className="font-bold text-slate-200 hover:text-teal-400 transition-colors">{displayTicker(r.ticker)}</a>
+                                    {getCompany(r.ticker)&&<span className="ml-1.5 text-slate-600 text-[10px]">{getCompany(r.ticker)}</span>}
                                   </td>
                                   <td className="py-2">
                                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${acColor}`}>
@@ -5087,18 +5077,15 @@ export default function ClientDashboardPage() {
                         const sell=actionCounts.vender;
                         const hold=actionCounts.manter;
                         return [
-                          {label:"Comprar",  n:buy,  icon:"↑",  bg:"bg-emerald-500/10", border:"border-emerald-500/25", tc:"text-emerald-300", nc:"text-emerald-400"},
-                          {label:"Aumentar", n:up,   icon:"↗",  bg:"bg-cyan-500/10",    border:"border-cyan-500/25",    tc:"text-cyan-300",    nc:"text-cyan-400"},
-                          {label:"Reduzir",  n:down, icon:"↙",  bg:"bg-amber-500/10",   border:"border-amber-500/25",   tc:"text-amber-300",   nc:"text-amber-400"},
-                          {label:"Vender",   n:sell, icon:"↓",  bg:"bg-red-500/10",     border:"border-red-500/25",     tc:"text-red-300",     nc:"text-red-400"},
-                          {label:"Manter",   n:hold, icon:"→",  bg:"bg-slate-700/30",   border:"border-slate-600/30",   tc:"text-slate-400",   nc:"text-slate-300"},
+                          {label:"Comprar",  n:buy,  bg:"bg-teal-500/10",   border:"border-teal-500/20",   tc:"text-teal-400",   nc:"text-teal-300"},
+                          {label:"Aumentar", n:up,   bg:"bg-blue-500/10",   border:"border-blue-500/20",   tc:"text-blue-400",   nc:"text-blue-300"},
+                          {label:"Reduzir",  n:down, bg:"bg-amber-500/10",  border:"border-amber-500/20",  tc:"text-amber-400",  nc:"text-amber-300"},
+                          {label:"Vender",   n:sell, bg:"bg-red-500/10",    border:"border-red-500/20",    tc:"text-red-400",    nc:"text-red-300"},
+                          {label:"Manter",   n:hold, bg:"bg-slate-800/60",  border:"border-slate-700/30",  tc:"text-slate-500",  nc:"text-slate-400"},
                         ].map(x=>(
-                          <div key={x.label} className={`flex items-center justify-between rounded-xl px-4 py-3 ${x.bg} border ${x.border}`}>
-                            <div className="flex items-center gap-2">
-                              <span className={`text-lg font-black leading-none ${x.nc}`}>{x.icon}</span>
-                              <span className={`text-xs font-semibold ${x.tc}`}>{x.label}</span>
-                            </div>
-                            <span className={`text-2xl font-black ${x.nc}`}>{x.n}</span>
+                          <div key={x.label} className={`flex items-center justify-between rounded-xl px-4 py-3.5 ${x.bg} border ${x.border} hover:brightness-110 transition-all duration-150`}>
+                            <span className={`text-xs font-semibold ${x.tc}`}>{x.label}</span>
+                            <span className={`text-3xl font-black tabular-nums ${x.nc}`}>{x.n}</span>
                           </div>
                         ));
                       })()}
@@ -5108,55 +5095,61 @@ export default function ClientDashboardPage() {
                   {/* ── Row 3: charts side by side ── */}
                   <div className="grid grid-cols-3 gap-4">
 
-                    {/* Performance chart (2/3) */}
-                    <div className="col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="font-bold text-slate-200 text-sm flex items-center gap-2">Evolução da carteira<Info size={12} className="text-slate-600"/></div>
-                        <div className="flex items-center gap-3">
+                    {/* Performance chart (2/3) — hero */}
+                    <div className="col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 hover:border-slate-700/60 transition-colors duration-200">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <div className="font-bold text-slate-100 text-sm">Evolução da carteira</div>
                           {perfData&&(
-                            <div className="flex gap-4 mr-2">
-                              <div className="text-right">
-                                <div className="text-[9px] text-slate-500">YTD</div>
-                                <div className={`font-black text-sm ${scaledYtd>=0?"text-emerald-400":"text-red-400"}`}>{scaledYtd>=0?"+":""}{scaledYtd.toFixed(2)}%</div>
+                            <div className="flex gap-5 mt-1.5">
+                              <div>
+                                <span className="text-[10px] text-slate-600 mr-1">YTD</span>
+                                <span className={`font-black text-sm ${scaledYtd>=0?"text-teal-400":"text-red-400"}`}>{scaledYtd>=0?"+":""}{scaledYtd.toFixed(1)}%</span>
                               </div>
-                              <div className="text-right">
-                                <div className="text-[9px] text-slate-500">CAGR</div>
-                                <div className={`font-black text-sm ${scaledAnn>=0?"text-emerald-400":"text-red-400"}`}>{scaledAnn>=0?"+":""}{scaledAnn.toFixed(2)}%</div>
+                              <div>
+                                <span className="text-[10px] text-slate-600 mr-1">CAGR</span>
+                                <span className={`font-black text-sm ${scaledAnn>=0?"text-teal-400":"text-red-400"}`}>{scaledAnn>=0?"+":""}{scaledAnn.toFixed(1)}%</span>
                               </div>
-                              <div className="text-right">
-                                <div className="text-[9px] text-slate-500">Sharpe</div>
-                                <div className="font-black text-sm text-slate-100">{perfData.m.shp.toFixed(2)}</div>
+                              <div>
+                                <span className="text-[10px] text-slate-600 mr-1">Sharpe</span>
+                                <span className="font-black text-sm text-slate-200">{perfData.m.shp.toFixed(2)}</span>
                               </div>
                             </div>
                           )}
-                          <div className="flex gap-1">
-                            {PERIODS.map(p=>(
-                              <button key={p} onClick={()=>setPeriod(p)}
-                                className={`px-2 py-1 text-[10px] font-semibold rounded transition-colors ${period===p?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>{p}</button>
-                            ))}
-                          </div>
+                        </div>
+                        <div className="flex gap-1 bg-[#111827] rounded-lg p-1">
+                          {PERIODS.map(p=>(
+                            <button key={p} onClick={()=>setPeriod(p)}
+                              className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all duration-150 ${period===p?"bg-teal-600 text-white shadow":"text-slate-500 hover:text-slate-300"}`}>{p}</button>
+                          ))}
                         </div>
                       </div>
-                      <ResponsiveContainer width="100%" height={190}>
-                        <LineChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
-                          <XAxis dataKey="date" tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}
-                            tickFormatter={(d:string)=>{const dt=new Date(d);return `${dt.toLocaleString("pt-PT",{month:"short"})} ${String(dt.getFullYear()).slice(2)}`;}}/>
-                          <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#64748b"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}} width={44}/>
+                      <ResponsiveContainer width="100%" height={230}>
+                        <AreaChart data={perfData?.chart??[]} margin={{top:4,right:8,left:-4,bottom:0}}>
+                          <defs>
+                            <linearGradient id="heroGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.25}/>
+                              <stop offset="95%" stopColor="#14b8a6" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <XAxis dataKey="date" tick={{fontSize:9,fill:"#475569"}} tickLine={false} axisLine={false} interval={Math.floor((perfData?.chart.length??1)/6)}
+                            tickFormatter={(d:string)=>{const dt=new Date(d);return `${dt.toLocaleString("pt-PT",{month:"short"})} '${String(dt.getFullYear()).slice(2)}`;}}/>
+                          <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tick={{fontSize:9,fill:"#475569"}} tickLine={false} axisLine={false} tickFormatter={v=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}} width={44}/>
                           <Tooltip content={<PerfTooltip/>}/>
-                          <ReferenceLine y={100} stroke="#334155" strokeDasharray="3 3"/>
-                          <Line type="monotone" dataKey="modelo" stroke="#60a5fa" strokeWidth={2} dot={false} name="A sua carteira"/>
-                          <Line type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} dot={false} name={BENCH_SHORT} strokeDasharray="4 2"/>
-                        </LineChart>
+                          <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="4 4"/>
+                          <Area type="monotone" dataKey="modelo" stroke="#14b8a6" strokeWidth={2.5} fill="url(#heroGrad)" dot={false} name="A sua carteira"/>
+                          <Area type="monotone" dataKey="bench" stroke="#334155" strokeWidth={1.5} fill="none" dot={false} name={BENCH_SHORT} strokeDasharray="5 3"/>
+                        </AreaChart>
                       </ResponsiveContainer>
-                      <div className="flex items-center gap-4 mt-2">
-                        <div className="flex items-center gap-2 text-[10px] text-slate-400"><div className="w-4 h-0.5 bg-blue-400 rounded"/>A sua carteira</div>
-                        <div className="flex items-center gap-2 text-[10px] text-slate-400"><div className="w-4 h-px bg-slate-500 rounded"/>Benchmark (60/40)</div>
+                      <div className="flex items-center gap-5 mt-2">
+                        <div className="flex items-center gap-2 text-[10px] text-slate-500"><div className="w-4 h-0.5 bg-teal-400 rounded"/>A sua carteira</div>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-600"><div className="w-4 h-px bg-slate-600 rounded"/>Benchmark (60/40)</div>
                       </div>
                     </div>
 
                     {/* Allocation donut (1/3) */}
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="font-bold text-slate-200 text-sm mb-3 flex items-center gap-2">Alocação da carteira<Info size={12} className="text-slate-600"/></div>
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 hover:border-slate-700/60 transition-colors duration-200">
+                      <div className="font-bold text-slate-100 text-sm mb-3 flex items-center gap-2">Alocação da carteira<Info size={12} className="text-slate-700"/></div>
                       {sectorData.length>0?(
                         <div className="flex flex-col items-center gap-3">
                           <div className="relative">
@@ -5203,10 +5196,10 @@ export default function ClientDashboardPage() {
                     };
                     const topCountries=[...countryAlloc.entries()].sort((a,b)=>b[1]-a[1]);
                     return (
-                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                        <div className="font-bold text-slate-200 text-sm mb-3 flex items-center gap-2">
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 hover:border-slate-700/60 transition-colors duration-200">
+                        <div className="font-bold text-slate-100 text-sm mb-3 flex items-center gap-2">
                           Exposição geográfica
-                          <span className="text-[10px] font-normal text-slate-500">· % das acções actuais</span>
+                          <span className="text-[10px] font-normal text-slate-600">% das acções actuais</span>
                           {hoveredCountry&&(
                             <span className="ml-2 text-xs font-normal text-blue-300">
                               {hoveredCountry.name}:{" "}
