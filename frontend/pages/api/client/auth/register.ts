@@ -1,56 +1,25 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import {
-  hashPasswordServer,
-  normalizeUsernameServer,
-  registerUserServer,
-} from "../../../../lib/server/clientUserStore";
+import { serverGetUser, serverUpsertUser } from "../../../../lib/serverClientUserStore";
 
-type Body = {
-  username?: string;
-  passwordHash?: string;
-  email?: string;
-  phone?: string;
-  emailVerified?: boolean;
-};
+export default function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
 
-type Out =
-  | { ok: true }
-  | { ok: false; error: string; field?: string };
-
-export default function handler(req: NextApiRequest, res: NextApiResponse<Out>) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ ok: false, error: "method_not_allowed" });
+  const { username, passwordHash, email, phone, emailVerified } = req.body ?? {};
+  if (!username || !passwordHash) {
+    return res.status(400).json({ error: "missing_fields" });
   }
 
-  let body: Body = {};
-  try {
-    body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body as Body) || {};
-  } catch {
-    return res.status(400).json({ ok: false, error: "invalid_json" });
-  }
+  const u = String(username).trim().toLowerCase();
+  const h = String(passwordHash).trim();
+  const existing = serverGetUser(u);
 
-  const u = normalizeUsernameServer(body.username || "");
-  if (!u) return res.status(400).json({ ok: false, error: "username_required", field: "username" });
-
-  // Accept either a pre-hashed password (from client) or a raw password to hash server-side.
-  // The client sends passwordHash so the raw password never crosses the wire.
-  const ph = body.passwordHash;
-  if (!ph || typeof ph !== "string" || !ph.startsWith("h_")) {
-    return res.status(400).json({ ok: false, error: "invalid_password_hash" });
-  }
-
-  const result = registerUserServer({
-    username: u,
-    passwordHash: ph,
-    email: body.email,
-    phone: body.phone,
-    emailVerified: body.emailVerified,
+  serverUpsertUser(u, {
+    passwordHash: h,
+    email: String(email ?? existing?.email ?? "").trim(),
+    phone: String(phone ?? existing?.phone ?? "").trim(),
+    emailVerified: emailVerified === true || existing?.emailVerified === true,
+    updatedAt: Date.now(),
   });
-
-  if (!result.ok) {
-    return res.status(400).json(result);
-  }
 
   return res.status(200).json({ ok: true });
 }
