@@ -5477,7 +5477,11 @@ export default function ClientDashboardPage() {
                                   const devColor=Math.abs(desvio)<1?"text-slate-500":desvio>0?"text-amber-400":"text-sky-400";
                                   return(
                                     <tr key={p.ticker} className={`border-b border-[#1a1f2e] hover:bg-[#111827] transition-colors ${i%2===0?"":"bg-[#080c14]"}`}>
-                                      <td className="px-4 py-2.5 font-bold text-blue-400">{displayTicker(p.ticker)}</td>
+                                      <td className="px-4 py-2.5 font-bold text-blue-400">
+                                        <a href={`https://finance.yahoo.com/quote/${p.ticker}`} target="_blank" rel="noopener noreferrer" className="hover:text-blue-300 hover:underline transition-colors" title={`Ver ${displayTicker(p.ticker)} no Yahoo Finance`}>
+                                          {displayTicker(p.ticker)}
+                                        </a>
+                                      </td>
                                       <td className="px-2 py-2.5 text-slate-300">{(p as any).name||"—"}</td>
                                       <td className="px-2 py-2.5 text-slate-400">{(p as any).sector||"—"}</td>
                                       <td className="px-2 py-2.5 text-slate-400">{COUNTRY[p.ticker.toUpperCase()]||(p as any).country||"—"}</td>
