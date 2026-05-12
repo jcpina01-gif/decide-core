@@ -2519,6 +2519,9 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     (ibkrPos??[]).forEach(p=>m.set(p.ticker.toUpperCase(),p.value));
     return m;
   },[ibkrPos]);
+  const totalHeldEur=React.useMemo(()=>
+    Array.from(ibkrHoldingsMap.values()).reduce((s,v)=>s+Math.abs(v),0)
+  ,[ibkrHoldingsMap]);
 
   // In "Construção inicial" mode: subtract what we already hold from BUY notional
   // so we only buy the DIFFERENCE needed to reach the target weight.
@@ -2555,15 +2558,26 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     });
 
     // ── Pass 2: compute scale factor so total BUY ≤ BUY_SAFETY_FACTOR × AUM ─
+    // In full mode rawTarget = cur/100*aum (≈100% aum after normalisation).
+    // In delta mode rawTarget = |delta|/100*aum which can be << aum.
+    // Use cur-weights total as the scaling reference so that full-mode builds from
+    // a zero portfolio never invest more than budgetEur regardless of mode.
+    const rawCurTotal = rows.reduce((s,{isSell,r})=>isSell?s:s+r.cur/100*aum, 0);
     const rawBuyTotal = rows.reduce((s,{isSell,rawTarget})=>isSell?s:s+rawTarget, 0);
     const budgetEur = aum * BUY_SAFETY_FACTOR;
-    const buyScale = rawBuyTotal > budgetEur ? budgetEur / rawBuyTotal : 1;
+    // Scale relative to cur-weight total (catches zero-portfolio full-mode over-investment)
+    const rawForScale = Math.max(rawBuyTotal, rawCurTotal);
+    const buyScale = rawForScale > budgetEur ? budgetEur / rawForScale : 1;
 
     // ── Pass 2.5: total currently held across ALL IB positions ───────────────
-    // Use Math.abs so short positions count as held, not as negative budget.
-    // If already invested ≥ plan budget, remaining cash budget = 0 → no new buys.
-    const totalHeldEur = Array.from(ibkrHoldingsMap.values()).reduce((s,v)=>s+Math.abs(v), 0);
-    const remainingBudget = Math.max(0, budgetEur - totalHeldEur);
+    // totalHeldEur is computed in the outer useMemo (ibkrHoldingsMap scope) and
+    // captured here via closure — no need to recompute.
+    // remainingBudget: only meaningful in full-mode (initial build from zero).
+    // In delta mode the position-level effectiveTarget−heldEur logic already prevents
+    // over-investment, and blocking all buys would break normal monthly rebalancing.
+    const remainingBudget = execMode==="full"
+      ? Math.max(0, budgetEur - totalHeldEur)
+      : budgetEur; // delta mode: no global cap (per-position cap applies)
 
     // ── Pass 3: apply scale, deduct holdings, apply skip rules ───────────────
     return rows.map(({r, isSell, rawTarget, ibTicker, heldEur})=>{
@@ -2571,7 +2585,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
       let adjEur=targetEur;
       let skipReason:string|undefined;
       if(!isSell){
-        // Hard cap: if total held already meets/exceeds the plan budget, block all new buys
+        // Hard cap (full-mode only): if already invested ≥ plan budget, block new buys
         if(remainingBudget<=0){
           adjEur=0;
           skipReason="Carteira no plano ou acima";
@@ -2597,7 +2611,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
       };
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[orderRows,execMode,aum,ibkrHoldingsMap,pendingBuyTickers]);
+  },[orderRows,execMode,aum,ibkrHoldingsMap,totalHeldEur,pendingBuyTickers]);
 
   const activeOrderRows=adjustedOrderRows.filter(r=>!r.skipReason&&r.adjEur>=MIN_ORDER_EUR||r.action==="Vender");
   const nOrdens=activeOrderRows.length;
@@ -3430,6 +3444,23 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
               <div className="flex items-center gap-2">
                 <AlertTriangle size={16} className="text-amber-400 shrink-0"/>
                 <span className="text-sm font-bold text-amber-300">Confirmar envio de {nOrdens} {nOrdens===1?"ordem":"ordens"} à Interactive Brokers</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="bg-emerald-900/30 border border-emerald-700/40 rounded-lg px-3 py-2 text-center">
+                  <div className="text-slate-400 mb-0.5">Total compras</div>
+                  <div className="text-emerald-300 font-bold text-sm">€{investEur.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+                  <div className="text-slate-500">{totalBuyPct.toFixed(1)}% plano</div>
+                </div>
+                <div className="bg-[#111827] border border-slate-700/40 rounded-lg px-3 py-2 text-center">
+                  <div className="text-slate-400 mb-0.5">Plano</div>
+                  <div className="text-slate-200 font-bold text-sm">€{aum.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+                  <div className="text-slate-500">budget {(BUY_SAFETY_FACTOR*100).toFixed(0)}%</div>
+                </div>
+                <div className={`border rounded-lg px-3 py-2 text-center ${investEur>aum*BUY_SAFETY_FACTOR?"bg-red-900/30 border-red-700/40":"bg-slate-800/50 border-slate-700/40"}`}>
+                  <div className="text-slate-400 mb-0.5">Já investido</div>
+                  <div className={`font-bold text-sm ${totalHeldEur>aum*BUY_SAFETY_FACTOR?"text-red-300":"text-slate-200"}`}>€{totalHeldEur.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+                  <div className="text-slate-500">{(totalHeldEur/aum*100).toFixed(1)}% plano</div>
+                </div>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
                 Esta acção é <strong className="text-slate-200">irreversível</strong> após execução. As ordens serão enviadas ao mercado e executadas ao melhor preço disponível. Verifique a lista de ordens antes de confirmar.
