@@ -4320,19 +4320,19 @@ export default function ClientDashboardPage() {
     "Imobiliário":0.85,"Cons. Discr.":1.15,"Liquidez":0.10,"Outros":1.00,
   };
   const sectorAlloc=useMemo(()=>{
-    if(!latestMonth) return [];
+    // Use actionCounts.allRows (top-20 equity plan, XEON excluded) — same source as sectorData
+    if(!actionCounts.allRows.length) return [];
     const m=new Map<string,number>();
-    (latestMonth.rows??[]).filter((r:any)=>r.ticker!=="XEON"&&!r.ticker.startsWith("TBILL")&&(r.weightPct??0)>=0.5).forEach((r:any)=>{
+    actionCounts.allRows.forEach(r=>{
+      if(r.ticker==="XEON") return;
       const s=getSector(r.ticker)||"Outros";
-      m.set(s,(m.get(s)??0)+(r.weightPct??0));
+      m.set(s,(m.get(s)??0)+r.cur);
     });
     const total=[...m.values()].reduce((a,b)=>a+b,0)||1;
-    // compute risk contribution using beta-adjusted weights
     const raw=[...m.entries()].sort((a,b)=>b[1]-a[1]).map(([name,v])=>({name,alloc:+((v/total)*100).toFixed(1),riskW:(v/total)*(SECTOR_BETA[name]??1)}));
     const riskTotal=raw.reduce((s,r)=>s+r.riskW,0)||1;
     return raw.map(r=>({name:r.name,pct:r.alloc,risk:+((r.riskW/riskTotal)*100).toFixed(1)}));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[latestMonth]);
+  },[actionCounts.allRows]);
 
   // Risk metrics: VaR 95%, Beta
   const countryAlloc=useMemo(()=>{
@@ -4680,14 +4680,8 @@ export default function ClientDashboardPage() {
                 const top5=(latestMonth?.rows??[])
                   .filter(r=>!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="XEON")
                   .sort((a,b)=>b.weightPct-a.weightPct).slice(0,5);
-                // Sector allocation
-                const secMap=new Map<string,number>();
-                (latestMonth?.rows??[]).forEach(r=>{
-                  if(r.ticker.startsWith("TBILL")||r.ticker.startsWith("CASH")) return;
-                  const s=getSector(r.ticker);
-                  secMap.set(s,(secMap.get(s)??0)+r.weightPct);
-                });
-                const topSectors=[...secMap.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6);
+                // Sector allocation — use same equity-only source as sectorData/sectorAlloc
+                const topSectors=sectorData.slice(0,6).map(s=>[s.name,s.value] as [string,number]);
                 // Recent changes
                 const changes=actionCounts.rows.filter(r=>r.action!=="Manter").slice(0,8);
                 // Chart data (YTD only for report)
