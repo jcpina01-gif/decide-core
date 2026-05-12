@@ -4103,17 +4103,19 @@ export default function ClientDashboardPage() {
      up to ~180% max (very low vol) exactly as the model computes each period.     */
   const MARGIN_RATE=0.04;
   const marginEquity=useMemo(()=>{
-    if(!scaledEquity.length||!benchRaw.length||!dates.length||!sortedMonths.length) return scaledEquity;
+    if(!scaledEquity.length||!benchRaw.length||!dates.length) return scaledEquity;
     const bRets=benchRaw.slice(1).map((v,i)=>benchRaw[i]!>0?v/benchRaw[i]!-1:0);
     const targetVol=annualVol(bRets)*profileFactor;
     if(!targetVol||!isFinite(targetVol)) return scaledEquity;
-    const xeonPeriods=sortedMonths.map(m=>{
-      const date=(m.rebalance_date??m.date??"").slice(0,10);
-      const xeonRow=m.rows.find(r=>r.ticker==="XEON");
-      const xeonPct=m.tbillsTotalPct??xeonRow?.weightPct??0;
-      return {date,xeonPct};
-    }).filter(p=>p.date);
-    if(!xeonPeriods.length) return scaledEquity;
+    // Build XEON periods if available; if not, assume fully risk-on (no defensive periods)
+    const xeonPeriods=sortedMonths.length
+      ? sortedMonths.map(m=>{
+          const date=(m.rebalance_date??m.date??"").slice(0,10);
+          const xeonRow=m.rows.find(r=>r.ticker==="XEON");
+          const xeonPct=m.tbillsTotalPct??xeonRow?.weightPct??0;
+          return {date,xeonPct};
+        }).filter(p=>p.date)
+      : [{date:dates[0]??"",xeonPct:0}]; // no data → always risk-on
     return marginEquityCurveVolTargeted(scaledEquity,benchRaw,dates,xeonPeriods,targetVol,MARGIN_RATE);
   },[scaledEquity,benchRaw,dates,sortedMonths,profileFactor]);
   // Active equity: base or leveraged depending on KPI mode selection
