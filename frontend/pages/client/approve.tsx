@@ -322,11 +322,12 @@ export default function ApprovePage({
    * O utilizador pode aprovar o plano mesmo sem IB Gateway activo; o envio real de ordens
    * exige a conta conectada na página de execução (Enviar Ordens).
    */
+  // hedgeGateOk is NOT a hard blocker — hedge is a KPI display preference,
+  // not a regulatory requirement. Show as soft warning only.
   const canApproveAll =
     hasTradePlan &&
     mifidDone &&
     kycDone &&
-    hedgeGateOk &&
     ibkrPrepDone;
 
   const handleToggle = (ticker: string) => {
@@ -404,13 +405,8 @@ export default function ApprovePage({
       setIbkrPrepDone(ibkrPrep);
       setHedgeGateOk(hedgeOk);
 
-      // Auto-redirect: se hedge aplicável e não concluído, enviar de volta para o passo 5
-      if (kyc && mifid && !hedgeOk && isFxHedgeOnboardingApplicable()) {
-        window.location.replace("/client/fx-hedge-onboarding");
-        return;
-      }
-
-      const allowed = hasTradePlan && mifid && kyc && hedgeOk && ibkrPrep;
+      // Hedge is a soft preference — no redirect, no hard block.
+      const allowed = hasTradePlan && mifid && kyc && ibkrPrep;
       if (!allowed) {
         window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.approve, "0");
         setUserApproved(false);
@@ -704,7 +700,7 @@ export default function ApprovePage({
     }
     if (!mifidDone) return "Botão desactivo: falta concluir o teste MiFID.";
     if (!kycDone) return "Botão desactivo: falta concluir o KYC (Persona).";
-    if (!hedgeGateOk) return "Botão desactivo: falta concluir o passo «Hedge cambial» (0%, 50% ou 100%).";
+    // hedge is soft — not blocking the button
     if (!ibkrPrepDone) return "Botão desactivo: falta concluir a preparação IBKR (passo «Plano e pagamento»).";
     if (ibkrLive.loading) return "Botão desactivo: a ler liquidez na conta IBKR paper…";
     if (!paperFundsVerified) {
@@ -728,7 +724,6 @@ export default function ApprovePage({
     hasTradePlan,
     mifidDone,
     kycDone,
-    hedgeGateOk,
     ibkrPrepDone,
     confirmReview,
     ibkrLive.loading,
@@ -816,31 +811,7 @@ export default function ApprovePage({
               <div className="mt-1 text-xs text-amber-200">
                 {!mifidDone && "Falta confirmar o Teste MiFID."}
                 {!kycDone && " Falta confirmar o KYC (Persona)."}
-                {mifidDone && kycDone && !hedgeGateOk
-                  ? (
-                    <span>
-                      {" "}Falta concluir o passo de hedge cambial (0%, 50% ou 100% nos indicadores).{" "}
-                      <Link href="/client/fx-hedge-onboarding" style={{ color: "#fcd34d", textDecoration: "underline" }}>
-                        Ir para Hedge Cambial →
-                      </Link>
-                      {" · "}
-                      <button
-                        type="button"
-                        style={{ color: "#86efac", textDecoration: "underline", background: "none", border: "none", cursor: "pointer", fontSize: "inherit", padding: 0 }}
-                        onClick={() => {
-                          try {
-                            window.localStorage.setItem("decide_fx_hedge_prefs_v1", JSON.stringify({ pair: "EURUSD", pct: 0, residenceCountry: "PT" }));
-                            window.localStorage.setItem("decide_onboarding_step5_hedge_done", "1");
-                            window.dispatchEvent(new Event("decide_onboarding_ls_changed_v1"));
-                          } catch { /* ignore */ }
-                        }}
-                      >
-                        Definir agora como «Sem hedge» e continuar →
-                      </button>
-                    </span>
-                  )
-                  : null}
-                {mifidDone && kycDone && hedgeGateOk && !ibkrPrepDone
+                {mifidDone && kycDone && !ibkrPrepDone
                   ? (
                     <span>
                       {" "}Falta concluir o passo de preparação IBKR.{" "}
@@ -850,12 +821,12 @@ export default function ApprovePage({
                     </span>
                   )
                   : null}
-                {mifidDone && kycDone && hedgeGateOk && ibkrPrepDone && !hasTradePlan
+                {mifidDone && kycDone && ibkrPrepDone && !hasTradePlan
                   ? displayNavEur <= 0
                     ? null
                     : "Sem linhas de plano (confirma backend/freeze do modelo e tmp_diag)."
                   : null}
-                {mifidDone && kycDone && hedgeGateOk && ibkrPrepDone && !hasTradePlan && displayNavEur <= 0 && !clientRefPlanBusy
+                {mifidDone && kycDone && ibkrPrepDone && !hasTradePlan && displayNavEur <= 0 && !clientRefPlanBusy
                   ? (
                     <span>
                       {" "}Montante de investimento não definido.{" "}
@@ -866,12 +837,11 @@ export default function ApprovePage({
                     </span>
                   )
                   : null}
-                {mifidDone && kycDone && hedgeGateOk && ibkrPrepDone && hasTradePlan && ibkrLive.loading
+                {mifidDone && kycDone && ibkrPrepDone && hasTradePlan && ibkrLive.loading
                   ? " A confirmar liquidez na conta IBKR paper…"
                   : null}
                 {mifidDone &&
                 kycDone &&
-                hedgeGateOk &&
                 ibkrPrepDone &&
                 hasTradePlan &&
                 !ibkrLive.loading &&
@@ -888,6 +858,31 @@ export default function ApprovePage({
                   : null}
                 {accountCode ? ` Conta: ${accountCode}.` : ""}
                 {cashEur > 0 ? ` Cash: ${formatEuro(cashEur)}.` : ""}
+              </div>
+            </section>
+          )}
+
+          {flowReady && canApproveAll && !hedgeGateOk && isFxHedgeOnboardingApplicable() && (
+            <section className="mb-4 rounded-xl border border-blue-800/50 bg-blue-950/30 p-3">
+              <div className="text-xs text-blue-200">
+                <strong>Nota opcional:</strong> Não configuraste ainda a preferência de cobertura cambial (hedge).{" "}
+                <Link href="/client/fx-hedge-onboarding" style={{ color: "#fcd34d", textDecoration: "underline" }}>
+                  Configurar agora →
+                </Link>
+                {" · "}
+                <button
+                  type="button"
+                  style={{ color: "#86efac", textDecoration: "underline", background: "none", border: "none", cursor: "pointer", fontSize: "inherit", padding: 0 }}
+                  onClick={() => {
+                    try {
+                      window.localStorage.setItem("decide_fx_hedge_prefs_v1", JSON.stringify({ pair: "EURUSD", pct: 0, residenceCountry: "PT" }));
+                      window.localStorage.setItem("decide_onboarding_step5_hedge_done", "1");
+                      window.dispatchEvent(new Event("decide_onboarding_ls_changed_v1"));
+                    } catch { /* ignore */ }
+                  }}
+                >
+                  Definir como «Sem hedge» e continuar →
+                </button>
               </div>
             </section>
           )}
