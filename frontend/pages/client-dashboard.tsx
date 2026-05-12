@@ -4968,12 +4968,12 @@ export default function ClientDashboardPage() {
                         equity={equityRaw}
                         bench={benchRaw}
                         onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}
-                        volScale={kpiMode==="margem"?profileFactor*1.35:profileFactor}
-                        profileKey={`${riskProfileLocal}-${kpiMode}`}/>
+                        volScale={1}
+                        profileKey=""/>
                     </div>
                   </div>
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4 text-xs text-slate-500">
-                    O simulador usa dados históricos reais dos últimos 20 anos com o perfil de risco e modo de margem activos nas Configurações.
+                    O simulador usa dados históricos reais dos últimos 20 anos (sem escalagem de perfil).
                     Rendimentos passados não garantem resultados futuros.
                   </div>
                 </div>
@@ -5378,8 +5378,8 @@ export default function ClientDashboardPage() {
                         equity={equityRaw}
                         bench={benchRaw}
                         onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}
-                        volScale={kpiMode==="margem"?profileFactor*1.35:profileFactor}
-                        profileKey={`${riskProfileLocal}-${kpiMode}`}/>
+                        volScale={1}
+                        profileKey=""/>
                     </div>
                   </div>
 
