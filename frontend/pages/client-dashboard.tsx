@@ -2555,11 +2555,14 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     });
 
     // ── Pass 2: compute scale factor so total BUY ≤ BUY_SAFETY_FACTOR × AUM ─
-    // Sum raw buy targets (ignoring already-held & pending — we'll deduct below)
     const rawBuyTotal = rows.reduce((s,{isSell,rawTarget})=>isSell?s:s+rawTarget, 0);
     const budgetEur = aum * BUY_SAFETY_FACTOR;
-    // If model has leverage (rawBuyTotal > budgetEur), scale every buy proportionally
     const buyScale = rawBuyTotal > budgetEur ? budgetEur / rawBuyTotal : 1;
+
+    // ── Pass 2.5: total currently held across ALL IB positions ───────────────
+    // If already invested ≥ plan budget, remaining cash budget = 0 → no new buys.
+    const totalHeldEur = Array.from(ibkrHoldingsMap.values()).reduce((s,v)=>s+v, 0);
+    const remainingBudget = Math.max(0, budgetEur - totalHeldEur);
 
     // ── Pass 3: apply scale, deduct holdings, apply skip rules ───────────────
     return rows.map(({r, isSell, rawTarget, ibTicker, heldEur})=>{
@@ -2567,7 +2570,11 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
       let adjEur=targetEur;
       let skipReason:string|undefined;
       if(!isSell){
-        if(pendingBuyTickers.has(ibTicker.toUpperCase())||pendingBuyTickers.has(r.ticker.toUpperCase())){
+        // Hard cap: if total held already meets/exceeds the plan budget, block all new buys
+        if(remainingBudget<=0){
+          adjEur=0;
+          skipReason="Carteira no plano ou acima";
+        } else if(pendingBuyTickers.has(ibTicker.toUpperCase())||pendingBuyTickers.has(r.ticker.toUpperCase())){
           adjEur=0;
           skipReason="Ordem de compra em curso na IB";
         } else if(heldEur>0){
