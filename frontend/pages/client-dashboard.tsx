@@ -4289,7 +4289,10 @@ export default function ClientDashboardPage() {
       map.set(z,(map.get(z)??0)+r.weightPct);
     });
     const total=[...map.values()].reduce((a,b)=>a+b,0)||1;
-    return [...map.entries()].map(([name,pct])=>({name,value:Math.round(pct/total*100)})).sort((a,b)=>b.value-a.value);
+    return [...map.entries()]
+      .map(([name,pct])=>({name,value:Math.round(pct/total*100)}))
+      .filter(d=>d.value>=2)   // hide countries with <2% — avoids single-stock artefacts
+      .sort((a,b)=>b.value-a.value);
   },[latestMonth]);
 
   // Return distribution histogram (monthly returns)
