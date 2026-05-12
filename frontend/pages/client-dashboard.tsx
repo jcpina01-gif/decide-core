@@ -3926,6 +3926,7 @@ export default function ClientDashboardPage() {
 
   // Carteira page: tab (real IB vs plano modelo) + IB snapshot state
   const [cartTab,setCartTab]=useState<"ib"|"plano">("ib");
+  const [showManterRows,setShowManterRows]=useState(false);
   const [hoveredCountry,setHoveredCountry]=useState<{name:string;pct:number}|null>(null);
   const [cartIbPos,setCartIbPos]=useState<{ticker:string;qty:number;value:number;value_eur?:number;weight_pct:number;currency:string;name?:string;sector?:string;country?:string}[]|null>(null);
   const [cartIbLoading,setCartIbLoading]=useState(false);
@@ -5813,7 +5814,7 @@ export default function ClientDashboardPage() {
                         <div className="grid grid-cols-2 gap-3">
                           {whatChanged.map((b,i)=>(
                             <div key={i} className="flex items-start gap-3">
-                              <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${b.icon==="up"?"bg-teal-500/15":"b.icon==="down"?"bg-red-500/15":"bg-slate-700/40"}`}>
+                              <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${b.icon==="up"?"bg-teal-500/15":b.icon==="down"?"bg-red-500/15":"bg-slate-700/40"}`}>
                                 {b.icon==="up"&&<TrendingUp size={12} className="text-teal-400"/>}
                                 {b.icon==="down"&&<TrendingDown size={12} className="text-red-400"/>}
                                 {b.icon==="globe"&&<Globe size={12} className="text-blue-400"/>}
@@ -5891,7 +5892,6 @@ export default function ClientDashboardPage() {
                       </div>
                     </div>
                   </div>
-                  {(()=>{const [showManter,setShowManter]=React.useState(false); return(
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e]/60 rounded-xl p-5">
                     <div className="flex items-center justify-between mb-4">
                       <div>
@@ -5899,9 +5899,9 @@ export default function ClientDashboardPage() {
                         <div className="text-[10px] text-slate-600 mt-0.5">{actionCounts.allRows.length} posições · {nChanges} com alteração · {actionCounts.manter} sem alteração</div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <button onClick={()=>setShowManter(v=>!v)}
-                          className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-colors ${showManter?"bg-slate-700 border-slate-600 text-slate-300":"border-slate-700/50 text-slate-600 hover:text-slate-400"}`}>
-                          {showManter?"Ocultar":"Mostrar"} posições sem alteração ({actionCounts.manter})
+                        <button onClick={()=>setShowManterRows(v=>!v)}
+                          className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-colors ${showManterRows?"bg-slate-700 border-slate-600 text-slate-300":"border-slate-700/50 text-slate-600 hover:text-slate-400"}`}>
+                          {showManterRows?"Ocultar":"Mostrar"} posições sem alteração ({actionCounts.manter})
                         </button>
                         {pricesLoading&&<span className="text-slate-500 text-[10px]">A carregar preços…</span>}
                         <label className="flex items-center gap-2 text-xs text-slate-500">
@@ -5960,7 +5960,7 @@ export default function ClientDashboardPage() {
                           ];
 
                           return allRows
-                            .filter(r=>showManter||r.action!=="Manter"||r.special)
+                            .filter(r=>showManterRows||r.action!=="Manter"||r.special)
                             .map(r=>{
                             const delta=r.cur-r.prev;
                             const isXeon=r.ticker==="XEON";
@@ -6031,7 +6031,7 @@ export default function ClientDashboardPage() {
                       </tbody>
                     </table>
                   </div>
-                  );})()} {/* end showManter IIFE */}
+                  </div>
                   </div>}{/* end cartTab==="plano" IIFE */}
                 </div>
               )}
