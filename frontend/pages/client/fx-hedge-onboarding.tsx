@@ -36,7 +36,10 @@ function canAccessHedgeStepWithoutLogin(): boolean {
   try {
     const kycDone = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.kyc) === "1";
     const stripeDone = window.localStorage.getItem(STRIPE_ONBOARDING_OK_KEY) === "1";
-    return kycDone && stripeDone;
+    const ibkrPrepDone = window.localStorage.getItem("decide_onboarding_ibkr_prep_done_v1") === "1";
+    // Allow access if KYC done + (Stripe done OR IBKR prep done)
+    // ibkr-prep implies the user passed the full onboarding flow up to this point
+    return kycDone && (stripeDone || ibkrPrepDone);
   } catch {
     return false;
   }

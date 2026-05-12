@@ -731,14 +731,14 @@ export async function loginClientUserAsync(
 
     if (r.status === 401) {
       const j = (await r.json()) as { error?: string };
-      const err = j.error === "user_not_found"
-        ? "User não encontrado."
-        : j.error === "wrong_password"
-        ? "Password incorreta."
-        : "Falha ao fazer login.";
-      return { ok: false, error: err };
+      // wrong_password is authoritative (user exists on server but pw is wrong)
+      if (j.error === "wrong_password") {
+        return { ok: false, error: "Password incorreta." };
+      }
+      // user_not_found on server → fall through to localStorage
+      // (user may have been registered locally only, or server store was reset)
     }
-    // Server error — fall through to localStorage
+    // Server error or user_not_found — fall through to localStorage
   } catch {
     // Network error — fall through to localStorage
   }
