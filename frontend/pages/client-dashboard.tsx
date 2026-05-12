@@ -763,9 +763,13 @@ function makeChartData(dates:string[], eq:number[], bench:number[], period:Perio
     bench:+((bench[s+i*step]/bb)*100).toFixed(3),
   }));
 }
-function periodMetrics(eq:number[], bench:number[], period:Period, calYearsOverride?:number) {
+function periodMetrics(eq:number[], bench:number[], period:Period, calYearsOverride?:number, seriesEndYear?:number) {
+  // For YTD: use fraction of the series end year elapsed, not the client's current month
+  const ytdFraction = eq.length > 1
+    ? Math.max(1/252, Math.min(1, (eq.length) / 252))
+    : (seriesEndYear ? (new Date(`${seriesEndYear}-12-31`).getMonth()+1)/12 : (new Date().getMonth()+1)/12);
   const y=calYearsOverride!==undefined?calYearsOverride
-    :period==="YTD"?(new Date().getMonth()+1)/12
+    :period==="YTD"?ytdFraction
     :period==="1 Ano"?1:period==="3 Anos"?3:period==="5 Anos"?5
     :eq.length/252;
   if(eq.length<2) return {ret:0,ann:0,shp:0,bench:0};
@@ -4152,7 +4156,10 @@ export default function ClientDashboardPage() {
     const calYears=period==="20 Anos"?calYearsFromDates(dates):undefined;
     const chart=makeChartData(dates,activeEquity,benchRaw,period);
     const m=periodMetrics(activeEquity.slice(s),benchRaw.slice(s),period,calYears);
-    const now=new Date(); const ytdStartStr=`${now.getFullYear()}-01-01`;
+    // Anchor YTD to the last year present in the series (not the client's wall clock)
+    // so freeze data from Dec 2024 still shows "2024 YTD" correctly.
+    const seriesEndYear = dates.length ? new Date(dates[dates.length-1]).getFullYear() : new Date().getFullYear();
+    const ytdStartStr=`${seriesEndYear}-01-01`;
     const ytdIdx=dates.findIndex(d=>d>=ytdStartStr);
     const ytdRet=ytdIdx>=0&&activeEquity.length>ytdIdx
       ? (activeEquity[activeEquity.length-1]/activeEquity[ytdIdx]-1)*100 : 0;
@@ -4690,7 +4697,7 @@ export default function ClientDashboardPage() {
                         {label:"Retorno total",val:fmtPct(scaledTotal,true),c:scaledTotal>=0?"text-emerald-400":"text-red-400",sub:`CAGR ${fmtPct(scaledAnn,true)}`},
                         {label:"Volatilidade",val:reportVol>0?`${reportVol.toFixed(1)}%`:"—",c:"text-amber-400",sub:"Período completo"},
                         {label:"Máx. drawdown",val:scaledDD!==0?fmtPct(scaledDD):"—",c:"text-red-400",sub:"Últimos 3 anos"},
-                        {label:"Sharpe ratio",val:sharpeVal.toFixed(2),c:sharpeVal>=1?"text-emerald-400":sharpeVal>=0?"text-amber-400":"text-red-400",sub:"Rf = 2%"},
+                        {label:"Sharpe ratio",val:sharpeVal.toFixed(2),c:sharpeVal>=1?"text-emerald-400":sharpeVal>=0?"text-amber-400":"text-red-400",sub:"Rf = 0%"},
                       ].map(k=>(
                         <div key={k.label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
                           <div className="text-slate-500 text-[10px] font-semibold mb-2 uppercase tracking-wider">{k.label}</div>
@@ -4884,7 +4891,7 @@ export default function ClientDashboardPage() {
                         {[
                           {label:"Volatilidade (período)",val:`${reportVol.toFixed(2)}%`,desc:"Desvio padrão anualizado dos retornos (período completo)"},
                           {label:"Máx. Drawdown (3a)",val:fmtPct(scaledDD),desc:"Queda máxima pico-a-vale nos últimos 3 anos"},
-                          {label:"Sharpe Ratio",val:sharpeVal.toFixed(2),desc:"Retorno anualizado excesso / volatilidade (Rf=2%)"},
+                          {label:"Sharpe Ratio",val:sharpeVal.toFixed(2),desc:"Retorno anualizado / volatilidade (Rf=0%)"},
                           {label:"CAGR",val:fmtPct(scaledAnn,true),desc:"Taxa de crescimento anual composta desde início"},
                         ].map(m=>(
                           <div key={m.label} className="border border-[#1a1f2e] rounded-lg p-4">
@@ -4902,6 +4909,35 @@ export default function ClientDashboardPage() {
 
               {/* ── ACTIVIDADE ── */}
               {activePage==="actividade"&&<ActividadePage sortedMonths={sortedMonths}/>}
+
+              {/* ── SIMULADOR ── */}
+              {activePage==="simulador"&&(
+                <div className="space-y-4">
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+                    <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-[#1a1f2e]">
+                      <div className="flex items-center gap-2">
+                        <Activity size={14} className="text-blue-400"/>
+                        <h2 className="text-slate-200 text-sm font-bold tracking-wide">Simulação de Capital</h2>
+                        <span className="text-[10px] text-slate-500">· Perfil {profileLabel}{kpiMode==="margem"?" · Com margem":""}</span>
+                      </div>
+                      {!loggedIn&&(
+                        <button onClick={()=>setShowRegModal(true)} className="text-[10px] text-blue-400 hover:underline">
+                          Guardar simulação →
+                        </button>
+                      )}
+                    </div>
+                    <div className="px-5 py-4">
+                      <NativeSimulator dates={dates} equity={activeEquity} bench={benchRaw}
+                        onRegister={()=>setShowRegModal(true)} loggedIn={loggedIn}
+                        volScale={1}/>
+                    </div>
+                  </div>
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4 text-xs text-slate-500">
+                    O simulador usa dados históricos reais dos últimos 20 anos com o perfil de risco e modo de margem activos nas Configurações.
+                    Rendimentos passados não garantem resultados futuros.
+                  </div>
+                </div>
+              )}
 
               {/* ── DASHBOARD ── */}
               {activePage==="dashboard"&&(

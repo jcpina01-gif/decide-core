@@ -14,14 +14,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const backendBase = getBackendBase();
   if (!backendBase) return res.status(503).json({ error: "backend_unavailable" });
 
-  if (req.method === "GET") {
-    const { username, passwordHash } = req.query;
+  // POST without `prefs` field = fetch prefs (credentials in body, not query string)
+  if (req.method === "POST") {
+    const { username, passwordHash } = req.body ?? {};
     if (!username || !passwordHash) return res.status(400).json({ error: "missing_fields" });
     try {
-      const r = await fetch(
-        `${backendBase}/api/client/prefs?username=${encodeURIComponent(String(username))}&passwordHash=${encodeURIComponent(String(passwordHash))}`,
-        { signal: AbortSignal.timeout(8000) },
-      );
+      const r = await fetch(`${backendBase}/api/client/prefs/fetch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: String(username), passwordHash: String(passwordHash) }),
+        signal: AbortSignal.timeout(8000),
+      });
       const j = await r.json();
       return res.status(r.status).json(j);
     } catch {

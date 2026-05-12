@@ -25,12 +25,30 @@ from routers.client_auth import router as client_auth_router
 
 app = FastAPI()
 
+import os as _os
+
+_CORS_ORIGINS_ENV = _os.environ.get("DECIDE_CORS_ORIGINS", "")
+_CORS_ORIGINS: list[str] = (
+    [o.strip() for o in _CORS_ORIGINS_ENV.split(",") if o.strip()]
+    if _CORS_ORIGINS_ENV.strip()
+    else [
+        "https://decide-frontend.vercel.app",
+        "https://decide-core22.vercel.app",
+        # allow any *.vercel.app preview deployments
+        "https://*.vercel.app",
+        # local dev
+        "http://localhost:3000",
+        "http://localhost:3001",
+    ]
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_CORS_ORIGINS,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
 
 @app.get("/api/health")

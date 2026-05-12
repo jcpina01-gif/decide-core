@@ -142,10 +142,12 @@ const LS_PREFS_KEYS = [
 /** Pull prefs from server and populate localStorage. Called after login. */
 export async function syncPrefsFromServer(username: string, passwordHash: string): Promise<void> {
   try {
-    const r = await fetch(
-      `/api/client/prefs?username=${encodeURIComponent(username)}&passwordHash=${encodeURIComponent(passwordHash)}`,
-      { signal: AbortSignal.timeout(8000) },
-    );
+    const r = await fetch("/api/client/prefs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, passwordHash }),
+      signal: AbortSignal.timeout(8000),
+    });
     if (!r.ok) return;
     const j = (await r.json()) as { prefs?: Record<string, string> };
     if (!j.prefs || typeof j.prefs !== "object") return;

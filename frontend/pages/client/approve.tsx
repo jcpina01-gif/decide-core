@@ -644,12 +644,12 @@ export default function ApprovePage({
       alert("Aprovação bloqueada: confirme primeiro o MiFID e o KYC (Persona).");
       return;
     }
+    // Hedge is soft — auto-set 0% if missing so approval is never blocked by it
     if (!isFxHedgeGateOk()) {
-      // eslint-disable-next-line no-alert
-      alert(
-        "Aprovação bloqueada: conclua primeiro o passo «Hedge cambial» (0%, 50% ou 100% nos indicadores), antes de «Plano e pagamento».",
-      );
-      return;
+      try {
+        window.localStorage.setItem("decide_fx_hedge_prefs_v1", JSON.stringify({ pair: "EURUSD", pct: 0, residenceCountry: "PT" }));
+        window.localStorage.setItem("decide_onboarding_step5_hedge_done", "1");
+      } catch { /* ignore */ }
     }
     if (!ibkrPrepDone) {
       // eslint-disable-next-line no-alert

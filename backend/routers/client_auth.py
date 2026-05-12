@@ -60,15 +60,20 @@ class PrefsRequest(BaseModel):
     prefs: dict
 
 
-@router.get("/api/client/prefs")
-def client_prefs_get(username: str, passwordHash: str):
-    u = username.strip().lower()
+class PrefsFetchRequest(BaseModel):
+    username: str
+    passwordHash: str
+
+
+@router.post("/api/client/prefs/fetch")
+def client_prefs_fetch(req: PrefsFetchRequest):
+    u = req.username.strip().lower()
     with _lock:
         db = _read()
     rec = db.get(u)
     if rec is None:
         return JSONResponse(status_code=401, content={"error": "user_not_found"})
-    if rec.get("passwordHash") != passwordHash.strip():
+    if rec.get("passwordHash") != req.passwordHash.strip():
         return JSONResponse(status_code=401, content={"error": "wrong_password"})
     return {"ok": True, "prefs": rec.get("prefs", {})}
 
