@@ -4291,7 +4291,7 @@ export default function ClientDashboardPage() {
     const total=[...map.values()].reduce((a,b)=>a+b,0)||1;
     return [...map.entries()]
       .map(([name,pct])=>({name,value:Math.round(pct/total*100)}))
-      .filter(d=>d.value>=2)   // hide countries with <2% — avoids single-stock artefacts
+      .filter(d=>d.value>=1)
       .sort((a,b)=>b.value-a.value);
   },[latestMonth]);
 
