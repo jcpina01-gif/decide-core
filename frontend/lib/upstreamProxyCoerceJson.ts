@@ -19,6 +19,14 @@ export function upstreamProxyHtmlFailureMessage(
   routeLabel: string,
 ): string {
   const healthHint = `${backendBase.replace(/\/+$/, "")}/api/health`;
+  if (upstreamStatus === 530 || upstreamStatus === 521 || upstreamStatus === 522 || upstreamStatus === 523 || upstreamStatus === 524) {
+    return (
+      `O servidor backend está inacessível (Cloudflare ${upstreamStatus}). ` +
+      `O processo uvicorn/FastAPI provavelmente parou. ` +
+      `Aceda ao servidor remoto e reinicie: \`systemctl restart decide-api\` ou \`./backend/scripts/restart_decide_kpi_gunicorn.sh --full\`. ` +
+      `Teste ${healthHint} após o reinício.`
+    );
+  }
   if (upstreamStatus === 502 || upstreamStatus === 503) {
     return (
       `HTTP ${upstreamStatus} em ${routeLabel}: o proxy recebeu HTML (ou corpo vazio) em vez de JSON do FastAPI. ` +

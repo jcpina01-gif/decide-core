@@ -6114,7 +6114,25 @@ export default function ClientDashboardPage() {
                           {cartIbLoading?"A carregar…":"↻ Actualizar"}
                         </button>
                       </div>
-                      {cartIbErr&&<div className="bg-red-900/30 border border-red-500/30 text-red-300 text-xs rounded-lg px-4 py-3">{cartIbErr}</div>}
+                      {cartIbErr&&(
+                        <div className="bg-red-900/20 border border-red-500/30 rounded-xl px-4 py-4 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-red-400 text-sm font-semibold">
+                              {cartIbErr.includes("inacessível")||cartIbErr.includes("530")||cartIbErr.includes("521")||cartIbErr.includes("522")||cartIbErr.includes("523")||cartIbErr.includes("524")
+                                ? "Servidor offline"
+                                : cartIbErr.includes("Timeout")
+                                  ? "Timeout de ligação"
+                                  : "Erro de ligação IB"}
+                            </span>
+                          </div>
+                          <p className="text-red-300/80 text-[11px] leading-relaxed">{cartIbErr}</p>
+                          {(cartIbErr.includes("inacessível")||cartIbErr.includes("530"))&&(
+                            <p className="text-amber-400/80 text-[10px] leading-relaxed border-t border-red-500/20 pt-2">
+                              O processo FastAPI/uvicorn no servidor remoto parou. Aceda ao servidor e reinicie o serviço backend (<code className="bg-black/30 px-1 py-0.5 rounded">systemctl restart decide-api</code> ou equivalente).
+                            </p>
+                          )}
+                        </div>
+                      )}
                       {cartIbPos===null&&!cartIbLoading&&!cartIbErr&&(
                         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-8 text-center text-slate-500 text-sm">A carregar posições IB…</div>
                       )}

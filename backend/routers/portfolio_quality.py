@@ -33,7 +33,6 @@ def _load_fund():
     global _fund_cache
     if _fund_cache is None and FUND_CSV.exists():
         _fund_cache = pd.read_csv(FUND_CSV, index_col=0)
-    import pandas as pd
     return _fund_cache if _fund_cache is not None else pd.DataFrame()
 
 
