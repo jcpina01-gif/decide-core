@@ -1664,9 +1664,7 @@ function CustosPage({aum}:{aum:number}) {
 /* ─── RobustezPage sub-component ───────────────────────────── */
 function RobustezPage(){
   const panel="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5";
-  const badge=(color:string,text:string)=>(
-    <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${color}`}>{text}</span>
-  );
+  const [expandedTest,setExpandedTest]=useState<string|null>(null);
 
   const tests=[
     {
@@ -1735,74 +1733,127 @@ function RobustezPage(){
     },
   ];
 
-  const summary=[
-    {label:"Testes realizados",value:"8",color:"text-emerald-400"},
-    {label:"Testes aprovados",value:"8/8",color:"text-emerald-400"},
-    {label:"Sub-períodos analisados",value:"4",color:"text-blue-400"},
-    {label:"Simulações Monte Carlo",value:"5 000",color:"text-blue-400"},
-    {label:"Universos testados",value:"4",color:"text-purple-400"},
-    {label:"Sharpe mín. out-of-sample",value:"> 1,0",color:"text-teal-400"},
+  // More nuanced labels replacing "Aprovado"
+  const testLabels:{[key:string]:{badge:string;color:string}}={
+    "01":{badge:"Comportamento consistente",color:"bg-slate-700/40 text-slate-300 border border-slate-600/30"},
+    "02":{badge:"Degradação limitada",color:"bg-slate-700/40 text-slate-300 border border-slate-600/30"},
+    "03":{badge:"Resiliência observada",color:"bg-slate-700/40 text-slate-300 border border-slate-600/30"},
+    "04":{badge:"Distribuição favorável",color:"bg-slate-700/40 text-slate-300 border border-slate-600/30"},
+    "05":{badge:"Sinais mantidos",color:"bg-slate-700/40 text-slate-300 border border-slate-600/30"},
+    "06":{badge:"Recuperação relativa",color:"bg-slate-700/40 text-slate-300 border border-slate-600/30"},
+    "07":{badge:"Baixa dependência paramétrica",color:"bg-slate-700/40 text-slate-300 border border-slate-600/30"},
+    "08":{badge:"Out-of-sample consistente",color:"bg-slate-700/40 text-slate-300 border border-slate-600/30"},
+  };
+
+  const LIMITATIONS=[
+    {title:"Dados históricos",desc:"Todos os testes assentam em dados históricos. Regimes de mercado inéditos (ex.: deflação prolongada, ruptura sistémica) não estão representados e podem comportar-se de forma diferente."},
+    {title:"Execução real vs. simulada",desc:"Os testes assumem execução a preços de fecho ou com slippage estimado. A execução real pode diferir, especialmente em períodos de elevada volatilidade ou iliquidez."},
+    {title:"Capacidade do modelo",desc:"Os resultados foram obtidos com carteiras de dimensão limitada. Estratégias de momentum tendem a degradar-se com volumes significativamente maiores."},
+    {title:"Risco de degradação futura",desc:"O comportamento passado dos factores de momentum e qualidade não garante persistência futura. Regimes em que estes factores percam eficácia não foram antecipados nos testes."},
+    {title:"Testes conduzidos internamente",desc:"Os testes foram realizados pela equipa DECIDE sem auditoria externa independente. Devem ser interpretados como análise interna, não como certificação regulatória ou académica."},
   ];
 
   return(
-    <div className="space-y-6">
-      {/* Resumo */}
+    <div className="space-y-5">
+
+      {/* ── Aviso de contexto ── */}
+      <div className="bg-amber-950/25 border border-amber-800/30 rounded-xl px-5 py-4">
+        <div className="flex items-start gap-3">
+          <Info size={15} className="text-amber-400 shrink-0 mt-0.5"/>
+          <div>
+            <div className="text-amber-300 font-semibold text-sm mb-1">O objectivo destes testes</div>
+            <p className="text-amber-200/70 text-xs leading-relaxed">
+              Esta secção documenta análises de robustez realizadas internamente sobre o modelo quantitativo DECIDE.
+              O objectivo é verificar se o modelo mantém comportamento <span className="font-semibold">relativamente consistente</span> em diferentes cenários históricos —
+              não demonstrar que o modelo é infalível ou que os resultados passados se repetirão.
+              Estes testes não constituem certificação regulatória, auditoria independente, ou garantia de resultados futuros.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Resumo — sem "8/8 aprovados" ── */}
       <div className={panel}>
-        <div className="font-bold text-slate-100 text-sm mb-1">Resumo executivo</div>
-        <p className="text-slate-400 text-xs leading-relaxed mb-4">
-          O modelo DECIDE foi submetido a um conjunto alargado de testes de robustez independentes, cobrindo múltiplos regimes de mercado, variações paramétricas, stress de custos e execução, e validação out-of-sample. Todos os 8 testes foram concluídos com resultado positivo.
-        </p>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-          {summary.map(s=>(
-            <div key={s.label} className="bg-[#060a10] rounded-lg p-3 text-center">
-              <div className={`text-xl font-black ${s.color}`}>{s.value}</div>
-              <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">{s.label}</div>
+        <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-3">Âmbito da análise</div>
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            {label:"Análises realizadas",value:"8",sub:"cenários distintos"},
+            {label:"Sub-períodos históricos",value:"4",sub:"incluindo 2008, COVID, 2022"},
+            {label:"Simulações Monte Carlo",value:"5 000",sub:"bootstrap de retornos mensais"},
+          ].map(s=>(
+            <div key={s.label} className="bg-[#060a10] border border-[#1a1f2e] rounded-xl p-4 text-center">
+              <div className="text-2xl font-black text-slate-200">{s.value}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5 font-medium">{s.label}</div>
+              <div className="text-[9px] text-slate-600 mt-0.5 italic">{s.sub}</div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Disclaimer */}
-      <div className="bg-amber-950/30 border border-amber-800/40 rounded-lg px-4 py-3 text-[11px] text-amber-200/80 leading-relaxed">
-        <strong>Nota:</strong> Resultados passados não garantem resultados futuros. Os testes descritos foram realizados internamente com base em dados históricos. Os valores de CAGR, Sharpe e outras métricas reflectem o backtest histórico e podem diferir da performance real futura.
+      {/* ── Testes — expandíveis ── */}
+      <div className="space-y-2">
+        <div className="text-[10px] uppercase tracking-widest text-slate-600 px-1 mb-2">Análises de robustez</div>
+        {tests.map(t=>{
+          const lbl=testLabels[t.id]??{badge:"Observado",color:"bg-slate-700/40 text-slate-300 border border-slate-600/30"};
+          const isOpen=expandedTest===t.id;
+          return (
+            <div key={t.id} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+              {/* Summary row — always visible */}
+              <button className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-white/[0.02] transition-colors"
+                onClick={()=>setExpandedTest(isOpen?null:t.id)}>
+                <span className="text-[10px] font-mono text-slate-600 shrink-0">T-{t.id}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-slate-200">{t.name}</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5 truncate">{t.metric}</div>
+                </div>
+                <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full shrink-0 ${lbl.color}`}>{lbl.badge}</span>
+                <ChevronDown size={14} className={`text-slate-600 shrink-0 transition-transform ${isOpen?"rotate-180":""}`}/>
+              </button>
+
+              {/* Detail — only when expanded */}
+              {isOpen&&(
+                <div className="border-t border-[#111827] px-5 py-4 space-y-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-slate-600 mb-1.5">Metodologia</div>
+                    <p className="text-xs text-slate-400 leading-relaxed">{t.description}</p>
+                  </div>
+                  <div className="bg-[#060a10] border border-[#1a1f2e] rounded-lg px-4 py-3">
+                    <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1.5">Observação</div>
+                    <p className="text-xs text-slate-300 leading-relaxed">{t.result}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {/* Testes individuais */}
-      <div className="space-y-4">
-        {tests.map(t=>(
-          <div key={t.id} className={panel}>
-            <div className="flex items-start justify-between gap-3 mb-2">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black text-slate-600 font-mono">T-{t.id}</span>
-                <span className="text-sm font-bold text-slate-100">{t.name}</span>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {badge("bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30","Aprovado")}
-              </div>
-            </div>
-            <p className="text-xs text-slate-400 leading-relaxed mb-3">{t.description}</p>
-            <div className="bg-[#060a10] rounded-lg px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
-              <div className="flex-1">
-                <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wide mb-1">Resultado</div>
-                <p className="text-xs text-slate-300 leading-relaxed">{t.result}</p>
-              </div>
-              <div className="shrink-0 bg-emerald-950/50 border border-emerald-800/40 rounded-lg px-3 py-2 text-center min-w-[140px]">
-                <div className="text-[9px] font-bold text-emerald-500 uppercase tracking-wide mb-0.5">Métrica-chave</div>
-                <div className="text-xs font-bold text-emerald-300">{t.metric}</div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Nota metodológica */}
+      {/* ── Limitações conhecidas ── */}
       <div className={panel}>
-        <div className="font-bold text-slate-100 text-sm mb-2">Nota metodológica</div>
-        <div className="space-y-2 text-xs text-slate-400 leading-relaxed">
-          <p>O modelo utiliza uma combinação de factores de momentum de preço (12 meses com exclusão do último mês) e factores de qualidade fundamental (rentabilidade, crescimento, solidez do balanço). O rebalanceamento é mensal.</p>
-          <p>A volatilidade alvo é ajustada ao perfil de risco: Conservador = 75% da vol do benchmark, Moderado = 100%, Dinâmico = 125%. Em períodos de risco elevado, o modelo aumenta a componente monetária (XEON/MM) como mecanismo de protecção.</p>
-          <p>Quando o modelo está em modo de alavancagem (XEON = 0%), a exposição a acções pode atingir até 180% do capital, com alavancagem dinâmica baseada na volatilidade realizada a 60 dias do benchmark.</p>
-          <p>Todos os testes foram conduzidos com dados históricos diários. Os custos de transacção foram estimados com base em spreads típicos para títulos de grande capitalização em mercados desenvolvidos.</p>
+        <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Limitações e advertências</div>
+        <div className="space-y-3">
+          {LIMITATIONS.map(l=>(
+            <div key={l.title} className="flex items-start gap-3">
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-600/60 shrink-0 mt-1.5"/>
+              <div>
+                <div className="text-xs font-semibold text-slate-300">{l.title}</div>
+                <div className="text-xs text-slate-500 leading-relaxed mt-0.5">{l.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Nota metodológica ── */}
+      <div className={panel}>
+        <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-3">Notas metodológicas</div>
+        <div className="space-y-2 text-xs text-slate-500 leading-relaxed">
+          <p>O modelo combina factores de momentum de preço (12 meses excluindo o último mês) e qualidade fundamental. O rebalanceamento é mensal com volatilidade-alvo ajustada ao perfil.</p>
+          <p>Em períodos de risco elevado, a exposição a acções é reduzida automaticamente com aumento da componente monetária (XEON). Em modo de alavancagem, a exposição pode atingir até 180% do capital.</p>
+          <p>Custos de transacção estimados com base em spreads típicos para títulos de grande capitalização em mercados desenvolvidos. A execução real pode diferir.</p>
+          <p className="text-slate-600 italic pt-1 border-t border-[#1a1f2e]">
+            Análise interna DECIDE · Não auditada externamente · Performance passada não garante resultados futuros · Simulado
+          </p>
         </div>
       </div>
     </div>
