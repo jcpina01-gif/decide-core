@@ -72,7 +72,7 @@ export default function FxHedgeOnboardingPage() {
     const prev = readFxHedgePrefs();
     if (prev) {
       setPair(prev.pair);
-      setPct(prev.pct);
+      // pct intentionally NOT restored — user must choose actively each time (default 0%)
       if (prev.residenceCountry) setResidence(prev.residenceCountry);
     }
   }, [mounted]);

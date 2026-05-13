@@ -1107,9 +1107,20 @@ export default function PersonaOnboardingPage({
           <h1 style={{ fontSize: "clamp(22px, 3.5vw, 32px)", fontWeight: 800, lineHeight: 1.15, margin: "0 0 8px", color: "#f1f5f9" }}>
             Verificação de identidade
           </h1>
-          <p style={{ margin: 0, fontSize: 14, color: "#64748b", lineHeight: 1.6, fontWeight: 500 }}>
+          <p style={{ margin: "0 0 12px", fontSize: 14, color: "#64748b", lineHeight: 1.6, fontWeight: 500 }}>
             Confirme a sua identidade para avançar — processo rápido e seguro.
           </p>
+          <div style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, color: "#475569", display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ opacity: 0.7 }}>⏱</span> Cerca de 2 minutos
+            </span>
+            <span style={{ fontSize: 12, color: "#475569", display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ opacity: 0.7 }}>🔒</span> Encriptado e seguro
+            </span>
+            <span style={{ fontSize: 12, color: "#475569", display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ opacity: 0.7 }}>✓</span> Penúltimo passo
+            </span>
+          </div>
         </div>
 
         {showPersonaVercelHostnameCallout ? (
@@ -1236,65 +1247,37 @@ export default function PersonaOnboardingPage({
                   marginBottom: 20,
                   padding: 16,
                   borderRadius: 14,
-                  background: "rgba(251, 191, 36, 0.08)",
-                  border: "1px solid rgba(251, 191, 36, 0.45)",
-                  color: "#fef3c7",
+                  background: "rgba(15, 23, 42, 0.6)",
+                  border: "1px solid rgba(148, 163, 184, 0.2)",
+                  color: "#cbd5e1",
                   fontSize: 14,
                   lineHeight: 1.6,
                 }}
               >
-                <div style={{ fontWeight: 800, color: "#fde68a", marginBottom: 8 }}>O que pode fazer</div>
                 {personaPrepIssue === "session" ? (
-                  <p style={{ margin: "0 0 14px" }}>
-                    Não conseguimos associar a sua conta a este passo. Inicie sessão (ou volte ao registo) e abra de novo a
-                    verificação de identidade. Também pode atualizar a página depois de entrar.
-                  </p>
-                ) : (
-                  <p style={{ margin: "0 0 14px" }}>
-                    O assistente externo (Persona) <strong>não está configurado</strong> neste site ou o último deploy foi feito{" "}
-                    <strong>antes</strong> de definirem as variáveis — voltar ao passo 3 não resolve isto.
-                  </p>
-                )}
-                {personaPrepIssue === "session" ? (
-                  <p style={{ margin: "0 0 14px", color: "#fcd34d", fontSize: 13 }}>
-                    Confirme que tem sessão iniciada (nome de utilizador visível no fluxo cliente).
-                  </p>
+                  <>
+                    <div style={{ fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>
+                      Sessão não encontrada
+                    </div>
+                    <p style={{ margin: "0 0 14px", color: "#94a3b8", fontSize: 13 }}>
+                      Para continuar a verificação de identidade precisa de estar com sessão iniciada. Atualize a página
+                      depois de entrar, ou inicie sessão novamente.
+                    </p>
+                  </>
                 ) : (
                   <>
-                    <p style={{ margin: "0 0 10px", color: "#fcd34d", fontSize: 13, lineHeight: 1.55 }}>
-                      Na Vercel: <strong>Project → Settings → Environment Variables → Production</strong>. Depois{" "}
-                      <strong>Redeploy</strong> (obrigatório para <code style={{ color: "#fef9c3" }}>NEXT_PUBLIC_*</code>).
-                    </p>
-                    <ul style={{ margin: "0 0 14px", paddingLeft: 18, color: "#fcd34d", fontSize: 12, lineHeight: 1.55 }}>
-                      {!templateId.trim() ? (
-                        <li>
-                          Falta <strong>template</strong> (ID começa por <code style={{ color: "#fef9c3" }}>itmpl_</code>).
-                        </li>
-                      ) : null}
-                      {!environmentId.trim() ? (
-                        <li>
-                          Falta <strong>environment</strong> (ID começa por <code style={{ color: "#fef9c3" }}>env_</code>).
-                        </li>
-                      ) : null}
-                    </ul>
-                    <p style={{ margin: 0, color: "#a8a29e", fontSize: 12, lineHeight: 1.5 }}>
-                      Copie os IDs em dashboard.withpersona.com → Inquiry template / API. Se aparecer «This application is
-                      misconfigured» / «template-id is blank»: confirme variáveis na Vercel (ou no servidor) e faça{" "}
-                      <strong>redeploy</strong>; em fluxo embebido, na Persona (Domain Manager) use o campo <strong>só com
-                      hostname</strong>, p.ex. <code style={{ color: "#d6d3d1" }}>localhost</code> — sem{" "}
-                      <code style={{ color: "#d6d3d1" }}>http://</code> nem path. Abra a app em{" "}
-                      <code style={{ color: "#d6d3d1" }}>http://localhost:4701</code> para coincidir com essa entrada; o painel
-                      costuma <strong>rejeitar</strong> <code style={{ color: "#d6d3d1" }}>127.0.0.1</code> como domínio.
-                      Se usou <code style={{ color: "#d6d3d1" }}>NEXT_PUBLIC_PERSONA_HOST=staging</code>, o{" "}
-                      <code style={{ color: "#d6d3d1" }}>NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID</code> tem de ser válido nesse
-                      ambiente. Para «Could not load template», publique uma versão do template e, se necessário, defina{" "}
-                      <code style={{ color: "#d6d3d1" }}>NEXT_PUBLIC_PERSONA_TEMPLATE_VERSION_ID</code>.
+                    <div style={{ fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>
+                      Verificação temporariamente indisponível
+                    </div>
+                    <p style={{ margin: "0 0 14px", color: "#94a3b8", fontSize: 13 }}>
+                      Estamos a finalizar a configuração da verificação de identidade. Se o problema persistir, contacte-nos
+                      — a nossa equipa resolve em menos de 1 dia útil.
                     </p>
                   </>
                 )}
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
                   <a href="/mifid-test" style={linkSecondary}>
-                    Voltar ao perfil de investidor
+                    ← Voltar
                   </a>
                   {personaPrepIssue === "session" ? (
                     <a href="/client/login" style={linkSecondary}>
@@ -1304,15 +1287,26 @@ export default function PersonaOnboardingPage({
                   <button
                     type="button"
                     onClick={() => window.location.reload()}
-                    style={{
-                      ...linkSecondary,
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                    }}
+                    style={{ ...linkSecondary, cursor: "pointer", fontFamily: "inherit" }}
                   >
                     Atualizar página
                   </button>
                 </div>
+                {process.env.NODE_ENV === "development" ? (
+                  <details style={{ marginTop: 14 }}>
+                    <summary style={{ cursor: "pointer", fontSize: 11, color: "#64748b", listStyle: "none" }}>
+                      Detalhes de configuração (apenas dev)
+                    </summary>
+                    <div style={{ marginTop: 10, fontSize: 12, color: "#64748b", lineHeight: 1.55 }}>
+                      {!templateId.trim() && <div>• Falta NEXT_PUBLIC_PERSONA_TEMPLATE_ID (itmpl_…)</div>}
+                      {!environmentId.trim() && <div>• Falta NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID (env_…)</div>}
+                      <div style={{ marginTop: 6 }}>
+                        Adicione em <code>.env.local</code> e reinicie o servidor. Na Persona Domain Manager, use só o
+                        hostname sem protocolo (ex.: <code>localhost</code>).
+                      </div>
+                    </div>
+                  </details>
+                ) : null}
               </div>
             ) : null}
 
@@ -1497,8 +1491,8 @@ export default function PersonaOnboardingPage({
                     display: "inline-block",
                     background: "transparent",
                     border: "none",
-                    color: manualBypassInFlight ? "#57534e" : "#71717a",
-                    fontSize: 12,
+                    color: manualBypassInFlight ? "#57534e" : "#64748b",
+                    fontSize: 11,
                     fontWeight: 500,
                     cursor: manualBypassInFlight ? "not-allowed" : "pointer",
                     textDecoration: manualBypassInFlight ? "none" : "underline",
@@ -1511,8 +1505,8 @@ export default function PersonaOnboardingPage({
                   }}
                 >
                   {manualBypassInFlight
-                    ? "A registar modo manual..."
-                    : "Continuar com validação manual"}
+                    ? "A registar pedido de suporte…"
+                    : "A verificação não está a funcionar? A equipa trata — continuar"}
                 </button>
               ) : null}
             </div>
@@ -1547,88 +1541,41 @@ export default function PersonaOnboardingPage({
                     textAlign: "center",
                   }}
                 >
-                  Continuar (validação manual pendente)
+                  Continuar — a equipa valida a identidade
                 </a>
                 <div style={{ color: "#a1a1aa", fontSize: 12, lineHeight: 1.5 }}>
-                  O pedido ficou marcado para revisão manual. A aprovação final da identidade será confirmada pela equipa.
+                  O pedido ficou registado. A nossa equipa confirma a identidade e notifica por email em menos de 1 dia útil.
                 </div>
               </div>
             ) : null}
 
             {!backendSaveConfirmed ? (
               <div style={{ color: "#71717a", fontSize: 11, lineHeight: 1.45, marginTop: 10 }}>
-                O assistente abre como <strong>janela escura em ecrã completo</strong> (não só na caixa abaixo) — verifique se não ficou atrás do browser ou se o bloqueador não impediu o iframe.
-                <div style={{ marginTop: 10, color: "#57534e", fontSize: 11 }}>
-                  Se ficar em branco: o template na Persona precisa de <strong>versão publicada</strong> (na lista de templates,
-                  «Last published» não pode estar vazio). A variável <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_TEMPLATE_VERSION_ID</code>{" "}
-                  é opcional. <strong>Não</strong> use <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_HOST=development</code>: no SDK isso aponta o
-                  iframe para <code style={{ color: "#a8a29e" }}>localhost:3000</code> (interno Persona). Sandbox usa <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID</code>{" "}
-                  e, se precisar, <code style={{ color: "#a8a29e" }}>NEXT_PUBLIC_PERSONA_HOST=production</code> ou omita (omissão = production).{" "}
-                  <strong>Rede (DevTools):</strong> se o pedido a <code style={{ color: "#a8a29e" }}>inquiry.withpersona.com</code> (documento
-                  <code style={{ color: "#a8a29e" }}>widget?…</code>) tiver <strong>403 Forbidden</strong>, a origem (hostname da tua app){" "}
-                  <strong>não</strong> está na allowlist da Persona: em dashboard.withpersona.com → <strong>Domain Manager</strong> (ou
-                  definição equivalente de domínios do embed), adicione o hostname exato, p.ex. o{" "}
-                  <code style={{ color: "#a8a29e" }}>*.vercel.app</code> concreto da barra de endereços — sem <code
-                    style={{ color: "#a8a29e" }}
-                  >
-                    https://
-                  </code>
-                  .
-                </div>
-                {stageStr === "persona-iframe-mounted" ? (
-                  <div
-                    style={{
-                      marginTop: 14,
-                      padding: "12px 14px",
-                      borderRadius: 12,
-                      background: "rgba(14, 165, 233, 0.1)",
-                      border: "1px solid rgba(56, 189, 248, 0.35)",
-                      color: "#99f6e4",
-                      fontSize: 12,
-                      lineHeight: 1.55,
-                    }}
-                  >
-                    <strong>Diagnóstico:</strong> o iframe da Persona está montado na página. Se a área escura continua vazia,
-                    confira na consola Persona o template publicado e o mesmo ambiente que{" "}
-                    <code style={{ color: "#d4d4d4" }}>NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID</code>.
-                    {" "}Se a mensagem for <strong>«localhost recusou-se a ligar»</strong>, não use{" "}
-                    <code style={{ color: "#d4d4d4" }}>NEXT_PUBLIC_PERSONA_HOST=development</code> (o SDK usa{" "}
-                    <code style={{ color: "#d4d4d4" }}>localhost:3000</code>). Se o Next só ouvir em{" "}
-                    <code style={{ color: "#d4d4d4" }}>127.0.0.1</code> mas a Persona só permitir{" "}
-                    <code style={{ color: "#d4d4d4" }}>localhost</code>, use <code style={{ color: "#d4d4d4" }}>npm run dev:lan</code>{" "}
-                    (<code style={{ color: "#d4d4d4" }}>0.0.0.0</code>) ou abra <code style={{ color: "#d4d4d4" }}>http://localhost:4701</code>.
-                    {" "}Se for <strong>«inquiry.withpersona.com recusou-se a ligar»</strong> (ou erro de ligação semelhante), o browser não está a conseguir HTTPS até aos servidores Persona: teste abrir{" "}
-                    <a href="https://inquiry.withpersona.com/" target="_blank" rel="noopener noreferrer" style={{ color: "#7dd3fc" }}>
-                      inquiry.withpersona.com
-                    </a>{" "}
-                    noutro separador; desative temporariamente bloqueadores, VPN ou inspecção HTTPS do antivírus; experimente outra rede ou{" "}
-                    <code style={{ color: "#d4d4d4" }}>NEXT_PUBLIC_PERSONA_HOST=staging</code> em <code style={{ color: "#d4d4d4" }}>.env.local</code> (reinicie o Next). No Windows, falhas de verificação de revogação de certificado (proxy offline) também bloqueiam ligações TLS.
-                    {" "}No DevTools → Rede, confirme se o pedido ao domínio Persona falha antes da resposta.
-                  </div>
+                <span>A verificação abre como janela em ecrã completo — se não aparecer, verifique se o browser não bloqueou o assistente.</span>
+                {process.env.NODE_ENV === "development" ? (
+                  <details style={{ marginTop: 8 }}>
+                    <summary style={{ cursor: "pointer", color: "#57534e", listStyle: "none" }}>Detalhes técnicos (dev)</summary>
+                    <div style={{ marginTop: 8, color: "#57534e", fontSize: 11 }}>
+                      Template Persona precisa de versão publicada. Não use NEXT_PUBLIC_PERSONA_HOST=development.
+                      403 Forbidden = hostname não está na allowlist (Domain Manager na Persona).
+                    </div>
+                  </details>
                 ) : null}
                 {embedBlockedByPersona && !manualFallbackActive ? (
                   <div
                     style={{
-                      marginTop: 14,
-                      padding: "12px 14px",
-                      borderRadius: 12,
-                      background: "rgba(251, 191, 36, 0.12)",
-                      border: "1px solid rgba(251, 191, 36, 0.45)",
-                      color: "#fef3c7",
+                      marginTop: 10,
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      background: "rgba(15, 23, 42, 0.5)",
+                      border: "1px solid rgba(148, 163, 184, 0.18)",
+                      color: "#94a3b8",
                       fontSize: 12,
-                      lineHeight: 1.55,
+                      lineHeight: 1.5,
                     }}
                   >
-                    O assistente automático pode falhar <strong>neste hostname</strong> (Persona embedded flow): na consola
-                    Persona, no mesmo sítio onde definiu domínios para{" "}
-                    <code style={{ color: "#fef9c3" }}>localhost</code>, adicione{" "}
-                    {requestHost ? (
-                      <code style={{ color: "#fef9c3" }}>{requestHost.split(":")[0]}</code>
-                    ) : (
-                      "o host da barra de endereços (só o nome, sem protocolo)"
-                    )}
-                    , ou abra a app no <strong>domínio de produção</strong> aprovado. Pode continuar em{" "}
-                    <strong>modo manual</strong> (botão abaixo) e a equipa valida a identidade depois.
+                    A verificação não carregou neste browser. Pode contactar-nos e a equipa valida a sua identidade
+                    por um processo alternativo — sem custos adicionais.
                   </div>
                 ) : null}
               </div>
