@@ -265,20 +265,14 @@ export default function OnboardingFlowBar({
           gap: 24,
         }}
       >
-        {/* Logo oficial — SVG com fundo transparente */}
+        {/* Logo oficial DECIDE */}
         <a href="/" style={{ flexShrink: 0, textDecoration: "none", lineHeight: 0 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/images/imagem-final-logo-decide.svg"
+            src="/images/imagem-final-logo-decide.png?v=13"
             alt="DECIDE"
             height={44}
             style={{ height: 44, width: "auto", display: "block" }}
-            onError={(e) => {
-              const img = e.currentTarget;
-              if (!img.src.endsWith(".png")) {
-                img.src = "/images/imagem-final-logo-decide.png";
-              }
-            }}
           />
         </a>
 

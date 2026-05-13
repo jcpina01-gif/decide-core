@@ -50,7 +50,7 @@ export default function FxHedgeOnboardingPage() {
   const [mounted, setMounted] = useState(false);
   const [residence, setResidence] = useState("PT");
   const [pair, setPair] = useState<FxHedgePairId>("EURUSD");
-  const [pct, setPct] = useState<HedgePctOption>(100);
+  const [pct, setPct] = useState<HedgePctOption>(0);
   const [msg, setMsg] = useState("");
 
   useEffect(() => {

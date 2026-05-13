@@ -243,7 +243,7 @@ const MIFID_PATRIMONIO_CARDS = [
   { id: "pat1" as const, label: "Até 50 000 €", sub: "Ordem de grandeza do património financeiro total.", value: 40_000 },
   { id: "pat2" as const, label: "50 000 € a 100 000 €", sub: "Estimativa por intervalos — não precisa do valor exacto.", value: 75_000 },
   { id: "pat3" as const, label: "100 000 € a 500 000 €", sub: "Útil para dimensionar o risco face ao seu contexto.", value: 250_000 },
-  { id: "pat4" as const, label: "Mais de 500 000 €", sub: "Património elevado; mantemos a mesma lógica de perfil.", value: 750_000 },
+  { id: "pat4" as const, label: "Superior a 500 000 €", sub: "Estimativa por intervalos — a lógica de perfil mantém-se igual.", value: 750_000 },
 ] as const;
 
 function patrimonioTierFromValue(n: number | ""): (typeof MIFID_PATRIMONIO_CARDS)[number]["id"] | "" {
@@ -278,8 +278,10 @@ function buildPerfilAtualLine(args: {
   const ex = experienceTierShortPt(args.experienceTier);
   if (ex) parts.push(ex);
   if (args.entendeVolatilidade === "sim") parts.push("Curto prazo: confortável com variações");
-  else if (args.entendeVolatilidade === "nao") parts.push("Curto prazo: prefere menos oscilação");
-  if (args.entendeDrawdown === "sim") parts.push("Quedas temporárias: compreende o risco");
+  else if (args.entendeVolatilidade === "alguma") parts.push("Curto prazo: aceita variação moderada");
+  else if (args.entendeVolatilidade === "nao") parts.push("Curto prazo: prefere pouca oscilação");
+  if (args.entendeDrawdown === "sim") parts.push("Quedas temporárias: compreende e aceita");
+  else if (args.entendeDrawdown === "algum") parts.push("Quedas temporárias: tolerância moderada");
   else if (args.entendeDrawdown === "nao") parts.push("Quedas temporárias: menor tolerância");
   if (typeof args.aceitaPerda === "number" && args.aceitaPerda > 0) {
     const lid = lossTierIdFromValue(args.aceitaPerda);
@@ -629,7 +631,9 @@ export default function MifidTestPage() {
     else if (nOperacoesNum >= 5) knowledgeScore += 1;
 
     if (entendeVolatilidade === "sim") knowledgeScore += 1;
+    else if (entendeVolatilidade === "alguma") knowledgeScore += 0;
     if (entendeDrawdown === "sim") knowledgeScore += 1;
+    else if (entendeDrawdown === "algum") knowledgeScore += 0;
 
     if (aceitaPerdaNum >= 30) riskScore += 3;
     else if (aceitaPerdaNum >= 15) riskScore += 2;
@@ -1246,13 +1250,18 @@ export default function MifidTestPage() {
                 [
                   {
                     id: "sim" as const,
-                    title: "Sim, estou confortável",
-                    sub: "Aceito que o valor possa variar de dia para dia.",
+                    title: "Aceito bem as oscilações",
+                    sub: "Entendo que o valor pode variar significativamente no dia a dia e estou confortável com isso.",
+                  },
+                  {
+                    id: "alguma" as const,
+                    title: "Aceito alguma variação",
+                    sub: "Compreendo as oscilações de mercado, mas prefiro que sejam moderadas.",
                   },
                   {
                     id: "nao" as const,
-                    title: "Não, prefiro evitar oscilações",
-                    sub: "Quero menor movimento no curto prazo.",
+                    title: "Prefiro pouca oscilação",
+                    sub: "Quero o menor movimento possível no curto prazo.",
                   },
                 ] as const
               ).map(({ id, title, sub }) => {
@@ -1340,13 +1349,18 @@ export default function MifidTestPage() {
                 [
                   {
                     id: "sim" as const,
-                    title: "Sim, compreendo",
-                    sub: "Sei que investir implica períodos em que o valor pode cair antes de recuperar.",
+                    title: "Compreendo e aceito",
+                    sub: "Sei que pode haver períodos negativos antes de recuperar, e estou preparado para isso.",
+                  },
+                  {
+                    id: "algum" as const,
+                    title: "Aceito quedas limitadas",
+                    sub: "Compreendo o risco mas prefiro que as quedas temporárias sejam contidas.",
                   },
                   {
                     id: "nao" as const,
-                    title: "Não, não estou confortável com isso",
-                    sub: "Prefiro evitar cenários com quedas prolongadas antes de recuperação.",
+                    title: "Prefiro evitar quedas",
+                    sub: "Não estou confortável com períodos prolongados em queda antes de recuperação.",
                   },
                 ] as const
               ).map(({ id, title, sub }) => {
@@ -1621,7 +1635,7 @@ export default function MifidTestPage() {
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <div style={mifidStep4BlockTitle}>Património financeiro total (estimativa)</div>
+              <div style={mifidStep4BlockTitle}>Faixa patrimonial <span style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0, opacity: 0.65 }}>(estimativa, por intervalos)</span></div>
               <div style={mifidChoiceInlineRow}>
                 {MIFID_PATRIMONIO_CARDS.map(({ id, label, sub, value }) => {
                   const selected = patrimonioTierFromValue(typeof patrimonio === "number" ? patrimonio : "") === id;
@@ -1761,7 +1775,7 @@ export default function MifidTestPage() {
                   ...sectionStyle(),
                   padding: "14px 14px 12px",
                   border: "1px solid rgba(45, 212, 191, 0.4)",
-                  boxShadow: `${DECIDE_CLIENT.cardShadow}, 0 0 0 1px rgba(45, 212, 191, 0.18), 0 0 40px rgba(45, 212, 191, 0.1)`,
+                  boxShadow: `${DECIDE_CLIENT.cardShadow}, 0 0 0 1px rgba(45, 212, 191, 0.12)`,
                 }}
               >
                 <div style={{ color: "#d4d4d4", fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", marginBottom: 8 }}>
@@ -1783,10 +1797,9 @@ export default function MifidTestPage() {
                     padding: "12px 12px 14px",
                     marginBottom: 10,
                     borderRadius: 14,
-                    background:
-                      "radial-gradient(ellipse 90% 140% at 50% 0%, rgba(45, 212, 191, 0.14) 0%, transparent 58%)",
-                    border: "1px solid rgba(45, 212, 191, 0.28)",
-                    boxShadow: "0 0 36px rgba(45, 212, 191, 0.09), inset 0 1px 0 rgba(255,255,255,0.05)",
+                    background: "rgba(15, 23, 42, 0.6)",
+                    border: "1px solid rgba(45, 212, 191, 0.18)",
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
                   }}
                 >
                   <div
@@ -1796,7 +1809,7 @@ export default function MifidTestPage() {
                       fontWeight: 900,
                       lineHeight: 1.05,
                       letterSpacing: "-0.03em",
-                      textShadow: "0 0 36px rgba(45, 212, 191, 0.32), 0 2px 20px rgba(0,0,0,0.35)",
+                      textShadow: "0 2px 16px rgba(0,0,0,0.4)",
                     }}
                   >
                     {profileLabelPt(result.profile)}
@@ -1828,20 +1841,25 @@ export default function MifidTestPage() {
                   <p style={{ margin: 0, color: "#a1a1aa", fontSize: 12, lineHeight: 1.4 }}>{whyProfileCompactLine}</p>
                 </div>
 
-                <div
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: 10,
-                    background: DECIDE_CLIENT.infoBg,
-                    border: DECIDE_CLIENT.infoBorder,
-                    color: DECIDE_CLIENT.infoText,
-                    fontSize: 13,
-                    lineHeight: 1.4,
-                  }}
-                >
-                  O montante representa ~<strong style={{ color: "#fff" }}>{(result.investmentRatio * 100).toFixed(1)}%</strong> do
-                  seu património.
-                </div>
+                {result.investmentRatio > 0 && (
+                  <div
+                    style={{
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      background: "rgba(15, 23, 42, 0.55)",
+                      border: "1px solid rgba(148, 163, 184, 0.2)",
+                      color: "#94a3b8",
+                      fontSize: 12,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {result.investmentRatio < 0.3
+                      ? "O montante a investir representa uma parcela moderada do contexto patrimonial indicado."
+                      : result.investmentRatio < 0.6
+                        ? "O montante a investir representa uma parcela relevante do contexto patrimonial indicado."
+                        : "O montante indicado é elevado face ao contexto patrimonial — considere rever se adequado ao seu perfil."}
+                  </div>
+                )}
               </div>
 
               {result.warnings.length ? (
