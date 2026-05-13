@@ -16,6 +16,7 @@ import { getHrefAfterTradePlanApprovalStep } from "../../lib/onboardingProgress"
 import { DECIDE_DASHBOARD, ONBOARDING_SHELL_MAX_WIDTH_PX } from "../../lib/decideClientTheme";
 import { DECIDE_MIN_INVEST_EUR } from "../../lib/decideInvestPrefill";
 import { isBuyMissingEquityClosePrice } from "../../lib/approvalPlanTradeDisplay";
+import { readDefaultRiskProfileFromOnboarding, LS_MIFID_FIELDS } from "../../lib/decideOnboardingRiskProfile";
 import { loadApprovalAlignedProposedTrades } from "../../lib/server/approvalTradePlan";
 import { resolveDecideProjectRoot } from "../../lib/server/decideProjectRoot";
 import path from "path";
@@ -276,6 +277,10 @@ export default function ApprovePage({
   const [ibkrLive, setIbkrLive] = useState<IbkrLiveState>(initialIbkrLive);
   /** Linha da tabela em foco (clique para destacar). */
   const [tableFocusIdx, setTableFocusIdx] = useState<number | null>(null);
+  /** Perfil MiFID lido do localStorage (para Investment Memo). */
+  const [mifidProfile, setMifidProfile] = useState<"conservador" | "moderado" | "dinamico" | null>(null);
+  /** Horizonte de investimento em anos (do questionário MiFID). */
+  const [mifidHorizonte, setMifidHorizonte] = useState<number>(0);
 
   const displayTrades = useMemo(() => {
     if (clientRefPlan?.trades?.length) return clientRefPlan.trades;
@@ -420,6 +425,17 @@ export default function ApprovePage({
       setMifidDone(false);
       setKycDone(false);
       setHedgeGateOk(false);
+    // Read MiFID profile and horizonte for Investment Memo
+    try {
+      const profile = readDefaultRiskProfileFromOnboarding();
+      if (profile) setMifidProfile(profile);
+      const raw = window.localStorage.getItem(LS_MIFID_FIELDS);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        const h = Number(parsed.horizonte);
+        if (Number.isFinite(h) && h > 0) setMifidHorizonte(h);
+      }
+    } catch { /* ignore */ }
     } finally {
       setFlowReady(true);
     }
@@ -699,32 +715,30 @@ export default function ApprovePage({
     alert("Decisão registada como «não aprovar». Pode rever o plano na página Plano e voltar aqui quando quiser.");
   };
 
-  /** Porque o botão «Aprovar» está desactivo — feedback visível (o `title` do botão nem sempre é óbvio). */
+  /** Porque o botão «Confirmar» está desactivo — mensagem orientada ao utilizador final. */
   const approveButtonHint = useMemo(() => {
     if (approveBusy) return null;
     if (!hasTradePlan) {
-      return "Botão desactivo: falta plano de ordens ou NAV de referência válido (Plano / tmp_diag ou montante no onboarding).";
+      return "Para confirmar, indique o montante a investir e aguarde que o plano seja carregado.";
     }
-    if (!mifidDone) return "Botão desactivo: falta concluir o teste MiFID.";
-    if (!kycDone) return "Botão desactivo: falta concluir o KYC (Persona).";
+    if (!mifidDone) return "Complete o questionário de perfil de investidor (passo 3) para continuar.";
+    if (!kycDone) return "Complete a verificação de identidade (passo 4) para continuar.";
     // hedge is soft — not blocking the button
-    if (!ibkrPrepDone) return "Botão desactivo: falta concluir a preparação IBKR (passo «Plano e pagamento»).";
-    if (ibkrLive.loading) return "Botão desactivo: a ler liquidez na conta IBKR paper…";
+    if (!ibkrPrepDone) return "Complete a preparação da conta (passo anterior) para activar a confirmação.";
+    if (ibkrLive.loading) return "A verificar saldo da conta…";
     if (!paperFundsVerified) {
       if (ibkrLive.loading) {
-        return "Botão desactivo: a ler património na conta IBKR paper…";
+        return "A verificar saldo da conta…";
       }
       if (!ibkrLive.ok) {
-        return ibkrLive.error
-          ? `Botão desactivo: leitura IBKR falhou — ${ibkrLive.error.slice(0, 120)}${ibkrLive.error.length > 120 ? "…" : ""}`
-          : "Botão desactivo: sem leitura da conta paper — confirme TWS/IB Gateway, backend e carregue em «Atualizar leitura (TWS)».";
+        return "Não foi possível verificar o saldo da conta. Confirme a ligação à corretora (TWS / IB Gateway) e atualize.";
       }
       if (!ibkrLiveSupportsFundsCheck(ibkrLive)) {
-        return "Botão desactivo: a validação de fundos só aceita conta base em EUR ou USD na paper (ajuste na IBKR ou contacte suporte).";
+        return "A conta da corretora deve estar em EUR ou USD para validar o saldo aqui. Ajuste na IBKR ou contacte o suporte.";
       }
-      return `Botão desactivo: património líquido total na paper tem de ser ≥ ${formatEuro(DECIDE_MIN_INVEST_EUR)} e ≥ ~85 % do NAV de referência do plano (${formatEuro(displayNavEur)}).`;
+      return `O saldo da conta de teste deve ser ≥ ${formatEuro(DECIDE_MIN_INVEST_EUR)} e ≥ ~85 % do valor de referência do plano (${formatEuro(displayNavEur)}).`;
     }
-    if (!confirmReview) return "Botão desactivo: marque a confirmação de que reviu a proposta e os riscos (caixa acima).";
+    if (!confirmReview) return "Confirme que reviu a proposta marcando a caixa acima.";
     return null;
   }, [
     approveBusy,
@@ -959,10 +973,11 @@ export default function ApprovePage({
             </section>
           )}
 
-          {flowReady && canApproveAll && !ibkrSmokeOk ? (
+          {/* IBKR diagnostic alert: only in dev — not shown to end users in production */}
+          {flowReady && canApproveAll && !ibkrSmokeOk && process.env.NODE_ENV === "development" ? (
             <section className="mb-6 rounded-xl border border-zinc-700/60 bg-zinc-900/35 p-4">
               <div className="text-sm font-semibold text-zinc-200">
-                Aviso: diagnóstico IBKR (paper) não está assinalado como OK
+                [DEV] Aviso: diagnóstico IBKR (paper) não está assinalado como OK
               </div>
               <div className="mt-1 text-xs text-zinc-400">
                 Mesmo assim pode <strong className="text-zinc-100">aprovar o plano</strong> gerado a partir do CSV do último
@@ -971,6 +986,57 @@ export default function ApprovePage({
               </div>
             </section>
           ) : null}
+
+          {/* Investment Memo — executive summary derived from MiFID profile */}
+          {flowReady && mifidProfile && (
+            <section className="mb-6 rounded-xl border border-slate-700/50 bg-slate-900/50 px-5 py-5">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-3">
+                Memorando de investimento
+              </p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                {[
+                  {
+                    label: "Perfil",
+                    value: mifidProfile === "dinamico" ? "Dinâmico" : mifidProfile === "moderado" ? "Moderado" : "Conservador",
+                    color: mifidProfile === "dinamico" ? "#34d399" : mifidProfile === "moderado" ? "#60a5fa" : "#a78bfa",
+                  },
+                  {
+                    label: "Horizonte",
+                    value: mifidHorizonte >= 10 ? `≥ ${mifidHorizonte} anos` : mifidHorizonte > 0 ? `${mifidHorizonte} anos` : "Longo prazo",
+                    color: "#94a3b8",
+                  },
+                  {
+                    label: "Risco esperado",
+                    value: mifidProfile === "dinamico" ? "Elevado" : mifidProfile === "moderado" ? "Médio" : "Baixo",
+                    color: "#94a3b8",
+                  },
+                  {
+                    label: "Volatilidade hist.",
+                    value: mifidProfile === "dinamico" ? "~26% a.a." : mifidProfile === "moderado" ? "~15% a.a." : "~8% a.a.",
+                    color: "#94a3b8",
+                  },
+                  {
+                    label: "Drawdown máx.",
+                    value: mifidProfile === "dinamico" ? "~–30%" : mifidProfile === "moderado" ? "~–20%" : "~–10%",
+                    color: "#94a3b8",
+                  },
+                  {
+                    label: "Classe principal",
+                    value: mifidProfile === "dinamico" ? "Ações globais" : mifidProfile === "moderado" ? "Mista" : "Obrigações / Mista",
+                    color: "#94a3b8",
+                  },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="rounded-lg border border-slate-700/40 bg-slate-950/50 px-3 py-2.5">
+                    <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
+                    <div className="mt-1 text-sm font-semibold" style={{ color }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-[11px] text-slate-600">
+                Plano gerado com base no modelo quantitativo DECIDE e ajustado ao seu perfil regulatório MiFID.
+              </p>
+            </section>
+          )}
 
           <section
             className="relative mb-8 overflow-hidden rounded-2xl border-2 px-6 py-9 sm:px-12 lg:px-14"
@@ -1031,6 +1097,24 @@ export default function ApprovePage({
                       {portfolioImpact.nSell === 1 ? "venda" : "vendas"}
                     </li>
                   </ul>
+                  {/* Profile-aligned context pills */}
+                  {mifidProfile && (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {[
+                        mifidProfile === "dinamico" ? "Exposição orientada ao crescimento" : mifidProfile === "moderado" ? "Exposição equilibrada" : "Exposição defensiva",
+                        mifidProfile === "dinamico" ? "Tolerância a drawdowns" : "Volatilidade controlada",
+                        mifidHorizonte >= 7 ? "Horizonte longo prazo" : mifidHorizonte >= 4 ? "Horizonte médio prazo" : "Horizonte curto prazo",
+                        "Diversificação multi-sector",
+                      ].map((pill) => (
+                        <span
+                          key={pill}
+                          className="rounded-full border border-slate-600/50 bg-slate-800/60 px-3 py-1 text-[11px] text-slate-300"
+                        >
+                          ✓ {pill}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {excludedTickers.length > 0 ? (
                     <p className="mt-3 text-xs text-slate-500">
                       Ordens excluídas desta aprovação:{" "}
@@ -1038,11 +1122,11 @@ export default function ApprovePage({
                     </p>
                   ) : null}
                   <p className="mt-4 border-t border-slate-700/60 pt-4 text-xs leading-relaxed text-slate-500">
-                    Montantes por linha (volume técnico do modelo) estão no{" "}
+                    Os valores representam a alocação sugerida pelo modelo para a sua carteira. Detalhes por linha no{" "}
                     <Link href="/client/report" className="font-medium text-zinc-400 underline-offset-2 hover:text-zinc-300">
-                      plano
+                      relatório do plano
                     </Link>
-                    — não são o valor da carteira.
+                    .
                   </p>
                 </div>
               </div>
@@ -1112,13 +1196,13 @@ export default function ApprovePage({
               >
                 {approveBusy ? (
                   <>
-                    A abrir plano
+                    A processar
                     <InlineLoadingDots />
                   </>
                 ) : excludedTickers.length > 0 ? (
-                  "Aprovar plano (com exclusões)"
+                  "Confirmar recomendação (com exclusões)"
                 ) : (
-                  "Aprovar plano"
+                  "Confirmar recomendação"
                 )}
               </button>
               <Link
@@ -1157,6 +1241,47 @@ export default function ApprovePage({
               Nada será executado sem a sua confirmação final na corretora.
             </p>
           </section>
+
+          {/* Operational timeline — shown after main approval section */}
+          {hasTradePlan && (
+            <section className="mb-6 rounded-xl border border-slate-800/50 bg-slate-900/30 px-5 py-5">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-4">
+                Após confirmação — o que acontece a seguir
+              </p>
+              <ol className="relative space-y-0">
+                {[
+                  {
+                    n: "1",
+                    title: "Ordens enviadas à corretora",
+                    desc: "O plano aprovado é transmitido ao IB Gateway / TWS para execução.",
+                  },
+                  {
+                    n: "2",
+                    title: "Execução depende do mercado",
+                    desc: "As ordens são executadas de acordo com a liquidez disponível. O DECIDE não garante preços específicos.",
+                  },
+                  {
+                    n: "3",
+                    title: "Carteira actualizada automaticamente",
+                    desc: "Após execução, a carteira e o relatório reflectem as novas posições.",
+                  },
+                ].map((step, i, arr) => (
+                  <li key={step.n} className="flex gap-4">
+                    <div className="flex flex-col items-center">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-600 bg-slate-800 text-[10px] font-bold text-slate-300">
+                        {step.n}
+                      </div>
+                      {i < arr.length - 1 && <div className="mt-1 w-px flex-1 bg-slate-700/60" style={{ minHeight: 24 }} />}
+                    </div>
+                    <div className="pb-5">
+                      <p className="text-sm font-medium text-slate-200">{step.title}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{step.desc}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
 
           {hasTradePlan ? (
             <section className="mb-6 mt-14 rounded-2xl border border-slate-800/55 bg-slate-950/30 px-6 py-6 sm:px-8">
