@@ -1556,30 +1556,37 @@ function CustosPage({aum}:{aum:number}) {
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Impacto dos custos a longo prazo</div>
           <div className="text-[10px] text-slate-600 mb-4 italic">Simulação: €{fmtInt(EX_CAP)} · {YRS} anos · {(HIST_CAGR*100).toFixed(0)}% retorno bruto estimado · simulado, não garantido</div>
           <div className="grid grid-cols-2 gap-3 mb-4">
-            <div className="bg-white/[0.03] border border-white/[0.05] rounded-xl p-3">
-              <div className="text-[10px] text-slate-500 mb-1">Com DECIDE</div>
-              <div className="text-lg font-black text-slate-100">€ {fmtInt(dVal)}</div>
-              <div className="text-[10px] text-slate-600 mt-0.5">{(dNet*100).toFixed(1)}% líquido / ano</div>
+            <div className="bg-teal-900/15 border border-teal-700/25 rounded-xl p-3">
+              <div className="text-[10px] text-teal-500 mb-1">Com DECIDE</div>
+              <div className="text-xl font-black text-slate-100">€ {fmtInt(dVal)}</div>
+              <div className="text-[10px] text-teal-600 mt-0.5">{(dNet*100).toFixed(1)}% líquido / ano</div>
             </div>
-            <div className="bg-white/[0.03] border border-white/[0.05] rounded-xl p-3">
-              <div className="text-[10px] text-slate-500 mb-1">Com fundos ativos</div>
-              <div className="text-lg font-black text-slate-400">€ {fmtInt(mVal)}</div>
+            <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-3">
+              <div className="text-[10px] text-slate-500 mb-1">Com fundos ativos (2%)</div>
+              <div className="text-xl font-black text-slate-400">€ {fmtInt(mVal)}</div>
               <div className="text-[10px] text-slate-600 mt-0.5">{(aNet*100).toFixed(1)}% líquido / ano</div>
             </div>
           </div>
           <div className="text-[11px] text-slate-400 mb-3">
-            Diferença estimada: <span className="font-bold text-slate-200">€{fmtInt(projDiff)}</span> em {YRS} anos — apenas pelo efeito cumulativo dos custos.
+            Diferença: <span className="font-bold text-teal-400">+€{fmtInt(projDiff)}</span> a seu favor em {YRS} anos — apenas pelo impacto cumulativo dos custos mais baixos.
           </div>
-          <ResponsiveContainer width="100%" height={80}>
-            <AreaChart data={growthChart} margin={{top:2,right:4,left:0,bottom:0}}>
+          <ResponsiveContainer width="100%" height={90}>
+            <AreaChart data={growthChart} margin={{top:4,right:4,left:0,bottom:0}}>
               <defs>
-                <linearGradient id="gD4" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#94a3b8" stopOpacity={0.2}/><stop offset="95%" stopColor="#94a3b8" stopOpacity={0}/></linearGradient>
-                <linearGradient id="gA4" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#475569" stopOpacity={0.1}/><stop offset="95%" stopColor="#475569" stopOpacity={0}/></linearGradient>
+                <linearGradient id="gD4" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#14b8a6" stopOpacity={0.25}/><stop offset="95%" stopColor="#14b8a6" stopOpacity={0}/></linearGradient>
+                <linearGradient id="gA4" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#475569" stopOpacity={0.15}/><stop offset="95%" stopColor="#475569" stopOpacity={0}/></linearGradient>
               </defs>
-              <Area type="monotone" dataKey="decide" stroke="#94a3b8" strokeWidth={2} fill="url(#gD4)" dot={false}/>
-              <Area type="monotone" dataKey="market" stroke="#475569" strokeWidth={1} strokeDasharray="4 2" fill="url(#gA4)" dot={false}/>
+              <XAxis dataKey="year" tick={{fill:"#475569",fontSize:9}} tickLine={false} axisLine={false} interval={2}/>
+              <Tooltip contentStyle={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,fontSize:10}}
+                formatter={(v:number,name:string)=>[`€${Math.round(v).toLocaleString("pt-PT")}`,name==="decide"?"DECIDE":"Fundos ativos"]}/>
+              <Area type="monotone" dataKey="decide" stroke="#14b8a6" strokeWidth={2.5} fill="url(#gD4)" dot={false}/>
+              <Area type="monotone" dataKey="market" stroke="#475569" strokeWidth={1.5} strokeDasharray="4 2" fill="url(#gA4)" dot={false}/>
             </AreaChart>
           </ResponsiveContainer>
+          <div className="flex gap-4 mt-1 text-[10px]">
+            <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-teal-500 inline-block rounded"/><span className="text-slate-500">DECIDE</span></span>
+            <span className="flex items-center gap-1.5"><span className="w-4 h-px bg-slate-500 inline-block" style={{borderTop:"2px dashed #475569"}}/><span className="text-slate-500">Fundos ativos</span></span>
+          </div>
         </div>
 
         {/* Quando pagas */}
