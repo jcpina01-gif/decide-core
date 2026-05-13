@@ -4839,50 +4839,84 @@ export default function ClientDashboardPage() {
                 const pfLabel=profileFactor<1?"Conservador":profileFactor>1?"Dinâmico":"Moderado";
                 const fmtPct=(v:number,sign=false)=>`${sign&&v>=0?"+":""}${v.toFixed(2)}%`;
                 const fmtEur=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0});
-                // Use period-based vol (same as Performance / Dashboard / Risco pages)
                 const reportVol=(benchPerfData?.mVol??0)>0?(benchPerfData?.mVol??0):scaledVol;
-                // Use same Sharpe source as Performance/Dashboard (perfData.inception.shp)
                 const sharpeVal=perfData?.inception?.shp??perfData?.m?.shp??0;
-                // Top-5 holdings
                 const top5=(latestMonth?.rows??[])
                   .filter(r=>!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="XEON")
                   .sort((a,b)=>b.weightPct-a.weightPct).slice(0,5);
-                // Sector allocation — use same equity-only source as sectorData/sectorAlloc
                 const topSectors=sectorData.slice(0,6).map(s=>[s.name,s.value] as [string,number]);
-                // Recent changes
                 const changes=actionCounts.rows.filter(r=>r.action!=="Manter").slice(0,8);
-                // Chart data (YTD only for report)
+                const top3Changes=changes.slice(0,3);
                 const reportChart=(perfData?.chart??[]).slice(-252);
                 const ytdGain=aum*scaledYtd/100;
                 const isUp=scaledYtd>=0;
+                const nEquity=(latestMonth?.rows??[]).filter(r=>!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="XEON").length;
+                const equityPctReport=100-(latestMonth?.tbillsTotalPct??0);
+                // Regime based on equity pct
+                const regimeTxt=equityPctReport>=80?"ofensivo":equityPctReport>=60?"moderado":equityPctReport>=40?"neutro":"defensivo";
+                // Risk level for advisory
+                const riskOk=Math.abs(scaledDD)<=25&&reportVol<=22;
+                // Outperformance vs bench
+                const outpBench=(perfData?.inception?.ann??0)-((perfData?.inception as {ann:number;bench?:number})?.bench??0);
+                const maxSec=topSectors[0]?.[0]??"—";
+                const maxSecPct=topSectors[0]?.[1]??0;
                 return (
-                  <div className="space-y-5 print:space-y-4">
-                    {/* ── Report header ── */}
-                    <div className="bg-gradient-to-r from-[#0b0f1a] to-[#0f1628] border border-[#1a1f2e] rounded-xl p-6 flex items-start justify-between">
-                      <div>
-                        <div className="text-slate-200 font-bold text-2xl mb-1">Relatório de Carteira</div>
-                        <div className="text-slate-400 text-sm">Perfil <span className="text-teal-400 font-semibold">{pfLabel}</span> · {reportDate}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-slate-500 text-xs mb-1">Valor da carteira</div>
-                        <div className="text-white font-black text-3xl">€ {fmtEur(aum)}</div>
-                        <div className={`text-sm font-bold mt-1 ${isUp?"text-emerald-400":"text-red-400"}`}>
-                          {fmtPct(scaledYtd,true)} YTD &nbsp;
-                          <span className="text-slate-500 font-normal text-xs">({isUp?"+":" "}{fmtEur(ytdGain)} €)</span>
+                  <div className="space-y-6 print:space-y-4">
+
+                    {/* ── Masthead ── */}
+                    <div className="bg-gradient-to-br from-[#091220] via-[#0b0f1a] to-[#0d1628] border border-[#1a2540] rounded-2xl p-7">
+                      <div className="flex items-start justify-between mb-6">
+                        <div>
+                          <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-2">Relatório de carteira · DECIDE</div>
+                          <div className="text-slate-100 font-black text-3xl tracking-tight mb-1">Relatório de Carteira</div>
+                          <div className="text-slate-500 text-sm">Perfil <span className="text-teal-400 font-semibold">{pfLabel}</span> · {reportDate}</div>
                         </div>
+                        <div className="text-right">
+                          <div className="text-slate-600 text-[10px] uppercase tracking-wider mb-1">Património</div>
+                          <div className="text-white font-black text-4xl tracking-tight">€ {fmtEur(aum)}</div>
+                          <div className={`text-base font-bold mt-1.5 ${isUp?"text-emerald-400":"text-red-400"}`}>
+                            {fmtPct(scaledYtd,true)} YTD
+                            <span className="text-slate-500 font-normal text-sm ml-2">({isUp?"+":""}{fmtEur(ytdGain)} €)</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* ── Resumo executivo ── */}
+                      <div className="border-t border-white/[0.05] pt-5">
+                        <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-3">Resumo executivo</div>
+                        <p className="text-slate-300 text-sm leading-7">
+                          {isUp
+                            ? `A carteira encerrou o período em terreno positivo, com um retorno de `
+                            : `A carteira registou um resultado negativo no período, com `}
+                          <span className={`font-bold ${isUp?"text-emerald-400":"text-red-400"}`}>{fmtPct(scaledYtd,true)} no ano corrente</span>
+                          {outpBench>0
+                            ? `, superando o benchmark em ${outpBench.toFixed(1)}pp`
+                            : outpBench<0
+                            ? `, abaixo do benchmark em ${Math.abs(outpBench).toFixed(1)}pp`
+                            : ""}
+                          . O modelo manteve um posicionamento <span className="text-slate-200 font-semibold">{regimeTxt}</span> durante o período,
+                          com <span className="text-slate-200 font-semibold">{equityPctReport.toFixed(0)}% em acções</span> e concentração principal em{" "}
+                          <span className="text-slate-200 font-semibold">{maxSec} ({maxSecPct.toFixed(0)}%)</span>.
+                          {riskOk
+                            ? ` O risco permanece alinhado com o perfil ${pfLabel}, com volatilidade controlada e drawdown dentro dos parâmetros históricos.`
+                            : ` O risco merece atenção — a volatilidade ou o drawdown situam-se acima dos níveis típicos para o perfil ${pfLabel}.`}
+                          {changes.length>0
+                            ? ` Neste rebalanceamento foram introduzidas ${changes.length} alterações ao portefólio.`
+                            : ` Não foram efectuadas alterações neste rebalanceamento — a carteira mantém-se estável.`}
+                        </p>
                       </div>
                     </div>
 
-                    {/* ── KPI row ── */}
+                    {/* ── KPI strip ── */}
                     <div className="grid grid-cols-5 gap-3">
                       {[
                         {label:"Retorno YTD",val:fmtPct(scaledYtd,true),c:isUp?"text-emerald-400":"text-red-400",sub:"Ano corrente"},
-                        {label:"Retorno total",val:fmtPct(scaledTotal,true),c:scaledTotal>=0?"text-emerald-400":"text-red-400",sub:`CAGR ${fmtPct(scaledAnn,true)}`},
-                        {label:"Volatilidade",val:reportVol>0?`${reportVol.toFixed(1)}%`:"—",c:"text-amber-400",sub:"Período completo"},
-                        {label:"Máx. drawdown",val:scaledDD!==0?fmtPct(scaledDD):"—",c:"text-red-400",sub:"Últimos 3 anos"},
-                        {label:"Sharpe ratio",val:sharpeVal.toFixed(2),c:sharpeVal>=1?"text-emerald-400":sharpeVal>=0?"text-amber-400":"text-red-400",sub:"Rf = 0%"},
+                        {label:"CAGR histórico",val:fmtPct(scaledAnn,true),c:scaledAnn>=0?"text-teal-400":"text-red-400",sub:"Desde início"},
+                        {label:"Volatilidade",val:reportVol>0?`${reportVol.toFixed(1)}%`:"—",c:"text-amber-400",sub:"Anualizada"},
+                        {label:"Máx. drawdown",val:scaledDD!==0?fmtPct(scaledDD):"—",c:"text-red-400",sub:"Período completo"},
+                        {label:"Sharpe",val:sharpeVal.toFixed(2),c:sharpeVal>=1?"text-emerald-400":sharpeVal>=0?"text-amber-400":"text-red-400",sub:"Risco/retorno"},
                       ].map(k=>(
-                        <div key={k.label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
+                        <div key={k.label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-4 py-4">
                           <div className="text-slate-500 text-[10px] font-semibold mb-2 uppercase tracking-wider">{k.label}</div>
                           <div className={`text-2xl font-black ${k.c}`}>{k.val}</div>
                           <div className="text-slate-600 text-[10px] mt-1">{k.sub}</div>
@@ -4890,58 +4924,172 @@ export default function ClientDashboardPage() {
                       ))}
                     </div>
 
-                    {/* ── Performance chart + Sector breakdown ── */}
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="font-bold text-slate-200 text-sm">Evolução da carteira</div>
-                          <div className="flex items-center gap-4 text-[10px] text-slate-500">
-                            <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-teal-500 inline-block rounded"/>{pfLabel}</span>
-                            <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-slate-600 inline-block rounded" style={{borderTop:"2px dashed #475569"}}/>{BENCH_SHORT}</span>
-                          </div>
+                    {/* ── Hero chart ── */}
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-6">
+                      <div className="flex items-center justify-between mb-5">
+                        <div>
+                          <div className="font-bold text-slate-100 text-base">Evolução patrimonial</div>
+                          <div className="text-slate-500 text-xs mt-0.5">Retorno acumulado · últimos 12 meses vs benchmark</div>
                         </div>
-                        {reportChart.length>0?(
-                          <ResponsiveContainer width="100%" height={200}>
-                            <AreaChart data={reportChart} margin={{top:4,right:4,bottom:0,left:0}}>
-                              <defs>
-                                <linearGradient id="repGrad" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.18}/>
-                                  <stop offset="95%" stopColor="#14b8a6" stopOpacity={0}/>
-                                </linearGradient>
-                              </defs>
-                              <XAxis dataKey="date" tick={{fill:"#475569",fontSize:9}} tickLine={false} axisLine={false}
-                                tickFormatter={d=>d?String(d).slice(0,7):""}
-                                interval={Math.floor(reportChart.length/6)}/>
-                              <YAxis tick={{fill:"#475569",fontSize:9}} tickLine={false} axisLine={false}
-                                tickFormatter={v=>`${(+v).toFixed(0)}%`} domain={["auto","auto"]}/>
-                              <Tooltip contentStyle={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:8,fontSize:11}}
-                                formatter={(v:number)=>[`${v?.toFixed(2)}%`,""]}
-                                labelFormatter={l=>String(l).slice(0,10)}/>
-                              <ReferenceLine y={0} stroke="#1e293b" strokeDasharray="3 3"/>
-                              <Area type="monotone" dataKey="model" stroke="#14b8a6" strokeWidth={2} fill="url(#repGrad)" dot={false} name={pfLabel}/>
-                              <Area type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} strokeDasharray="4 2" fill="none" dot={false} name={BENCH_SHORT}/>
-                            </AreaChart>
-                          </ResponsiveContainer>
+                        <div className="flex items-center gap-5 text-[11px] text-slate-500">
+                          <span className="flex items-center gap-1.5"><span className="w-5 h-0.5 bg-teal-500 inline-block rounded"/>{pfLabel}</span>
+                          <span className="flex items-center gap-1.5"><span className="w-5 h-0.5 bg-slate-600 inline-block rounded" style={{borderTop:"2px dashed #475569"}}/>{BENCH_SHORT}</span>
+                        </div>
+                      </div>
+                      {reportChart.length>0?(
+                        <ResponsiveContainer width="100%" height={270}>
+                          <AreaChart data={reportChart} margin={{top:4,right:8,bottom:0,left:0}}>
+                            <defs>
+                              <linearGradient id="repGrad2" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.22}/>
+                                <stop offset="95%" stopColor="#14b8a6" stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid stroke="#0f172a" strokeDasharray="3 6" vertical={false}/>
+                            <XAxis dataKey="date" tick={{fill:"#475569",fontSize:10}} tickLine={false} axisLine={false}
+                              tickFormatter={d=>d?String(d).slice(0,7):""}
+                              interval={Math.floor(reportChart.length/7)}/>
+                            <YAxis tick={{fill:"#475569",fontSize:10}} tickLine={false} axisLine={false}
+                              tickFormatter={v=>`${(+v).toFixed(0)}%`} domain={["auto","auto"]}/>
+                            <Tooltip contentStyle={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:8,fontSize:12}}
+                              formatter={(v:number)=>[`${v?.toFixed(2)}%`,""]}
+                              labelFormatter={l=>String(l).slice(0,10)}/>
+                            <ReferenceLine y={0} stroke="#1e293b" strokeDasharray="3 3"/>
+                            <Area type="monotone" dataKey="model" stroke="#14b8a6" strokeWidth={2.5} fill="url(#repGrad2)" dot={false} name={pfLabel}/>
+                            <Area type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} strokeDasharray="5 3" fill="none" dot={false} name={BENCH_SHORT}/>
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      ):(
+                        <div className="h-[270px] flex items-center justify-center text-slate-600 text-sm">Sem dados de performance</div>
+                      )}
+                    </div>
+
+                    {/* ── "O que mudou" + Principais riscos ── */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* O que mudou */}
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">O que mudou neste rebalanceamento</div>
+                        {top3Changes.length===0?(
+                          <p className="text-slate-500 text-sm py-2">Sem alterações — carteira estável.</p>
                         ):(
-                          <div className="h-[200px] flex items-center justify-center text-slate-600 text-sm">Sem dados de performance</div>
+                          <div className="space-y-3">
+                            {top3Changes.map(r=>{
+                              const isB=r.action==="Comprar"||r.action==="Aumentar";
+                              const isS=r.action==="Vender"||r.action==="Reduzir";
+                              const delta=r.cur-r.prev;
+                              return (
+                                <div key={r.ticker} className="flex items-center justify-between">
+                                  <div>
+                                    <div className="text-slate-200 text-sm font-semibold">{getCompany(r.ticker)||r.ticker}</div>
+                                    <div className="text-slate-500 text-xs">{r.ticker} · {getSector(r.ticker)}</div>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isB?"bg-emerald-900/30 text-emerald-400":isS?"bg-red-900/30 text-red-400":"bg-slate-800 text-slate-400"}`}>
+                                      {r.action}
+                                    </span>
+                                    <div className={`text-xs mt-1 font-semibold ${delta>0?"text-emerald-400/70":"text-red-400/70"}`}>
+                                      {delta>0?"+":""}{delta.toFixed(1)}pp
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {changes.length>3&&(
+                              <div className="text-slate-600 text-xs pt-1">+{changes.length-3} outras alterações — ver Recomendações</div>
+                            )}
+                          </div>
                         )}
                       </div>
 
+                      {/* Principais riscos */}
                       <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                        <div className="font-bold text-slate-200 text-sm mb-4">Exposição sectorial</div>
-                        {topSectors.length>0?(
-                          <div className="space-y-3">
-                            {topSectors.map(([sec,pct],i)=>(
-                              <div key={sec}>
-                                <div className="flex justify-between text-xs mb-1">
-                                  <span className="text-slate-300">{sec}</span>
-                                  <span className="text-slate-200 font-semibold">{pct.toFixed(1)}%</span>
-                                </div>
-                                <div className="h-1.5 bg-slate-800 rounded-full">
-                                  <div className="h-1.5 rounded-full" style={{width:`${pct}%`,background:PIE_COLORS[i%PIE_COLORS.length]}}/>
-                                </div>
+                        <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Principais riscos a monitorizar</div>
+                        <div className="space-y-3">
+                          {[
+                            {
+                              label:"Concentração sectorial",
+                              desc:`${maxSec} representa ${maxSecPct.toFixed(0)}% da carteira — acima de 35% pode amplificar movimentos sectoriais.`,
+                              level:maxSecPct>35?"alto":"moderado",
+                            },
+                            {
+                              label:"Risco cambial (USD/EUR)",
+                              desc:"Exposição maioritária a activos USD sem cobertura sistemática — o EUR/USD impacta o valor patrimonial.",
+                              level:"moderado",
+                            },
+                            {
+                              label:"Drawdown histórico",
+                              desc:`Queda máxima de ${fmtPct(scaledDD)} — ${Math.abs(scaledDD)<=15?"dentro dos parâmetros esperados para o perfil.":"acima do nível típico para o perfil "+pfLabel+"."}`,
+                              level:Math.abs(scaledDD)>25?"alto":Math.abs(scaledDD)>15?"moderado":"baixo",
+                            },
+                          ].map(rk=>(
+                            <div key={rk.label} className="flex items-start gap-3">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded mt-0.5 shrink-0 ${rk.level==="alto"?"bg-red-900/30 text-red-400":rk.level==="moderado"?"bg-amber-900/30 text-amber-400":"bg-slate-800 text-slate-500"}`}>
+                                {rk.level.toUpperCase()}
+                              </span>
+                              <div>
+                                <div className="text-slate-200 text-xs font-semibold mb-0.5">{rk.label}</div>
+                                <div className="text-slate-500 text-xs leading-relaxed">{rk.desc}</div>
                               </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── Holdings + Sectors ── */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Principais posições ({nEquity} títulos)</div>
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
+                              <th className="pb-2 font-semibold">Empresa</th>
+                              <th className="pb-2 font-semibold text-right">Sector</th>
+                              <th className="pb-2 font-semibold text-right">Peso</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {top5.map((r,i)=>(
+                              <tr key={r.ticker} className="border-b border-[#0f172a]/60 last:border-0">
+                                <td className="py-2.5">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full shrink-0" style={{background:PIE_COLORS[i%PIE_COLORS.length]}}/>
+                                    <div>
+                                      <div className="text-slate-200 font-semibold">{getCompany(r.ticker)||r.ticker}</div>
+                                      <div className="text-slate-600 text-[9px]">{r.ticker} · {getZone(r.ticker)}</div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-2.5 text-slate-500 text-right text-[11px]">{getSector(r.ticker)}</td>
+                                <td className="py-2.5 text-right font-black text-slate-100 text-sm">{r.weightPct.toFixed(1)}%</td>
+                              </tr>
                             ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Exposição sectorial</div>
+                        {topSectors.length>0?(
+                          <div className="space-y-3.5">
+                            {topSectors.map(([sec,pct],i)=>{
+                              const maxPct=topSectors[0]?.[1]??1;
+                              return (
+                                <div key={sec}>
+                                  <div className="flex justify-between text-xs mb-1.5">
+                                    <span className="text-slate-300 font-medium">{sec}</span>
+                                    <span className="text-slate-200 font-bold">{pct.toFixed(1)}%</span>
+                                  </div>
+                                  <div className="h-2 bg-slate-800/60 rounded-full">
+                                    <div className="h-2 rounded-full transition-all" style={{
+                                      width:`${(pct/maxPct)*100}%`,
+                                      background:PIE_COLORS[i%PIE_COLORS.length],
+                                      opacity:0.8
+                                    }}/>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         ):(
                           <div className="text-slate-600 text-sm text-center py-4">Sem dados</div>
@@ -4949,140 +5097,39 @@ export default function ClientDashboardPage() {
                       </div>
                     </div>
 
-                    {/* ── Holdings + Changes ── */}
-                    <div className="grid grid-cols-2 gap-4">
-                      {/* Top holdings */}
-                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                        <div className="font-bold text-slate-200 text-sm mb-4">Principais posições</div>
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
-                              <th className="pb-2 font-semibold">Empresa</th>
-                              <th className="pb-2 font-semibold">Sector</th>
-                              <th className="pb-2 font-semibold text-right">País</th>
-                              <th className="pb-2 font-semibold text-right">Peso</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {top5.map((r,i)=>(
-                              <tr key={r.ticker} className="border-b border-[#0f172a] last:border-0">
-                                <td className="py-2">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{background:PIE_COLORS[i%PIE_COLORS.length]}}/>
-                                    <div>
-                                      <div className="text-slate-200 font-semibold">{getCompany(r.ticker)||r.ticker}</div>
-                                      <div className="text-slate-600 text-[9px]">{r.ticker}</div>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="py-2 text-slate-400">{getSector(r.ticker)}</td>
-                                <td className="py-2 text-slate-400 text-right">{getZone(r.ticker)}</td>
-                                <td className="py-2 text-right font-bold text-slate-200">{r.weightPct.toFixed(1)}%</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                    {/* ── Investment letter commentary ── */}
+                    <div className="bg-gradient-to-br from-[#0b0f1a] to-[#091220] border border-[#1a2030] rounded-2xl p-7">
+                      <div className="flex items-center gap-2.5 mb-5">
+                        <BookOpen size={15} className="text-teal-400"/>
+                        <div className="text-[10px] uppercase tracking-widest text-slate-500">Nota do gestor</div>
                       </div>
-
-                      {/* Recent changes */}
-                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                        <div className="font-bold text-slate-200 text-sm mb-4">Alterações recentes</div>
-                        {changes.length===0?(
-                          <div className="text-slate-600 text-sm text-center py-4">Sem alterações neste rebalanceamento</div>
-                        ):(
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
-                                <th className="pb-2 font-semibold">Empresa</th>
-                                <th className="pb-2 font-semibold text-right">Peso ant.</th>
-                                <th className="pb-2 font-semibold text-right">Peso novo</th>
-                                <th className="pb-2 font-semibold text-right">Ação</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {changes.map(r=>{
-                                const ac=r.action;
-                                const isB=ac==="Comprar"||ac==="Aumentar";
-                                const isS=ac==="Vender"||ac==="Reduzir";
-                                return (
-                                  <tr key={r.ticker} className="border-b border-[#0f172a] last:border-0">
-                                    <td className="py-2">
-                                      <div className="text-slate-200 font-semibold">{getCompany(r.ticker)||r.ticker}</div>
-                                      <div className="text-slate-600 text-[9px]">{r.ticker}</div>
-                                    </td>
-                                    <td className="py-2 text-right text-slate-400">{r.prev.toFixed(1)}%</td>
-                                    <td className="py-2 text-right text-slate-200 font-semibold">{r.cur.toFixed(1)}%</td>
-                                    <td className="py-2 text-right">
-                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isB?"bg-emerald-900/40 text-emerald-400":isS?"bg-red-900/40 text-red-400":"bg-slate-800 text-slate-400"}`}>
-                                        {ac}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
+                      <div className="space-y-4 text-sm text-slate-400 leading-7">
+                        <p>
+                          O modelo manteve um posicionamento <span className="text-slate-200 font-semibold">{regimeTxt}</span> ao longo do período,
+                          beneficiando de {equityPctReport>=70?"forte exposição a acções globais":"diversificação equilibrada entre acções e liquidez"}.
+                          A concentração em <span className="text-slate-200 font-semibold">{maxSec}</span> continuou a ser o principal factor de retorno,
+                          {maxSecPct>30?" embora o nível de concentração sectorial mereça acompanhamento continuado.":" com exposição diversificada entre sectores."}
+                        </p>
+                        <p>
+                          Em termos de risco, a volatilidade anualizada situou-se em <span className="text-amber-400 font-semibold">{reportVol.toFixed(1)}%</span>,
+                          {reportVol<=18
+                            ? " permanecendo alinhada com o perfil de risco seleccionado e dentro dos parâmetros históricos da estratégia."
+                            : " ligeiramente acima do nível típico, reflectindo condições de maior dispersão nos mercados globais."}
+                          {" "}O drawdown máximo de <span className="text-red-400/80 font-semibold">{fmtPct(scaledDD)}</span> demonstra
+                          {Math.abs(scaledDD)<=20?" a capacidade de contenção de perdas da estratégia quantitativa.":" um período de maior pressão — historicamente seguido de recuperação sustentada."}
+                        </p>
+                        {changes.length>0&&(
+                          <p>
+                            Neste ciclo de rebalanceamento foram introduzidas <span className="text-slate-200 font-semibold">{changes.length} alterações</span>,
+                            com {actionCounts.comprar+actionCounts.aumentar} novas entradas ou reforços e {actionCounts.reduzir+actionCounts.vender} reduções ou saídas.
+                            {top3Changes[0]&&(()=>{const ch=top3Changes[0];const d=ch.cur-ch.prev;return <> A alteração de maior impacto foi em <span className="text-slate-200 font-semibold">{getCompany(ch.ticker)||ch.ticker}</span>{" "}({ch.action.toLowerCase()}, {d>0?"+":""}{d.toFixed(1)}pp).</>;})()}
+                          </p>
                         )}
-                      </div>
-                    </div>
-
-                    {/* ── Commentary ── */}
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-6">
-                      <div className="font-bold text-slate-200 text-sm mb-4 flex items-center gap-2">
-                        <BookOpen size={14} className="text-teal-400"/>
-                        Comentário da carteira
-                      </div>
-                      <div className="space-y-4 text-sm text-slate-400 leading-relaxed">
-                        <p>
-                          A carteira DECIDE com perfil <span className="text-slate-200 font-semibold">{pfLabel}</span> encerra o período
-                          com um retorno acumulado de <span className={`font-semibold ${scaledTotal>=0?"text-emerald-400":"text-red-400"}`}>{fmtPct(scaledTotal,true)}</span>,
-                          correspondendo a uma taxa de crescimento anualizada (CAGR) de <span className="text-slate-200 font-semibold">{fmtPct(scaledAnn,true)}</span>.
-                          No ano corrente, a carteira regista <span className={`font-semibold ${isUp?"text-emerald-400":"text-red-400"}`}>{fmtPct(scaledYtd,true)}</span>,
-                          equivalente a <span className="text-slate-200 font-semibold">{isUp?"+":""}{fmtEur(ytdGain)} €</span> sobre o valor investido.
-                        </p>
-                        <p>
-                          O modelo mantém uma volatilidade anualizada de <span className="text-amber-400 font-semibold">{reportVol.toFixed(1)}%</span>,
-                          reflectindo o nível de risco associado ao perfil {pfLabel.toLowerCase()}.
-                          O máximo drawdown nos últimos três anos foi de <span className="text-red-400 font-semibold">{fmtPct(scaledDD)}</span>,
-                          o que demonstra a capacidade de contenção de perdas da estratégia quantitativa.
-                          O rácio de Sharpe situou-se em <span className={`font-semibold ${sharpeVal>=1?"text-emerald-400":"text-amber-400"}`}>{sharpeVal.toFixed(2)}</span>,
-                          indicando {sharpeVal>=1?"uma remuneração adequada do risco assumido":"margem para melhoria na remuneração do risco"}.
-                        </p>
-                        <p>
-                          A carteira é composta por <span className="text-slate-200 font-semibold">{(latestMonth?.rows??[]).filter(r=>!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="XEON").length} títulos</span>,
-                          com maior concentração em <span className="text-slate-200 font-semibold">{topSectors[0]?.[0]??"—"}</span> ({topSectors[0]?.[1]?.toFixed(1)??"0"}%)
-                          e <span className="text-slate-200 font-semibold">{topSectors[1]?.[0]??"—"}</span> ({topSectors[1]?.[1]?.toFixed(1)??"0"}%).
-                          {changes.length>0&&(
-                            <> Neste rebalanceamento foram efectuadas <span className="text-slate-200 font-semibold">{changes.length} alterações</span>,
-                            com {actionCounts.comprar+actionCounts.aumentar} novas entradas/reforços e {actionCounts.reduzir+actionCounts.vender} reduções/saídas.</>
-                          )}
-                          {changes.length===0&&<> A carteira não sofreu alterações no último rebalanceamento.</>}
-                        </p>
-                        <p className="text-slate-600 text-xs border-t border-[#1a1f2e] pt-3">
-                          Este relatório foi gerado automaticamente pelo sistema DECIDE com base nos dados históricos do modelo quantitativo.
-                          Os dados de performance são calculados sobre a curva de capital ajustada ao perfil de risco seleccionado.
+                        <p className="text-slate-600 text-xs border-t border-white/[0.04] pt-4 leading-relaxed">
+                          Este relatório foi gerado pelo sistema DECIDE com base em dados históricos do modelo quantitativo, ajustados ao perfil <span className="italic">{pfLabel}</span>.
                           A informação apresentada é de carácter meramente informativo e não constitui recomendação de investimento.
-                          O desempenho passado não garante resultados futuros.
+                          Performance passada não garante resultados futuros. <span className="italic">Backtested — simulado.</span>
                         </p>
-                      </div>
-                    </div>
-
-                    {/* ── Risk metrics row ── */}
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="font-bold text-slate-200 text-sm mb-4">Métricas de risco</div>
-                      <div className="grid grid-cols-4 gap-4 text-sm">
-                        {[
-                          {label:"Volatilidade (período)",val:`${reportVol.toFixed(2)}%`,desc:"Desvio padrão anualizado dos retornos (período completo)"},
-                          {label:"Máx. Drawdown (3a)",val:fmtPct(scaledDD),desc:"Queda máxima pico-a-vale nos últimos 3 anos"},
-                          {label:"Sharpe Ratio",val:sharpeVal.toFixed(2),desc:"Retorno anualizado / volatilidade (Rf=0%)"},
-                          {label:"CAGR",val:fmtPct(scaledAnn,true),desc:"Taxa de crescimento anual composta desde início"},
-                        ].map(m=>(
-                          <div key={m.label} className="border border-[#1a1f2e] rounded-lg p-4">
-                            <div className="text-slate-500 text-[10px] uppercase tracking-wider mb-1">{m.label}</div>
-                            <div className="text-slate-100 font-black text-xl mb-2">{m.val}</div>
-                            <div className="text-slate-600 text-[10px] leading-relaxed">{m.desc}</div>
-                          </div>
-                        ))}
                       </div>
                     </div>
 
