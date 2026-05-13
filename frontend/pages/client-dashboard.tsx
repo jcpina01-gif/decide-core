@@ -1555,20 +1555,32 @@ function CustosPage({aum}:{aum:number}) {
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Impacto dos custos a longo prazo</div>
           <div className="text-[10px] text-slate-600 mb-4 italic">Simulação: €{fmtInt(EX_CAP)} · {YRS} anos · {(HIST_CAGR*100).toFixed(0)}% retorno bruto estimado · simulado, não garantido</div>
+          {/* Cost comparison row */}
           <div className="grid grid-cols-2 gap-3 mb-4">
             <div className="bg-teal-900/15 border border-teal-700/25 rounded-xl p-3">
-              <div className="text-[10px] text-teal-500 mb-1">Com DECIDE</div>
-              <div className="text-xl font-black text-slate-100">€ {fmtInt(dVal)}</div>
-              <div className="text-[10px] text-teal-600 mt-0.5">{(dNet*100).toFixed(1)}% líquido / ano</div>
+              <div className="text-[10px] text-teal-400 font-semibold mb-1">DECIDE — custo anual</div>
+              <div className="text-xl font-black text-teal-300">{totalFixedPct.toFixed(2)}%</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">≈ €{fmtInt(EX_CAP*totalFixedPct/100)} / ano</div>
             </div>
             <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-3">
-              <div className="text-[10px] text-slate-500 mb-1">Com fundos ativos (2%)</div>
-              <div className="text-xl font-black text-slate-400">€ {fmtInt(mVal)}</div>
-              <div className="text-[10px] text-slate-600 mt-0.5">{(aNet*100).toFixed(1)}% líquido / ano</div>
+              <div className="text-[10px] text-slate-500 font-semibold mb-1">Fundos ativos — custo anual</div>
+              <div className="text-xl font-black text-slate-400">{ACTIVE_FUND.toFixed(2)}%</div>
+              <div className="text-[10px] text-slate-600 mt-0.5">≈ €{fmtInt(EX_CAP*ACTIVE_FUND/100)} / ano</div>
+            </div>
+          </div>
+          {/* Projected final values */}
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="bg-teal-900/10 border border-teal-700/15 rounded-lg px-3 py-2">
+              <div className="text-[9px] text-slate-500">Capital final (DECIDE)</div>
+              <div className="text-base font-black text-slate-100">€ {fmtInt(dVal)}</div>
+            </div>
+            <div className="bg-white/[0.02] border border-white/[0.03] rounded-lg px-3 py-2">
+              <div className="text-[9px] text-slate-500">Capital final (fundos ativos)</div>
+              <div className="text-base font-black text-slate-400">€ {fmtInt(mVal)}</div>
             </div>
           </div>
           <div className="text-[11px] text-slate-400 mb-3">
-            Diferença: <span className="font-bold text-teal-400">+€{fmtInt(projDiff)}</span> a seu favor em {YRS} anos — apenas pelo impacto cumulativo dos custos mais baixos.
+            O DECIDE custa <span className="font-bold text-teal-400">{(ACTIVE_FUND-totalFixedPct).toFixed(2)}pp menos</span> por ano. Em {YRS} anos isso representa <span className="font-bold text-teal-400">+€{fmtInt(projDiff)}</span> a mais no seu bolso.
           </div>
           <ResponsiveContainer width="100%" height={90}>
             <AreaChart data={growthChart} margin={{top:4,right:4,left:0,bottom:0}}>
