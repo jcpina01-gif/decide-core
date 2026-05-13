@@ -10,6 +10,7 @@ import { DECIDE_DASHBOARD, ONBOARDING_SHELL_MAX_WIDTH_PX } from "../../lib/decid
 import { loadApprovalAlignedProposedTrades } from "../../lib/server/approvalTradePlan";
 import { resolveDecideProjectRoot } from "../../lib/server/decideProjectRoot";
 import { FUNDING_STATUS_LS_KEY, type FundingStatus, readFundingStatus, writeFundingStatus } from "../../lib/fundingFlow";
+import { readDefaultRiskProfileFromOnboarding, LS_MIFID_FIELDS } from "../../lib/decideOnboardingRiskProfile";
 import {
   CLIENT_SESSION_CHANGED_EVENT,
   deriveClientUsernameFromEmail,
@@ -173,6 +174,10 @@ export default function FundAccountPage({
   const [onboardingMontanteEur, setOnboardingMontanteEur] = useState<number | null>(null);
   /** Quando o funil regulamentar já terminou, a página de depósito fica sem a barra de passos (vista isolada). */
   const [onboardingFlowComplete, setOnboardingFlowComplete] = useState(false);
+  /** Perfil de risco MiFID para enriquecer o bloco de montante. */
+  const [mifidProfile, setMifidProfile] = useState<"conservador" | "moderado" | "dinamico" | null>(null);
+  /** Horizonte em anos (do questionário MiFID). */
+  const [mifidHorizonte, setMifidHorizonte] = useState(0);
 
   const iban = (process.env.NEXT_PUBLIC_IBKR_DEPOSIT_IBAN || "").trim();
   const hasIban = iban.length > 0;
@@ -209,6 +214,18 @@ export default function FundAccountPage({
       const raw = window.localStorage.getItem(ONBOARDING_MONTANTE_KEY);
       const n = raw != null ? Math.round(Number(String(raw).replace(/\s/g, ""))) : NaN;
       if (Number.isFinite(n) && n >= MIN_FUNDING_DISPLAY_EUR) setOnboardingMontanteEur(n);
+    } catch {
+      /* ignore */
+    }
+    try {
+      const profile = readDefaultRiskProfileFromOnboarding();
+      if (profile) setMifidProfile(profile);
+      const mifidRaw = window.localStorage.getItem(LS_MIFID_FIELDS);
+      if (mifidRaw) {
+        const parsed = JSON.parse(mifidRaw) as Record<string, unknown>;
+        const h = Number(parsed.horizonte);
+        if (Number.isFinite(h) && h > 0) setMifidHorizonte(h);
+      }
     } catch {
       /* ignore */
     }
@@ -373,18 +390,41 @@ export default function FundAccountPage({
           </header>
 
           {mounted ? (
-            <div className="mb-9 flex max-w-2xl flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
+            <div className="mb-9 flex max-w-2xl flex-col gap-3">
+              {/* Funding progress tracker */}
+              <div className="rounded-xl border border-slate-700/50 bg-slate-900/40 px-4 py-4">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-3">Progresso do onboarding</p>
+                <ol className="space-y-2">
+                  {[
+                    { label: "Conta criada", done: true },
+                    { label: "Perfil validado (MiFID)", done: true },
+                    { label: "Identidade verificada", done: true },
+                    { label: "Financiamento da conta", done: fundingStatus === "received", active: fundingStatus === "awaiting" || fundingStatus === "transferred" },
+                    { label: "Plano pronto para execução", done: false, active: false },
+                  ].map((step, i) => (
+                    <li key={i} className="flex items-center gap-3">
+                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${step.done ? "bg-emerald-500/20 text-emerald-400" : step.active ? "border border-amber-500/50 text-amber-400 bg-amber-950/30" : "border border-slate-700 text-slate-600"}`}>
+                        {step.done ? "✓" : step.active ? "⏳" : "○"}
+                      </span>
+                      <span className={`text-sm ${step.done ? "text-slate-300" : step.active ? "font-semibold text-amber-100" : "text-slate-600"}`}>
+                        {step.label}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
               {fundingStatus === "awaiting" ? (
                 <div
                   className="rounded-xl border px-4 py-3"
                   style={{
-                    borderColor: "rgba(234, 179, 8, 0.5)",
-                    background: "rgba(234, 179, 8, 0.08)",
+                    borderColor: "rgba(234, 179, 8, 0.4)",
+                    background: "rgba(234, 179, 8, 0.06)",
                   }}
                 >
-                  <p className="text-sm font-bold text-amber-100">⏳ Estado actual: a aguardar receção de fundos</p>
-                  <p className="mt-1.5 text-sm leading-relaxed text-amber-100/85">
-                    Assim que a transferência for recebida, poderá avançar para a execução do plano.
+                  <p className="text-sm font-bold text-amber-100">Próximo passo: realizar a sua transferência</p>
+                  <p className="mt-1 text-sm leading-relaxed text-amber-100/80">
+                    Use os dados abaixo para transferir diretamente para a Interactive Brokers.
                   </p>
                 </div>
               ) : null}
@@ -427,32 +467,55 @@ export default function FundAccountPage({
               boxShadow: DECIDE_DASHBOARD.clientPanelShadow,
             }}
           >
-            <h2 className="text-sm font-bold uppercase tracking-wide text-zinc-400">Valor a investir</h2>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-zinc-400">Simulação do plano inicial</h2>
             <p className="mt-1 text-xs text-slate-500">
               {suggestedFromOnboardingStep
-                ? "Valor definido por si no onboarding."
-                : "Montante ainda não guardado desse passo — abaixo mostramos um valor ilustrativo a partir do plano (tmp_diag). Conclua «Valor a investir» ou confira o plano."}
+                ? "Montante definido no passo 2 do onboarding."
+                : "Valor ilustrativo a partir do plano — confirme o montante em «Valor a investir»."}
             </p>
             <p className="mt-4 text-3xl font-bold tabular-nums tracking-tight text-white">
               {suggestedEur > 0 ? formatEuro(suggestedEur) : "—"}
             </p>
+            {/* Profile-derived simulation context */}
+            {mifidProfile && suggestedEur > 0 && (
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {[
+                  {
+                    label: "Perfil",
+                    value: mifidProfile === "dinamico" ? "Dinâmico" : mifidProfile === "moderado" ? "Moderado" : "Conservador",
+                  },
+                  {
+                    label: "Estratégia",
+                    value: mifidProfile === "dinamico" ? "Ações globais" : mifidProfile === "moderado" ? "Mista" : "Defensiva",
+                  },
+                  {
+                    label: "Horizonte",
+                    value: mifidHorizonte > 0 ? `${mifidHorizonte} anos` : "Longo prazo",
+                  },
+                  {
+                    label: "Volatilidade est.",
+                    value: mifidProfile === "dinamico" ? "~26% a.a." : mifidProfile === "moderado" ? "~15% a.a." : "~8% a.a.",
+                  },
+                ].map(({ label, value }) => (
+                  <div key={label} className="rounded-lg border border-slate-700/40 bg-slate-950/50 px-3 py-2">
+                    <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
+                    <div className="mt-0.5 text-sm font-semibold text-slate-200">{value}</div>
+                  </div>
+                ))}
+              </div>
+            )}
             {suggestedEur > 0 ? (
               <p className="mt-3 max-w-xl text-sm font-medium leading-relaxed text-zinc-300">
                 {suggestedFromOnboardingStep
-                  ? "Este é o valor que indicou. Transferir este montante permite executar o plano sem ajustes."
-                  : "Montante ilustrativo a partir do plano. Transferir este valor aproximado permite executar o plano sem ajustes."}
+                  ? "Transferir este montante permite executar o plano sem ajustes."
+                  : "Montante ilustrativo. Transferir este valor aproximado permite executar o plano sem ajustes."}
               </p>
             ) : null}
-            {suggestedEur > 0 && suggestedEur >= MIN_FUNDING_DISPLAY_EUR ? (
-              <p className="mt-2 text-sm text-slate-400">
-                Mínimo usual para operar com conforto (referência):{" "}
-                <strong className="text-slate-200">{formatEuro(MIN_FUNDING_DISPLAY_EUR)}</strong>
-              </p>
-            ) : (
-              <p className="mt-2 text-sm text-slate-500">
-                Se o valor acima não aparecer, confirme o plano na página Plano ou o ficheiro de diagnóstico (tmp_diag).
-              </p>
-            )}
+            {/* Custody note */}
+            <div className="mt-4 rounded-lg border border-slate-700/40 bg-slate-950/30 px-3 py-2.5 text-xs leading-relaxed text-slate-400">
+              <strong className="text-slate-200">A conta Interactive Brokers está em seu nome.</strong>{" "}
+              O DECIDE não detém os seus fundos — os activos permanecem custodiados directamente na Interactive Brokers, regulada pelos supervisores aplicáveis.
+            </div>
             {suggestedFromOnboardingStep && grossBuyOrderVolumeEur > suggestedEur * 1.02 ? (
               <p className="mt-3 max-w-xl text-xs leading-relaxed text-slate-500">
                 O plano pode gerar{" "}
@@ -706,27 +769,57 @@ export default function FundAccountPage({
             </div>
           </div>
 
+          {/* Operational timeline */}
+          <div className="mb-9 rounded-xl border border-slate-700/50 bg-slate-900/30 px-5 py-5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-4">Após a transferência — o que acontece</p>
+            <ol className="relative space-y-0">
+              {[
+                { title: "A IBKR confirma a receção", desc: "Tipicamente 1–2 dias úteis após a transferência SEPA." },
+                { title: "O DECIDE prepara as ordens", desc: "O plano personalizado fica disponível para revisão." },
+                { title: "Revê e aprova o rebalanceamento", desc: "Nada é executado sem a sua confirmação explícita." },
+                { title: "Execução ocorre na corretora", desc: "As ordens são enviadas ao IB Gateway e executadas a mercado." },
+              ].map((step, i, arr) => (
+                <li key={i} className="flex gap-4">
+                  <div className="flex flex-col items-center">
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-600 bg-slate-800 text-[10px] font-bold text-slate-300">
+                      {i + 1}
+                    </div>
+                    {i < arr.length - 1 && <div className="mt-1 w-px flex-1 bg-slate-700/60" style={{ minHeight: 24 }} />}
+                  </div>
+                  <div className="pb-5">
+                    <p className="text-sm font-medium text-slate-200">{step.title}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{step.desc}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+
           <div className="flex max-w-xl flex-col gap-4">
             {fundingStatus === "awaiting" ? (
               <>
                 <button
                   type="button"
-                  className="w-full rounded-xl px-6 py-3.5 text-sm font-bold text-zinc-50 shadow-lg transition hover:brightness-105 sm:w-auto sm:min-w-[240px]"
+                  className="w-full rounded-2xl px-8 py-4 text-base font-bold text-zinc-50 shadow-lg transition hover:brightness-110 sm:w-auto sm:min-w-[300px]"
                   style={{
                     background: DECIDE_DASHBOARD.buttonRegister,
-                    boxShadow: "0 4px 20px rgba(0, 0, 0, 0.4)",
+                    boxShadow: "0 6px 28px rgba(0, 0, 0, 0.5)",
                   }}
                   onClick={onTransferred}
                 >
-                  Já fiz a transferência
+                  Confirmar transferência enviada
                 </button>
-                <button
-                  type="button"
-                  className="self-start text-left text-sm font-semibold text-slate-400 underline-offset-4 hover:text-zinc-300 hover:underline"
-                  onClick={scrollToDetails}
-                >
-                  Ainda não transferi — ver instruções
-                </button>
+                <details className="max-w-xl rounded-xl border border-slate-700/50 bg-slate-900/30 px-4 py-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-400 hover:text-slate-300">
+                    Como fazer a transferência
+                  </summary>
+                  <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-slate-300">
+                    <li>Inicie uma transferência SEPA no seu banco (homebanking).</li>
+                    <li>Cole o beneficiário <strong className="text-slate-100">Interactive Brokers</strong> e o IBAN acima.</li>
+                    <li>No campo descritivo/referência, use <strong className="text-teal-200">exactamente</strong> o seu utilizador DECIDE (obrigatório para creditação).</li>
+                    <li>Aguarde a confirmação na IBKR — tipicamente 1–2 dias úteis.</li>
+                  </ol>
+                </details>
               </>
             ) : null}
             {fundingStatus === "transferred" ? (
