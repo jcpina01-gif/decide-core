@@ -1302,34 +1302,30 @@ export default function ApprovePage({
               <p className="mt-1 text-xs text-slate-500">
                 Ordens em candidatura após exclusões (se as aplicar).
               </p>
-              <div
-                className="mt-4 rounded-xl border border-zinc-700/40 bg-zinc-950/30 px-4 py-3 text-left text-xs leading-relaxed text-slate-400"
-                role="note"
-              >
-                <p className="font-semibold text-zinc-300">Porque três valores diferentes?</p>
-                <ul className="mt-2 list-inside list-disc space-y-2 text-slate-400/95">
-                  <li>
-                    <strong className="text-slate-300">Valor estimado em compras (Δ)</strong> — soma dos valores
-                    estimados das <strong className="text-slate-200">ordens de compra</strong> deste plano (volume{" "}
-                    <em>bruto</em> de compras no modelo).{" "}
-                    <strong className="text-slate-300">Não é</strong> o seu património total nem o saldo da conta; pode ser{" "}
-                    <strong className="text-slate-300">maior que o NAV de calibração</strong> quando há muitas linhas de
-                    compra ou rotação relevante.
-                  </li>
-                  <li>
-                    <strong className="text-slate-300">Património (conta paper)</strong> — valor líquido{" "}
-                    <strong className="text-slate-200">real</strong> lido da IBKR neste momento. Cancelar ou completar ordens
-                    na TWS altera a carteira, mas <strong className="text-slate-300">não recalibra</strong> o ficheiro do
-                    plano em <code className="text-slate-500">tmp_diag</code>.
-                  </li>
-                  <li>
-                    <strong className="text-slate-300">NAV de referência do plano</strong> («plano calibrado a…») — património
-                    usado quando o <strong className="text-slate-200">último rebalance</strong> gerou o CSV. Mantém-se até
-                    correr de novo o modelo com um NAV actualizado; por isso a diferença face à TWS{" "}
-                    <strong className="text-slate-300">não desaparece</strong> só por criar/cancelar posições.
-                  </li>
-                </ul>
-              </div>
+              {process.env.NODE_ENV === "development" && (
+                <div
+                  className="mt-4 rounded-xl border border-zinc-700/40 bg-zinc-950/30 px-4 py-3 text-left text-xs leading-relaxed text-slate-400"
+                  role="note"
+                >
+                  <p className="font-semibold text-zinc-300">[DEV] Porque três valores diferentes?</p>
+                  <ul className="mt-2 list-inside list-disc space-y-2 text-slate-400/95">
+                    <li>
+                      <strong className="text-slate-300">Valor estimado em compras (Δ)</strong> — soma dos valores
+                      estimados das <strong className="text-slate-200">ordens de compra</strong> deste plano (volume{" "}
+                      <em>bruto</em> de compras no modelo). <strong className="text-slate-300">Não é</strong> o seu
+                      património total nem o saldo da conta.
+                    </li>
+                    <li>
+                      <strong className="text-slate-300">Património (conta paper)</strong> — valor líquido{" "}
+                      <strong className="text-slate-200">real</strong> lido da IBKR neste momento.
+                    </li>
+                    <li>
+                      <strong className="text-slate-300">NAV de referência do plano</strong> — património usado quando
+                      o último rebalance gerou o CSV.
+                    </li>
+                  </ul>
+                </div>
+              )}
               <div className="mt-4 grid max-w-md gap-3 sm:grid-cols-2">
                 <div className="rounded-xl border border-slate-700/60 bg-slate-950/40 px-4 py-3">
                   <div className="text-[11px] uppercase tracking-wide text-slate-500">Compras</div>
@@ -1397,14 +1393,9 @@ export default function ApprovePage({
                   )}
                 </div>
               ) : null}
-              {ibkrLive.error ? (
-                <div className="mt-1 max-w-xs text-[10px] text-amber-500/95">{ibkrLive.error}</div>
+              {ibkrLive.error && process.env.NODE_ENV === "development" ? (
+                <div className="mt-1 max-w-xs text-[10px] text-amber-500/95">[DEV] {ibkrLive.error}</div>
               ) : null}
-              <p className="mt-2 max-w-xl text-[10px] leading-snug text-slate-600">
-                O backend só aceita envio de ordens com <strong className="font-medium text-slate-500">paper_mode</strong> e
-                conta <strong className="font-medium text-slate-500">paper (DU*)</strong> quando a protecção está activa —
-                não envia para conta real.
-              </p>
             </div>
             <button
               type="button"
