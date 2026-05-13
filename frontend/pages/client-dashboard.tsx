@@ -1886,12 +1886,11 @@ const FAQ_CATS=[
     {q:"Posso perder todo o capital?",a:"Não existe produto de investimento que elimine totalmente o risco de perda. O DECIDE reduz o risco através de diversificação e gestão dinâmica, mas perdas significativas são possíveis em cenários extremos."},
   ]},
   {cat:"Carteira e ordens",faqs:[
+    {q:"Porque é que a minha carteira mudou este mês?",a:"Todos os meses o modelo reavalia o universo de acções e pode alterar as posições por três razões: (1) um activo perdeu momentum relativo e foi substituído por outro mais forte; (2) o modelo ajustou pesos para gerir o risco; (3) alteração no nível de liquidez (XEON) em resposta à volatilidade de mercado. A página Histórico mostra o detalhe de cada revisão."},
     {q:"O que é o XEON?",a:"XEON é o Xtrackers EUR Overnight Rate Swap UCITS ETF — um ETF de liquidez que rende a taxa de juro de curto prazo em euros (€STR). É usado como 'estacionamento' de capital quando o modelo reduz a exposição a acções."},
     {q:"O que é o hedge cambial?",a:"Parte da carteira está em activos denominados em USD. Para reduzir o risco cambial EUR/USD, é mantida uma posição de cobertura proporcional à exposição em dólares. Isso protege contra valorizações do euro face ao dólar."},
-    {q:"O que é 'Aumentar' vs 'Comprar'?",a:"'Comprar' significa iniciar uma nova posição (o activo não estava em carteira). 'Reforçar' significa adicionar capital a uma posição já existente, aumentando o seu peso na carteira."},
-    {q:"Como se calcula o número de acções a comprar?",a:"Na página Carteira, introduz o teu AUM (capital total). O sistema calcula o número de acções para cada posição com base no peso da carteira dividido pelo preço actual de mercado."},
+    {q:"O que é 'Aumentar' vs 'Comprar'?",a:"'Comprar' (ou 'Nova posição') significa iniciar uma posição que não existia. 'Reforçar' significa adicionar capital a uma posição já existente, aumentando o seu peso na carteira."},
     {q:"A corretora Interactive Brokers é obrigatória?",a:"Não é obrigatória para ver as recomendações, mas é necessária para execução automática de ordens. Podes também seguir as recomendações manualmente em qualquer corretora."},
-    {q:"Com que frequência actualizam os preços?",a:"Os preços são obtidos em tempo real através do Interactive Brokers (quando ligado) ou do Yahoo Finance como fallback. A actualização ocorre quando abres a página Carteira."},
   ]},
   {cat:"Conta e segurança",faqs:[
     {q:"Como é feita a verificação de identidade?",a:"No registo, o teu email é verificado via link de confirmação e o telemóvel via código SMS (Twilio). Isso garante que a conta é associada a um utilizador real e previne fraude."},
@@ -1958,19 +1957,40 @@ function AjudaPage() {
   return (
     <div className="space-y-5">
 
-      {/* ── AI Assistant ── */}
+      {/* ── Como começar ── */}
+      <div className="bg-gradient-to-br from-[#0b0f1a] to-[#0d1220] border border-[#1a1f2e] rounded-xl p-5">
+        <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Como começar</div>
+        <div className="grid grid-cols-4 gap-3">
+          {[
+            {n:"1",title:"Definir o teu perfil",desc:"Selecciona o perfil de risco (Conservador, Moderado, Dinâmico) e preferência de hedge cambial no onboarding ou no topo da plataforma.",icon:<ShieldCheck size={14} className="text-teal-400"/>},
+            {n:"2",title:"Rever as recomendações",desc:"No início de cada mês, o modelo gera um novo plano. Revê na página Recomendações e aprova se concordas.",icon:<BookOpen size={14} className="text-blue-400"/>},
+            {n:"3",title:"Enviar ordens",desc:"Depois de aprovares o plano, envia as ordens à Interactive Brokers. O sistema gera e envia automaticamente.",icon:<Send size={14} className="text-emerald-400"/>},
+            {n:"4",title:"Acompanhar o desempenho",desc:"Consulta as páginas Performance, Risco e Histórico para acompanhar a evolução da carteira ao longo do tempo.",icon:<TrendingUp size={14} className="text-amber-400"/>},
+          ].map(s=>(
+            <div key={s.n} className="bg-white/[0.03] border border-white/[0.05] rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 rounded-full bg-white/[0.05] flex items-center justify-center text-[10px] font-black text-slate-400">{s.n}</div>
+                {s.icon}
+              </div>
+              <div className="text-slate-200 text-xs font-semibold mb-1">{s.title}</div>
+              <div className="text-slate-500 text-[11px] leading-relaxed">{s.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Assistente (tom educativo, não IA hype) ── */}
       <div ref={chatBoxRef} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-[#1a1f2e] bg-gradient-to-r from-blue-600/10 to-transparent">
-          <div className="w-8 h-8 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center shrink-0">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-[#1a1f2e]">
+          <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700/50 flex items-center justify-center shrink-0">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
           </div>
           <div>
-            <div className="text-slate-200 font-bold text-sm">Assistente DECIDE</div>
-            <div className="text-slate-500 text-[10px]">Alimentado por IA · Responde sobre finanças e a plataforma</div>
+            <div className="text-slate-200 font-semibold text-sm">Assistente educativo DECIDE</div>
+            <div className="text-slate-600 text-[10px]">Responde a dúvidas sobre a plataforma e conceitos financeiros gerais</div>
           </div>
-          <div className="ml-auto flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"/>
-            <span className="text-emerald-400 text-[10px] font-semibold">Online</span>
+          <div className="ml-auto">
+            <span className="text-[10px] text-slate-600 border border-slate-700/40 rounded px-2 py-0.5">Não constitui aconselhamento personalizado</span>
           </div>
         </div>
 
@@ -2042,7 +2062,9 @@ function AjudaPage() {
             </button>
           )}
         </div>
-        <div className="px-5 pb-3 text-[9px] text-slate-600">O assistente pode cometer erros. Não constitui conselho de investimento personalizado.</div>
+        <div className="px-5 pb-3 text-[10px] text-slate-600 leading-relaxed">
+          O assistente responde a questões educativas sobre a plataforma e finanças em geral. Pode cometer erros. As respostas não constituem recomendação de investimento personalizada nem aconselhamento financeiro regulado. Para decisões de investimento, consulte um profissional autorizado.
+        </div>
       </div>
 
       {/* ── FAQs ── */}
@@ -2080,25 +2102,46 @@ function AjudaPage() {
         </div>
       </div>
 
-      {/* ── Resources ── */}
-      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-        <div className="font-bold text-slate-200 text-sm mb-4">Guias e recursos</div>
+      {/* ── Falar com a equipa ── */}
+      <div className="bg-gradient-to-br from-[#0d1220] to-[#0b0f1a] border border-[#1a2030] rounded-xl p-6">
+        <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Falar com a equipa</div>
+        <div className="text-slate-400 text-xs mb-4 leading-relaxed">
+          O DECIDE é construído e gerido por pessoas reais. Se tiveres dúvidas que a plataforma não resolve,
+          ou simplesmente quiseres perceber melhor como funciona — estamos disponíveis.
+        </div>
         <div className="grid grid-cols-3 gap-3">
           {[
-            {Icon:Activity,label:"Vídeos tutoriais",desc:"Tutoriais em vídeo passo a passo",href:"https://www.youtube.com/@decide",color:"text-red-400"},
-            {Icon:BookOpen,label:"Guia rápido",desc:"Passos essenciais para começar",href:null,color:"text-blue-400"},
-            {Icon:Globe,label:"Glossário de termos",desc:"Definição dos principais termos financeiros",href:null,color:"text-emerald-400"},
-            {Icon:ShieldCheck,label:"Política de risco",desc:"Como o modelo CAP15 gere o risco",href:null,color:"text-amber-400"},
-            {Icon:TrendingUp,label:"Metodologia do modelo",desc:"Documentação técnica do algoritmo",href:null,color:"text-cyan-400"},
-            {Icon:Mail,label:"Contactar suporte",desc:"Fala directamente com a equipa",href:"contactos",color:"text-purple-400"},
-          ].map(({Icon,label,desc,href,color},idx)=>(
-            <button key={idx}
-              onClick={()=>href==="contactos"?undefined:href?window.open(href,"_blank"):undefined}
-              className="bg-[#080c14] border border-[#1a1f2e] rounded-lg p-4 text-left hover:border-blue-500/40 transition-colors group">
-              <Icon size={16} className={`${color} mb-2 transition-transform group-hover:scale-110`}/>
-              <div className="text-slate-200 text-xs font-semibold">{label}</div>
-              <div className="text-slate-500 text-[10px] mt-0.5">{desc}</div>
-            </button>
+            {icon:<Mail size={16} className="text-teal-400"/>,label:"Email",sub:"Resposta em 24–48h",action:"geral@decide.pt",href:"mailto:geral@decide.pt",bg:"bg-teal-900/10 border-teal-700/20"},
+            {icon:<Phone size={16} className="text-blue-400"/>,label:"Telefone",sub:"+351 210 123 456",action:"Seg–Sex, 9h–18h",href:"tel:+351210123456",bg:"bg-blue-900/10 border-blue-700/20"},
+            {icon:<Activity size={16} className="text-amber-400"/>,label:"Agendar chamada",sub:"Revisão da carteira",action:"15 min · gratuito",href:"mailto:geral@decide.pt?subject=Agendar chamada",bg:"bg-amber-900/10 border-amber-700/20"},
+          ].map(c=>(
+            <a key={c.label} href={c.href} className={`flex items-start gap-3 p-4 rounded-xl border ${c.bg} hover:opacity-80 transition-opacity`}>
+              <div className="mt-0.5">{c.icon}</div>
+              <div>
+                <div className="text-slate-200 text-sm font-semibold">{c.label}</div>
+                <div className="text-slate-400 text-xs mt-0.5">{c.sub}</div>
+                <div className="text-slate-600 text-[10px] mt-0.5 italic">{c.action}</div>
+              </div>
+            </a>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Recursos ── */}
+      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+        <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Documentação e recursos</div>
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            {Icon:BookOpen,label:"Glossário de termos",desc:"Definição dos principais termos financeiros usados na plataforma",color:"text-blue-400"},
+            {Icon:ShieldCheck,label:"Política de risco",desc:"Como o modelo gere automaticamente o risco e limita drawdowns",color:"text-amber-400"},
+            {Icon:TrendingUp,label:"Metodologia (resumida)",desc:"Como funciona o modelo — versão simplificada para não especialistas",color:"text-teal-400"},
+          ].map(({Icon,label,desc,color})=>(
+            <div key={label} className="bg-[#080c14] border border-[#1a1f2e] rounded-xl p-4 hover:border-slate-600/60 transition-colors cursor-default">
+              <Icon size={15} className={`${color} mb-2.5`}/>
+              <div className="text-slate-200 text-xs font-semibold mb-1">{label}</div>
+              <div className="text-slate-500 text-[10px] leading-relaxed">{desc}</div>
+              <div className="text-slate-700 text-[10px] mt-2 italic">Em breve →</div>
+            </div>
           ))}
         </div>
       </div>
