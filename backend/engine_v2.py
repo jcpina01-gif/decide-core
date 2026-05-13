@@ -15,7 +15,7 @@ import pandas as pd
 from price_series_clean import sanitize_extreme_daily_closes
 
 
-ENGINE_VERSION = "DECIDE_ENGINE_V2_M3_SCORE_RANK_POOL_2026_04_17_ZONE_CAP_SINK"
+ENGINE_VERSION = "DECIDE_ENGINE_V2_M3_SCORE_RANK_POOL_2026_05_13_SECTOR_CAP"
 
 _TSE_DOT_T_COL = re.compile(r"^\d+\.[Tt]$|^\d+-[Tt]$")
 
@@ -754,6 +754,82 @@ def _cap_and_normalize(weights: pd.Series, cap: float) -> pd.Series:
     return weights.sort_values(ascending=False)
 
 
+# ============================================================
+# SECTOR CAP  (V1 Institutional — Dynamic: Tech ≤ 30%, others ≤ 35%)
+# ============================================================
+
+_SECTOR_MAP_CACHE: Optional[dict] = None
+
+
+def _load_sector_map() -> dict[str, str]:
+    """Load FMP sector classification. Returns {} if file missing (graceful degradation)."""
+    global _SECTOR_MAP_CACHE
+    if _SECTOR_MAP_CACHE is not None:
+        return _SECTOR_MAP_CACHE
+    p = _candidate_path("backend/data/sectors_fmp.csv", "data/sectors_fmp.csv")
+    if p is None or not p.exists():
+        _SECTOR_MAP_CACHE = {}
+        return _SECTOR_MAP_CACHE
+    try:
+        df = pd.read_csv(p, index_col=0, usecols=["ticker", "sector"])
+        _SECTOR_MAP_CACHE = df["sector"].dropna().to_dict()
+    except Exception:
+        _SECTOR_MAP_CACHE = {}
+    return _SECTOR_MAP_CACHE
+
+
+def _sector_cap_enabled() -> bool:
+    return _env_truthy("DECIDE_SECTOR_CAP_ENABLED")
+
+
+def _apply_sector_cap(
+    weights: pd.Series,
+    sector_map: dict[str, str],
+    default_cap: float = 0.35,
+    tech_cap: float = 0.30,
+    max_iters: int = 30,
+) -> pd.Series:
+    """
+    Redistribute weight exceeding per-sector caps.
+    Technology sector: tech_cap (default 30%).
+    All other sectors: default_cap (default 35%).
+    Missing sector classification → treated as 'Unknown' (pooled, subject to default_cap).
+    Gracefully returns original weights if sector_map is empty.
+    """
+    if not sector_map:
+        return weights
+
+    w = weights.clip(lower=0)
+    if w.sum() <= 0:
+        return weights
+    w = w / w.sum()
+
+    for _ in range(max_iters):
+        sector_totals: dict[str, float] = {}
+        for tkr in w.index:
+            sec = sector_map.get(str(tkr), "Unknown")
+            sector_totals[sec] = sector_totals.get(sec, 0.0) + float(w[tkr])
+
+        any_over = False
+        new_w = w.copy()
+        for sec, sec_wt in sector_totals.items():
+            cap = tech_cap if sec == "Technology" else default_cap
+            if sec_wt > cap + 1e-9:
+                any_over = True
+                ratio = cap / sec_wt
+                for tkr in w.index:
+                    if sector_map.get(str(tkr), "Unknown") == sec:
+                        new_w[tkr] = w[tkr] * ratio
+
+        if not any_over:
+            break
+        total = new_w.sum()
+        w = new_w / total if total > 0 else new_w
+
+    total = w.sum()
+    return (w / total).sort_values(ascending=False) if total > 0 else w
+
+
 def build_weights(
     scores: pd.Series,
     cap_per_ticker: float = 0.20,
@@ -1041,6 +1117,11 @@ def run_model(
     ticker_zones = load_ticker_zone_lookup(window.columns) if _zone_cap_enabled() else {}
     zone_cap_mult = _zone_cap_multiplier_from_env()
 
+    # Sector cap (V1 Institutional)
+    _sector_map = _load_sector_map() if _sector_cap_enabled() else {}
+    _default_sec_cap = float(os.environ.get("DECIDE_SECTOR_CAP_DEFAULT", "0.35"))
+    _tech_sec_cap    = float(os.environ.get("DECIDE_SECTOR_CAP_TECH",    "0.30"))
+
     def _apply_zone_cap_if_needed(ws: pd.Series) -> pd.Series:
         if not _zone_cap_enabled() or zone_cap_mult <= 0:
             return ws
@@ -1078,6 +1159,8 @@ def run_model(
         return _apply_zone_cap_if_needed(bw), False
 
     weights, weights_used_lp = _weights_engine(selected)
+    if _sector_map:
+        weights = _apply_sector_cap(weights, _sector_map, _default_sec_cap, _tech_sec_cap)
 
     w_emit = weights[weights > 1e-9]
     if float(w_emit.sum()) > 1e-18:
@@ -1138,6 +1221,10 @@ def run_model(
             selected_hist = hist_scores.iloc[:pool_hist] if pool_hist > 0 else hist_scores.iloc[:n_univ]
 
             current_weights, _ = _weights_engine(selected_hist)
+            if _sector_map:
+                current_weights = _apply_sector_cap(
+                    current_weights, _sector_map, _default_sec_cap, _tech_sec_cap
+                )
 
             if use_vol_target:
 

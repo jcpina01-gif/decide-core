@@ -4180,6 +4180,19 @@ export default function ClientDashboardPage() {
   const [recoMonths,setRecoMonths]=useState<RecoMonth[]>([]);
   const [recoLoading,setRecoLoading]=useState(true);
 
+  // FMP portfolio quality
+  type PortfolioQuality={
+    portfolio_summary:{
+      roic:number|null;gross_margin:number|null;op_margin:number|null;
+      net_margin:number|null;debt_equity:number|null;revenue_growth:number|null;
+      sector_exposure:Record<string,number>;portfolio_quality_label:string;
+    };
+    tickers:Array<{ticker:string;roic?:number|null;gross_margin?:number|null;op_margin?:number|null;debt_equity?:number|null;revenue_growth?:number|null;sector?:string;name?:string;quality_label?:string}>;
+    n_positions:number;
+  };
+  const [portfolioQuality,setPortfolioQuality]=useState<PortfolioQuality|null>(null);
+  const [pqLoading,setPqLoading]=useState(false);
+
   const syncSession=()=>{ try{ setSessionUser(getCurrentSessionUser()); setLoggedIn(isClientLoggedIn()); }catch{} };
 
   useEffect(()=>{
@@ -4224,6 +4237,14 @@ export default function ClientDashboardPage() {
 
   // price fetch effect is placed after latestMonth declaration below
 
+  // FMP portfolio quality — fetch when relatorios or carteira page is active and positions available
+  useEffect(()=>{
+    if(activePage!=="relatorios"&&activePage!=="carteira") return;
+    if(portfolioQuality||pqLoading) return;
+    // will be triggered once latestMonth is available (see below)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[activePage]);
+
   // API devolve meses ordenados do mais antigo para o mais recente — último = mais recente
   const sortedMonths=useMemo(()=>[...recoMonths].sort((a,b)=>{
     const da=a.date??a.rebalance_date??"";
@@ -4232,6 +4253,22 @@ export default function ClientDashboardPage() {
   }),[recoMonths]);
   const latestMonth=sortedMonths[sortedMonths.length-1];
   const prevMonth=sortedMonths[sortedMonths.length-2];
+
+  // Portfolio quality fetch (FMP) — triggered when latestMonth available and on relatorios/carteira
+  useEffect(()=>{
+    if(!latestMonth||(activePage!=="relatorios"&&activePage!=="carteira")) return;
+    if(portfolioQuality||pqLoading) return;
+    const rows=(latestMonth.rows??[]).filter((r:any)=>
+      r.weightPct>=0.5&&!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="XEON"
+    );
+    if(!rows.length) return;
+    const positions=rows.map((r:any)=>({ticker:r.ticker,weight:r.weightPct/100}));
+    setPqLoading(true);
+    fetch("/api/portfolio-quality",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({positions})})
+      .then(r=>r.json()).then((d:any)=>{if(d?.portfolio_summary) setPortfolioQuality(d as any);})
+      .catch(()=>{}).finally(()=>setPqLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[activePage,latestMonth?.date]);
 
   useEffect(()=>{
     if(activePage!=="carteira"||!latestMonth) return;
@@ -5173,26 +5210,36 @@ export default function ClientDashboardPage() {
                           <thead>
                             <tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
                               <th className="pb-2 font-semibold">Empresa</th>
-                              <th className="pb-2 font-semibold text-right">Sector</th>
+                              <th className="pb-2 font-semibold text-right">ROIC</th>
                               <th className="pb-2 font-semibold text-right">Peso</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {top5.map((r,i)=>(
+                            {top5.map((r,i)=>{
+                              const qd=portfolioQuality?.tickers?.find(t=>t.ticker===r.ticker);
+                              const roic=qd?.roic??null;
+                              return (
                               <tr key={r.ticker} className="border-b border-[#0f172a]/60 last:border-0">
                                 <td className="py-2.5">
                                   <div className="flex items-center gap-2">
                                     <div className="w-2 h-2 rounded-full shrink-0" style={{background:PIE_COLORS[i%PIE_COLORS.length]}}/>
                                     <div>
                                       <div className="text-slate-200 font-semibold">{getCompany(r.ticker)||r.ticker}</div>
-                                      <div className="text-slate-600 text-[9px]">{r.ticker} · {getZone(r.ticker)}</div>
+                                      <div className="text-slate-600 text-[9px]">{r.ticker} · {getSector(r.ticker)||getZone(r.ticker)}</div>
                                     </div>
                                   </div>
                                 </td>
-                                <td className="py-2.5 text-slate-500 text-right text-[11px]">{getSector(r.ticker)}</td>
+                                <td className="py-2.5 text-right">
+                                  {roic!=null?(
+                                    <span className={`text-[10px] font-bold ${roic>0.25?"text-emerald-400":roic>0.12?"text-amber-400":"text-slate-500"}`}>
+                                      {(roic*100).toFixed(0)}%
+                                    </span>
+                                  ):<span className="text-slate-700 text-[10px]">—</span>}
+                                </td>
                                 <td className="py-2.5 text-right font-black text-slate-100 text-sm">{r.weightPct.toFixed(1)}%</td>
                               </tr>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -5226,6 +5273,53 @@ export default function ClientDashboardPage() {
                       </div>
                     </div>
 
+                    {/* ── Perfil de Qualidade (FMP) ── */}
+                    {(portfolioQuality||pqLoading)&&(
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="flex items-center justify-between mb-5">
+                          <div>
+                            <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Perfil de qualidade da carteira</div>
+                            <div className="text-slate-400 text-xs">Médias ponderadas · dados Financial Modeling Prep</div>
+                          </div>
+                          {portfolioQuality&&(
+                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                              portfolioQuality.portfolio_summary.portfolio_quality_label==="Alta"?"bg-emerald-900/30 text-emerald-400":
+                              portfolioQuality.portfolio_summary.portfolio_quality_label==="Média"?"bg-amber-900/30 text-amber-400":
+                              "bg-slate-800 text-slate-400"
+                            }`}>
+                              Qualidade {portfolioQuality.portfolio_summary.portfolio_quality_label}
+                            </span>
+                          )}
+                        </div>
+                        {pqLoading&&!portfolioQuality?(
+                          <div className="text-slate-600 text-sm py-4 text-center">A carregar métricas fundamentais…</div>
+                        ):(portfolioQuality&&(()=>{
+                          const s=portfolioQuality.portfolio_summary;
+                          const fmt=(v:number|null,pct=true)=>v==null?"n/d":pct?`${(v*100).toFixed(1)}%`:`${v.toFixed(2)}x`;
+                          const fmtG=(v:number|null)=>v==null?"n/d":`${v>=0?"+":""}${(v*100).toFixed(1)}%`;
+                          const metrics=[
+                            {label:"ROIC",val:fmt(s.roic),desc:"Rentabilidade do capital investido",c:s.roic!=null&&s.roic>0.20?"text-emerald-400":s.roic!=null&&s.roic>0.10?"text-amber-400":"text-slate-400"},
+                            {label:"Margem bruta",val:fmt(s.gross_margin),desc:"Eficiência operacional",c:s.gross_margin!=null&&s.gross_margin>0.40?"text-emerald-400":"text-slate-300"},
+                            {label:"Margem operacional",val:fmt(s.op_margin),desc:"Rentabilidade antes de impostos",c:s.op_margin!=null&&s.op_margin>0.20?"text-emerald-400":"text-slate-300"},
+                            {label:"Crescimento receita",val:fmtG(s.revenue_growth),desc:"Variação anual das vendas",c:s.revenue_growth!=null&&s.revenue_growth>0.10?"text-emerald-400":s.revenue_growth!=null&&s.revenue_growth<0?"text-red-400":"text-amber-400"},
+                            {label:"Dívida/Capital próprio",val:fmt(s.debt_equity,false),desc:"Alavancagem do balanço",c:s.debt_equity!=null&&s.debt_equity<1.0?"text-emerald-400":s.debt_equity!=null&&s.debt_equity>2.0?"text-red-400":"text-amber-400"},
+                            {label:"Margem líquida",val:fmt(s.net_margin),desc:"Lucro por euro de receita",c:s.net_margin!=null&&s.net_margin>0.15?"text-emerald-400":"text-slate-300"},
+                          ];
+                          return (
+                            <div className="grid grid-cols-3 gap-4">
+                              {metrics.map(m=>(
+                                <div key={m.label} className="bg-[#091220] border border-[#1a1f2e]/60 rounded-lg px-4 py-3">
+                                  <div className="text-slate-600 text-[10px] font-semibold uppercase tracking-wider mb-1.5">{m.label}</div>
+                                  <div className={`text-xl font-black ${m.c}`}>{m.val}</div>
+                                  <div className="text-slate-600 text-[10px] mt-1">{m.desc}</div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })())}
+                      </div>
+                    )}
+
                     {/* ── Investment letter commentary ── */}
                     <div className="bg-gradient-to-br from-[#0b0f1a] to-[#091220] border border-[#1a2030] rounded-2xl p-7">
                       <div className="flex items-center gap-2.5 mb-5">
@@ -5254,9 +5348,23 @@ export default function ClientDashboardPage() {
                             {top3Changes[0]&&(()=>{const ch=top3Changes[0];const d=ch.cur-ch.prev;return <> A alteração de maior impacto foi em <span className="text-slate-200 font-semibold">{getCompany(ch.ticker)||ch.ticker}</span>{" "}({ch.action.toLowerCase()}, {d>0?"+":""}{d.toFixed(1)}pp).</>;})()}
                           </p>
                         )}
+                        {portfolioQuality&&portfolioQuality.portfolio_summary.roic!=null&&(
+                          <p>
+                            A carteira apresenta um <span className="text-slate-200 font-semibold">ROIC médio ponderado de{" "}
+                            {(portfolioQuality.portfolio_summary.roic*100).toFixed(1)}%</span>
+                            {portfolioQuality.portfolio_summary.roic>0.20
+                              ? ", reflectindo uma selecção orientada para empresas com elevada rentabilidade do capital — um indicador robusto de vantagem competitiva sustentada."
+                              : ", com perfil de qualidade moderado."}{" "}
+                            {portfolioQuality.portfolio_summary.gross_margin!=null&&(
+                              <>A margem bruta média situa-se em{" "}
+                              <span className="text-slate-200 font-semibold">{(portfolioQuality.portfolio_summary.gross_margin*100).toFixed(1)}%</span>,
+                              {portfolioQuality.portfolio_summary.gross_margin>0.40?" indicando estruturas de custo eficientes e poder de precificação acima da média.":" em linha com a mediana de mercado."}</>
+                            )}
+                          </p>
+                        )}
                         <p className="text-slate-600 text-xs border-t border-white/[0.04] pt-4 leading-relaxed">
                           Este relatório foi gerado pelo sistema DECIDE com base em dados históricos do modelo quantitativo, ajustados ao perfil <span className="italic">{pfLabel}</span>.
-                          A informação apresentada é de carácter meramente informativo e não constitui recomendação de investimento.
+                          Métricas fundamentais obtidas via Financial Modeling Prep (TTM). A informação apresentada é de carácter meramente informativo e não constitui recomendação de investimento.
                           Performance passada não garante resultados futuros. <span className="italic">Backtested — simulado.</span>
                         </p>
                       </div>
@@ -6215,6 +6323,50 @@ export default function ClientDashboardPage() {
                       );})()}
                     </div>
                   </div>
+                  {/* ── Perfil de qualidade FMP (Carteira) ── */}
+                  {(portfolioQuality||pqLoading)&&(
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e]/60 rounded-xl p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="text-xs font-bold text-slate-300">Perfil fundamental da carteira</div>
+                          {portfolioQuality&&(
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              portfolioQuality.portfolio_summary.portfolio_quality_label==="Alta"?"bg-emerald-900/30 text-emerald-400 border-emerald-500/30":
+                              portfolioQuality.portfolio_summary.portfolio_quality_label==="Média"?"bg-amber-900/30 text-amber-400 border-amber-500/30":
+                              "bg-slate-800 text-slate-500 border-slate-600/30"}`}>
+                              Qualidade {portfolioQuality.portfolio_summary.portfolio_quality_label}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-600">FMP · TTM</span>
+                      </div>
+                      {pqLoading&&!portfolioQuality?(
+                        <div className="text-slate-600 text-xs animate-pulse">A carregar métricas fundamentais…</div>
+                      ):(portfolioQuality&&(()=>{
+                        const s=portfolioQuality.portfolio_summary;
+                        const metrics=[
+                          {label:"ROIC médio",val:s.roic!=null?`${(s.roic*100).toFixed(1)}%`:null,good:s.roic!=null&&s.roic>0.12,ok:s.roic!=null&&s.roic>0.08},
+                          {label:"Margem bruta",val:s.gross_margin!=null?`${(s.gross_margin*100).toFixed(1)}%`:null,good:s.gross_margin!=null&&s.gross_margin>0.40,ok:s.gross_margin!=null&&s.gross_margin>0.25},
+                          {label:"Margem operacional",val:s.op_margin!=null?`${(s.op_margin*100).toFixed(1)}%`:null,good:s.op_margin!=null&&s.op_margin>0.15,ok:s.op_margin!=null&&s.op_margin>0.08},
+                          {label:"Dívida/Capital",val:s.debt_equity!=null?`${s.debt_equity.toFixed(2)}x`:null,good:s.debt_equity!=null&&s.debt_equity<1.0,ok:s.debt_equity!=null&&s.debt_equity<2.0},
+                          {label:"Crescimento receita",val:s.revenue_growth!=null?`${(s.revenue_growth*100).toFixed(1)}%`:null,good:s.revenue_growth!=null&&s.revenue_growth>0.10,ok:s.revenue_growth!=null&&s.revenue_growth>0.05},
+                        ];
+                        return(
+                          <div className="grid grid-cols-5 gap-3">
+                            {metrics.map(m=>(
+                              <div key={m.label} className="bg-white/[0.025] rounded-lg px-3 py-3 border border-white/[0.04]">
+                                <div className="text-[10px] text-slate-600 mb-1.5">{m.label}</div>
+                                <div className={`text-base font-black ${m.val==null?"text-slate-700":m.good?"text-emerald-400":m.ok?"text-amber-400":"text-slate-300"}`}>
+                                  {m.val??"—"}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })())}
+                    </div>
+                  )}
+
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e]/60 rounded-xl p-5">
                     <div className="flex items-center justify-between mb-4">
                       <div>
@@ -6247,6 +6399,7 @@ export default function ClientDashboardPage() {
                         <th className="text-left pb-2">Nome</th>
                         <th className="text-left pb-2 text-slate-600 font-medium">Setor</th>
                         <th className="text-left pb-2 text-slate-600 font-medium">País</th>
+                        {portfolioQuality&&<th className="text-right pb-2 text-slate-600 font-medium" title="Return on Invested Capital (TTM)">ROIC</th>}
                         <th className="text-right pb-2">Mês ant.</th>
                         <th className="text-right pb-2">Este mês</th>
                         <th className="text-right pb-2">Δ</th>
@@ -6311,6 +6464,20 @@ export default function ClientDashboardPage() {
                                 <td className="py-2.5 text-slate-600 text-[11px]">
                                   {isHedge?"Global":getZone(r.ticker)}
                                 </td>
+                                {portfolioQuality&&(()=>{
+                                  if(isHedge||isXeon) return <td className="py-2.5 text-right text-slate-700">—</td>;
+                                  const qd=portfolioQuality.tickers?.find(t=>t.ticker===r.ticker);
+                                  const roic=qd?.roic;
+                                  return(
+                                    <td className="py-2.5 text-right tabular-nums font-semibold text-[11px]">
+                                      {roic!=null?(
+                                        <span className={roic>0.15?"text-emerald-400":roic>0.08?"text-amber-400":roic>0?"text-slate-400":"text-red-400"}>
+                                          {(roic*100).toFixed(1)}%
+                                        </span>
+                                      ):<span className="text-slate-700">—</span>}
+                                    </td>
+                                  );
+                                })()}
                                 <td className="py-2.5 text-right text-slate-500 tabular-nums">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
                                 <td className="py-2.5 text-right text-slate-200 font-semibold tabular-nums">
                                   {isHedge?<span className="text-slate-600 font-normal italic text-[10px]">~{r.cur.toFixed(0)}%</span>:`${r.cur.toFixed(1)}%`}
@@ -6347,7 +6514,7 @@ export default function ClientDashboardPage() {
                         })()}
                         {/* weight total footer – always 100% (same normalised source as Recomendações) */}
                         <tr className="border-t-2 border-slate-600 bg-slate-800/40">
-                          <td colSpan={5} className="py-2 text-right text-slate-400 font-semibold text-xs pr-3">Total</td>
+                          <td colSpan={portfolioQuality?6:5} className="py-2 text-right text-slate-400 font-semibold text-xs pr-3">Total</td>
                           <td className="py-2 text-right font-bold text-emerald-400">100.0%</td>
                           <td colSpan={2} className="py-2 text-slate-600 text-xs pl-2">(normalizado)</td>
                         </tr>
