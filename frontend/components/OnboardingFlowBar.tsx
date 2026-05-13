@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ONBOARDING_SHELL_MAX_WIDTH_PX } from "../lib/decideClientTheme";
 import { isFxHedgeGateOk } from "../lib/fxHedgePrefs";
+import { isFxHedgeOnboardingApplicable } from "../lib/clientSegment";
 import {
   type OnboardingStepId,
   applyOnboardingBackNavigation,
@@ -293,7 +294,9 @@ export default function OnboardingFlowBar({
             const isActive = state === "active";
             const isLocked = state === "future_locked";
             const isLast = idx === steps.length - 1;
-            const isClickable = isCompleted || (!isLocked && isActive) || (state === "upcoming");
+            // Hedge step: only clickable if applicable to this user's profile
+            const hedgeNotApplicable = step.id === "hedge" && mounted && !isFxHedgeOnboardingApplicable();
+            const isClickable = !hedgeNotApplicable && (isCompleted || (!isLocked && isActive) || (state === "upcoming"));
 
             const circleBg = isCompleted || isActive ? "#2563eb" : "#111827";
             const circleBorder = isCompleted || isActive ? "#3b82f6" : "#252a3a";

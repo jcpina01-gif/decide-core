@@ -66,7 +66,10 @@ export default function FxHedgeOnboardingPage() {
       return;
     }
     if (!isFxHedgeOnboardingApplicable()) {
-      window.location.href = "/client-dashboard";
+      // If arriving from the stepper/onboarding, go back to approve instead of dashboard
+      const ref = typeof document !== "undefined" ? document.referrer : "";
+      const isFromOnboarding = ref.includes("/client/approve") || ref.includes("/persona-onboarding") || ref.includes("/mifid-test");
+      window.location.href = isFromOnboarding ? "/client/approve" : "/client-dashboard";
       return;
     }
     const prev = readFxHedgePrefs();
