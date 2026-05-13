@@ -4192,6 +4192,7 @@ export default function ClientDashboardPage() {
   };
   const [portfolioQuality,setPortfolioQuality]=useState<PortfolioQuality|null>(null);
   const [pqLoading,setPqLoading]=useState(false);
+  const [expandedReco,setExpandedReco]=useState<string|null>(null);
 
   const syncSession=()=>{ try{ setSessionUser(getCurrentSessionUser()); setLoggedIn(isClientLoggedIn()); }catch{} };
 
@@ -4239,7 +4240,7 @@ export default function ClientDashboardPage() {
 
   // FMP portfolio quality — fetch when relatorios or carteira page is active and positions available
   useEffect(()=>{
-    if(activePage!=="relatorios"&&activePage!=="carteira") return;
+    if(activePage!=="relatorios"&&activePage!=="carteira"&&activePage!=="reco") return;
     if(portfolioQuality||pqLoading) return;
     // will be triggered once latestMonth is available (see below)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4256,7 +4257,7 @@ export default function ClientDashboardPage() {
 
   // Portfolio quality fetch (FMP) — triggered when latestMonth available and on relatorios/carteira
   useEffect(()=>{
-    if(!latestMonth||(activePage!=="relatorios"&&activePage!=="carteira")) return;
+    if(!latestMonth||(activePage!=="relatorios"&&activePage!=="carteira"&&activePage!=="reco")) return;
     if(portfolioQuality||pqLoading) return;
     const rows=(latestMonth.rows??[]).filter((r:any)=>
       r.weightPct>=0.5&&!r.ticker.startsWith("TBILL")&&!r.ticker.startsWith("CASH")&&r.ticker!=="XEON"
@@ -5914,15 +5915,17 @@ export default function ClientDashboardPage() {
                           return (
                             <React.Fragment key={r.ticker}>
                               {showGroupSep&&<tr><td colSpan={7} className="h-px bg-[#1a1f2e] p-0"/></tr>}
-                              <tr className={`border-b border-[#0d1220] hover:bg-white/[0.025] transition-colors duration-100 ${isXeon?"opacity-60":""} ${!isXeon?rowAccent(r.action):""}`}>
+                              <tr
+                                onClick={!isXeon?()=>setExpandedReco(v=>v===r.ticker?null:r.ticker):undefined}
+                                className={`border-b border-[#0d1220] transition-colors duration-100 ${isXeon?"opacity-60":"cursor-pointer hover:bg-white/[0.03]"} ${!isXeon?rowAccent(r.action):""} ${expandedReco===r.ticker?"bg-white/[0.03]":""}`}>
                                 <td className="py-2.5 pl-3">
                                   {isXeon?(
                                     <span className="font-bold text-slate-400">XEON</span>
                                   ):(
-                                    <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1 font-bold text-slate-200 hover:text-teal-400 hover:underline underline-offset-2 transition-colors">
-                                      {displayTicker(r.ticker)}<ArrowUpRight size={10} className="opacity-40"/>
-                                    </a>
+                                    <span className="inline-flex items-center gap-1.5 font-bold text-slate-200">
+                                      {displayTicker(r.ticker)}
+                                      <span className={`transition-transform duration-150 text-slate-600 text-[9px] ${expandedReco===r.ticker?"rotate-90":"rotate-0"}`}>▶</span>
+                                    </span>
                                   )}
                                   {getCompany(r.ticker)&&<span className="ml-1.5 text-slate-600 font-normal text-[10px]">{getCompany(r.ticker)}</span>}
                                 </td>
@@ -5935,6 +5938,69 @@ export default function ClientDashboardPage() {
                                   {!isXeon&&<span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${actionColor(r.action)}`}>{actionLabel(r.action)}</span>}
                                 </td>
                               </tr>
+                              {/* ── Painel editorial FMP (expansão) ── */}
+                              {expandedReco===r.ticker&&!isXeon&&(()=>{
+                                const qd=portfolioQuality?.tickers?.find(t=>t.ticker===r.ticker);
+                                const scoreRaw=(latestMonth?.rows??[]).find((x:any)=>x.ticker===r.ticker||x.ticker===r.ticker.replace("XYZ","SQ"))?.score??null;
+                                const score=scoreRaw??0;
+                                const momentumLabel=score>50?"Momentum muito forte":score>30?"Momentum forte":score>15?"Momentum moderado":"Momentum fraco";
+                                const momentumColor=score>50?"text-emerald-400":score>30?"text-teal-400":score>15?"text-amber-400":"text-slate-500";
+                                type Bullet={dot:string;text:string};
+                                const bullets:Bullet[]=[];
+                                bullets.push({dot:score>30?"bg-teal-500":"bg-amber-500",text:momentumLabel});
+                                if(qd?.roic!=null){
+                                  const roic=qd.roic as number;
+                                  const roicPct=(roic*100).toFixed(1);
+                                  const roicLabel=roic>0.25?`ROIC ${roicPct}% — rentabilidade operacional elevada`:roic>0.12?`ROIC ${roicPct}% — rentabilidade sólida`:roic>0?`ROIC ${roicPct}%`:`ROIC ${roicPct}% — abaixo do threshold`;
+                                  bullets.push({dot:roic>0.12?"bg-emerald-500":roic>0?"bg-amber-500":"bg-red-500",text:roicLabel});
+                                }
+                                if(qd?.revenue_growth!=null){
+                                  const g=qd.revenue_growth as number;
+                                  const gPct=(g*100).toFixed(1);
+                                  bullets.push({dot:g>0.10?"bg-emerald-500":g>0?"bg-amber-500":"bg-red-500",text:`Crescimento de receita ${g>0?"+":""}${gPct}%`});
+                                }
+                                if(qd?.gross_margin!=null){
+                                  const gm=qd.gross_margin as number;
+                                  bullets.push({dot:gm>0.40?"bg-emerald-500":gm>0.20?"bg-amber-500":"bg-slate-500",text:`Margem bruta ${(gm*100).toFixed(1)}%${gm>0.40?" — acima da mediana":gm>0.20?" — moderada":" — baixa"}`});
+                                }
+                                if(qd?.debt_equity!=null){
+                                  const de=qd.debt_equity as number;
+                                  bullets.push({dot:de<1.0?"bg-emerald-500":de<2.5?"bg-amber-500":"bg-red-500",text:`Dívida/Capital ${de.toFixed(2)}x${de<1.0?" — alavancagem reduzida":de<2.5?" — alavancagem moderada":" — alavancagem elevada"}`});
+                                }
+                                const hasFmp=qd&&(qd.roic!=null||qd.revenue_growth!=null);
+                                return(
+                                  <tr className="bg-[#080c14] border-b border-[#0d1220]">
+                                    <td colSpan={7} className="px-6 py-4">
+                                      <div className="flex items-start gap-8">
+                                        <div className="flex-1">
+                                          <div className="text-[10px] text-slate-600 uppercase tracking-widest mb-3 font-semibold">Racional de investimento</div>
+                                          <div className="space-y-2">
+                                            {bullets.map((b,i)=>(
+                                              <div key={i} className="flex items-center gap-2.5">
+                                                <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${b.dot}`}/>
+                                                <span className="text-xs text-slate-300">{b.text}</span>
+                                              </div>
+                                            ))}
+                                            {!hasFmp&&(
+                                              <div className="flex items-center gap-2.5">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-slate-700 shrink-0"/>
+                                                <span className="text-xs text-slate-600 italic">Dados fundamentais não disponíveis para esta posição</span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                        {scoreRaw!=null&&(
+                                          <div className="shrink-0 text-right">
+                                            <div className="text-[10px] text-slate-600 uppercase tracking-widest mb-2 font-semibold">Score</div>
+                                            <div className={`text-2xl font-black tabular-nums ${momentumColor}`}>{score.toFixed(0)}</div>
+                                            <div className="text-[10px] text-slate-600 mt-0.5">momentum</div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })()}
                             </React.Fragment>
                           );
                         });
@@ -6345,18 +6411,16 @@ export default function ClientDashboardPage() {
                       ):(portfolioQuality&&(()=>{
                         const s=portfolioQuality.portfolio_summary;
                         const metrics=[
-                          {label:"ROIC médio",val:s.roic!=null?`${(s.roic*100).toFixed(1)}%`:null,good:s.roic!=null&&s.roic>0.12,ok:s.roic!=null&&s.roic>0.08},
-                          {label:"Margem bruta",val:s.gross_margin!=null?`${(s.gross_margin*100).toFixed(1)}%`:null,good:s.gross_margin!=null&&s.gross_margin>0.40,ok:s.gross_margin!=null&&s.gross_margin>0.25},
-                          {label:"Margem operacional",val:s.op_margin!=null?`${(s.op_margin*100).toFixed(1)}%`:null,good:s.op_margin!=null&&s.op_margin>0.15,ok:s.op_margin!=null&&s.op_margin>0.08},
-                          {label:"Dívida/Capital",val:s.debt_equity!=null?`${s.debt_equity.toFixed(2)}x`:null,good:s.debt_equity!=null&&s.debt_equity<1.0,ok:s.debt_equity!=null&&s.debt_equity<2.0},
-                          {label:"Crescimento receita",val:s.revenue_growth!=null?`${(s.revenue_growth*100).toFixed(1)}%`:null,good:s.revenue_growth!=null&&s.revenue_growth>0.10,ok:s.revenue_growth!=null&&s.revenue_growth>0.05},
+                          {label:"ROIC",val:s.roic!=null?`${(s.roic*100).toFixed(1)}%`:null,good:s.roic!=null&&s.roic>0.12,ok:s.roic!=null&&s.roic>0.08,tip:"Retorno sobre capital investido (TTM)"},
+                          {label:"Crescimento",val:s.revenue_growth!=null?`${(s.revenue_growth*100).toFixed(1)}%`:null,good:s.revenue_growth!=null&&s.revenue_growth>0.10,ok:s.revenue_growth!=null&&s.revenue_growth>0.05,tip:"Crescimento de receita anual (TTM)"},
+                          {label:"Dívida/Capital",val:s.debt_equity!=null?`${s.debt_equity.toFixed(2)}x`:null,good:s.debt_equity!=null&&s.debt_equity<1.0,ok:s.debt_equity!=null&&s.debt_equity<2.0,tip:"Rácio dívida sobre capital próprio"},
                         ];
                         return(
-                          <div className="grid grid-cols-5 gap-3">
+                          <div className="flex gap-6">
                             {metrics.map(m=>(
-                              <div key={m.label} className="bg-white/[0.025] rounded-lg px-3 py-3 border border-white/[0.04]">
-                                <div className="text-[10px] text-slate-600 mb-1.5">{m.label}</div>
-                                <div className={`text-base font-black ${m.val==null?"text-slate-700":m.good?"text-emerald-400":m.ok?"text-amber-400":"text-slate-300"}`}>
+                              <div key={m.label} title={m.tip} className="cursor-default">
+                                <div className="text-[10px] text-slate-600 mb-1">{m.label}</div>
+                                <div className={`text-lg font-black tabular-nums ${m.val==null?"text-slate-700":m.good?"text-emerald-400":m.ok?"text-amber-400":"text-slate-300"}`}>
                                   {m.val??"—"}
                                 </div>
                               </div>
