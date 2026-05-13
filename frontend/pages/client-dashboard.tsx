@@ -4857,9 +4857,8 @@ export default function ClientDashboardPage() {
                 // Risk level for advisory
                 const riskOk=Math.abs(scaledDD)<=25&&reportVol<=22;
                 // Outperformance vs bench
-                // Compare YTD model vs YTD bench (same window — avoids total vs CAGR mismatch)
-                const benchYtd=perfData?.m?.bench??0; // bench cumulative return for selected period
-                const outpBench=scaledYtd-benchYtd;
+                // Outperformance: CAGR model vs CAGR bench — same annualised metric, safe to subtract
+                const outpBench=(perfData?.inception?.ann??0)-(benchPerfData?.ann??0);
                 const maxSec=topSectors[0]?.[0]??"—";
                 const maxSecPct=topSectors[0]?.[1]??0;
                 return (
@@ -4888,14 +4887,15 @@ export default function ClientDashboardPage() {
                         <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-3">Resumo executivo</div>
                         <p className="text-slate-300 text-sm leading-7">
                           {isUp
-                            ? `A carteira encerrou o período em terreno positivo, com um retorno de `
-                            : `A carteira registou um resultado negativo no período, com `}
-                          <span className={`font-bold ${isUp?"text-emerald-400":"text-red-400"}`}>{fmtPct(scaledYtd,true)} no ano corrente</span>
-                          {outpBench>0
-                            ? `, superando o benchmark em ${outpBench.toFixed(1)}pp`
-                            : outpBench<0
-                            ? `, abaixo do benchmark em ${Math.abs(outpBench).toFixed(1)}pp`
-                            : ""}
+                            ? "A carteira encerrou o ano em terreno positivo, com um retorno de "
+                            : "A carteira registou um resultado negativo no ano, com "}
+                          <span className={`font-bold ${isUp?"text-emerald-400":"text-red-400"}`}>{fmtPct(scaledYtd,true)} YTD</span>.
+                          {" "}O CAGR histórico situa-se em <span className="text-teal-400 font-semibold">{fmtPct(scaledAnn,true)}</span>
+                          {outpBench>0.5
+                            ? `, com excesso de retorno anualizado de ${outpBench.toFixed(1)}pp face ao benchmark`
+                            : outpBench<-0.5
+                            ? `, ligeiramente abaixo do CAGR do benchmark (${(benchPerfData?.ann??0).toFixed(1)}%)`
+                            : `, em linha com o benchmark`}
                           . O modelo manteve um posicionamento <span className="text-slate-200 font-semibold">{regimeTxt}</span> durante o período,
                           com <span className="text-slate-200 font-semibold">{equityPctReport.toFixed(0)}% em acções</span> e concentração principal em{" "}
                           <span className="text-slate-200 font-semibold">{maxSec} ({maxSecPct.toFixed(0)}%)</span>.
