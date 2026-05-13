@@ -6823,71 +6823,122 @@ export default function ClientDashboardPage() {
 
               {/* ── CONTACTOS ── */}
               {activePage==="contactos"&&(
-                <div className="grid grid-cols-2 gap-5">
-                  <div className="space-y-4">
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="font-bold text-slate-200 text-sm mb-4">Fale connosco</div>
-                      <div className="space-y-3">
-                        {[
-                          {Icon:Phone,label:"Telefone",val:"+351 21 302 34 48"},
-                          {Icon:Mail,label:"Email",val:"geral@decide.pt"},
-                          {Icon:MapPin,label:"Morada",val:"Av. da Liberdade, 123\n1250-140 Lisboa, Portugal"},
-                        ].map(({Icon,label,val})=>(
-                          <div key={label} className="flex items-start gap-3 p-3 bg-[#080c14] rounded-lg">
-                            <Icon size={16} className="text-blue-400 mt-0.5 shrink-0"/>
-                            <div>
-                              <div className="text-slate-500 text-[10px]">{label}</div>
-                              <div className="text-slate-200 text-xs font-semibold whitespace-pre-line">{val}</div>
-                            </div>
-                          </div>
-                        ))}
+                <div className="space-y-4">
+                  {/* Human intro */}
+                  <div className="bg-gradient-to-br from-[#0b0f1a] to-[#0d1220] border border-[#1a1f2e] rounded-xl px-6 py-5 flex items-start justify-between">
+                    <div>
+                      <div className="text-slate-100 font-bold text-lg mb-1">Equipa DECIDE</div>
+                      <div className="text-slate-400 text-sm max-w-md leading-relaxed">
+                        Estamos disponíveis para ajudar — seja para esclarecer dúvidas sobre a plataforma, discutir o modelo ou simplesmente perceber se o DECIDE é certo para si.
                       </div>
                     </div>
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                      <div className="font-bold text-slate-200 text-sm mb-3">Horário de atendimento</div>
-                      <div className="space-y-2 text-xs">
-                        {[["Segunda a Sexta","9h - 18h"],["Sábado","10h - 13h"],["Domingo","Encerrado"]].map(([d,h])=>(
-                          <div key={d} className="flex justify-between"><span className="text-slate-400">{d}</span><span className="text-slate-200">{h}</span></div>
-                        ))}
+                    <div className="flex items-center gap-2 shrink-0 ml-6">
+                      <div className="w-2 h-2 rounded-full bg-emerald-400"/>
+                      <div>
+                        <div className="text-emerald-400 text-xs font-semibold">Disponível</div>
+                        <div className="text-slate-600 text-[10px]">Resposta em &lt; 1 dia útil</div>
                       </div>
                     </div>
                   </div>
-                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-                    <div className="font-bold text-slate-200 text-sm mb-4">Envie-nos uma mensagem</div>
-                    {contactSent?(
-                      <div className="flex flex-col items-center justify-center h-64 gap-3">
-                        <CheckCircle2 size={40} className="text-emerald-400"/>
-                        <div className="text-emerald-400 font-bold">Mensagem enviada!</div>
-                        <div className="text-slate-400 text-xs text-center">Respondemos em 1 dia útil.</div>
-                        <button onClick={()=>{setContactSent(false);setContactForm({nome:"",email:"",assunto:"",msg:""}); }}
-                          className="mt-2 text-xs text-blue-400 underline">Enviar outra mensagem</button>
-                      </div>
-                    ):(
-                      <form onSubmit={e=>{e.preventDefault();setContactSent(true);}} className="space-y-3">
-                        {[
-                          {k:"nome",label:"Nome",type:"text",ph:"O seu nome"},
-                          {k:"email",label:"Email",type:"email",ph:"email@exemplo.com"},
-                          {k:"assunto",label:"Assunto",type:"text",ph:"Seleccione o assunto"},
-                        ].map(({k,label,type,ph})=>(
-                          <div key={k}>
-                            <label className="text-xs text-slate-400 mb-1 block">{label}</label>
-                            <input type={type} placeholder={ph} value={(contactForm as any)[k]} required
-                              onChange={e=>setContactForm(f=>({...f,[k]:e.target.value}))}
-                              className="w-full bg-[#080c14] border border-[#252a3a] text-slate-200 text-xs rounded-lg px-3 py-2.5 outline-none focus:border-blue-500 transition-colors"/>
-                          </div>
-                        ))}
-                        <div>
-                          <label className="text-xs text-slate-400 mb-1 block">Mensagem</label>
-                          <textarea rows={4} placeholder="Descreva a sua questão..." required value={contactForm.msg}
-                            onChange={e=>setContactForm(f=>({...f,msg:e.target.value}))}
-                            className="w-full bg-[#080c14] border border-[#252a3a] text-slate-200 text-xs rounded-lg px-3 py-2.5 outline-none focus:border-blue-500 transition-colors resize-none"/>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Left: contacts + hours */}
+                    <div className="space-y-4">
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Contactos directos</div>
+                        <div className="space-y-3">
+                          {[
+                            {Icon:Mail,label:"Email geral",val:"geral@decide.pt",href:"mailto:geral@decide.pt",note:"Respondemos em menos de 1 dia útil"},
+                            {Icon:Phone,label:"Telefone",val:"+351 21 302 34 48",href:"tel:+351213023448",note:"Seg–Sex, 9h–18h · Sáb, 10h–13h"},
+                            {Icon:MapPin,label:"Correspondência",val:"Av. da Liberdade, 123\n1250-140 Lisboa, Portugal",href:null,note:"Sede social registada"},
+                          ].map(({Icon,label,val,href,note})=>(
+                            <div key={label} className="flex items-start gap-3 p-3 bg-[#080c14] border border-[#1a1f2e] rounded-lg hover:border-slate-600/50 transition-colors">
+                              <Icon size={15} className="text-slate-400 mt-0.5 shrink-0"/>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-slate-500 text-[10px]">{label}</div>
+                                {href?(
+                                  <a href={href} className="text-slate-200 text-xs font-semibold hover:text-teal-400 transition-colors whitespace-pre-line">{val}</a>
+                                ):(
+                                  <div className="text-slate-200 text-xs font-semibold whitespace-pre-line">{val}</div>
+                                )}
+                                <div className="text-slate-600 text-[10px] mt-0.5 italic">{note}</div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        <button type="submit"
-                          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg py-2.5 transition-colors">
-                          <Send size={13}/>Enviar mensagem
-                        </button>
-                      </form>
-                    )}
+                      </div>
+
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                        <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-3">Horário de atendimento</div>
+                        <div className="space-y-2">
+                          {[
+                            {d:"Segunda a Sexta",h:"9h – 18h",active:true},
+                            {d:"Sábado",h:"10h – 13h",active:false},
+                            {d:"Domingo e feriados",h:"Encerrado",active:false},
+                          ].map(({d,h,active})=>(
+                            <div key={d} className="flex justify-between items-center py-1.5 border-b border-[#0f172a] last:border-0">
+                              <span className="text-slate-400 text-xs">{d}</span>
+                              <span className={`text-xs font-semibold ${active?"text-teal-400":"text-slate-500"}`}>{h}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-[#1a1f2e] flex items-center gap-2">
+                          <Info size={11} className="text-slate-600 shrink-0"/>
+                          <span className="text-[10px] text-slate-600">Para questões urgentes fora do horário, envie email — respondemos assim que possível.</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: form */}
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                      <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Envie-nos uma mensagem</div>
+                      {contactSent?(
+                        <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
+                          <div className="w-12 h-12 rounded-full bg-teal-900/30 border border-teal-700/40 flex items-center justify-center">
+                            <CheckCircle2 size={22} className="text-teal-400"/>
+                          </div>
+                          <div className="text-slate-200 font-semibold text-sm">Mensagem recebida</div>
+                          <div className="text-slate-500 text-xs max-w-xs leading-relaxed">Respondemos habitualmente em menos de 1 dia útil. Verifique a caixa de entrada do email que indicou.</div>
+                          <button onClick={()=>{setContactSent(false);setContactForm({nome:"",email:"",assunto:"",msg:""}); }}
+                            className="mt-2 text-xs text-teal-400 hover:text-teal-300 underline transition-colors">Enviar outra mensagem</button>
+                        </div>
+                      ):(
+                        <form onSubmit={e=>{e.preventDefault();setContactSent(true);}} className="space-y-3">
+                          {[
+                            {k:"nome",label:"Nome",type:"text",ph:"O seu nome"},
+                            {k:"email",label:"Email",type:"email",ph:"email@exemplo.com"},
+                            {k:"assunto",label:"Assunto",type:"text",ph:"Ex: dúvida sobre recomendações"},
+                          ].map(({k,label,type,ph})=>(
+                            <div key={k}>
+                              <label className="text-xs text-slate-500 mb-1 block">{label}</label>
+                              <input type={type} placeholder={ph} value={(contactForm as Record<string,string>)[k]} required
+                                onChange={e=>setContactForm(f=>({...f,[k]:e.target.value}))}
+                                className="w-full bg-[#080c14] border border-[#1a1f2e] text-slate-200 text-xs rounded-lg px-3 py-2.5 outline-none focus:border-teal-500/60 transition-colors placeholder:text-slate-700"/>
+                            </div>
+                          ))}
+                          <div>
+                            <label className="text-xs text-slate-500 mb-1 block">Mensagem</label>
+                            <textarea rows={4} placeholder="Descreva a sua questão em detalhe..." required value={contactForm.msg}
+                              onChange={e=>setContactForm(f=>({...f,msg:e.target.value}))}
+                              className="w-full bg-[#080c14] border border-[#1a1f2e] text-slate-200 text-xs rounded-lg px-3 py-2.5 outline-none focus:border-teal-500/60 transition-colors resize-none placeholder:text-slate-700"/>
+                          </div>
+                          <button type="submit"
+                            className="w-full flex items-center justify-center gap-2 bg-teal-700 hover:bg-teal-600 text-white text-xs font-bold rounded-lg py-3 transition-colors">
+                            <Send size={12}/>Enviar mensagem
+                          </button>
+                          <div className="text-[10px] text-slate-700 text-center">Os seus dados são tratados de forma confidencial. Nunca partilhamos informação com terceiros.</div>
+                        </form>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Legal/regulatory footer */}
+                  <div className="flex items-start gap-3 bg-[#080c14] border border-[#1a1f2e] rounded-xl px-5 py-3">
+                    <ShieldCheck size={13} className="text-slate-600 shrink-0 mt-0.5"/>
+                    <div className="text-[10px] text-slate-600 leading-relaxed">
+                      O DECIDE está registado na CMVM como intermediário financeiro. Para questões regulatórias, de conformidade ou reclamações formais, contacte <span className="text-slate-500">compliance@decide.pt</span>.
+                      Para questões de privacidade e protecção de dados, contacte <span className="text-slate-500">privacidade@decide.pt</span>.
+                    </div>
                   </div>
                 </div>
               )}
