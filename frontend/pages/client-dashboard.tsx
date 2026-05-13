@@ -6096,7 +6096,7 @@ export default function ClientDashboardPage() {
                     return <>
 
                   {/* ── Comité header — full narrative ── */}
-                  <div className="bg-gradient-to-br from-teal-950/50 via-[#0b0f1a] to-[#0b0f1a] border border-teal-500/15 rounded-2xl p-6">
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-2xl p-6">
                     <div className="flex items-start justify-between gap-6 mb-5">
                       <div>
                         <div className="flex items-center gap-2 mb-2">
