@@ -3664,7 +3664,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                  paperMode?"Desliga 'Simulação local' para enviar à IB →":
                  investOverBudget?`⛔ Bloqueado — total excede budget`:
                  recentlySent?"⚠ Já enviou recentemente — confirmar envio?":
-                 `Enviar ${nOrdens} ordem${nOrdens===1?"":"ns"} à Interactive Brokers →`}
+                 `Enviar ${nOrdens} ${nOrdens===1?"ordem":"ordens"} à Interactive Brokers →`}
               </button>
               <p className="text-center text-[10px] text-slate-700 flex items-center justify-center gap-1">
                 <ShieldCheck size={10}/> Conexão segura · Execução controlada pelo DECIDE
