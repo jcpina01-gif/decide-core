@@ -4857,7 +4857,9 @@ export default function ClientDashboardPage() {
                 // Risk level for advisory
                 const riskOk=Math.abs(scaledDD)<=25&&reportVol<=22;
                 // Outperformance vs bench
-                const outpBench=(perfData?.inception?.ann??0)-((perfData?.inception as {ann:number;bench?:number})?.bench??0);
+                // Compare YTD model vs YTD bench (same window — avoids total vs CAGR mismatch)
+                const benchYtd=perfData?.m?.bench??0; // bench cumulative return for selected period
+                const outpBench=scaledYtd-benchYtd;
                 const maxSec=topSectors[0]?.[0]??"—";
                 const maxSecPct=topSectors[0]?.[1]??0;
                 return (
