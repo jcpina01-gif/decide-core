@@ -1320,13 +1320,19 @@ export default function ClientRegisterPage() {
         {/* Page heading */}
         <div style={{ maxWidth: 480, margin: "0 auto 32px", textAlign: "center" }}>
           <h1 style={{ fontSize: "clamp(24px, 4vw, 32px)", fontWeight: 800, lineHeight: 1.2, margin: "0 0 10px", color: "#f1f5f9" }}>
-            Criar conta
+            {wizardStep === 2 ? "Verificar email e telemóvel" : "Criar conta"}
           </h1>
-          <p style={{ margin: 0, fontSize: 15, color: "#64748b", lineHeight: 1.6 }}>
+          <p style={{ margin: "0 0 12px", fontSize: 15, color: "#64748b", lineHeight: 1.6 }}>
             {wizardStep === 2
               ? "Confirme o email e o telemóvel para concluir o registo."
               : "Vamos começar com os seus dados."}
           </p>
+          {wizardStep !== 2 && (
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#334155", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 999, padding: "4px 14px" }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              Demora cerca de 5 minutos
+            </div>
+          )}
         </div>
 
         <div>
@@ -1913,7 +1919,7 @@ export default function ClientRegisterPage() {
 
                     <div style={{ width: "100%", marginTop: 2, boxSizing: "border-box" }}>
                       <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 5, fontWeight: 500 }}>
-                        Utilizador (login) <span style={{ color: "#ef4444" }}>*</span>
+                        Nome de utilizador <span style={{ color: "#ef4444" }}>*</span>
                       </div>
                       <input
                         ref={registerUsernameInputRef}
@@ -1949,12 +1955,12 @@ export default function ClientRegisterPage() {
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, width: "100%" }}>
                       {(["premium", "private"] as const).map((seg) => {
                         const selected = clientSegment === seg;
-                        const label = seg === "premium" ? "Essencial" : "Private";
+                        const label = seg === "premium" ? "Premium" : "Private";
                         const minLabel = seg === "premium" ? "mín. 5 000 €" : "mín. 50 000 €";
-                        const tagLine = seg === "premium" ? "Ideal para começar com controlo total" : "Para patrimónios mais elevados";
+                        const tagLine = seg === "premium" ? "Investimento disciplinado com custo fixo mensal" : "Para patrimónios mais elevados";
                         const detail = seg === "premium"
-                          ? "Comissão fixa mensal e simulador de custos no dashboard."
-                          : "Inclui opção de hedge cambial e análise avançada de custos/risco.";
+                          ? "€25/mês · sem performance fee · controlo total do portefólio."
+                          : "0,6%/ano + performance fee · hedge cambial · análise avançada.";
                         return (
                           <label
                             key={seg}
@@ -1965,8 +1971,8 @@ export default function ClientRegisterPage() {
                               cursor: "pointer",
                               padding: "14px 14px",
                               borderRadius: 14,
-                              border: selected ? "1.5px solid #3b82f6" : "1px solid #1a1f2e",
-                              background: selected ? "rgba(59,130,246,0.10)" : "#0d1118",
+                              border: selected ? (seg==="private"?"1.5px solid #d97706":"1.5px solid #3b82f6") : "1px solid #1a1f2e",
+                              background: selected ? (seg==="private"?"rgba(217,119,6,0.08)":"rgba(59,130,246,0.10)") : "#0d1118",
                               transition: "all 0.15s ease",
                               minWidth: 0,
                               position: "relative",
@@ -1980,8 +1986,8 @@ export default function ClientRegisterPage() {
                               width: 18,
                               height: 18,
                               borderRadius: "50%",
-                              border: selected ? "2px solid #3b82f6" : "2px solid rgba(255,255,255,0.15)",
-                              background: selected ? "#3b82f6" : "transparent",
+                              border: selected ? (seg==="private"?"2px solid #d97706":"2px solid #3b82f6") : "2px solid rgba(255,255,255,0.15)",
+                              background: selected ? (seg==="private"?"#d97706":"#3b82f6") : "transparent",
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
@@ -1998,7 +2004,7 @@ export default function ClientRegisterPage() {
                             <div style={{ fontWeight: 700, fontSize: 14, color: "#e2e8f0", paddingRight: 24 }}>
                               {label} — <span style={{ color: "#64748b", fontWeight: 500, fontSize: 12 }}>{minLabel}</span>
                             </div>
-                            <div style={{ fontSize: 12, color: selected ? "#60a5fa" : "#22c55e", fontWeight: 600 }}>
+                            <div style={{ fontSize: 12, color: selected ? (seg==="private"?"#fbbf24":"#60a5fa") : "#475569", fontWeight: 600 }}>
                               ✔ {tagLine}
                             </div>
                             <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.45 }}>
@@ -2172,9 +2178,24 @@ export default function ClientRegisterPage() {
                       >
                         Continuar →
                       </button>
-                    <p style={{ fontSize: 12, color: "#334155", marginTop: 14, textAlign: "center" }}>
-                      Os seus dados estão protegidos
-                    </p>
+                    {/* Trust signals */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, marginTop: 16, flexWrap: "wrap" }}>
+                      {[
+                        { icon: "🔒", text: "Encriptação TLS" },
+                        { icon: "🇪🇺", text: "RGPD · dados na UE" },
+                        { icon: "🏦", text: "Parceiro Interactive Brokers" },
+                      ].map(t => (
+                        <div key={t.text} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#334155" }}>
+                          <span>{t.icon}</span>
+                          <span>{t.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Próximo passo */}
+                    <div style={{ marginTop: 18, padding: "10px 16px", borderRadius: 10, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", textAlign: "center" }}>
+                      <div style={{ fontSize: 11, color: "#1e293b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Próximo passo</div>
+                      <div style={{ fontSize: 13, color: "#475569" }}>Definir o valor a investir e o perfil de risco</div>
+                    </div>
                   </div>
                   </div>
                 </div>
