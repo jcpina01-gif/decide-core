@@ -896,8 +896,15 @@ export default function ApprovePage({
 
           {flowReady && !hasTradePlan && displayNavEur <= 0 && !clientRefPlanBusy && (
             <section className="mb-6 rounded-xl border border-blue-800/60 bg-blue-950/40 p-4">
-              <div className="text-sm font-semibold text-blue-100 mb-2">
-                Indique o montante a investir (EUR)
+              <div className="text-sm font-semibold text-blue-100 mb-1">
+                Montante a investir (EUR)
+              </div>
+              <div style={{ fontSize: 12, color: "#93c5fd", marginBottom: 10 }}>
+                Introduza o valor que definiu no passo 2 ou{" "}
+                <Link href="/client-montante" style={{ color: "#60a5fa", textDecoration: "underline" }}>
+                  volte a defini-lo aqui
+                </Link>
+                .
               </div>
               <form
                 onSubmit={(e) => {
@@ -910,6 +917,8 @@ export default function ApprovePage({
                 style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}
               >
                 <input
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
+                  autoFocus
                   type="number"
                   min={1000}
                   max={50000000}
@@ -919,12 +928,12 @@ export default function ApprovePage({
                   onChange={(e) => setMontanteInputText(e.target.value)}
                   style={{
                     background: "rgba(30,41,59,0.8)",
-                    border: "1px solid rgba(96,165,250,0.4)",
+                    border: "1px solid rgba(96,165,250,0.6)",
                     borderRadius: 8,
                     color: "#e2e8f0",
                     padding: "6px 12px",
-                    fontSize: 14,
-                    width: 160,
+                    fontSize: 15,
+                    width: 180,
                     outline: "none",
                   }}
                 />
@@ -943,12 +952,6 @@ export default function ApprovePage({
                 >
                   Carregar plano
                 </button>
-                <span style={{ fontSize: 11, color: "#93c5fd" }}>
-                  ou{" "}
-                  <Link href="/client-montante" style={{ color: "#60a5fa", textDecoration: "underline" }}>
-                    altere o montante no onboarding
-                  </Link>
-                </span>
               </form>
               {clientRefPlanError && (
                 <div style={{ marginTop: 8, fontSize: 12, color: "#fca5a5" }}>{clientRefPlanError}</div>
