@@ -610,6 +610,11 @@ export default function ApprovePage({
       }
     }
 
+    // Pre-fill the fallback input with the value found so the user sees it populated
+    if (montante > 0) {
+      setMontanteInputText(String(montante));
+    }
+
     return fetchApprovalPlan(montante);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

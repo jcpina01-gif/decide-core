@@ -291,7 +291,9 @@ export default function OnboardingFlowBar({
             const state = stepVisualState(idx);
             const isCompleted = state === "completed";
             const isActive = state === "active";
+            const isLocked = state === "future_locked";
             const isLast = idx === steps.length - 1;
+            const isClickable = isCompleted || (!isLocked && isActive) || (state === "upcoming");
 
             const circleBg = isCompleted || isActive ? "#2563eb" : "#111827";
             const circleBorder = isCompleted || isActive ? "#3b82f6" : "#252a3a";
@@ -299,50 +301,77 @@ export default function OnboardingFlowBar({
             const labelColor = isActive ? "#e2e8f0" : isCompleted ? "#94a3b8" : "#374151";
             const lineColor = isCompleted ? "#2563eb" : "#1a1f2e";
 
-            return (
-              <React.Fragment key={step.id}>
+            const stepContent = (
+              <>
+                {/* Círculo */}
                 <div
                   style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: "50%",
+                    background: circleBg,
+                    border: `2px solid ${circleBorder}`,
                     display: "flex",
-                    flexDirection: "column",
                     alignItems: "center",
-                    gap: 4,
+                    justifyContent: "center",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: numColor,
+                    transition: "all 0.2s ease",
                     flexShrink: 0,
                   }}
                 >
-                  {/* Círculo */}
+                  {isCompleted ? "✓" : step.n}
+                </div>
+                {/* Label abaixo */}
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: isActive ? 700 : 500,
+                    color: labelColor,
+                    whiteSpace: "nowrap",
+                    letterSpacing: "0.01em",
+                  }}
+                >
+                  {step.label}
+                </span>
+              </>
+            );
+
+            return (
+              <React.Fragment key={step.id}>
+                {isClickable ? (
+                  <a
+                    href={step.href}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 4,
+                      flexShrink: 0,
+                      textDecoration: "none",
+                      cursor: "pointer",
+                    }}
+                    title={`Ir para: ${step.label}`}
+                    aria-label={`Ir para passo ${step.n}: ${step.label}`}
+                  >
+                    {stepContent}
+                  </a>
+                ) : (
                   <div
                     style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: "50%",
-                      background: circleBg,
-                      border: `2px solid ${circleBorder}`,
                       display: "flex",
+                      flexDirection: "column",
                       alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: numColor,
-                      transition: "all 0.2s ease",
+                      gap: 4,
                       flexShrink: 0,
+                      opacity: 0.45,
                     }}
+                    aria-disabled="true"
                   >
-                    {isCompleted ? "✓" : step.n}
+                    {stepContent}
                   </div>
-                  {/* Label abaixo */}
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: isActive ? 700 : 500,
-                      color: labelColor,
-                      whiteSpace: "nowrap",
-                      letterSpacing: "0.01em",
-                    }}
-                  >
-                    {step.label}
-                  </span>
-                </div>
+                )}
 
                 {/* Linha de ligação */}
                 {!isLast && (
