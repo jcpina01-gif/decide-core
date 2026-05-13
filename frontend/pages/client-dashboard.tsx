@@ -3865,24 +3865,24 @@ function ActividadePage({sortedMonths}:{sortedMonths:MonthRec[]}) {
         const p=pm.get(t)??0, c=cm.get(t)??0, d=c-p;
         if(Math.abs(d)<0.01) return;
         const name=getCompany(t)||t;
-        if(p===0&&c>0){comprar++;details.push(`Comprar ${name} (${c.toFixed(1)}%)`);}
-        else if(p>0&&c===0){vender++;details.push(`Vender ${name} (era ${p.toFixed(1)}%)`);}
-        else if(d>0){aumentar++;details.push(`Aumentar ${name} ${p.toFixed(1)}%→${c.toFixed(1)}%`);}
-        else{reduzir++;details.push(`Reduzir ${name} ${p.toFixed(1)}%→${c.toFixed(1)}%`);}
+        if(p===0&&c>0){comprar++;details.push(`Nova posição: ${name} (${c.toFixed(1)}%)`);}
+        else if(p>0&&c===0){vender++;details.push(`Encerrar: ${name} (era ${p.toFixed(1)}%)`);}
+        else if(d>0){aumentar++;details.push(`Reforçar: ${name} ${p.toFixed(1)}%→${c.toFixed(1)}%`);}
+        else{reduzir++;details.push(`Reduzir: ${name} ${p.toFixed(1)}%→${c.toFixed(1)}%`);}
       });
       const total=comprar+vender+aumentar+reduzir;
       if(total===0) return;
       const parts:string[]=[];
-      if(comprar) parts.push(`${comprar} compra${comprar>1?"s":""}`);
+      if(comprar) parts.push(`${comprar} nova${comprar>1?"s":""} posição${comprar>1?"ões":""}`);
       if(aumentar) parts.push(`${aumentar} reforço${aumentar>1?"s":""}`);
       if(reduzir) parts.push(`${reduzir} redução${reduzir>1?"ões":""}`);
-      if(vender) parts.push(`${vender} venda${vender>1?"s":""}`);
+      if(vender) parts.push(`${vender} encerramento${vender>1?"s":""}`);
       const dateStr:string=m.date??m.rebalance_date??"1970-01-01";
       evs.push({
         id:`reb-${dateStr}`,ts:new Date(dateStr).getTime(),
         type:"rebalanceamento",
-        label:`Rebalanceamento · ${parts.join(", ")}`,
-        detail:details.slice(0,5).join(" · ")+(details.length>5?` · +${details.length-5} mais`:""),
+        label:`Revisão mensal aprovada`,
+        detail:parts.join(" · ")+(details.length>0?" · "+details.slice(0,3).join(" · ")+(details.length>3?` · +${details.length-3} mais`:""):""),
         icon:"↺",color:"text-blue-400",
       });
     });
@@ -3892,67 +3892,154 @@ function ActividadePage({sortedMonths}:{sortedMonths:MonthRec[]}) {
   const allEvents=[...actLog,...rebalanceEvents].sort((a,b)=>b.ts-a.ts);
   const filterTypes=["todos","rebalanceamento","ordens","cancelamento","configuração","login"];
   const filtered=actFilter==="todos"?allEvents:allEvents.filter(e=>e.type===actFilter);
-  const fmtDate=(ts:number)=>{
-    const d=new Date(ts);
-    return d.toLocaleDateString("pt-PT",{day:"2-digit",month:"short",year:"numeric"})+" "+
-           d.toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"});
+
+  // Group events by calendar day
+  const groupedByDay=useMemo(()=>{
+    const groups=new Map<string,ActEntry[]>();
+    filtered.forEach(e=>{
+      const d=new Date(e.ts);
+      const key=d.toLocaleDateString("pt-PT",{day:"2-digit",month:"long",year:"numeric"});
+      if(!groups.has(key)) groups.set(key,[]);
+      groups.get(key)!.push(e);
+    });
+    return [...groups.entries()]; // [[dayLabel, events[]], ...]
+  },[filtered]);
+
+  // Collapse config events within a day
+  const isImportant=(e:ActEntry)=>e.type==="rebalanceamento"||e.type==="ordens";
+
+  const typeStyle=(type:string):{dot:string;badge:string;bg:string}=>{
+    switch(type){
+      case "rebalanceamento": return {dot:"bg-teal-500",badge:"bg-teal-900/30 text-teal-400 border-teal-700/30",bg:"bg-teal-900/10 border-teal-700/20"};
+      case "ordens":          return {dot:"bg-emerald-500",badge:"bg-emerald-900/30 text-emerald-400 border-emerald-700/30",bg:"bg-emerald-900/10 border-emerald-700/20"};
+      case "cancelamento":    return {dot:"bg-red-500",badge:"bg-red-900/30 text-red-400 border-red-700/30",bg:"bg-red-900/10 border-red-700/20"};
+      case "configuração":    return {dot:"bg-amber-500",badge:"bg-amber-900/30 text-amber-400 border-amber-700/30",bg:""};
+      case "login":           return {dot:"bg-slate-600",badge:"bg-slate-800 text-slate-500 border-slate-700/30",bg:""};
+      default:                return {dot:"bg-slate-600",badge:"bg-slate-800 text-slate-500 border-slate-700/30",bg:""};
+    }
   };
+
+  const typeLabel=(type:string)=>{
+    switch(type){
+      case "rebalanceamento": return "Revisão";
+      case "ordens": return "Execução";
+      case "cancelamento": return "Cancelamento";
+      case "configuração": return "Configuração";
+      case "login": return "Acesso";
+      default: return type;
+    }
+  };
+
+  const fmtTime=(ts:number)=>{
+    const d=new Date(ts);
+    return d.toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"});
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 flex-wrap">
-        {filterTypes.map(f=>(
-          <button key={f} onClick={()=>setActFilter(f)}
-            className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold capitalize transition-colors ${actFilter===f?"bg-blue-600 text-white":"bg-[#0b0f1a] border border-[#1a1f2e] text-slate-400 hover:text-slate-200"}`}>
-            {f==="todos"?`Tudo (${allEvents.length})`:f}
-          </button>
-        ))}
+    <div className="space-y-5">
+      {/* Header + filters */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <div className="text-slate-100 font-bold text-base">Histórico de actividade</div>
+          <div className="text-slate-500 text-xs mt-0.5">{allEvents.length} eventos registados · ordenados por data</div>
+        </div>
         <button onClick={()=>{localStorage.removeItem(ACT_KEY);setActLog([]);}}
-          className="ml-auto px-3 py-1.5 rounded-lg text-[11px] font-semibold text-red-500 hover:text-red-400 border border-red-900/40 hover:border-red-700/60 transition-colors">
-          Limpar histórico manual
+          className="px-3 py-1.5 rounded-lg text-[11px] font-semibold text-red-500/70 hover:text-red-400 border border-red-900/30 hover:border-red-700/50 transition-colors">
+          Limpar histórico
         </button>
       </div>
-      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
-        {filtered.length===0?(
-          <div className="p-8 text-center text-slate-600 text-sm">
-            <div className="text-2xl mb-2">📋</div>
-            Sem actividade registada{actFilter!=="todos"?` para "${actFilter}"`:""}
-          </div>
-        ):(
-          <div className="divide-y divide-[#111827]">
-            {filtered.map((e,i)=>(
-              <div key={e.id||i} className="flex items-start gap-4 px-5 py-4 hover:bg-[#0f172a] transition-colors">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 mt-0.5
-                  ${e.type==="rebalanceamento"?"bg-blue-900/40 text-blue-400":
-                    e.type==="ordens"?"bg-emerald-900/40 text-emerald-400":
-                    e.type==="cancelamento"?"bg-red-900/40 text-red-400":
-                    e.type==="configuração"?"bg-amber-900/40 text-amber-400":
-                    e.type==="login"?"bg-slate-800 text-slate-400":
-                    "bg-slate-800 text-slate-400"}`}>
-                  {e.icon}
+
+      {/* Filter pills */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {filterTypes.map(f=>{
+          const count=f==="todos"?allEvents.length:allEvents.filter(e=>e.type===f).length;
+          return (
+            <button key={f} onClick={()=>setActFilter(f)}
+              className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all ${
+                actFilter===f
+                  ?"bg-teal-600 text-white shadow-md shadow-teal-900/30"
+                  :"bg-[#0b0f1a] border border-[#1a1f2e] text-slate-400 hover:text-slate-200 hover:border-slate-600"}`}>
+              {f==="todos"?"Tudo":typeLabel(f)}
+              <span className={`ml-1.5 text-[10px] ${actFilter===f?"text-teal-200/70":"text-slate-600"}`}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Timeline */}
+      {groupedByDay.length===0?(
+        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-10 text-center">
+          <div className="text-slate-700 text-3xl mb-3">◎</div>
+          <div className="text-slate-500 text-sm">Sem actividade registada{actFilter!=="todos"?` para "${typeLabel(actFilter)}"`:""}</div>
+        </div>
+      ):(
+        <div className="space-y-8">
+          {groupedByDay.map(([dayLabel,events])=>{
+            const important=events.filter(e=>isImportant(e));
+            const minor=events.filter(e=>!isImportant(e));
+            return (
+              <div key={dayLabel} className="relative">
+                {/* Day label */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">{dayLabel}</div>
+                  <div className="flex-1 h-px bg-[#1a1f2e]"/>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="text-slate-200 text-[12px] font-semibold leading-tight">{e.label}</div>
-                      {e.detail&&<div className="text-slate-500 text-[10px] mt-1 leading-relaxed">{e.detail}</div>}
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <div className="text-slate-500 text-[10px]">{fmtDate(e.ts)}</div>
-                      <div className={`text-[9px] font-semibold capitalize mt-0.5 px-1.5 py-0.5 rounded
-                        ${e.type==="rebalanceamento"?"bg-blue-900/20 text-blue-500":
-                          e.type==="ordens"?"bg-emerald-900/20 text-emerald-500":
-                          e.type==="cancelamento"?"bg-red-900/20 text-red-500":
-                          e.type==="configuração"?"bg-amber-900/20 text-amber-500":
-                          "bg-slate-800 text-slate-500"}`}>
-                        {e.type}
+
+                {/* Events for this day */}
+                <div className="ml-0 space-y-3">
+                  {/* Important events — prominent cards */}
+                  {important.map((e,i)=>{
+                    const s=typeStyle(e.type);
+                    return (
+                      <div key={e.id||i} className={`relative flex items-start gap-4 rounded-xl px-5 py-4 border ${s.bg} border-[#1a2030]`}>
+                        {/* Timeline dot + line */}
+                        <div className="flex flex-col items-center shrink-0 mt-1">
+                          <div className={`w-3 h-3 rounded-full ${s.dot} ring-4 ring-[#080c14] shrink-0`}/>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${s.badge}`}>{typeLabel(e.type)}</span>
+                              </div>
+                              <div className="text-slate-100 text-sm font-bold leading-snug">{e.label}</div>
+                              {e.detail&&(
+                                <div className="text-slate-400 text-xs mt-1.5 leading-relaxed">{e.detail}</div>
+                              )}
+                            </div>
+                            <div className="shrink-0 text-slate-500 text-[11px] mt-0.5">{fmtTime(e.ts)}</div>
+                          </div>
+                        </div>
                       </div>
+                    );
+                  })}
+
+                  {/* Minor events — compact grouped list */}
+                  {minor.length>0&&(
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+                      {minor.map((e,i)=>{
+                        const s=typeStyle(e.type);
+                        return (
+                          <div key={e.id||i} className={`flex items-center gap-3 px-4 py-2.5 ${i<minor.length-1?"border-b border-[#111827]":""} hover:bg-white/[0.02] transition-colors`}>
+                            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.dot} opacity-60`}/>
+                            <div className="flex-1 text-[11px] text-slate-400 truncate">{e.label}</div>
+                            {e.detail&&<div className="text-[10px] text-slate-600 truncate max-w-[200px] hidden sm:block">{e.detail}</div>}
+                            <div className="text-[10px] text-slate-600 shrink-0">{fmtTime(e.ts)}</div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+            );
+          })}
+        </div>
+      )}
+
+      {/* Footer note */}
+      <div className="text-[10px] text-slate-700 text-center pt-2">
+        O histórico de actividade é armazenado localmente neste dispositivo.
       </div>
     </div>
   );
