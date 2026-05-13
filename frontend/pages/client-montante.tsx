@@ -119,8 +119,8 @@ export default function ClientMontantePage() {
           <h1 style={{ fontSize: "clamp(26px, 5vw, 36px)", fontWeight: 800, lineHeight: 1.15, margin: "0 0 10px", color: "#f1f5f9" }}>
             Quanto pretende investir?
           </h1>
-          <p style={{ margin: 0, fontSize: 15, color: "#64748b", lineHeight: 1.6 }}>
-            Usamos este valor para calibrar o risco e as recomendações. Pode ajustar mais tarde.
+          <p style={{ margin: "0 0 12px", fontSize: 15, color: "#64748b", lineHeight: 1.6 }}>
+            Pode ajustar mais tarde. Este valor ajuda-nos a calibrar as posições e o perfil de risco.
           </p>
         </div>
 
@@ -164,9 +164,9 @@ export default function ClientMontantePage() {
                     <span style={{ position: "absolute", top: 5, right: 8, fontSize: 10, color: "#60a5fa" }}>✓</span>
                   )}
                   <div>{formatEurPt(n)} €</div>
-                  {isCommon && (
-                    <div style={{ fontSize: 9, color: active ? "#60a5fa" : "#334155", letterSpacing: "0.05em", textTransform: "uppercase", marginTop: 3 }}>
-                      Popular
+                  {isCommon && !active && (
+                    <div style={{ fontSize: 9, color: "#334155", letterSpacing: "0.05em", textTransform: "uppercase", marginTop: 3 }}>
+                      Comum
                     </div>
                   )}
                 </button>
@@ -240,6 +240,30 @@ export default function ClientMontantePage() {
             )}
           </div>
 
+          {/* Preview instantâneo */}
+          {minOk && (()=>{
+            const positions = montanteNum >= 100_000 ? "~20" : montanteNum >= 50_000 ? "~18" : montanteNum >= 25_000 ? "~15" : "~10";
+            const horizon = montanteNum >= 50_000 ? "5–10 anos" : "5+ anos";
+            const profile = montanteNum >= 50_000 ? "Moderado / Dinâmico" : "Conservador / Moderado";
+            return (
+              <div style={{ marginBottom: 20, padding: "12px 16px", borderRadius: 12, background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.12)" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#334155", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>O que isto significa</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                  {[
+                    { label: "Posições", val: positions },
+                    { label: "Perfil típico", val: profile },
+                    { label: "Horizonte", val: horizon },
+                  ].map(k => (
+                    <div key={k.label} style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>{k.val}</div>
+                      <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>{k.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Validation error */}
           {confirmAttempted && missing.length > 0 && (
             <div style={{
@@ -286,9 +310,10 @@ export default function ClientMontantePage() {
             </svg>
           </button>
 
-          <p style={{ textAlign: "center", fontSize: 12, color: "#334155", marginTop: 14, marginBottom: 0 }}>
-            Os seus dados estão protegidos
-          </p>
+          <div style={{ marginTop: 16, textAlign: "center" }}>
+            <div style={{ fontSize: 11, color: "#1e293b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Próximo passo</div>
+            <div style={{ fontSize: 13, color: "#334155" }}>Perfil de investimento e preferências de risco</div>
+          </div>
         </div>
       </div>
     </>
