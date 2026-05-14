@@ -22,7 +22,7 @@ export default function AppLayout({
     "/client/RegisterForm",
     "/client-montante",
     "/mifid-test",
-    "/persona-onboarding",
+    "/sumsub-onboarding",
     "/client/fx-hedge-onboarding",
     "/client/ibkr-prep",
     "/client/approve",

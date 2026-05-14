@@ -957,7 +957,7 @@ export default function MifidTestPage() {
     } catch {
       kycDoneNow = false;
     }
-    window.location.href = !kycDoneNow ? "/persona-onboarding" : getNextOnboardingHref();
+    window.location.href = !kycDoneNow ? "/sumsub-onboarding" : getNextOnboardingHref();
   }
 
   const btnPrimary: React.CSSProperties = {

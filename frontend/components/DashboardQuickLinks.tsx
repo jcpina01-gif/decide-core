@@ -63,7 +63,7 @@ export default function DashboardQuickLinks() {
           description="Questionário de adequação e conhecimentos."
         />
         <LinkCard
-          href="/persona-onboarding"
+          href="/sumsub-onboarding"
           title="Identidade"
           description="Identificação e verificação (câmara + documentos)."
         />

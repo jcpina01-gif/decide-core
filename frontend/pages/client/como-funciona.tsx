@@ -246,7 +246,7 @@ export default function ComoFuncionaPage() {
                 Valor a investir
               </Link>{" "}
               ou{" "}
-              <Link href="/persona-onboarding" style={{ color: DECIDE_DASHBOARD.accentSky, fontWeight: 700 }}>
+              <Link href="/sumsub-onboarding" style={{ color: DECIDE_DASHBOARD.accentSky, fontWeight: 700 }}>
                 Identidade (KYC)
               </Link>
               .
