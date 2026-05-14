@@ -5280,41 +5280,41 @@ export default function ClientDashboardPage() {
                         <div className="flex items-center justify-between mb-5">
                           <div>
                             <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Perfil de qualidade da carteira</div>
-                            <div className="text-slate-400 text-xs">Médias ponderadas · dados Financial Modeling Prep</div>
+                            <div className="text-slate-400 text-xs">Médias ponderadas · FMP TTM · vs benchmark 60% SPY / 25% VGK / 10% EWJ / 5% EWC</div>
                           </div>
-                          {portfolioQuality&&(
-                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                              portfolioQuality.portfolio_summary.portfolio_quality_label==="Alta"?"bg-emerald-900/30 text-emerald-400":
-                              portfolioQuality.portfolio_summary.portfolio_quality_label==="Média"?"bg-amber-900/30 text-amber-400":
-                              "bg-slate-800 text-slate-400"
-                            }`}>
-                              Qualidade {portfolioQuality.portfolio_summary.portfolio_quality_label}
-                            </span>
-                          )}
                         </div>
                         {pqLoading&&!portfolioQuality?(
                           <div className="text-slate-600 text-sm py-4 text-center">A carregar métricas fundamentais…</div>
                         ):(portfolioQuality&&(()=>{
                           const s=portfolioQuality.portfolio_summary;
+                          // Benchmark oficial ponderado: 60% SPY + 25% VGK + 10% EWJ + 5% EWC (TTM médias estimadas)
+                          const B={roic:0.125,gross:0.44,op:0.162,revG:0.050,debtEq:1.30,net:0.114};
                           const fmt=(v:number|null,pct=true)=>v==null?"n/d":pct?`${(v*100).toFixed(1)}%`:`${v.toFixed(2)}x`;
                           const fmtG=(v:number|null)=>v==null?"n/d":`${v>=0?"+":""}${(v*100).toFixed(1)}%`;
                           const metrics=[
-                            {label:"ROIC",val:fmt(s.roic),desc:"Rentabilidade do capital investido",c:s.roic!=null&&s.roic>0.20?"text-emerald-400":s.roic!=null&&s.roic>0.10?"text-amber-400":"text-slate-400"},
-                            {label:"Margem bruta",val:fmt(s.gross_margin),desc:"Eficiência operacional",c:s.gross_margin!=null&&s.gross_margin>0.40?"text-emerald-400":"text-slate-300"},
-                            {label:"Margem operacional",val:fmt(s.op_margin),desc:"Rentabilidade antes de impostos",c:s.op_margin!=null&&s.op_margin>0.20?"text-emerald-400":"text-slate-300"},
-                            {label:"Crescimento receita",val:fmtG(s.revenue_growth),desc:"Variação anual das vendas",c:s.revenue_growth!=null&&s.revenue_growth>0.10?"text-emerald-400":s.revenue_growth!=null&&s.revenue_growth<0?"text-red-400":"text-amber-400"},
-                            {label:"Dívida/Capital próprio",val:fmt(s.debt_equity,false),desc:"Alavancagem do balanço",c:s.debt_equity!=null&&s.debt_equity<1.0?"text-emerald-400":s.debt_equity!=null&&s.debt_equity>2.0?"text-red-400":"text-amber-400"},
-                            {label:"Margem líquida",val:fmt(s.net_margin),desc:"Lucro por euro de receita",c:s.net_margin!=null&&s.net_margin>0.15?"text-emerald-400":"text-slate-300"},
+                            {label:"ROIC",val:fmt(s.roic),raw:s.roic,bench:B.roic,benchFmt:`${(B.roic*100).toFixed(1)}%`,higherBetter:true,desc:"Rentabilidade do capital investido"},
+                            {label:"Margem bruta",val:fmt(s.gross_margin),raw:s.gross_margin,bench:B.gross,benchFmt:`${(B.gross*100).toFixed(0)}%`,higherBetter:true,desc:"Eficiência operacional"},
+                            {label:"Margem operacional",val:fmt(s.op_margin),raw:s.op_margin,bench:B.op,benchFmt:`${(B.op*100).toFixed(1)}%`,higherBetter:true,desc:"Rentabilidade antes de impostos"},
+                            {label:"Crescimento receita",val:fmtG(s.revenue_growth),raw:s.revenue_growth,bench:B.revG,benchFmt:`${(B.revG*100).toFixed(1)}%`,higherBetter:true,desc:"Variação anual das vendas"},
+                            {label:"Dívida/Capital próprio",val:fmt(s.debt_equity,false),raw:s.debt_equity,bench:B.debtEq,benchFmt:`${B.debtEq.toFixed(1)}x`,higherBetter:false,desc:"Alavancagem do balanço"},
+                            {label:"Margem líquida",val:fmt(s.net_margin),raw:s.net_margin,bench:B.net,benchFmt:`${(B.net*100).toFixed(1)}%`,higherBetter:true,desc:"Lucro por euro de receita"},
                           ];
                           return (
                             <div className="grid grid-cols-3 gap-4">
-                              {metrics.map(m=>(
+                              {metrics.map(m=>{
+                                const beats=m.raw!=null?(m.higherBetter?m.raw>m.bench:m.raw<m.bench):null;
+                                const valColor=m.raw==null?"text-slate-500":beats===true?"text-emerald-400":beats===false?"text-amber-400":"text-slate-300";
+                                return(
                                 <div key={m.label} className="bg-[#091220] border border-[#1a1f2e]/60 rounded-lg px-4 py-3">
                                   <div className="text-slate-600 text-[10px] font-semibold uppercase tracking-wider mb-1.5">{m.label}</div>
-                                  <div className={`text-xl font-black ${m.c}`}>{m.val}</div>
-                                  <div className="text-slate-600 text-[10px] mt-1">{m.desc}</div>
+                                  <div className={`text-xl font-black ${valColor}`}>{m.val}</div>
+                                  <div className="flex items-center gap-1 mt-1.5">
+                                    {m.raw!=null&&(<span className={`text-[9px] leading-none font-bold ${beats===true?"text-emerald-500":beats===false?"text-amber-500":"text-slate-600"}`}>{beats===true?"▲":beats===false?"▼":"—"}</span>)}
+                                    <span className="text-slate-600 text-[9px]">bench {m.benchFmt}</span>
+                                  </div>
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           );
                         })())}
@@ -6408,46 +6408,64 @@ export default function ClientDashboardPage() {
                     </div>
                   </div>
                   {/* ── Perfil de qualidade FMP (Carteira) ── */}
-                  {(portfolioQuality||pqLoading)&&(
+                  {(portfolioQuality||pqLoading)&&(()=>{
+                    // Benchmark oficial: 60% SPY + 25% VGK + 10% EWJ + 5% EWC (médias ponderadas TTM)
+                    const BENCH={roic:0.125,revGrowth:0.050,debtEq:1.30};
+                    return(
                     <div className="bg-[#0b0f1a] border border-[#1a1f2e]/60 rounded-xl p-5">
                       <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className="text-xs font-bold text-slate-300">Perfil fundamental da carteira</div>
-                          {portfolioQuality&&(
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                              portfolioQuality.portfolio_summary.portfolio_quality_label==="Alta"?"bg-emerald-900/30 text-emerald-400 border-emerald-500/30":
-                              portfolioQuality.portfolio_summary.portfolio_quality_label==="Média"?"bg-amber-900/30 text-amber-400 border-amber-500/30":
-                              "bg-slate-800 text-slate-500 border-slate-600/30"}`}>
-                              Qualidade {portfolioQuality.portfolio_summary.portfolio_quality_label}
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[10px] text-slate-600">FMP · TTM</span>
+                        <div className="text-xs font-bold text-slate-300">Perfil fundamental da carteira</div>
+                        <span className="text-[10px] text-slate-600">FMP · TTM · vs Bench 60/25/10/5</span>
                       </div>
                       {pqLoading&&!portfolioQuality?(
                         <div className="text-slate-600 text-xs animate-pulse">A carregar métricas fundamentais…</div>
                       ):(portfolioQuality&&(()=>{
                         const s=portfolioQuality.portfolio_summary;
                         const metrics=[
-                          {label:"ROIC",val:s.roic!=null?`${(s.roic*100).toFixed(1)}%`:null,good:s.roic!=null&&s.roic>0.12,ok:s.roic!=null&&s.roic>0.08,tip:"Retorno sobre capital investido (TTM)"},
-                          {label:"Crescimento",val:s.revenue_growth!=null?`${(s.revenue_growth*100).toFixed(1)}%`:null,good:s.revenue_growth!=null&&s.revenue_growth>0.10,ok:s.revenue_growth!=null&&s.revenue_growth>0.05,tip:"Crescimento de receita anual (TTM)"},
-                          {label:"Dívida/Capital",val:s.debt_equity!=null?`${s.debt_equity.toFixed(2)}x`:null,good:s.debt_equity!=null&&s.debt_equity<1.0,ok:s.debt_equity!=null&&s.debt_equity<2.0,tip:"Rácio dívida sobre capital próprio"},
+                          {
+                            label:"ROIC",tip:"Retorno sobre capital investido (TTM)",
+                            val:s.roic!=null?`${(s.roic*100).toFixed(1)}%`:null,
+                            raw:s.roic,bench:BENCH.roic,
+                            higherBetter:true,
+                            benchFmt:`${(BENCH.roic*100).toFixed(1)}%`,
+                          },
+                          {
+                            label:"Crescimento",tip:"Crescimento de receita anual (TTM)",
+                            val:s.revenue_growth!=null?`${(s.revenue_growth*100).toFixed(1)}%`:null,
+                            raw:s.revenue_growth,bench:BENCH.revGrowth,
+                            higherBetter:true,
+                            benchFmt:`${(BENCH.revGrowth*100).toFixed(1)}%`,
+                          },
+                          {
+                            label:"Dívida/Capital",tip:"Rácio dívida sobre capital próprio",
+                            val:s.debt_equity!=null?`${s.debt_equity.toFixed(2)}x`:null,
+                            raw:s.debt_equity,bench:BENCH.debtEq,
+                            higherBetter:false,
+                            benchFmt:`${BENCH.debtEq.toFixed(1)}x`,
+                          },
                         ];
                         return(
-                          <div className="flex gap-6">
-                            {metrics.map(m=>(
+                          <div className="flex gap-8">
+                            {metrics.map(m=>{
+                              const beats=m.raw!=null?(m.higherBetter?m.raw>m.bench:m.raw<m.bench):null;
+                              const valColor=m.raw==null?"text-slate-700":beats===true?"text-emerald-400":beats===false?"text-amber-400":"text-slate-300";
+                              return(
                               <div key={m.label} title={m.tip} className="cursor-default">
                                 <div className="text-[10px] text-slate-600 mb-1">{m.label}</div>
-                                <div className={`text-lg font-black tabular-nums ${m.val==null?"text-slate-700":m.good?"text-emerald-400":m.ok?"text-amber-400":"text-slate-300"}`}>
-                                  {m.val??"—"}
+                                <div className={`text-lg font-black tabular-nums ${valColor}`}>{m.val??"—"}</div>
+                                <div className="flex items-center gap-0.5 mt-0.5">
+                                  {m.raw!=null&&(<span className={`text-[9px] leading-none ${beats===true?"text-emerald-500":beats===false?"text-amber-500":"text-slate-600"}`}>{beats===true?"▲":beats===false?"▼":"—"}</span>)}
+                                  <span className="text-[9px] text-slate-600">bench {m.benchFmt}</span>
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         );
                       })())}
                     </div>
-                  )}
+                    );
+                  })()}
 
                   <div className="bg-[#0b0f1a] border border-[#1a1f2e]/60 rounded-xl p-5">
                     <div className="flex items-center justify-between mb-4">
