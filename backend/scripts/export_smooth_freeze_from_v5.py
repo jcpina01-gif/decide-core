@@ -63,17 +63,26 @@ DEFAULT_PRICES = BACKEND_DIR / "data" / "prices_close.csv"
 
 def _resolve_engine_backend() -> Path:
     env = (os.environ.get("DECIDE_V5_ENGINE_ROOT") or "").strip()
-    cand = Path(env) if env else (REPO_ROOT.parent / "DECIDE_CORE22_CLONE" / "backend")
-    eng = cand.resolve()
-    if not (eng / "engine_research_v5.py").is_file():
-        print(
-            "ERRO: não encontrei engine_research_v5.py em",
-            eng,
-            file=sys.stderr,
-        )
-        print("      Define DECIDE_V5_ENGINE_ROOT ou coloca DECIDE_CORE22_CLONE ao lado do decide-core.", file=sys.stderr)
-        raise SystemExit(1)
-    return eng
+    if env:
+        candidates = [Path(env)]
+    else:
+        # 1. Mesmo repo (CI / GitHub Actions): backend/ está ao lado de scripts/
+        # 2. Clone irmão (ambiente local de desenvolvimento)
+        candidates = [
+            BACKEND_DIR,
+            REPO_ROOT.parent / "DECIDE_CORE22_CLONE" / "backend",
+        ]
+    for cand in candidates:
+        eng = cand.resolve()
+        if (eng / "engine_research_v5.py").is_file():
+            return eng
+    print(
+        "ERRO: não encontrei engine_research_v5.py em nenhum caminho candidato:",
+        [str(c) for c in candidates],
+        file=sys.stderr,
+    )
+    print("      Define DECIDE_V5_ENGINE_ROOT ou coloca DECIDE_CORE22_CLONE ao lado do decide-core.", file=sys.stderr)
+    raise SystemExit(1)
 
 
 def _fmt_equity_date(raw: str) -> str:

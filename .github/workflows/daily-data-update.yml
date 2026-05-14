@@ -42,6 +42,10 @@ jobs:
 
       - name: Regenerate smooth freeze outputs (motor V5 obrigatório — sem fallback)
         working-directory: backend
+        # DECIDE_V5_ENGINE_ROOT aponta para backend/ do próprio checkout — necessário em CI onde
+        # o caminho irmão ../DECIDE_CORE22_CLONE não existe (só existe em ambiente de desenvolvimento local).
+        env:
+          DECIDE_V5_ENGINE_ROOT: ${{ github.workspace }}/backend
         # IMPORTANTE: DECIDE_FREEZE_FALLBACK_ENGINE_V2 é intencionalmente AUSENTE.
         # Se engine_research_v5.py não estiver disponível, o script termina com erro (rc != 0)
         # e o step seguinte de validação impede qualquer commit de dados incorrectos.
