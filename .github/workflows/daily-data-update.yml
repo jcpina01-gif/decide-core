@@ -118,3 +118,17 @@ jobs:
           fi
           git commit -m "chore(data): preços diários $(date -u +%Y-%m-%dT%H:%MZ)"
           git push
+
+      - name: Trigger Render redeploy (KPI Flask server)
+        # Render deploy hook — garante que o Flask lê os CSVs actualizados após cada push.
+        # Configurar: Render → serviço KPI → Settings → Deploy Hook → copiar URL
+        # Adicionar como secret no GitHub: Settings → Secrets → Actions → RENDER_DEPLOY_HOOK
+        if: ${{ env.RENDER_DEPLOY_HOOK != '' }}
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          echo "A desencadear redeploy no Render..."
+          curl -s -o /dev/null -w "HTTP %{http_code}" \
+            --max-time 30 \
+            -X POST "$RENDER_DEPLOY_HOOK" \
+            && echo " — OK" || echo " — falhou (não bloqueante)"
