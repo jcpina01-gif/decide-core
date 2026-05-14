@@ -38,7 +38,7 @@ function buildSteps(authStepHref: string): Step[] {
     { id: "auth", n: 1, label: "Conta", href: authStepHref },
     { id: "onboarding", n: 2, label: "Valor a investir", href: "/client-montante" },
     { id: "mifid", n: 3, label: "Perfil de investidor", href: "/mifid-test" },
-    { id: "kyc", n: 4, label: "Identidade", href: "/persona-onboarding" },
+    { id: "kyc", n: 4, label: "Identidade", href: "/sumsub-onboarding" },
     { id: "hedge", n: 5, label: "Hedge cambial", href: "/client/fx-hedge-onboarding" },
     { id: "approve", n: 6, label: ONBOARDING_STEP_6_LABEL, href: "/client/ibkr-prep" },
   ];

@@ -190,16 +190,16 @@ const nextConfig = {
         ],
       },
       /**
-       * Persona Embedded Flow: o documento pai não deve negar câmara/microfone a origens Persona.
-       * Inclui `self` para não restringir o próprio site. Ver documentação Persona (embedded-flow-security).
+       * Sumsub WebSDK: câmara e microfone permitidos para as origens Sumsub.
+       * O SDK lança um iframe de api.sumsub.com — o documento pai não pode negar os seus sensores.
        */
       {
-        source: "/persona-onboarding",
+        source: "/sumsub-onboarding",
         headers: [
           {
             key: "Permissions-Policy",
             value:
-              'camera=(self "https://inquiry.withpersona.com" "https://inquiry.withpersona-staging.com" "https://canary.withpersona.com" "https://withpersona.com"); microphone=(self "https://inquiry.withpersona.com" "https://inquiry.withpersona-staging.com" "https://canary.withpersona.com" "https://withpersona.com")',
+              'camera=(self "https://api.sumsub.com" "https://*.sumsub.com"); microphone=(self "https://api.sumsub.com" "https://*.sumsub.com")',
           },
         ],
       },

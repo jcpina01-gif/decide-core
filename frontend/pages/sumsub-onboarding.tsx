@@ -1,404 +1,390 @@
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import type { GetServerSideProps } from "next";
 import Head from "next/head";
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import ClientFlowDashboardButton from "../components/ClientFlowDashboardButton";
 import { useRouter } from "next/router";
-import { DECIDE_APP_FONT_FAMILY, DECIDE_DASHBOARD, DECIDE_ONBOARDING } from "../lib/decideClientTheme";
+import OnboardingFlowBar, {
+  ONBOARDING_LOCALSTORAGE_CHANGED_EVENT,
+  ONBOARDING_STORAGE_KEYS,
+} from "../components/OnboardingFlowBar";
+import { getCurrentSessionUser, getCurrentSessionUserEmail } from "../lib/clientAuth";
+import { buildSumsubExternalUserIdFromSession } from "../lib/sumsubReference";
+import {
+  DECIDE_ONBOARDING,
+  ONBOARDING_PRIMARY_CTA_MAX_WIDTH_PX,
+  ONBOARDING_SHELL_MAX_WIDTH_PX,
+} from "../lib/decideClientTheme";
+import { getNextOnboardingHref } from "../lib/onboardingProgress";
 
-type CreateResult = {
-  ok?: boolean;
-  record?: Record<string, any>;
-  applicant?: Record<string, any>;
-  error?: string;
-};
+const LEVEL_NAME = process.env.NEXT_PUBLIC_SUMSUB_LEVEL_NAME || "basic-kyc-level";
 
-type TokenResult = {
-  ok?: boolean;
-  token?: string;
-  error?: string;
-};
-
-type StatusResult = {
-  ok?: boolean;
-  status?: Record<string, any>;
-  error?: string;
-};
-
-const API_BASE = "http://127.0.0.1:8101";
-
-function cardStyle(): React.CSSProperties {
-  return {
-    background: "rgba(24, 24, 27, 0.92)",
-    border: "1px solid rgba(63, 63, 70, 0.75)",
-    borderRadius: 22,
-    padding: 20,
-    boxShadow: "0 8px 30px rgba(0,0,0,0.18)",
-  };
+function bumpOnboardingFlowBar() {
+  try {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(ONBOARDING_LOCALSTORAGE_CHANGED_EVENT));
+    }
+  } catch {
+    // ignore
+  }
 }
 
-function inputStyle(): React.CSSProperties {
-  return {
-    width: "100%",
-    background: "#27272a",
-    color: "#fff",
-    border: "1px solid rgba(63, 63, 70, 0.85)",
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 16,
-    outline: "none",
-  };
-}
-
-function Label({ children }: { children: React.ReactNode }) {
-  return <div style={{ color: "#a1a1aa", fontSize: 14, marginBottom: 8 }}>{children}</div>;
-}
-
-function Button({
-  children,
-  onClick,
-  disabled,
-}: {
-  children: React.ReactNode;
-  onClick: () => void | Promise<void>;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        background: disabled ? DECIDE_ONBOARDING.buttonDisabled : DECIDE_DASHBOARD.buttonRegister,
-        color: "#fff",
-        border: disabled ? DECIDE_ONBOARDING.inputBorder : DECIDE_ONBOARDING.buttonPrimaryBorder,
-        borderRadius: 14,
-        padding: "12px 18px",
-        fontSize: 15,
-        fontWeight: 800,
-        cursor: disabled ? "not-allowed" : "pointer",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
+type SdkStatus =
+  | "idle"
+  | "loading-token"
+  | "ready"
+  | "submitted"
+  | "approved"
+  | "rejected"
+  | "error";
 
 export default function SumsubOnboardingPage() {
   const router = useRouter();
-  useEffect(() => {
-    // Redirect legacy Sumsub route to Persona onboarding.
-    router.replace("/persona-onboarding");
-  }, [router]);
 
   const [externalUserId, setExternalUserId] = useState("");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [levelName, setLevelName] = useState("basic-kyc-level");
-  const [fixedInfoText, setFixedInfoText] = useState("{\n  \"country\": \"PT\"\n}");
-  const [loading, setLoading] = useState(false);
-  const [createResult, setCreateResult] = useState<CreateResult | null>(null);
-  const [tokenResult, setTokenResult] = useState<TokenResult | null>(null);
-  const [statusResult, setStatusResult] = useState<StatusResult | null>(null);
-  const [error, setError] = useState("");
+  const [sdkStatus, setSdkStatus] = useState<SdkStatus>("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [kycDoneAlready, setKycDoneAlready] = useState(false);
+
   const sdkContainerRef = useRef<HTMLDivElement | null>(null);
-
-  const currentExternalUserId = useMemo(() => {
-    return externalUserId.trim() || (createResult?.record?.external_user_id as string) || "";
-  }, [externalUserId, createResult]);
-
-  async function createApplicant() {
-    setLoading(true);
-    setError("");
-    setTokenResult(null);
-    setStatusResult(null);
-    try {
-      let fixedInfo: Record<string, any> | undefined;
-      if (fixedInfoText.trim()) {
-        fixedInfo = JSON.parse(fixedInfoText);
-      }
-      const res = await fetch(`${API_BASE}/api/sumsub/create-applicant`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          external_user_id: externalUserId || undefined,
-          name,
-          email,
-          phone,
-          level_name: levelName,
-          fixed_info: fixedInfo,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error || `HTTP ${res.status}`);
-      }
-      setCreateResult(json);
-      if (!externalUserId && json.record?.external_user_id) {
-        setExternalUserId(String(json.record.external_user_id));
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao criar applicant");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function fetchSdkToken(): Promise<string> {
-    const id = currentExternalUserId;
-    if (!id) {
-      setError("Cria ou introduz primeiro um externalUserId.");
-      return "";
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const url = `${API_BASE}/api/sumsub/sdk-token?external_user_id=${encodeURIComponent(id)}&level_name=${encodeURIComponent(levelName)}&ttl_secs=600`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
-      setTokenResult(json);
-      return String(json.token || "");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao gerar token");
-      return "";
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function getSdkToken() {
-    await fetchSdkToken();
-  }
-
-  async function refreshStatus() {
-    const id = currentExternalUserId;
-    if (!id) {
-      setError("Cria ou introduz primeiro um externalUserId.");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const url = `${API_BASE}/api/sumsub/status?external_user_id=${encodeURIComponent(id)}`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
-      setStatusResult(json);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao obter estado");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function copyToken() {
-    const token = tokenResult?.token || "";
-    if (!token) return;
-    await navigator.clipboard.writeText(token);
-  }
+  const sdkInstanceRef = useRef<{ destroy?: () => void } | null>(null);
 
   useEffect(() => {
+    const uid = buildSumsubExternalUserIdFromSession();
+    setExternalUserId(uid);
+    try {
+      const done = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.kyc) === "1";
+      setKycDoneAlready(done);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const fetchToken = useCallback(async (): Promise<string> => {
+    if (!externalUserId) return "";
+    const res = await fetch("/api/sumsub/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ external_user_id: externalUserId, level_name: LEVEL_NAME, ttl_secs: 1800 }),
+    });
+    const json = (await res.json()) as { ok?: boolean; token?: string; error?: string };
+    if (!res.ok || !json.ok || !json.token) {
+      throw new Error(json.error || `HTTP ${res.status}`);
+    }
+    return json.token;
+  }, [externalUserId]);
+
+  const saveRecord = useCallback(
+    async (opts: {
+      status: string;
+      review_answer?: string;
+      applicant_id?: string;
+      name?: string;
+      fields?: Record<string, unknown>;
+    }) => {
+      try {
+        await fetch("/api/sumsub/record", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            external_user_id: externalUserId,
+            email: getCurrentSessionUserEmail() || undefined,
+            ...opts,
+          }),
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setSaveError(msg);
+      }
+    },
+    [externalUserId],
+  );
+
+  const markKycDone = useCallback(() => {
+    try {
+      window.localStorage.setItem(ONBOARDING_STORAGE_KEYS.kyc, "1");
+      bumpOnboardingFlowBar();
+      setKycDoneAlready(true);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!externalUserId) return;
     let cancelled = false;
 
-    async function mountSdk() {
-      const token = tokenResult?.token;
-      if (!token || !sdkContainerRef.current) {
-        if (sdkContainerRef.current) sdkContainerRef.current.innerHTML = "";
+    async function launch() {
+      setSdkStatus("loading-token");
+      setErrorMsg("");
+      setSaveError("");
+
+      let token: string;
+      try {
+        token = await fetchToken();
+      } catch (e) {
+        if (!cancelled) {
+          setErrorMsg(e instanceof Error ? e.message : "Erro ao gerar token Sumsub");
+          setSdkStatus("error");
+        }
         return;
       }
+      if (cancelled) return;
 
       try {
         const mod = await import("@sumsub/websdk");
         if (cancelled || !sdkContainerRef.current) return;
 
-        const snsWebSdk = (mod as any).default || mod;
-        sdkContainerRef.current.innerHTML = "";
+        const snsWebSdk = (mod as { default?: unknown }).default ?? mod;
+        if (sdkContainerRef.current) sdkContainerRef.current.innerHTML = "";
 
-        const instance = snsWebSdk
-          .init(token, async () => fetchSdkToken())
-          .withConf({
-            lang: "pt",
-            theme: "dark",
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const instance = (snsWebSdk as any)
+          .init(token, async () => {
+            try { return await fetchToken(); } catch { return ""; }
           })
-          .withOptions({
-            addViewportTag: false,
-            adaptIframeHeight: true,
+          .withConf({ lang: "pt", theme: "dark" })
+          .withOptions({ addViewportTag: false, adaptIframeHeight: true })
+          .on("idCheck.onApplicantLoaded", (p: any) => {
+            if (!cancelled) setSdkStatus("ready");
+            void saveRecord({
+              status: "init",
+              applicant_id: String(p?.applicantId || p?.id || ""),
+            });
           })
-          .on("idCheck.onStepCompleted", (payload: any) => {
-            setStatusResult({ ok: true, status: { sdk_event: "idCheck.onStepCompleted", payload } });
+          .on("idCheck.onApplicantStatusChanged", (p: any) => {
+            const reviewStatus: string = p?.reviewStatus || "";
+            const reviewAnswer: string = p?.reviewResult?.reviewAnswer || "";
+            if (!cancelled) {
+              if (reviewAnswer === "GREEN") setSdkStatus("approved");
+              else if (reviewAnswer === "RED") setSdkStatus("rejected");
+              else if (reviewStatus) setSdkStatus("submitted");
+            }
+            void saveRecord({
+              status: reviewStatus || "pending",
+              review_answer: reviewAnswer || undefined,
+              applicant_id: String(p?.applicantId || ""),
+              fields: p ?? undefined,
+            });
+            if (reviewAnswer === "GREEN" || ["completed", "prechecked", "queued", "onhold"].includes(reviewStatus.toLowerCase())) {
+              markKycDone();
+            }
           })
-          .on("idCheck.onError", (payload: any) => {
-            setStatusResult({ ok: false, error: "Sumsub SDK error", status: payload });
+          .on("idCheck.onComplete", (p: any) => {
+            const reviewStatus: string = p?.reviewStatus || "completed";
+            const reviewAnswer: string = p?.reviewResult?.reviewAnswer || "";
+            if (!cancelled) {
+              if (reviewAnswer === "GREEN") setSdkStatus("approved");
+              else setSdkStatus("submitted");
+            }
+            void saveRecord({
+              status: reviewStatus,
+              review_answer: reviewAnswer || undefined,
+              applicant_id: String(p?.applicantId || ""),
+              fields: p ?? undefined,
+            });
+            markKycDone();
+          })
+          .on("idCheck.onError", (p: any) => {
+            if (!cancelled) {
+              setErrorMsg(p?.message || "Erro no processo de verificação Sumsub");
+              setSdkStatus("error");
+            }
           })
           .build();
+        /* eslint-enable @typescript-eslint/no-explicit-any */
 
-        instance.launch("#sumsub-websdk-container");
+        instance.launch("#sumsub-sdk-container");
+        sdkInstanceRef.current = instance as { destroy?: () => void };
+        if (!cancelled) setSdkStatus("ready");
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Falha a inicializar o Sumsub WebSDK");
+          setErrorMsg(e instanceof Error ? e.message : "Falha a inicializar o Sumsub WebSDK");
+          setSdkStatus("error");
         }
       }
     }
 
-    void mountSdk();
+    void launch();
 
     return () => {
       cancelled = true;
-      if (sdkContainerRef.current) {
-        sdkContainerRef.current.innerHTML = "";
+      if (sdkInstanceRef.current?.destroy) {
+        try { sdkInstanceRef.current.destroy(); } catch { /* ignore */ }
       }
+      sdkInstanceRef.current = null;
+      if (sdkContainerRef.current) sdkContainerRef.current.innerHTML = "";
     };
-  }, [tokenResult?.token, levelName, currentExternalUserId]);
+  }, [externalUserId, fetchToken, saveRecord, markKycDone]);
+
+  function handleContinue() {
+    void router.push(getNextOnboardingHref());
+  }
+
+  const isError = sdkStatus === "error";
+  const isDone = kycDoneAlready || sdkStatus === "approved" || sdkStatus === "submitted";
 
   return (
-    // Route is immediately replaced; this is a fallback UI.
     <>
       <Head>
-        <title>DECIDE | Sumsub Onboarding</title>
+        <title>DECIDE | Verificação de identidade</title>
       </Head>
       <div
         style={{
           minHeight: "100vh",
-          background: "#000",
-          color: "#fff",
-          padding: 32,
-          fontFamily: DECIDE_APP_FONT_FAMILY,
+          background: DECIDE_ONBOARDING.pageBg,
+          color: DECIDE_ONBOARDING.text,
+          fontFamily: "Inter, system-ui, sans-serif",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 20, marginBottom: 24, flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: 40, fontWeight: 800 }}>DECIDE — Sumsub Onboarding</div>
-            <div style={{ color: "#a1a1aa", fontSize: 18 }}>
-              Fluxo sandbox para criar applicant, gerar SDK token e acompanhar o estado KYC.
+        <OnboardingFlowBar currentStep="kyc" />
+
+        <div
+          style={{
+            maxWidth: ONBOARDING_SHELL_MAX_WIDTH_PX,
+            margin: "0 auto",
+            padding: "32px 20px 80px",
+          }}
+        >
+          {/* Header */}
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 6 }}>
+              Verificação de identidade
             </div>
-          </div>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <ClientFlowDashboardButton />
-          </div>
-        </div>
-
-        {error ? (
-          <div style={{ ...cardStyle(), marginBottom: 16, color: "#fecaca", borderColor: "#7f1d1d" }}>
-            {error}
-          </div>
-        ) : null}
-
-        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 20 }}>
-          <div style={{ display: "grid", gap: 20 }}>
-            <div style={cardStyle()}>
-              <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>Dados do cliente</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                <div>
-                  <Label>externalUserId (opcional)</Label>
-                  <input value={externalUserId} onChange={(e) => setExternalUserId(e.target.value)} style={inputStyle()} placeholder="cliente-001" />
-                </div>
-                <div>
-                  <Label>Nível Sumsub</Label>
-                  <input value={levelName} onChange={(e) => setLevelName(e.target.value)} style={inputStyle()} placeholder="basic-kyc-level" />
-                </div>
-                <div>
-                  <Label>Nome</Label>
-                  <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle()} placeholder="João Silva" />
-                </div>
-                <div>
-                  <Label>Email</Label>
-                  <input value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle()} placeholder="joao@empresa.pt" />
-                </div>
-                <div>
-                  <Label>Telefone</Label>
-                  <input value={phone} onChange={(e) => setPhone(e.target.value)} style={inputStyle()} placeholder="+351..." />
-                </div>
-                <div>
-                  <Label>Fixed info JSON</Label>
-                  <textarea
-                    value={fixedInfoText}
-                    onChange={(e) => setFixedInfoText(e.target.value)}
-                    rows={4}
-                    style={{ ...inputStyle(), resize: "vertical" }}
-                  />
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 12, marginTop: 18, flexWrap: "wrap" }}>
-                <Button onClick={createApplicant} disabled={loading}>{loading ? "A criar..." : "Criar applicant"}</Button>
-                <Button onClick={getSdkToken} disabled={loading}>Gerar SDK token</Button>
-                <Button onClick={refreshStatus} disabled={loading}>Atualizar estado</Button>
-              </div>
-            </div>
-
-            <div style={cardStyle()}>
-              <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>Sumsub SDK</div>
-              <div style={{ color: "#a1a1aa", marginBottom: 12 }}>
-                O token abaixo pode ser passado ao WebSDK do Sumsub quando a sandbox estiver pronta.
-              </div>
-              <div style={{ display: "grid", gap: 12 }}>
-                <div>
-                  <Label>externalUserId atual</Label>
-                  <div style={{ ...inputStyle(), display: "flex", alignItems: "center", minHeight: 48 }}>
-                    {currentExternalUserId || "—"}
-                  </div>
-                </div>
-                <div>
-                  <Label>SDK token</Label>
-                  <pre
-                    style={{
-                      ...inputStyle(),
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-all",
-                      minHeight: 120,
-                      margin: 0,
-                    }}
-                  >
-                    {tokenResult?.token || "—"}
-                  </pre>
-                </div>
-                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                  <Button onClick={copyToken} disabled={!tokenResult?.token}>Copiar token</Button>
-                </div>
-                <div
-                  id="sumsub-websdk-container"
-                  ref={sdkContainerRef}
-                  style={{
-                    marginTop: 8,
-                    minHeight: 720,
-                    borderRadius: 16,
-                    overflow: "hidden",
-                    border: "1px solid rgba(63, 63, 70, 0.85)",
-                    background: "#061126",
-                  }}
-                />
-              </div>
+            <div style={{ color: DECIDE_ONBOARDING.textLabel, fontSize: 15, lineHeight: 1.55 }}>
+              Para cumprimento regulamentar (MiFID II / AML), precisamos de confirmar a sua
+              identidade. O processo demora cerca de 3 minutos.
             </div>
           </div>
 
-          <div style={{ display: "grid", gap: 20 }}>
-            <div style={cardStyle()}>
-              <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>Resultado do create applicant</div>
-              <pre style={{ ...inputStyle(), whiteSpace: "pre-wrap", margin: 0, minHeight: 300, overflow: "auto" }}>
-{JSON.stringify(createResult || { ok: false, info: "Ainda sem criação." }, null, 2)}
-              </pre>
+          {/* Already done banner */}
+          {kycDoneAlready && sdkStatus !== "rejected" && (
+            <div
+              style={{
+                background: "rgba(16,185,129,0.08)",
+                border: "1px solid rgba(16,185,129,0.35)",
+                borderRadius: 14,
+                padding: "14px 18px",
+                marginBottom: 20,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ color: "#34d399", fontWeight: 700, fontSize: 15 }}>
+                ✓ Verificação de identidade concluída
+              </div>
+              <button
+                onClick={handleContinue}
+                style={{
+                  background: "rgba(16,185,129,0.18)",
+                  border: "1px solid rgba(16,185,129,0.45)",
+                  borderRadius: 10,
+                  color: "#34d399",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  padding: "8px 18px",
+                  cursor: "pointer",
+                }}
+              >
+                Continuar →
+              </button>
             </div>
+          )}
 
-            <div style={cardStyle()}>
-              <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>Estado KYC atual</div>
-              <pre style={{ ...inputStyle(), whiteSpace: "pre-wrap", margin: 0, minHeight: 220, overflow: "auto" }}>
-{JSON.stringify(statusResult || { ok: false, info: "Ainda sem consulta de estado." }, null, 2)}
-              </pre>
-            </div>
-
-            <div style={cardStyle()}>
-              <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>Passos seguintes</div>
-              <div style={{ color: "#dbeafe", lineHeight: 1.7 }}>
-                <div>1. Criar applicant no sandbox.</div>
-                <div>2. Gerar SDK token e inicializar o WebSDK no frontend.</div>
-                <div>3. Acompanhar o estado em `Sumsub Admin` ou via webhook.</div>
-                <div style={{ marginTop: 10, color: "#a1a1aa" }}>
-                  Quando tiver o email de empresa, trocamos o sandbox por credenciais de teste apropriadas e ligamos o fluxo ao seu onboarding real.
-                </div>
+          {/* Error banner */}
+          {isError && errorMsg && (
+            <div
+              style={{
+                background: "rgba(239,68,68,0.08)",
+                border: "1px solid rgba(239,68,68,0.35)",
+                borderRadius: 14,
+                padding: "14px 18px",
+                marginBottom: 20,
+                color: "#fca5a5",
+              }}
+            >
+              <strong>Erro:</strong> {errorMsg}
+              <div style={{ marginTop: 6, fontSize: 13, color: DECIDE_ONBOARDING.textLabel }}>
+                Verifique a ligação à internet e recarregue a página. Se o problema persistir,
+                contacte o suporte DECIDE.
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Save error (non-blocking) */}
+          {saveError && (
+            <div
+              style={{
+                background: "rgba(234,179,8,0.08)",
+                border: "1px solid rgba(234,179,8,0.3)",
+                borderRadius: 12,
+                padding: "10px 16px",
+                marginBottom: 16,
+                color: "#fde047",
+                fontSize: 13,
+              }}
+            >
+              Aviso: não foi possível gravar o registo no servidor ({saveError}). O processo de
+              verificação continua normalmente.
+            </div>
+          )}
+
+          {/* Loading token */}
+          {sdkStatus === "loading-token" && (
+            <div
+              style={{
+                color: DECIDE_ONBOARDING.textLabel,
+                fontSize: 14,
+                marginBottom: 16,
+                animationDuration: "1.5s",
+              }}
+            >
+              A inicializar verificação…
+            </div>
+          )}
+
+          {/* SDK container */}
+          <div
+            id="sumsub-sdk-container"
+            ref={sdkContainerRef}
+            style={{
+              borderRadius: 18,
+              overflow: "hidden",
+              border: "1px solid rgba(63,63,70,0.7)",
+              background: "#060d1a",
+              minHeight: sdkStatus === "idle" || sdkStatus === "loading-token" ? 0 : 640,
+            }}
+          />
+
+          {/* Approved / submitted state CTA */}
+          {isDone && (
+            <div style={{ marginTop: 28, maxWidth: ONBOARDING_PRIMARY_CTA_MAX_WIDTH_PX }}>
+              <button
+                onClick={handleContinue}
+                style={{
+                  width: "100%",
+                  background: DECIDE_ONBOARDING.buttonPrimaryBg,
+                  border: DECIDE_ONBOARDING.buttonPrimaryBorder,
+                  borderRadius: 14,
+                  color: "#fff",
+                  fontWeight: 800,
+                  fontSize: 16,
+                  padding: "14px 24px",
+                  cursor: "pointer",
+                }}
+              >
+                Continuar →
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </>
   );
 }
 
+export const getServerSideProps: GetServerSideProps = async () => {
+  return { props: {} };
+};

@@ -7,8 +7,8 @@ import OnboardingFlowBar, {
   ONBOARDING_MONTANTE_KEY,
   ONBOARDING_STORAGE_KEYS,
 } from "../../components/OnboardingFlowBar";
-import { buildPersonaReferenceIdFromSession } from "../../lib/personaReference";
-import { extractDisplayNameFromPersonaRecord } from "../../lib/personaDisplayName";
+import { buildSumsubExternalUserIdFromSession } from "../../lib/sumsubReference";
+import { sumsubRecordAllowsIbkrPrep, extractNameFromSumsubRecord } from "../../lib/sumsubKycGate";
 import { isClientLoggedIn, repairSessionFromOnboardingFlags } from "../../lib/clientAuth";
 import {
   getClientSegment,
@@ -21,17 +21,16 @@ import {
   shouldSkipHedgeGateRedirect,
   syncHedgeOnboardingDoneFromPrefs,
 } from "../../lib/fxHedgePrefs";
-import { personaRecordAllowsIbkrPrep } from "../../lib/personaKycGate";
 import { ONBOARDING_STEP_6_LABEL } from "../../lib/onboardingStep6Label";
 
 const STRIPE_ONBOARDING_OK_KEY = "decide_onboarding_stripe_checkout_v1";
 const STRIPE_UI_ENABLED = process.env.NEXT_PUBLIC_STRIPE_ONBOARDING === "1";
 /**
- * 1: se Persona responde 404 (sem registo) ou 503 (BD não configurada), o pagamento Stripe
+ * 1: se Sumsub responde 404 (sem registo) ou 503 (BD não configurada), o pagamento Stripe
  * estiver validado e KYC=1 no localStorage, aceitamos a preparação IBKR na mesma (E2E / Vercel sem DB).
- * Em produção com KYC a sério, omita a variável; o normal é 200+Persona+Neon.
+ * Em produção com KYC a sério, omita a variável; o normal é 200+Sumsub+Neon.
  */
-const IBKR_PREP_PERSONA_TRUST_LSKYC =
+const IBKR_PREP_KYC_TRUST_LSKYC =
   process.env.NEXT_PUBLIC_DECIDE_IBKR_PREP_TRUST_LSKYC_PERSONA_LS === "1";
 
 function safeNumber(x: unknown, fallback = 0): number {
@@ -206,13 +205,13 @@ export default function IbkrPrepPage() {
   const [kycDone, setKycDone] = useState(false);
   /** Passos posteriores no funil implicam MiFID percorrido — alinha com `OnboardingFlowBar` quando `step2` falha no LS. */
   const [approveDone, setApproveDone] = useState(false);
-  /** null = a verificar no backend; true se existir registo Persona com estado suficiente (ver `personaRecordAllowsIbkrPrep`). */
+  /** null = a verificar no backend; true se existir registo Sumsub com estado suficiente (ver `sumsubRecordAllowsIbkrPrep`). */
   const [serverKycOk, setServerKycOk] = useState<boolean | null>(null);
-  /** Código HTTP do último GET /api/persona/status (para copy e bypass). */
+  /** Código HTTP do último GET /api/sumsub/status (para copy e bypass). */
   const [personaHttpStatus, setPersonaHttpStatus] = useState<number | null>(null);
   /** Nome no registo de identidade (servidor DECIDE), quando existir. */
   const [personaNameOnRecord, setPersonaNameOnRecord] = useState<string | null>(null);
-  /** Evita o aviso «Falta perfil» enquanto o primeiro GET Persona ainda decorre. */
+  /** Evita o aviso «Falta perfil» enquanto o primeiro GET Sumsub ainda decorre. */
   const [personaGatePending, setPersonaGatePending] = useState(true);
   const [ibkrPrepDone, setIbkrPrepDone] = useState(false);
   /** Hedge (0/50/100%) antes de «Plano e pagamento» — segmentos elegíveis. */
@@ -453,9 +452,9 @@ export default function IbkrPrepPage() {
       if (cancelled) return;
       setKycDone(k);
 
-      const ref = buildPersonaReferenceIdFromSession();
+      const ref = buildSumsubExternalUserIdFromSession();
       if (!ref) {
-        // Sem sessão (referência) não dá para validar Persona no servidor.
+        // Sem sessão (referência) não dá para validar Sumsub no servidor.
         setPersonaHttpStatus(-1);
         setServerKycOk(false);
         setPersonaNameOnRecord(null);
@@ -471,15 +470,14 @@ export default function IbkrPrepPage() {
       setPersonaHttpStatus(null);
 
       try {
-        const r = await fetch(`/api/persona/status?reference_id=${encodeURIComponent(ref)}`);
+        const r = await fetch(`/api/sumsub/status?external_user_id=${encodeURIComponent(ref)}`);
         if (cancelled) return;
         setPersonaHttpStatus(r.status);
         const j = await r.json().catch(() => ({}));
         if (cancelled) return;
         const rec = j?.record;
-        const verified = Boolean(j?.ok && rec && personaRecordAllowsIbkrPrep(rec));
-        /** `name` na BD pode estar vazio mesmo com Persona concluído — o nome vem muitas vezes só em `fields`. */
-        const nm = extractDisplayNameFromPersonaRecord(rec);
+        const verified = Boolean(j?.ok && rec && sumsubRecordAllowsIbkrPrep(rec));
+        const nm = extractNameFromSumsubRecord(rec);
         setPersonaNameOnRecord(verified && nm ? nm : verified ? "" : null);
         if (verified) {
           // Garantir LS alinhado com o servidor (e stepper com ✓) sem voltar ao passo Identidade.
@@ -518,19 +516,19 @@ export default function IbkrPrepPage() {
     if (serverKycOk === true) return true;
     /**
      * Checkout Stripe já validado pela API (`STRIPE_ONBOARDING_OK_KEY`) + KYC marcado no funil:
-     * não bloquear este passo quando o GET `/api/persona/status` não bate certo com Neon/preview (referência,
-     * deployment diferente) ou o estado Persona ainda não encaixa em `personaRecordAllowsIbkrPrep`.
+     * não bloquear este passo quando o GET `/api/sumsub/status` não bate certo com Neon/preview (referência,
+     * deployment diferente) ou o estado Sumsub ainda não encaixa em `sumsubRecordAllowsIbkrPrep`.
      * Sem isto, utilizadores com pagamento confirmado ficavam presos ao aviso «Identidade…».
      */
     if (stripeCheckoutDoneLs && kycDone) return true;
-    if (!IBKR_PREP_PERSONA_TRUST_LSKYC) return false;
+    if (!IBKR_PREP_KYC_TRUST_LSKYC) return false;
     if (!stripeCheckoutDoneLs || !kycDone) return false;
     if (personaHttpStatus == null) return false;
     return personaHttpStatus === 404 || personaHttpStatus === 503;
   }, [serverKycOk, kycDone, stripeCheckoutDoneLs, personaHttpStatus]);
 
   /**
-   * Identidade ok mas hedge obrigatório em falta → passo 5 (alinha Persona / `getNextOnboardingHref`).
+   * Identidade ok mas hedge obrigatório em falta → passo 5 (alinha KYC / `getNextOnboardingHref`).
    */
   useEffect(() => {
     if (!router.isReady) return;
@@ -615,7 +613,7 @@ export default function IbkrPrepPage() {
       return {
         title: "Falta concluir a verificação de identidade",
         body: "Conclua o passo «Identidade» e guarde a confirmação no sistema para desbloquear a preparação da conta.",
-        ctaHref: "/persona-onboarding",
+        ctaHref: "/sumsub-onboarding",
         ctaLabel: "Ir para Identidade",
       };
     }
@@ -641,15 +639,15 @@ export default function IbkrPrepPage() {
         return {
           title: "Identidade ainda não registada no servidor",
           body:
-            "A base de dados não devolveu um registo Persona com o seu id de referência. Volte ao passo «Identidade» (com a base a funcionar) para gravar, ou, em Vercel com POSTGRES, confirme o mesmo domínio/sessão de login.",
-          ctaHref: "/persona-onboarding",
+            "A base de dados não devolveu um registo de verificação com o seu id de utilizador. Volte ao passo «Identidade» (com a base a funcionar) para gravar, ou, em Vercel com POSTGRES, confirme o mesmo domínio/sessão de login.",
+          ctaHref: "/sumsub-onboarding",
           ctaLabel: "Ir para Identidade",
         };
       }
       return {
         title: "Identidade ainda não confirmada no sistema",
         body: "O estado devolvido no servidor ainda não permite a preparação. Volte ao passo «Identidade» ou tente concluir de novo, assegurando a gravação (Neon) no mesmo ambiente (ex.: o mesmo subdomínio de produção).",
-        ctaHref: "/persona-onboarding",
+        ctaHref: "/sumsub-onboarding",
         ctaLabel: "Ir para Identidade",
       };
     }
@@ -716,17 +714,17 @@ export default function IbkrPrepPage() {
             </div>
           ) : null}
           {canPrepare &&
-          IBKR_PREP_PERSONA_TRUST_LSKYC &&
+          IBKR_PREP_KYC_TRUST_LSKYC &&
           !serverKycOk &&
           (personaHttpStatus === 404 || personaHttpStatus === 503) ? (
             <div
               className="mb-4 rounded-xl border border-cyan-500/35 bg-cyan-950/20 px-4 py-3 text-sm text-cyan-100/95"
               role="status"
             >
-              <strong>Modo de teste (Persona):</strong> a preparação foi desbloqueada com{" "}
+              <strong>Modo de teste (KYC):</strong> a preparação foi desbloqueada com{" "}
               <code className="rounded bg-black/20 px-1.5 text-[11px]">NEXT_PUBLIC_DECIDE_IBKR_PREP_TRUST_LSKYC_PERSONA_LS=1</code>{" "}
               enquanto a API devolveu {personaHttpStatus} (registo inexistente ou base não configurada). Em produção com
-              KYC, use Neon/POSTRES e o registo após o passo «Identidade».
+              KYC, use Neon/POSTGRES e o registo após o passo «Identidade».
             </div>
           ) : null}
 

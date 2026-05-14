@@ -36,7 +36,7 @@ export function getNextOnboardingHref(): string {
 
     if (!onboardingDone) return "/client-montante";
     if (!mifidDone) return "/mifid-test";
-    if (!kycDone) return "/persona-onboarding";
+    if (!kycDone) return "/sumsub-onboarding";
     /** Antes do passo 6 (plano e pagamento): escolha 0% / 50% / 100% (só segmentos elegíveis). */
     if (!isFxHedgeGateOk()) return "/client/fx-hedge-onboarding";
     /**

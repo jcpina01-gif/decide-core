@@ -1,23 +1,7 @@
 import Head from "next/head";
-import Link from "next/link";
-import React, { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/router";
-import { DECIDE_APP_FONT_FAMILY, DECIDE_DASHBOARD, DECIDE_ONBOARDING } from "../lib/decideClientTheme";
-
-const API_BASE = "http://127.0.0.1:8101";
-
-type SumsubRecord = {
-  external_user_id: string;
-  applicant_id?: string;
-  name?: string;
-  email?: string;
-  phone?: string;
-  level_name?: string;
-  created_at?: string;
-  updated_at?: string;
-  last_status?: Record<string, any>;
-  last_status_at?: string;
-};
+import React, { useEffect, useState } from "react";
+import { DECIDE_APP_FONT_FAMILY } from "../lib/decideClientTheme";
+import type { SumsubRecordRow } from "../lib/server/sumsubRecordsStore";
 
 function cardStyle(): React.CSSProperties {
   return {
@@ -29,210 +13,196 @@ function cardStyle(): React.CSSProperties {
   };
 }
 
-function inputStyle(): React.CSSProperties {
-  return {
-    width: "100%",
-    background: "#27272a",
-    color: "#fff",
-    border: "1px solid rgba(63, 63, 70, 0.85)",
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 16,
-    outline: "none",
-  };
+function statusBadge(status: string | null | undefined, reviewAnswer: string | null | undefined) {
+  const ans = String(reviewAnswer || "").toUpperCase();
+  const st = String(status || "").toLowerCase();
+  if (ans === "GREEN") return { label: "Aprovado", color: "#34d399", bg: "rgba(16,185,129,0.12)" };
+  if (ans === "RED") return { label: "Rejeitado", color: "#f87171", bg: "rgba(239,68,68,0.12)" };
+  if (st === "completed") return { label: "Concluído", color: "#a78bfa", bg: "rgba(139,92,246,0.12)" };
+  if (["pending", "prechecked", "queued"].includes(st)) return { label: "Em revisão", color: "#fbbf24", bg: "rgba(234,179,8,0.12)" };
+  if (st === "onhold") return { label: "Em espera", color: "#fb923c", bg: "rgba(249,115,22,0.12)" };
+  return { label: st || "—", color: "#a1a1aa", bg: "rgba(63,63,70,0.18)" };
 }
 
-function Button({
-  children,
-  onClick,
-  disabled,
-}: {
-  children: React.ReactNode;
-  onClick: () => void | Promise<void>;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        background: disabled ? DECIDE_ONBOARDING.buttonDisabled : DECIDE_DASHBOARD.buttonRegister,
-        color: "#fff",
-        border: disabled ? DECIDE_ONBOARDING.inputBorder : DECIDE_ONBOARDING.buttonPrimaryBorder,
-        borderRadius: 14,
-        padding: "12px 18px",
-        fontSize: 15,
-        fontWeight: 800,
-        cursor: disabled ? "not-allowed" : "pointer",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Label({ children }: { children: React.ReactNode }) {
-  return <div style={{ color: "#a1a1aa", fontSize: 14, marginBottom: 8 }}>{children}</div>;
+function fmtDate(v: string | null | undefined): string {
+  if (!v) return "—";
+  try {
+    return new Intl.DateTimeFormat("pt-PT", { dateStyle: "short", timeStyle: "short" }).format(new Date(v));
+  } catch {
+    return v;
+  }
 }
 
 export default function SumsubAdminPage() {
-  const router = useRouter();
-  useEffect(() => {
-    // Redirect legacy Sumsub Admin route to Persona Admin.
-    router.replace("/persona-admin");
-  }, [router]);
-
-  const [externalUserId, setExternalUserId] = useState("");
-  const [records, setRecords] = useState<SumsubRecord[]>([]);
-  const [lookupResult, setLookupResult] = useState<Record<string, any> | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [records, setRecords] = useState<SumsubRecordRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
-  async function loadRecords() {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch(`${API_BASE}/api/sumsub/records`);
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
-      setRecords(Array.isArray(json.records) ? json.records : []);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro a carregar registos");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function lookupStatus() {
-    if (!externalUserId.trim()) {
-      setError("Indique um externalUserId.");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const url = `${API_BASE}/api/sumsub/status?external_user_id=${encodeURIComponent(externalUserId.trim())}`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
-      setLookupResult(json);
-    } catch (e) {
-      setLookupResult(null);
-      setError(e instanceof Error ? e.message : "Erro a consultar estado");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [lookupId, setLookupId] = useState("");
+  const [lookupResult, setLookupResult] = useState<SumsubRecordRow | null>(null);
+  const [lookupError, setLookupError] = useState("");
+  const [lookupLoading, setLookupLoading] = useState(false);
 
   useEffect(() => {
-    void loadRecords();
+    void (async () => {
+      try {
+        const r = await fetch("/api/sumsub/records");
+        const j = await r.json() as { ok?: boolean; records?: SumsubRecordRow[]; error?: string };
+        if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+        setRecords(j.records || []);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
-  const selectedRecord = useMemo(() => {
-    const key = externalUserId.trim();
-    return records.find((r) => r.external_user_id === key) || null;
-  }, [records, externalUserId]);
+  async function lookup() {
+    if (!lookupId.trim()) return;
+    setLookupLoading(true);
+    setLookupError("");
+    setLookupResult(null);
+    try {
+      const r = await fetch(`/api/sumsub/status?external_user_id=${encodeURIComponent(lookupId.trim())}`);
+      const j = await r.json() as { ok?: boolean; record?: SumsubRecordRow; error?: string };
+      if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      setLookupResult(j.record || null);
+    } catch (e) {
+      setLookupError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLookupLoading(false);
+    }
+  }
 
   return (
     <>
       <Head>
-        <title>DECIDE | Sumsub Admin</title>
+        <title>DECIDE Admin | Sumsub KYC</title>
       </Head>
       <div
         style={{
           minHeight: "100vh",
           background: "#000",
           color: "#fff",
-          padding: 32,
+          padding: "32px 24px 80px",
           fontFamily: DECIDE_APP_FONT_FAMILY,
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 20, marginBottom: 24, flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: 40, fontWeight: 800 }}>DECIDE — Sumsub Admin</div>
-            <div style={{ color: "#a1a1aa", fontSize: 18 }}>
-              Consulta de estado KYC e histórico local de applicants.
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 32, fontWeight: 800 }}>DECIDE — Sumsub Admin</div>
+            <div style={{ color: "#a1a1aa", fontSize: 16, marginTop: 4 }}>
+              Registos KYC guardados localmente após verificação Sumsub.
             </div>
           </div>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <Link href="/sumsub-onboarding" style={{ color: "#d4d4d4", fontSize: 16 }}>Onboarding Sumsub</Link>
-            <a href="http://localhost:5000/" style={{ color: "#d4d4d4", fontSize: 16 }}>Dashboard</a>
-            <Link href="/client-montante" style={{ color: "#d4d4d4", fontSize: 16 }}>Onboarding interno</Link>
-          </div>
-        </div>
 
-        {error ? (
-          <div style={{ ...cardStyle(), marginBottom: 16, color: "#fecaca", borderColor: "#7f1d1d" }}>
-            {error}
-          </div>
-        ) : null}
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 20 }}>
-          <div style={{ display: "grid", gap: 20 }}>
-            <div style={cardStyle()}>
-              <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>Lookup de estado</div>
-              <Label>externalUserId</Label>
+          {/* Lookup */}
+          <div style={{ ...cardStyle(), marginBottom: 24 }}>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 14 }}>Consultar por external_user_id</div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <input
-                value={externalUserId}
-                onChange={(e) => setExternalUserId(e.target.value)}
-                style={inputStyle()}
-                placeholder="cliente-001"
+                value={lookupId}
+                onChange={(e) => setLookupId(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void lookup(); }}
+                placeholder="ex.: joao-silva ou sumsub-joao@email.com"
+                style={{
+                  flex: 1,
+                  minWidth: 220,
+                  background: "#18181b",
+                  color: "#fff",
+                  border: "1px solid rgba(63,63,70,0.8)",
+                  borderRadius: 10,
+                  padding: "10px 14px",
+                  fontSize: 14,
+                  outline: "none",
+                }}
               />
-              <div style={{ display: "flex", gap: 12, marginTop: 18, flexWrap: "wrap" }}>
-                <Button onClick={lookupStatus} disabled={loading}>Consultar estado</Button>
-                <Button onClick={loadRecords} disabled={loading}>Recarregar registos</Button>
-              </div>
+              <button
+                onClick={() => void lookup()}
+                disabled={lookupLoading || !lookupId.trim()}
+                style={{
+                  background: "#1d4ed8",
+                  border: "none",
+                  borderRadius: 10,
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  padding: "10px 20px",
+                  cursor: lookupLoading || !lookupId.trim() ? "not-allowed" : "pointer",
+                  opacity: lookupLoading || !lookupId.trim() ? 0.6 : 1,
+                }}
+              >
+                {lookupLoading ? "A consultar…" : "Consultar"}
+              </button>
             </div>
-
-            <div style={cardStyle()}>
-              <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>Estado atual</div>
-              <pre style={{ ...inputStyle(), whiteSpace: "pre-wrap", margin: 0, minHeight: 260, overflow: "auto" }}>
-{JSON.stringify(lookupResult || selectedRecord || { ok: false, info: "Sem resultado ainda." }, null, 2)}
+            {lookupError && <div style={{ color: "#fca5a5", marginTop: 10, fontSize: 13 }}>{lookupError}</div>}
+            {lookupResult && (
+              <pre
+                style={{
+                  marginTop: 14,
+                  background: "#0a0a0a",
+                  border: "1px solid rgba(63,63,70,0.6)",
+                  borderRadius: 10,
+                  padding: 14,
+                  fontSize: 12,
+                  color: "#d4d4d8",
+                  overflow: "auto",
+                  maxHeight: 260,
+                }}
+              >
+                {JSON.stringify(lookupResult, null, 2)}
               </pre>
-            </div>
+            )}
           </div>
 
+          {/* Records table */}
           <div style={cardStyle()}>
-            <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Applicants recentes</div>
-            <div style={{ color: "#a1a1aa", marginBottom: 14 }}>
-              Histórico local guardado em `backend/data/sumsub_state.json`.
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 14 }}>
+              Todos os registos ({loading ? "…" : records.length})
             </div>
-
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-                <thead>
-                  <tr style={{ textAlign: "left", borderBottom: "1px solid rgba(63, 63, 70, 0.75)" }}>
-                    <th style={{ padding: "12px 10px" }}>externalUserId</th>
-                    <th style={{ padding: "12px 10px" }}>Applicant ID</th>
-                    <th style={{ padding: "12px 10px" }}>Email</th>
-                    <th style={{ padding: "12px 10px" }}>Nível</th>
-                    <th style={{ padding: "12px 10px" }}>Atualizado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {records.map((rec) => (
-                    <tr key={rec.external_user_id} style={{ borderBottom: "1px solid #10284f" }}>
-                      <td style={{ padding: "12px 10px", fontWeight: 800 }}>{rec.external_user_id}</td>
-                      <td style={{ padding: "12px 10px" }}>{rec.applicant_id || "-"}</td>
-                      <td style={{ padding: "12px 10px" }}>{rec.email || "-"}</td>
-                      <td style={{ padding: "12px 10px" }}>{rec.level_name || "-"}</td>
-                      <td style={{ padding: "12px 10px" }}>{rec.updated_at || rec.created_at || "-"}</td>
+            {error && <div style={{ color: "#fca5a5", marginBottom: 12 }}>{error}</div>}
+            {loading && <div style={{ color: "#a1a1aa", fontSize: 14 }}>A carregar…</div>}
+            {!loading && records.length === 0 && !error && (
+              <div style={{ color: "#a1a1aa", fontSize: 14 }}>Sem registos ainda.</div>
+            )}
+            {!loading && records.length > 0 && (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ color: "#71717a", textAlign: "left" }}>
+                      {["external_user_id", "applicant_id", "Nome", "Email", "Estado", "Resposta", "Atualizado"].map((h) => (
+                        <th key={h} style={{ padding: "6px 10px", borderBottom: "1px solid rgba(63,63,70,0.5)", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                  {!records.length && (
-                    <tr>
-                      <td colSpan={5} style={{ padding: 18, color: "#a1a1aa" }}>
-                        Ainda não há applicants guardados.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {records.map((r) => {
+                      const badge = statusBadge(r.status, r.review_answer);
+                      return (
+                        <tr key={r.external_user_id} style={{ borderBottom: "1px solid rgba(63,63,70,0.25)" }}>
+                          <td style={{ padding: "8px 10px", color: "#e4e4e7", fontFamily: "monospace", fontSize: 12 }}>{r.external_user_id}</td>
+                          <td style={{ padding: "8px 10px", color: "#71717a", fontFamily: "monospace", fontSize: 11 }}>{r.applicant_id || "—"}</td>
+                          <td style={{ padding: "8px 10px" }}>{r.name || "—"}</td>
+                          <td style={{ padding: "8px 10px", color: "#71717a" }}>{r.email || "—"}</td>
+                          <td style={{ padding: "8px 10px" }}>
+                            <span style={{ background: badge.bg, color: badge.color, borderRadius: 6, padding: "2px 8px", fontSize: 12, fontWeight: 600 }}>
+                              {badge.label}
+                            </span>
+                          </td>
+                          <td style={{ padding: "8px 10px", color: r.review_answer === "GREEN" ? "#34d399" : r.review_answer === "RED" ? "#f87171" : "#71717a" }}>
+                            {r.review_answer || "—"}
+                          </td>
+                          <td style={{ padding: "8px 10px", color: "#71717a", whiteSpace: "nowrap" }}>{fmtDate(r.updated_at)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </div>
     </>
   );
 }
-
