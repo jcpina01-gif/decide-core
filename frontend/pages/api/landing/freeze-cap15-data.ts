@@ -17,13 +17,20 @@ function normalizeProfileParam(raw: unknown): string {
 }
 
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Redirect permanently to the new URL to bypass any CDN-cached response on this path
-  const profile = typeof req.query.profile === "string" ? req.query.profile : "";
-  const _v = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const dest = `/api/landing/freeze-cap15-data?v=${_v}${profile ? `&profile=${encodeURIComponent(profile)}` : ""}`;
+  if (req.method !== "GET" && req.method !== "POST") {
+    res.setHeader("Allow", "GET, POST");
+    return res.status(405).json({ ok: false, error: "Method not allowed" });
+  }
+
+  const profile = normalizeProfileParam(
+    typeof req.query.profile === "string" ? req.query.profile : undefined,
+  );
+
   res.setHeader("Cache-Control", "no-store, no-cache, max-age=0, s-maxage=0, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
   res.setHeader("Vercel-CDN-Cache-Control", "no-store");
-  return res.redirect(307, dest);
 
   const built = buildPlafonadoEmbedLikeSeries(profile, resolveNextFrontendAppDir());
   if (!built) {

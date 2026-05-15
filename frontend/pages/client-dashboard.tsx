@@ -4225,7 +4225,7 @@ export default function ClientDashboardPage() {
 
   useEffect(()=>{
     const _v=new Date().toISOString().slice(0,10).replace(/-/g,"");
-    fetch(`/api/landing/freeze-cap15-backtest?v=${_v}`).then(r=>r.json())
+    fetch(`/api/landing/freeze-cap15-data?v=${_v}`).then(r=>r.json())
       .then((d:any)=>{ if(d?.series){ setDates(d.series.dates??[]); setEquityRaw(d.series.equity_overlayed??[]); setBenchRaw(d.series.benchmark_equity??[]); } })
       .catch(()=>{});
   },[]);
