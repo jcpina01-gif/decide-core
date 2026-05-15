@@ -4469,9 +4469,16 @@ export default function ClientDashboardPage() {
 
   const perfData=useMemo(()=>{
     if(!dates.length||!activeEquity.length) return null;
-    // "20 Anos" = full history from index 0 with real calendar years (same as former "Desde início")
-    const s=period==="20 Anos"?0:skipWarmup(activeEquity,periodStart(dates,period));
-    const calYears=period==="20 Anos"?calYearsFromDates(dates):undefined;
+    // "20 Anos" — janela rolante (mesmo corte do NativeSimulator) com skip de warmup
+    const s20start=(()=>{
+      const last=new Date(dates[dates.length-1]);
+      const cut=new Date(last.getFullYear()-20,last.getMonth(),last.getDate());
+      let idx=dates.findIndex(d=>new Date(d)>=cut);
+      if(idx<0) idx=0;
+      return skipWarmup(activeEquity,idx);
+    })();
+    const s=period==="20 Anos"?s20start:skipWarmup(activeEquity,periodStart(dates,period));
+    const calYears=period==="20 Anos"?calYearsFromDates(dates.slice(s)):undefined;
     const chart=makeChartData(dates,activeEquity,benchRaw,period);
     const m=periodMetrics(activeEquity.slice(s),benchRaw.slice(s),period,calYears);
     // Anchor YTD to the last year present in the series (not the client's wall clock)
