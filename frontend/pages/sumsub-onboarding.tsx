@@ -49,7 +49,16 @@ export default function SumsubOnboardingPage() {
   const sdkInstanceRef = useRef<{ destroy?: () => void } | null>(null);
 
   useEffect(() => {
-    const uid = buildSumsubExternalUserIdFromSession();
+    let uid = buildSumsubExternalUserIdFromSession();
+    // Fallback para dev/teste sem sessão activa
+    if (!uid) {
+      try {
+        const ANON_KEY = "decide_sumsub_anon_id";
+        let anon = window.localStorage.getItem(ANON_KEY);
+        if (!anon) { anon = `anon-${Date.now().toString(36)}`; window.localStorage.setItem(ANON_KEY, anon); }
+        uid = anon;
+      } catch { uid = "anon-dev"; }
+    }
     setExternalUserId(uid);
     try {
       const done = window.localStorage.getItem(ONBOARDING_STORAGE_KEYS.kyc) === "1";
