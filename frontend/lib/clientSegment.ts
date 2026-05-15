@@ -53,8 +53,15 @@ export function syncFeeSegmentFromNavEur(navEur: number): void {
  * alinhado ao relatório — não basta o rádio «Private» no registo.
  */
 export function isFxHedgeOnboardingApplicable(): boolean {
-  // Passo Hedge FX desactivado — não aplicável a nenhum segmento.
-  return false;
+  if (typeof window === "undefined") return false;
+  try {
+    const seg = getClientSegment();
+    if (seg === "private") return true;
+    const feeB = window.localStorage.getItem(FEE_SEGMENT_LS_KEY) === "B";
+    return feeB;
+  } catch {
+    return false;
+  }
 }
 
 export function getClientSegment(): ClientSegment {
