@@ -2111,9 +2111,8 @@ function AjudaPage() {
         </div>
         <div className="grid grid-cols-3 gap-3">
           {[
-            {icon:<Mail size={16} className="text-teal-400"/>,label:"Email",sub:"Resposta em 24–48h",action:"geral@decide.pt",href:"mailto:geral@decide.pt",bg:"bg-teal-900/10 border-teal-700/20"},
-            {icon:<Phone size={16} className="text-blue-400"/>,label:"Telefone",sub:"+351 210 123 456",action:"Seg–Sex, 9h–18h",href:"tel:+351210123456",bg:"bg-blue-900/10 border-blue-700/20"},
-            {icon:<Activity size={16} className="text-amber-400"/>,label:"Agendar chamada",sub:"Revisão da carteira",action:"15 min · gratuito",href:"mailto:geral@decide.pt?subject=Agendar chamada",bg:"bg-amber-900/10 border-amber-700/20"},
+            {icon:<Mail size={16} className="text-teal-400"/>,label:"Email",sub:"Resposta em 24–48h",action:"jcpina01@decidepoweredbyai.com",href:"mailto:jcpina01@decidepoweredbyai.com",bg:"bg-teal-900/10 border-teal-700/20"},
+            {icon:<Activity size={16} className="text-amber-400"/>,label:"Agendar chamada",sub:"Revisão da carteira",action:"15 min · gratuito",href:"mailto:jcpina01@decidepoweredbyai.com?subject=Agendar%20chamada%20DECIDE",bg:"bg-amber-900/10 border-amber-700/20"},
           ].map(c=>(
             <a key={c.label} href={c.href} className={`flex items-start gap-3 p-4 rounded-xl border ${c.bg} hover:opacity-80 transition-opacity`}>
               <div className="mt-0.5">{c.icon}</div>
@@ -7149,9 +7148,8 @@ export default function ClientDashboardPage() {
                         <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Contactos directos</div>
                         <div className="space-y-3">
                           {[
-                            {Icon:Mail,label:"Email geral",val:"geral@decide.pt",href:"mailto:geral@decide.pt",note:"Respondemos em menos de 1 dia útil"},
-                            {Icon:Phone,label:"Telefone",val:"+351 21 302 34 48",href:"tel:+351213023448",note:"Seg–Sex, 9h–18h · Sáb, 10h–13h"},
-                            {Icon:MapPin,label:"Correspondência",val:"Av. da Liberdade, 123\n1250-140 Lisboa, Portugal",href:null,note:"Sede social registada"},
+                            {Icon:Mail,label:"Email",val:"jcpina01@decidepoweredbyai.com",href:"mailto:jcpina01@decidepoweredbyai.com",note:"Respondemos em menos de 1 dia útil"},
+                            {Icon:MapPin,label:"Morada",val:"Av. Miguel Bombarda 26, 3º\n1050-165 Lisboa - Portugal",href:null,note:"Sede social registada"},
                           ].map(({Icon,label,val,href,note})=>(
                             <div key={label} className="flex items-start gap-3 p-3 bg-[#080c14] border border-[#1a1f2e] rounded-lg hover:border-slate-600/50 transition-colors">
                               <Icon size={15} className="text-slate-400 mt-0.5 shrink-0"/>
@@ -7231,6 +7229,23 @@ export default function ClientDashboardPage() {
                         </form>
                       )}
                     </div>
+                  </div>
+
+                  {/* Agendamento de chamada */}
+                  <div className="bg-gradient-to-br from-[#0d1220] to-[#0b0f1a] border border-amber-700/20 rounded-xl p-5 flex items-center justify-between gap-6">
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-amber-900/20 border border-amber-700/30 flex items-center justify-center shrink-0">
+                        <Activity size={18} className="text-amber-400"/>
+                      </div>
+                      <div>
+                        <div className="text-slate-100 font-bold text-sm mb-0.5">Agendar chamada</div>
+                        <div className="text-slate-400 text-xs leading-relaxed">Revisão da carteira, dúvidas sobre o modelo ou onboarding — marcamos uma chamada de 15 minutos, gratuita.</div>
+                      </div>
+                    </div>
+                    <a href="mailto:jcpina01@decidepoweredbyai.com?subject=Agendar%20chamada%20DECIDE"
+                      className="shrink-0 flex items-center gap-2 bg-amber-700/20 hover:bg-amber-700/35 border border-amber-600/30 text-amber-300 text-xs font-bold rounded-lg px-4 py-2.5 transition-colors whitespace-nowrap">
+                      <Send size={12}/>Pedir chamada
+                    </a>
                   </div>
 
                   {/* Legal/regulatory footer */}
