@@ -74,6 +74,7 @@ const nextConfig = {
   outputFileTracingIncludes: {
     /** Lê `../freeze/.../model_outputs` (mesmo padrão que /api/client/plan-decision-kpis); sem isto, em Vercel só o landing entra no *trace* e o gráfico cai a 15-04. */
     "/api/landing/freeze-cap15-backtest": [...traceFreezeGlobs, "./data/landing/**/*"],
+    "/api/landing/freeze-cap15-data": [...traceFreezeGlobs, "./data/landing/**/*"],
     "/api/landing/core-overlayed": ["./data/landing/**/*"],
     /** Plano de aprovação (freeze + CSVs) em deploy Vercel com root `frontend/`. */
     "/api/client/approval-plan": [...traceFreezeGlobs, "../backend/data/**/*"],
