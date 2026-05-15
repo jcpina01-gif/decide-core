@@ -26,7 +26,11 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     typeof req.query.profile === "string" ? req.query.profile : undefined,
   );
 
-  res.setHeader("Cache-Control", "private, no-store, no-cache, must-revalidate");
+  res.setHeader("Cache-Control", "no-store, no-cache, max-age=0, s-maxage=0, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+  res.setHeader("Vercel-CDN-Cache-Control", "no-store");
 
   const built = buildPlafonadoEmbedLikeSeries(profile, resolveNextFrontendAppDir());
   if (!built) {

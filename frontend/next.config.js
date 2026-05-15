@@ -141,6 +141,15 @@ const nextConfig = {
    */
   async headers() {
     return [
+      /** API routes — impede o Vercel CDN de cachear respostas de serverless functions. */
+      {
+        source: "/api/:path*",
+        headers: [
+          { key: "Cache-Control", value: "no-store, no-cache, max-age=0, s-maxage=0, must-revalidate" },
+          { key: "Surrogate-Control", value: "no-store" },
+          { key: "Vercel-CDN-Cache-Control", value: "no-store" },
+        ],
+      },
       /** HTML do relatório sem cache agressivo — ajuda o browser a apanhar JS novo após deploy. */
       {
         source: "/client/report",
