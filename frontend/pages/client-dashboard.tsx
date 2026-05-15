@@ -4455,8 +4455,15 @@ export default function ClientDashboardPage() {
       if(bv>bpk)bpk=bv;
       return {...pt,bench:+(((bv-bpk)/bpk)*100).toFixed(2)};
     });
-    const calYearsInc=calYearsFromDates(dates)??dates.length/252;
-    const inception=periodMetrics(activeEquity.slice(0),benchRaw.slice(0),"20 Anos",calYearsInc);
+    // Rolling 20-year window — mesma lógica do NativeSimulator para consistência
+    const last20=new Date(dates[dates.length-1]);
+    const cut20=new Date(last20.getFullYear()-20,last20.getMonth(),last20.getDate());
+    let s20=dates.findIndex(d=>new Date(d)>=cut20);
+    if(s20<0) s20=0;
+    const v20=activeEquity[s20];
+    while(s20<activeEquity.length-1&&activeEquity[s20]===v20) s20++;
+    const calYearsInc=calYearsFromDates(dates.slice(s20))??20;
+    const inception=periodMetrics(activeEquity.slice(s20),benchRaw.slice(s20),"20 Anos",calYearsInc);
     return {vol20y,benchVol20y,curVol,curDD,ddChart,inception};
   },[dates,activeEquity,benchRaw]);
 
