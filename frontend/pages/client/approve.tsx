@@ -616,15 +616,7 @@ export default function ApprovePage({
       }
     } catch { /* ignore */ }
 
-    if (!(montante > 0)) {
-      try {
-        const raw = window.localStorage.getItem(ONBOARDING_MONTANTE_KEY);
-        montante =
-          raw != null ? safeNumber(Number(String(raw).replace(/\s/g, "").replace(",", ".")), 0) : 0;
-      } catch {
-        montante = 0;
-      }
-    }
+    // Montante do localStorage ignorado — usa apenas URL param ou input manual nesta página.
 
     // Pre-fill the fallback input with the value found so the user sees it populated
     if (montante > 0) {
