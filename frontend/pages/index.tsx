@@ -35,7 +35,7 @@ function Nav() {
 
         {/* Nav links */}
         <Flex style={{gap:32,alignItems:"center"}}>
-          {["Como funciona","Vantagens","Preços","Segurança","Sobre nós"].map(l=>(
+          {(["Como funciona","Vantagens","Segurança","Sobre nós"] as string[]).map(l=>(
             <a key={l} href={`#${l.toLowerCase().replace(/ /g,"-").replace(/ç/g,"c").replace(/ã/g,"a")}`}
               style={{color:"#94a3b8",fontSize:14,fontWeight:500,textDecoration:"none",whiteSpace:"nowrap",
                 cursor:"pointer",transition:"color .15s"}}
@@ -43,6 +43,12 @@ function Nav() {
               onMouseLeave={e=>(e.currentTarget.style.color="#94a3b8")}
             >{l}</a>
           ))}
+          <Link href="/fees-client"
+            style={{color:"#94a3b8",fontSize:14,fontWeight:500,textDecoration:"none",whiteSpace:"nowrap",
+              cursor:"pointer",transition:"color .15s"}}
+            onMouseEnter={e=>(e.currentTarget.style.color="#f1f5f9")}
+            onMouseLeave={e=>(e.currentTarget.style.color="#94a3b8")}
+          >Preços</Link>
         </Flex>
 
         {/* Auth buttons */}
@@ -396,6 +402,103 @@ export default function LandingPage() {
                   <p style={{fontSize:13.5,color:"#64748b",lineHeight:1.65,margin:0}}>{c.desc}</p>
                 </div>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── SEGURANÇA ────────────────────────────────────────────────── */}
+        <section id="seguranca" style={{padding:"80px 28px",background:BG,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          <div style={{maxWidth:1100,margin:"0 auto"}}>
+            <div style={{textAlign:"center",marginBottom:52}}>
+              <div style={{display:"inline-block",fontSize:12,fontWeight:700,letterSpacing:2,
+                color:TEAL,textTransform:"uppercase",marginBottom:14}}>Segurança</div>
+              <h2 style={{fontSize:"clamp(1.5rem,2.8vw,2.1rem)",fontWeight:800,color:"#f8fafc",
+                margin:"0 0 14px",letterSpacing:-0.6}}>
+                O seu dinheiro nunca passa pelo DECIDE
+              </h2>
+              <p style={{fontSize:16,color:"#94a3b8",maxWidth:580,margin:"0 auto",lineHeight:1.7}}>
+                Somos um serviço de assessoria e recomendação — os seus ativos ficam sempre na sua conta da Interactive Brokers, regulada e segregada.
+              </p>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:20}}>
+              {[
+                {icon:"🏦",color:"#2dd4bf",title:"Ativos segregados na IB",
+                  desc:"A sua carteira está na Interactive Brokers — líder mundial regulado pela SEC, FCA e CMVM. O DECIDE nunca detém nem movimenta os seus fundos."},
+                {icon:"🔒",color:"#3b82f6",title:"Encriptação e RGPD",
+                  desc:"Todos os dados são transmitidos via HTTPS/TLS e armazenados em base de dados cifrada. Cumprimos integralmente o Regulamento Geral de Proteção de Dados (RGPD)."},
+                {icon:"🪪",color:"#a78bfa",title:"Verificação de identidade (KYC/AML)",
+                  desc:"Cada cliente passa por verificação de identidade biométrica (KYC) e rastreio de branqueamento de capitais (AML), em conformidade com a Diretiva MiFID II."},
+                {icon:"🛡️",color:"#f59e0b",title:"Sem acesso à sua conta",
+                  desc:"O DECIDE apenas emite recomendações. A execução de qualquer ordem é sempre feita por si, na plataforma da Interactive Brokers, com o seu login exclusivo."},
+                {icon:"📋",color:"#34d399",title:"Regulação e conformidade",
+                  desc:"Operamos em conformidade com a legislação europeia de serviços de investimento. Parceiros regulados, processos auditáveis e documentação transparente."},
+                {icon:"🔑",color:"#fb7185",title:"Autenticação segura",
+                  desc:"Acesso protegido por email verificado e código SMS. Sessões com expiração automática. Nenhuma palavra-passe é armazenada em texto simples."},
+              ].map(c=>(
+                <div key={c.title} style={{
+                  background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",
+                  borderRadius:14,padding:"24px 22px",transition:"border-color .2s",
+                }}>
+                  <div style={{width:40,height:40,borderRadius:10,marginBottom:14,fontSize:19,
+                    background:`${c.color}18`,display:"flex",alignItems:"center",justifyContent:"center"}}>{c.icon}</div>
+                  <h3 style={{fontSize:14,fontWeight:700,color:"#f1f5f9",margin:"0 0 8px"}}>{c.title}</h3>
+                  <p style={{fontSize:13,color:"#64748b",lineHeight:1.65,margin:0}}>{c.desc}</p>
+                </div>
+              ))}
+            </div>
+            <div style={{marginTop:32,padding:"16px 24px",background:"rgba(45,212,191,0.04)",
+              border:"1px solid rgba(45,212,191,0.12)",borderRadius:12,
+              display:"flex",alignItems:"flex-start",gap:14}}>
+              <span style={{fontSize:18,flexShrink:0}}>ℹ️</span>
+              <p style={{fontSize:12.5,color:"#64748b",lineHeight:1.65,margin:0}}>
+                <strong style={{color:"#94a3b8"}}>Aviso regulatório:</strong> o DECIDE presta um serviço de aconselhamento em matéria de investimento. Investimentos em valores mobiliários envolvem risco de perda, incluindo a possibilidade de perda do capital investido. Rendimentos passados não garantem rendimentos futuros. Leia a documentação regulamentar antes de subscrever.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* ── SOBRE NÓS ─────────────────────────────────────────────────── */}
+        <section id="sobre-nos" style={{padding:"80px 28px",background:BG2,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          <div style={{maxWidth:1100,margin:"0 auto"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:60,alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,letterSpacing:2,color:TEAL,
+                  textTransform:"uppercase",marginBottom:14}}>Sobre nós</div>
+                <h2 style={{fontSize:"clamp(1.5rem,2.8vw,2.1rem)",fontWeight:800,color:"#f8fafc",
+                  margin:"0 0 18px",letterSpacing:-0.6,lineHeight:1.2}}>
+                  Construído por quem investe, para quem quer investir melhor
+                </h2>
+                <p style={{fontSize:15,color:"#94a3b8",lineHeight:1.75,margin:"0 0 16px"}}>
+                  O DECIDE nasceu de uma constatação simples: os modelos quantitativos que os melhores fundos de investimento usam são inacessíveis ao investidor individual. Demasiado técnicos, demasiado caros, demasiado opacos.
+                </p>
+                <p style={{fontSize:15,color:"#94a3b8",lineHeight:1.75,margin:"0 0 16px"}}>
+                  A nossa missão é mudar isso — disponibilizar estratégias baseadas em dados, com transparência total, a quem quer tomar decisões de investimento informadas sem delegar o controlo a terceiros.
+                </p>
+                <p style={{fontSize:15,color:"#94a3b8",lineHeight:1.75,margin:0}}>
+                  Somos uma equipa pequena, baseada em Lisboa, com experiência em finanças quantitativas, engenharia de software e gestão de risco. Acreditamos que o melhor investimento é aquele que o investidor compreende.
+                </p>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                {[
+                  {icon:"📍",label:"Localização",val:"Av. Miguel Bombarda 26, 3º — Lisboa, Portugal"},
+                  {icon:"✉️",label:"Contacto",val:"jcpina01@decidepoweredbyai.com"},
+                  {icon:"🎯",label:"Missão",val:"Democratizar o acesso a estratégias quantitativas de investimento"},
+                  {icon:"🤖",label:"Tecnologia",val:"Modelos próprios de machine learning e análise fundamentalista, actualizados diariamente"},
+                  {icon:"🏛️",label:"Regulação",val:"Operamos em conformidade com MiFID II e legislação portuguesa de serviços de investimento"},
+                ].map(r=>(
+                  <div key={r.label} style={{
+                    display:"flex",alignItems:"flex-start",gap:14,
+                    padding:"14px 18px",background:"rgba(255,255,255,0.025)",
+                    border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,
+                  }}>
+                    <span style={{fontSize:18,flexShrink:0,marginTop:1}}>{r.icon}</span>
+                    <div>
+                      <div style={{fontSize:11,fontWeight:600,color:"#475569",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>{r.label}</div>
+                      <div style={{fontSize:13.5,color:"#cbd5e1",lineHeight:1.5}}>{r.val}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </section>
