@@ -53,15 +53,7 @@ export function syncFeeSegmentFromNavEur(navEur: number): void {
  * alinhado ao relatório — não basta o rádio «Private» no registo.
  */
 export function isFxHedgeOnboardingApplicable(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const seg = getClientSegment();
-    if (seg === "private") return true;
-    const feeB = window.localStorage.getItem(FEE_SEGMENT_LS_KEY) === "B";
-    return feeB;
-  } catch {
-    return false;
-  }
+  return true;
 }
 
 export function getClientSegment(): ClientSegment {
