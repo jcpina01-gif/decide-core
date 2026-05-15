@@ -208,8 +208,7 @@ const nextConfig = {
         headers: [
           {
             key: "Permissions-Policy",
-            value:
-              'camera=(self "https://api.sumsub.com" "https://*.sumsub.com"); microphone=(self "https://api.sumsub.com" "https://*.sumsub.com")',
+            value: "camera=*, microphone=*",
           },
         ],
       },

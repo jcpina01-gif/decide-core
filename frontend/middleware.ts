@@ -36,8 +36,20 @@ function isSiteGateBypass(pathname: string): boolean {
   return false;
 }
 
+const PROD_ORIGIN = "https://www.decidepoweredbyai.com";
+
 export function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
+
+  /**
+   * Redirect de preview Vercel (*.vercel.app) para o domínio de produção.
+   * Evita que utilizadores fiquem presos num deployment imutável antigo.
+   */
+  const host = req.headers.get("host") || "";
+  if (host.endsWith(".vercel.app")) {
+    const dest = `${PROD_ORIGIN}${req.nextUrl.pathname}${req.nextUrl.search}`;
+    return NextResponse.redirect(dest, { status: 308 });
+  }
 
   /**
    * Dev + Turbopack: rewrites em `next.config.js` para 127.0.0.1:5000 são pouco fiáveis.
