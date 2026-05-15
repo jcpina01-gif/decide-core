@@ -4287,17 +4287,36 @@ export default function ClientDashboardPage() {
 
   async function fetchCartIbPositions(){
     setCartIbLoading(true);setCartIbErr("");
-    try{
-      const resp=await fetch("/api/ibkr-snapshot",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paper_mode:true})});
-      const j=await resp.json();
-      if(j.status==="ok"||j.positions){
-        setCartIbPos(j.positions??[]);
-        setCartIbNav({value:j.net_liquidation??0,ccy:j.net_liquidation_ccy??"EUR"});
-      } else {
-        setCartIbErr(j.error||"Erro ao carregar posições");
+    const MAX_TRIES=4, RETRY_MS=3000;
+    for(let attempt=0;attempt<MAX_TRIES;attempt++){
+      try{
+        const resp=await fetch("/api/ibkr-snapshot",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paper_mode:true})});
+        const j=await resp.json();
+        if(j.status==="ok"||j.positions){
+          const positions=j.positions??[];
+          // Se voltou vazio e ainda há tentativas, aguarda e volta a tentar
+          if(positions.length===0&&attempt<MAX_TRIES-1){
+            await new Promise(r=>setTimeout(r,RETRY_MS));
+            continue;
+          }
+          setCartIbPos(positions);
+          setCartIbNav({value:j.net_liquidation??0,ccy:j.net_liquidation_ccy??"EUR"});
+          setCartIbLoading(false);
+          return;
+        } else {
+          setCartIbErr(j.error||"Erro ao carregar posições");
+          setCartIbLoading(false);
+          return;
+        }
+      }catch(e:unknown){
+        if(attempt<MAX_TRIES-1){
+          await new Promise(r=>setTimeout(r,RETRY_MS));
+          continue;
+        }
+        setCartIbErr(e instanceof Error?e.message:"Erro de ligação");
       }
-    }catch(e:unknown){setCartIbErr(e instanceof Error?e.message:"Erro de ligação");}
-    finally{setCartIbLoading(false);}
+    }
+    setCartIbLoading(false);
   }
 
   useEffect(()=>{
@@ -6126,7 +6145,7 @@ export default function ClientDashboardPage() {
                         <button onClick={fetchCartIbPositions} disabled={cartIbLoading}
                           className="flex items-center gap-1.5 bg-[#0b0f1a] border border-[#1a1f2e] hover:border-teal-500/50 text-slate-400 hover:text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
                           {cartIbLoading?<span className="animate-spin text-xs">⟳</span>:null}
-                          {cartIbLoading?"A carregar…":"↻ Actualizar"}
+                          {cartIbLoading?"A ligar ao IB…":"↻ Actualizar"}
                         </button>
                       </div>
                       {cartIbErr&&(
