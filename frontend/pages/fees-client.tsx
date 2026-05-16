@@ -342,7 +342,11 @@ export default function FeesClientPage({
     if (!router.isReady || !embed) return;
     const q = parseProfileQuery(router.query.profile);
     if (q) setProfile(q);
-  }, [router.isReady, embed, router.query.profile]);
+    // Pré-seleccionar plano via ?plan=private ou ?plan=premium
+    const planQ = typeof router.query.plan === "string" ? router.query.plan.toLowerCase() : "";
+    if (planQ === "private") { setPlanMode("segment_b_mgmt_pf"); setCapitalInvestido(50000); }
+    else if (planQ === "premium") { setPlanMode("segment_a_fixed"); }
+  }, [router.isReady, embed, router.query.profile, router.query.plan]);
 
   useEffect(() => {
     if (feesEmbedView === "intro") return;
