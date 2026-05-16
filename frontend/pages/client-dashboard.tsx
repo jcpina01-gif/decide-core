@@ -1289,7 +1289,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
     {q:"Custos DECIDE vs custos externos — qual a diferença?",
      a:"O custo DECIDE (0,6% aa) é a comissão pelo serviço de gestão quantitativa. Os custos externos (custódia, transações, câmbio) são cobrados pelo broker (Interactive Brokers) e não beneficiam o DECIDE."},
     {q:"Quando é cobrada a taxa de gestão?",
-     a:"A taxa de gestão de 0,6% é cobrada mensalmente (0,05%/mês) sobre o valor da carteira."},
+     a:"A taxa de gestão é de 0,05% por mês (0,6% ao ano), cobrada sobre o valor real da carteira no início de cada mês. Se a carteira vale €60 000 em Janeiro, paga €30 nesse mês. Se em Fevereiro vale €62 000, paga €31. O custo acompanha o valor da carteira — sobe quando ganha, desce quando perde."},
     {q:"Existe performance fee no plano Private?",
      a:"Não. O plano Private tem apenas a taxa de gestão de 0,6% ao ano, sem qualquer performance fee. Custo simples, previsível e alinhado com o seu interesse."},
   ];
@@ -1355,7 +1355,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
               </div>
               <div className="text-slate-400 text-sm max-w-md leading-relaxed">
                 Gestão quantitativa assistida com custo simples e transparente.
-                Sem performance fee. Sem high watermark. Só 0,6% ao ano.
+                Sem performance fee. Cobrado mensalmente: 0,05% sobre o valor real da carteira em cada mês.
               </div>
             </div>
             <div className="text-right space-y-2">
@@ -1368,7 +1368,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
           </div>
           <div className="grid grid-cols-3 gap-3 mt-6 pt-5 border-t border-white/[0.05]">
             {[
-              {label:"Taxa de gestão",val:"0,6% / ano",sub:`≈ €${fmtInt(privateAnnual)} anuais`,note:"cobrada mensalmente (0,05%/mês)"},
+              {label:"Taxa de gestão",val:"0,6% / ano",sub:`≈ €${fmtInt(privateAnnual)} anuais`,note:"0,05%/mês sobre o valor actual da carteira"},
               {label:"Performance fee",val:"Não aplicável",sub:"sem performance fee",note:"custo simples e previsível"},
               {label:"Custos externos (broker)",val:`${EXTERN_PCT.toFixed(2)}% / ano`,sub:`≈ €${fmtInt(aumEur*EXTERN_PCT/100)} anuais`,note:"custódia + transações + FX"},
             ].map(k=>(
@@ -1414,7 +1414,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
               <div className="flex items-center justify-between py-3 border-b border-[#111827]">
                 <div>
                   <div className="text-slate-200 text-sm font-bold">Taxa de gestão</div>
-                  <div className="text-slate-500 text-xs mt-0.5">0,6% sobre o AUM, cobrada mensalmente</div>
+                  <div className="text-slate-500 text-xs mt-0.5">0,05%/mês sobre o valor real da carteira em cada mês</div>
                 </div>
                 <div className="text-right">
                   <div className="text-slate-100 font-black text-lg">0,6% / ano</div>
@@ -1426,8 +1426,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
                 <div className="text-slate-600 text-xs font-semibold">Não aplicável</div>
               </div>
               <div className="bg-amber-900/10 border border-amber-700/20 rounded-lg px-4 py-3 mt-1">
-                <div className="text-[10px] text-amber-400 font-semibold">Custo DECIDE anual: 0,6% do AUM</div>
-                <div className="text-[10px] text-slate-500 mt-0.5">Sem performance fee. Custo fixo e previsível independentemente da performance da carteira.</div>
+                <div className="text-[10px] text-amber-400 font-semibold">Custo DECIDE: 0,05% por mês sobre o valor da carteira</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Cobrado mensalmente sobre o valor real da carteira nesse mês — sem performance fee, sem valor fixo.</div>
               </div>
             </div>
           )}
@@ -1580,7 +1580,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Quando e como paga</div>
           <div className="space-y-4">
             {(isPrivate?[
-              {title:"Taxa de gestão (0,6%)",timing:"Mensal",detail:"Débito directo de 0,05%/mês sobre o valor da carteira no início do mês.",color:"text-amber-400"},
+              {title:"Taxa de gestão (0,6%/ano)",timing:"Mensal",detail:"0,05% cobrado no início de cada mês sobre o valor real da carteira nesse mês — se a carteira crescer, paga um pouco mais; se cair, paga menos.",color:"text-amber-400"},
               {title:"Performance fee",timing:"Não aplicável",detail:"O plano Private não tem performance fee — custo simples e previsível.",color:"text-slate-600"},
               {title:"Custos externos",timing:"Por transação",detail:"Cobrados pelo Interactive Brokers. Custódia debitada mensalmente; transações no momento da execução.",color:"text-slate-400"},
             ]:[
