@@ -35,7 +35,7 @@ function Nav() {
 
         {/* Nav links */}
         <Flex style={{gap:32,alignItems:"center"}}>
-          {(["Como funciona","Vantagens","Segurança","Sobre nós"] as string[]).map(l=>(
+          {(["Como funciona","Vantagens","Preços","Segurança","Sobre nós"] as string[]).map(l=>(
             <a key={l} href={`#${l.toLowerCase().replace(/ /g,"-").replace(/ç/g,"c").replace(/ã/g,"a")}`}
               style={{color:"#94a3b8",fontSize:14,fontWeight:500,textDecoration:"none",whiteSpace:"nowrap",
                 cursor:"pointer",transition:"color .15s"}}
@@ -43,12 +43,6 @@ function Nav() {
               onMouseLeave={e=>(e.currentTarget.style.color="#94a3b8")}
             >{l}</a>
           ))}
-          <Link href="/fees-client"
-            style={{color:"#94a3b8",fontSize:14,fontWeight:500,textDecoration:"none",whiteSpace:"nowrap",
-              cursor:"pointer",transition:"color .15s"}}
-            onMouseEnter={e=>(e.currentTarget.style.color="#f1f5f9")}
-            onMouseLeave={e=>(e.currentTarget.style.color="#94a3b8")}
-          >Preços</Link>
         </Flex>
 
         {/* Auth buttons */}
@@ -406,8 +400,56 @@ export default function LandingPage() {
           </div>
         </section>
 
+        {/* ── PREÇOS ───────────────────────────────────────────────────── */}
+        <section id="precos" style={{scrollMarginTop:NAV_H,padding:"80px 28px",background:BG2,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          <div style={{maxWidth:1100,margin:"0 auto"}}>
+            <div style={{textAlign:"center",marginBottom:52}}>
+              <div style={{display:"inline-block",fontSize:12,fontWeight:700,letterSpacing:2,
+                color:TEAL,textTransform:"uppercase",marginBottom:14}}>Preços</div>
+              <h2 style={{fontSize:"clamp(1.5rem,2.8vw,2.1rem)",fontWeight:800,color:"#f8fafc",
+                margin:"0 0 14px",letterSpacing:-0.6}}>Simples e transparente</h2>
+              <p style={{fontSize:16,color:"#94a3b8",maxWidth:520,margin:"0 auto",lineHeight:1.7}}>
+                Dois planos, sem surpresas. Sem comissões de transação escondidas, sem conflito de interesses.
+              </p>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,maxWidth:820,margin:"0 auto"}}>
+              {[
+                {plan:"Essencial",color:TEAL,price:"€25",period:"/mês",desc:"Para investidores que querem recomendações claras e controlo total com carteiras a partir de €10 000.",features:["Recomendações mensais do modelo","Dashboard e performance em tempo real","Relatório detalhado da carteira","Verificação de identidade incluída","Suporte por email"],href:"/fees-client",cta:"Ver plano Essencial"},
+                {plan:"Private",color:"#a78bfa",price:"Fee NAV",period:"+ performance",desc:"Para carteiras a partir de €50 000 com hedge cambial, relatório avançado e acompanhamento dedicado.",features:["Tudo do plano Essencial","Fee alinhada ao desempenho","Hedge cambial configurável","Relatório com análise de risco avançada","Acompanhamento personalizado"],href:"/fees-client?segment=private",cta:"Ver plano Private"},
+              ].map(p=>(
+                <div key={p.plan} style={{
+                  background:"rgba(255,255,255,0.025)",border:`1px solid ${p.color}28`,
+                  borderRadius:18,padding:"32px 28px",display:"flex",flexDirection:"column",gap:20,
+                }}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:2,color:p.color,textTransform:"uppercase",marginBottom:8}}>{p.plan}</div>
+                    <div style={{display:"flex",alignItems:"baseline",gap:4,marginBottom:10}}>
+                      <span style={{fontSize:36,fontWeight:800,color:"#f8fafc"}}>{p.price}</span>
+                      <span style={{fontSize:13,color:"#64748b"}}>{p.period}</span>
+                    </div>
+                    <p style={{fontSize:13.5,color:"#94a3b8",lineHeight:1.65,margin:0}}>{p.desc}</p>
+                  </div>
+                  <ul style={{listStyle:"none",padding:0,margin:0,display:"flex",flexDirection:"column",gap:8}}>
+                    {p.features.map(f=>(
+                      <li key={f} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:"#cbd5e1"}}>
+                        <span style={{color:p.color,fontWeight:700,fontSize:14}}>&#10003;</span>{f}
+                      </li>
+                    ))}
+                  </ul>
+                  <Link href={p.href} style={{
+                    display:"block",textAlign:"center",padding:"12px 20px",borderRadius:10,
+                    background:`${p.color}18`,border:`1px solid ${p.color}40`,
+                    color:p.color,fontSize:13,fontWeight:700,textDecoration:"none",
+                    transition:"background .2s",
+                  }}>{p.cta} →</Link>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* ── SEGURANÇA ────────────────────────────────────────────────── */}
-        <section id="seguranca" style={{padding:"80px 28px",background:BG,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+        <section id="seguranca" style={{scrollMarginTop:NAV_H,padding:"80px 28px",background:BG,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
           <div style={{maxWidth:1100,margin:"0 auto"}}>
             <div style={{textAlign:"center",marginBottom:52}}>
               <div style={{display:"inline-block",fontSize:12,fontWeight:700,letterSpacing:2,
@@ -458,7 +500,7 @@ export default function LandingPage() {
         </section>
 
         {/* ── SOBRE NÓS ─────────────────────────────────────────────────── */}
-        <section id="sobre-nos" style={{padding:"80px 28px",background:BG2,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+        <section id="sobre-nos" style={{scrollMarginTop:NAV_H,padding:"80px 28px",background:BG2,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
           <div style={{maxWidth:1100,margin:"0 auto"}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:60,alignItems:"center"}}>
               <div>
@@ -479,19 +521,19 @@ export default function LandingPage() {
                 </p>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                {[
-                  {icon:"📍",label:"Localização",val:"Av. Miguel Bombarda 26, 3º — Lisboa, Portugal"},
-                  {icon:"✉️",label:"Contacto",val:"jcpina01@decidepoweredbyai.com"},
-                  {icon:"🎯",label:"Missão",val:"Democratizar o acesso a estratégias quantitativas de investimento"},
-                  {icon:"🤖",label:"Tecnologia",val:"Modelos próprios de machine learning e análise fundamentalista, actualizados diariamente"},
-                  {icon:"🏛️",label:"Regulação",val:"Operamos em conformidade com MiFID II e legislação portuguesa de serviços de investimento"},
-                ].map(r=>(
+                {([
+                  {dot:TEAL,label:"Localização",val:"Av. Miguel Bombarda 26, 3\u00ba \u2014 Lisboa, Portugal"},
+                  {dot:TEAL,label:"Contacto",val:"jcpina01@decidepoweredbyai.com"},
+                  {dot:TEAL,label:"Miss\u00e3o",val:"Democratizar o acesso a estrat\u00e9gias quantitativas de investimento"},
+                  {dot:TEAL,label:"Tecnologia",val:"Modelos pr\u00f3prios de machine learning e an\u00e1lise fundamentalista, actualizados diariamente"},
+                  {dot:TEAL,label:"Regula\u00e7\u00e3o",val:"Operamos em conformidade com MiFID II e legisla\u00e7\u00e3o portuguesa de servi\u00e7os de investimento"},
+                ] as {dot:string;label:string;val:string}[]).map(r=>(
                   <div key={r.label} style={{
                     display:"flex",alignItems:"flex-start",gap:14,
                     padding:"14px 18px",background:"rgba(255,255,255,0.025)",
                     border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,
                   }}>
-                    <span style={{fontSize:18,flexShrink:0,marginTop:1}}>{r.icon}</span>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:r.dot,flexShrink:0,marginTop:5,display:"inline-block"}}/>
                     <div>
                       <div style={{fontSize:11,fontWeight:600,color:"#475569",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>{r.label}</div>
                       <div style={{fontSize:13.5,color:"#cbd5e1",lineHeight:1.5}}>{r.val}</div>
