@@ -1226,12 +1226,12 @@ const BASE_COST_ROWS=[
 
 
 
-function CustosPage({aum}:{aum:number}) {
+function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"private"}) {
   const [faqOpen,setFaqOpen]=useState<number|null>(null);
 
   const aumEur=Math.max(aum,5000);
   const ytdMonths=new Date().getMonth()+1;
-  const isPrivate=aumEur>=50000;
+  const isPrivate=planOverride==="private"?true:planOverride==="premium"?false:aumEur>=50000;
   const MGMT_PCT_AA=0.60;
   const PERF_RATE=0.15;
   const HIST_CAGR=0.08; // conservative 8% gross
@@ -7123,7 +7123,7 @@ export default function ClientDashboardPage() {
 
               {/* ── HISTÓRICO ── */}
               {activePage==="historico"&&<HistoricoPage sortedMonths={sortedMonths} dates={dates} equityRaw={equityRaw} benchRaw={benchRaw} marginEnabled={marginEnabled} profileFactor={profileFactor}/>}
-              {activePage==="custos"&&<CustosPage aum={aum}/>}
+              {activePage==="custos"&&<CustosPage aum={aum} planOverride={router.query.plan==="premium"?"premium":router.query.plan==="private"?"private":undefined}/>}
 
               {/* ── TESTES DE ROBUSTEZ ── */}
               {activePage==="robustez"&&<RobustezPage/>}
