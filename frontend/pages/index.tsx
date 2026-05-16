@@ -508,44 +508,117 @@ export default function LandingPage() {
         </section>
 
         {/* ── SOBRE NÓS ─────────────────────────────────────────────────── */}
-        <section id="sobre-nos" style={{scrollMarginTop:NAV_H,padding:"80px 28px",background:BG2,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-          <div style={{maxWidth:1100,margin:"0 auto"}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:60,alignItems:"center"}}>
-              <div>
-                <div style={{fontSize:12,fontWeight:700,letterSpacing:2,color:TEAL,
-                  textTransform:"uppercase",marginBottom:14}}>Sobre nós</div>
-                <h2 style={{fontSize:"clamp(1.5rem,2.8vw,2.1rem)",fontWeight:800,color:"#f8fafc",
-                  margin:"0 0 18px",letterSpacing:-0.6,lineHeight:1.2}}>
-                  Construído por quem investe, para quem quer investir melhor
-                </h2>
-                <p style={{fontSize:15,color:"#94a3b8",lineHeight:1.75,margin:"0 0 16px"}}>
-                  O DECIDE nasceu de uma constatação simples: os modelos quantitativos que os melhores fundos de investimento usam são inacessíveis ao investidor individual. Demasiado técnicos, demasiado caros, demasiado opacos.
-                </p>
-                <p style={{fontSize:15,color:"#94a3b8",lineHeight:1.75,margin:"0 0 16px"}}>
-                  A nossa missão é mudar isso — disponibilizar estratégias baseadas em dados, com transparência total, a quem quer tomar decisões de investimento informadas sem delegar o controlo a terceiros.
-                </p>
-                <p style={{fontSize:15,color:"#94a3b8",lineHeight:1.75,margin:0}}>
-                  Somos uma equipa pequena, baseada em Lisboa, com experiência em finanças quantitativas, engenharia de software e gestão de risco. Acreditamos que o melhor investimento é aquele que o investidor compreende.
-                </p>
+        <section id="sobre-nos" style={{scrollMarginTop:NAV_H,background:BG2,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+
+          {/* Hero */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",minHeight:420}}>
+            <div style={{padding:"80px 52px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+              <div style={{fontSize:11,fontWeight:700,letterSpacing:2,color:TEAL,textTransform:"uppercase",marginBottom:18}}>Quem somos</div>
+              <h2 style={{fontSize:"clamp(1.8rem,3.2vw,2.6rem)",fontWeight:800,color:"#f8fafc",margin:"0 0 20px",letterSpacing:-0.8,lineHeight:1.15}}>
+                Inteligência artificial<br/>com propósito.<br/>Decisões com confiança.
+              </h2>
+              <p style={{fontSize:15,color:"#94a3b8",lineHeight:1.75,margin:"0 0 32px",maxWidth:480}}>
+                Na DECIDE, acreditamos que melhores decisões de investimento começam com informação rigorosa, tecnologia avançada e total alinhamento entre o investidor e os seus objetivos.
+              </p>
+              <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+                <Link href="/client/register" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"13px 28px",borderRadius:10,background:`linear-gradient(135deg,${TEAL2},${BLUE})`,color:"#fff",fontSize:14,fontWeight:700,textDecoration:"none",boxShadow:"0 4px 20px rgba(45,212,191,0.3)"}}>
+                  Aceder à plataforma →
+                </Link>
               </div>
-              <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                {([
-                  {dot:TEAL,label:"Localização",val:"Av. Miguel Bombarda 26, 3\u00ba \u2014 Lisboa, Portugal"},
-                  {dot:TEAL,label:"Contacto",val:"jcpina01@decidepoweredbyai.com"},
-                  {dot:TEAL,label:"Miss\u00e3o",val:"Democratizar o acesso a estrat\u00e9gias quantitativas de investimento"},
-                  {dot:TEAL,label:"Tecnologia",val:"Modelos pr\u00f3prios de machine learning e an\u00e1lise fundamentalista, actualizados diariamente"},
-                  {dot:TEAL,label:"Regula\u00e7\u00e3o",val:"Operamos em conformidade com MiFID II e legisla\u00e7\u00e3o portuguesa de servi\u00e7os de investimento"},
-                ] as {dot:string;label:string;val:string}[]).map(r=>(
-                  <div key={r.label} style={{
-                    display:"flex",alignItems:"flex-start",gap:14,
-                    padding:"14px 18px",background:"rgba(255,255,255,0.025)",
-                    border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,
-                  }}>
-                    <span style={{width:8,height:8,borderRadius:"50%",background:r.dot,flexShrink:0,marginTop:5,display:"inline-block"}}/>
-                    <div>
-                      <div style={{fontSize:11,fontWeight:600,color:"#475569",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>{r.label}</div>
-                      <div style={{fontSize:13.5,color:"#cbd5e1",lineHeight:1.5}}>{r.val}</div>
+            </div>
+            <div style={{background:`linear-gradient(135deg,#0d1830 0%,#0a1628 50%,#061020 100%)`,display:"flex",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden"}}>
+              <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 60% 60% at 60% 40%,rgba(45,212,191,0.12) 0%,transparent 70%)"}}/>
+              <div style={{position:"relative",textAlign:"center"}}>
+                <div style={{width:120,height:120,borderRadius:24,background:"rgba(45,212,191,0.08)",border:"1px solid rgba(45,212,191,0.2)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px"}}>
+                  <svg width="56" height="56" viewBox="0 0 56 56" fill="none"><circle cx="28" cy="28" r="28" fill="rgba(45,212,191,0.1)"/><path d="M18 28l7 7 13-13" stroke="#2dd4bf" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </div>
+                <div style={{fontSize:13,color:"#64748b",letterSpacing:1}}>DECIDE · Lisboa</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Valores strip */}
+          <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.2)"}}>
+            <div style={{maxWidth:1200,margin:"0 auto",display:"grid",gridTemplateColumns:"repeat(4,1fr)"}}>
+              {[
+                {icon:"👤",title:"Investidores no centro",desc:"Colocamos os objetivos e o controlo sempre nas mãos do investidor."},
+                {icon:"◎",title:"Transparência total",desc:"Todas as recomendações são explicadas e requerem aprovação explícita."},
+                {icon:"⬡",title:"Tecnologia com rigor",desc:"Modelos quantitativos avançados e gestão de risco institucional."},
+                {icon:"□",title:"Segurança e confiança",desc:"Os seus dados e investimentos estão protegidos com os mais elevados padrões."},
+              ].map((v,i)=>(
+                <div key={v.title} style={{padding:"32px 28px",borderRight:i<3?"1px solid rgba(255,255,255,0.06)":"none"}}>
+                  <div style={{fontSize:20,marginBottom:12,color:TEAL}}>{v.icon}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:"#e2e8f0",marginBottom:8}}>{v.title}</div>
+                  <div style={{fontSize:13,color:"#64748b",lineHeight:1.6}}>{v.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* A nossa história */}
+          <div style={{maxWidth:1200,margin:"0 auto",display:"grid",gridTemplateColumns:"1fr 1fr",gap:80,padding:"80px 28px",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:11,fontWeight:700,letterSpacing:2,color:TEAL,textTransform:"uppercase",marginBottom:16}}>A nossa história</div>
+              <h2 style={{fontSize:"clamp(1.5rem,2.6vw,2rem)",fontWeight:800,color:"#f8fafc",margin:"0 0 20px",letterSpacing:-0.5,lineHeight:1.2}}>
+                Criada por profissionais.<br/>Pensada para investidores.
+              </h2>
+              <p style={{fontSize:15,color:"#94a3b8",lineHeight:1.75,margin:"0 0 14px"}}>
+                A DECIDE nasceu da união de especialistas em gestão de ativos, engenharia financeira e ciência de dados com uma visão comum: combinar o melhor da inteligência artificial com princípios institucionais de transparência, disciplina e gestão de risco.
+              </p>
+              <p style={{fontSize:15,color:"#94a3b8",lineHeight:1.75,margin:"0 0 28px"}}>
+                O nosso propósito é tornar a gestão de carteiras mais inteligente, acessível e alinhada com os interesses de cada investidor.
+              </p>
+              <a href="mailto:jcpina01@decidepoweredbyai.com" style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:14,fontWeight:600,color:TEAL,textDecoration:"none"}}>
+                Saber mais sobre a nossa missão →
+              </a>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:0}}>
+              <div style={{borderRadius:16,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",padding:"24px 28px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"center",minHeight:180}}>
+                <div style={{textAlign:"center"}}>
+                  <div style={{fontSize:32,fontWeight:800,color:TEAL,letterSpacing:-1}}>DECIDE</div>
+                  <div style={{fontSize:12,color:"#475569",marginTop:6,letterSpacing:1}}>POWERED BY AI · LISBOA</div>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                {[
+                  {icon:"○",title:"Independência",desc:"Arquitetura aberta e sem conflitos de interesse."},
+                  {icon:"△",title:"Alinhamento",desc:"O nosso sucesso depende do seu sucesso."},
+                  {icon:"◇",title:"Excelência",desc:"Rigor quantitativo, disciplina e melhoria contínua."},
+                  {icon:"☆",title:"Inovação responsável",desc:"Usamos IA para aumentar a inteligência humana, nunca para a substituir."},
+                ].map(v=>(
+                  <div key={v.title} style={{padding:"16px 18px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12}}>
+                    <div style={{fontSize:16,color:TEAL,marginBottom:6}}>{v.icon}</div>
+                    <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:4}}>{v.title}</div>
+                    <div style={{fontSize:12,color:"#64748b",lineHeight:1.55}}>{v.desc}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* A nossa equipa */}
+          <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",padding:"80px 28px",background:BG}}>
+            <div style={{maxWidth:1200,margin:"0 auto"}}>
+              <div style={{textAlign:"center",marginBottom:52}}>
+                <div style={{fontSize:11,fontWeight:700,letterSpacing:2,color:TEAL,textTransform:"uppercase",marginBottom:14}}>A nossa equipa</div>
+                <h2 style={{fontSize:"clamp(1.5rem,2.8vw,2.1rem)",fontWeight:800,color:"#f8fafc",margin:0,letterSpacing:-0.6}}>
+                  Experiência que inspira confiança
+                </h2>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:20}}>
+                {[
+                  {name:"Joaquim Pina",role:"Fundador & CEO",roleColor:"#2dd4bf",desc:"Mais de 15 anos em gestão de ativos e estratégia de investimento.",initials:"JP"},
+                  {name:"Equipa Quant",role:"Research & Modelos",roleColor:"#60a5fa",desc:"Especialistas em gestão de carteiras e análise quantitativa com experiência institucional.",initials:"EQ"},
+                  {name:"Equipa Tech",role:"Engenharia",roleColor:"#a78bfa",desc:"Engenheiros de dados e especialistas em IA aplicada a mercados financeiros.",initials:"ET"},
+                  {name:"Equipa Risk",role:"Risco & Compliance",roleColor:"#fb7185",desc:"Especialistas em risco e compliance com experiência em instituições financeiras.",initials:"ER"},
+                ].map(m=>(
+                  <div key={m.name} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:"28px 22px"}}>
+                    <div style={{width:64,height:64,borderRadius:"50%",background:`${m.roleColor}18`,border:`1.5px solid ${m.roleColor}40`,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:16,fontSize:18,fontWeight:700,color:m.roleColor}}>
+                      {m.initials}
                     </div>
+                    <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>{m.name}</div>
+                    <div style={{fontSize:12,fontWeight:600,color:m.roleColor,marginBottom:12}}>{m.role}</div>
+                    <div style={{fontSize:13,color:"#64748b",lineHeight:1.6}}>{m.desc}</div>
                   </div>
                 ))}
               </div>
@@ -555,32 +628,28 @@ export default function LandingPage() {
 
         {/* ── CTA BANNER ───────────────────────────────────────────────── */}
         <section style={{
-          padding:"80px 28px",
-          background:`radial-gradient(ellipse 70% 80% at 50% 50%, rgba(34,197,94,0.10) 0%, rgba(45,212,191,0.06) 30%, ${BG2} 70%)`,
+          padding:"64px 28px",
+          background:`linear-gradient(135deg,#07111f 0%,#0a1628 100%)`,
           borderTop:"1px solid rgba(255,255,255,0.06)",
-          borderBottom:"1px solid rgba(255,255,255,0.06)",
-          textAlign:"center",
         }}>
-          <div style={{maxWidth:620,margin:"0 auto"}}>
-            <h2 style={{fontSize:"clamp(1.6rem,3vw,2.2rem)",fontWeight:800,color:"#f8fafc",
-              margin:"0 0 16px",letterSpacing:-0.8}}>
-              Pronto para investir com clareza e controlo?
-            </h2>
-            <p style={{fontSize:16,color:"#94a3b8",margin:"0 0 36px",lineHeight:1.65}}>
-              Crie a sua conta gratuita e receba a sua primeira recomendação.
-            </p>
-            <Link href="/client/register" style={{
-              display:"inline-flex",alignItems:"center",gap:8,
-              padding:"15px 36px",borderRadius:10,
-              background:`linear-gradient(135deg, ${TEAL2} 0%, ${BLUE} 100%)`,
-              color:"#fff",fontSize:16,fontWeight:700,textDecoration:"none",
-              boxShadow:`0 4px 32px rgba(45,212,191,0.35)`,
-            }}>
-              Criar conta gratuita <span>→</span>
-            </Link>
-            <p style={{fontSize:13,color:"#475569",margin:"16px 0 0",fontWeight:500}}>
-              Sem compromisso. Cancele quando quiser.
-            </p>
+          <div style={{maxWidth:1100,margin:"0 auto",display:"grid",gridTemplateColumns:"1fr auto",gap:40,alignItems:"center"}}>
+            <div>
+              <h2 style={{fontSize:"clamp(1.4rem,2.6vw,1.9rem)",fontWeight:800,color:"#f8fafc",margin:"0 0 10px",letterSpacing:-0.5}}>
+                Pronto para investir de forma mais inteligente?
+              </h2>
+              <p style={{fontSize:15,color:"#64748b",margin:0,lineHeight:1.6}}>
+                Descubra como o DECIDE pode ajudá-lo a alcançar os seus objetivos com tecnologia, transparência e controlo total.
+              </p>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12,alignItems:"flex-end",flexShrink:0}}>
+              <Link href="/client/register" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"13px 28px",borderRadius:10,background:`linear-gradient(135deg,${TEAL2},${BLUE})`,color:"#fff",fontSize:14,fontWeight:700,textDecoration:"none",whiteSpace:"nowrap",boxShadow:"0 4px 20px rgba(45,212,191,0.25)"}}>
+                Aceder à plataforma →
+              </Link>
+              <a href="mailto:jcpina01@decidepoweredbyai.com" style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:13,color:"#64748b",textDecoration:"none",whiteSpace:"nowrap"}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 11.5 19.79 19.79 0 01.12 2.82a2 2 0 011.9-2.18h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.09a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+                Falar com o nosso assistente
+              </a>
+            </div>
           </div>
         </section>
 
