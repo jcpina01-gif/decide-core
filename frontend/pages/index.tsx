@@ -613,13 +613,8 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:20,
-              display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
-              <div style={{height:44,overflow:"hidden",display:"flex",alignItems:"center"}}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/images/decide-logo-full.png" alt="DECIDE" style={{height:110,width:"auto",mixBlendMode:"screen",opacity:0.8}} />
-              </div>
-              <p style={{fontSize:11,color:"#334155",margin:0,textAlign:"right",maxWidth:560,lineHeight:1.5}}>
+            <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:20}}>
+              <p style={{fontSize:11,color:"#334155",margin:0,lineHeight:1.5}}>
                 Informação meramente indicativa. Investimentos envolvem risco de perda. Leia a documentação regulamentar antes de subscrever qualquer serviço.
               </p>
             </div>

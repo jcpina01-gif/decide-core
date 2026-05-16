@@ -1313,27 +1313,21 @@ export default function ClientRegisterPage() {
           background: "#080c14",
           color: "#e2e8f0",
           fontFamily: "'Nunito', 'Segoe UI', system-ui, sans-serif",
-          padding: "40px max(20px, 4vw) 60px",
+          padding: wizardStep === 1 ? "0 max(16px, 3vw) 40px" : "40px max(20px, 4vw) 60px",
           boxSizing: "border-box",
         }}
       >
-        {/* Page heading */}
-        <div style={{ maxWidth: 480, margin: "0 auto 32px", textAlign: "center" }}>
-          <h1 style={{ fontSize: "clamp(24px, 4vw, 32px)", fontWeight: 800, lineHeight: 1.2, margin: "0 0 10px", color: "#f1f5f9" }}>
-            {wizardStep === 2 ? "Verificar email e telemóvel" : "Criar conta"}
-          </h1>
-          <p style={{ margin: "0 0 12px", fontSize: 15, color: "#64748b", lineHeight: 1.6 }}>
-            {wizardStep === 2
-              ? "Confirme o email e o telemóvel para concluir o registo."
-              : "Vamos começar com os seus dados."}
-          </p>
-          {wizardStep !== 2 && (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#334155", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 999, padding: "4px 14px" }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-              Demora cerca de 5 minutos
-            </div>
-          )}
-        </div>
+        {/* Page heading — só no passo 2 */}
+        {wizardStep === 2 && (
+          <div style={{ maxWidth: 480, margin: "0 auto 32px", textAlign: "center" }}>
+            <h1 style={{ fontSize: "clamp(24px, 4vw, 32px)", fontWeight: 800, lineHeight: 1.2, margin: "0 0 10px", color: "#f1f5f9" }}>
+              Verificar email e telemóvel
+            </h1>
+            <p style={{ margin: 0, fontSize: 15, color: "#64748b", lineHeight: 1.6 }}>
+              Confirme o email e o telemóvel para concluir o registo.
+            </p>
+          </div>
+        )}
 
         <div>
 
@@ -1360,22 +1354,7 @@ export default function ClientRegisterPage() {
           ) : null}
 
           {devResetEnabled ? (
-            <div
-              style={{
-                marginBottom: 12,
-                borderRadius: 12,
-                background: "rgba(127,29,29,0.12)",
-                border: "1px solid rgba(248,113,113,0.25)",
-                padding: "10px 14px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-              }}
-            >
-              <span style={{ fontSize: 12, color: "#fca5a5", fontWeight: 700 }}>
-                Reiniciar onboarding (testes)
-              </span>
+            <div style={{ marginBottom: 12, display: "flex", justifyContent: "flex-end" }}>
               <button
                 type="button"
                 onClick={() => {
@@ -1390,19 +1369,18 @@ export default function ClientRegisterPage() {
                   window.location.href = "/client/register";
                 }}
                 style={{
-                  background: "rgba(127,29,29,0.5)",
-                  color: "#fecaca",
-                  border: "1px solid rgba(248,113,113,0.5)",
+                  background: "transparent",
+                  color: "#475569",
+                  border: "1px solid #1e293b",
                   borderRadius: 8,
-                  padding: "6px 12px",
-                  fontWeight: 800,
-                  fontSize: 12,
+                  padding: "5px 12px",
+                  fontWeight: 600,
+                  fontSize: 11,
                   cursor: "pointer",
                   whiteSpace: "nowrap",
-                  flexShrink: 0,
                 }}
               >
-                Limpar e reiniciar
+                Reiniciar onboarding
               </button>
             </div>
           ) : null}
@@ -1415,6 +1393,7 @@ export default function ClientRegisterPage() {
                 border: "1px solid rgba(71, 85, 105, 0.55)",
                 background: "rgba(15, 23, 42, 0.45)",
                 overflow: "hidden",
+                display: "none",
               }}
             >
               <button
@@ -1695,26 +1674,107 @@ export default function ClientRegisterPage() {
             </div>
           ) : null}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
-            <div style={REGISTER_CARD_STYLE}>
-              {(
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: REGISTER_STEP1_STACK_GAP_PX,
-                    width: "100%",
-                    marginTop: -4,
-                  }}
-                >
-                  <div style={{ ...registerFieldsColumn }}>
+          <div>
+
+            {/* ── PASSO 1: layout de duas colunas ── */}
+            {wizardStep === 1 && (
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 360px) 1fr",
+                maxWidth: "min(1200px, 100%)",
+                margin: "0 auto",
+                border: "1px solid #1a1f2e",
+                borderTop: "none",
+                overflow: "hidden",
+                minHeight: "calc(100vh - 88px)",
+              }}>
+
+                {/* ── PAINEL ESQUERDO ── */}
+                <div style={{ background: "#07090f", padding: "44px 36px", borderRight: "1px solid #1a1f2e", display: "flex", flexDirection: "column", gap: 20 }}>
+
+                  {/* Título */}
+                  <div>
+                    <h1 style={{ fontSize: 24, fontWeight: 800, color: "#f1f5f9", margin: "0 0 8px", lineHeight: 1.25 }}>Criar conta</h1>
+                    <p style={{ margin: "0 0 14px", fontSize: 14, color: "#64748b", lineHeight: 1.6 }}>Vamos começar com os seus dados.</p>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#334155", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 999, padding: "4px 14px" }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                      Demora cerca de 3–5 minutos
+                    </div>
+                  </div>
+
+                  {/* Features */}
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 14 }}>O que inclui a sua conta</div>
+                    {([
+                      { color: "#2dd4bf", label: "AI & Research de classe institucional", sub: "Modelos proprietários e análise avançada." },
+                      { color: "#60a5fa", label: "Controlo total, sempre", sub: "A decisão final é sempre sua." },
+                      { color: "#a78bfa", label: "Relatórios e performance", sub: "Acompanhe, analise e otimize." },
+                      { color: "#34d399", label: "Segurança e privacidade", sub: "Encriptação TLS e conformidade RGPD." },
+                    ] as Array<{color: string; label: string; sub: string}>).map(f => (
+                      <div key={f.label} style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+                        <div style={{ width: 30, height: 30, borderRadius: 8, background: `${f.color}1a`, border: `1px solid ${f.color}40`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <div style={{ width: 9, height: 9, borderRadius: "50%", background: f.color }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", lineHeight: 1.3 }}>{f.label}</div>
+                          <div style={{ fontSize: 12, color: "#475569", marginTop: 2 }}>{f.sub}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Tipo de conta */}
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 10 }}>Escolha o seu tipo de conta</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {(["premium", "private"] as const).map((seg) => {
+                        const selected = clientSegment === seg;
+                        const label = seg === "premium" ? "Premium" : "Private";
+                        const minLabel = seg === "premium" ? "mín. 5 000 €" : "mín. 50 000 €";
+                        const tagLine = seg === "premium" ? "Investimento disciplinado com custo fixo mensal" : "Para patrimónios mais elevados";
+                        const detail = seg === "premium"
+                          ? "€29/mês · sem performance fee · controlo total do portefólio."
+                          : "0,6%/ano · hedge cambial · análise e acompanhamento avançado.";
+                        return (
+                          <label key={seg} style={{ display: "flex", flexDirection: "column", gap: 5, cursor: "pointer", padding: "12px 12px", borderRadius: 12, border: selected ? (seg==="private"?"1.5px solid #d97706":"1.5px solid #3b82f6") : "1px solid #1a1f2e", background: selected ? (seg==="private"?"rgba(217,119,6,0.08)":"rgba(59,130,246,0.10)") : "#0d1118", transition: "all 0.15s ease", position: "relative" }}>
+                            <div style={{ position: "absolute", top: 10, right: 10, width: 16, height: 16, borderRadius: "50%", border: selected ? (seg==="private"?"2px solid #d97706":"2px solid #3b82f6") : "2px solid rgba(255,255,255,0.15)", background: selected ? (seg==="private"?"#d97706":"#3b82f6") : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              {selected && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff" }} />}
+                            </div>
+                            <input type="radio" name="client_segment" checked={selected} onChange={() => setClientSegmentState(seg)} style={{ display: "none" }} />
+                            <div style={{ fontWeight: 700, fontSize: 13, color: "#e2e8f0", paddingRight: 22 }}>
+                              {label} — <span style={{ color: "#64748b", fontWeight: 500, fontSize: 11 }}>{minLabel}</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: selected ? (seg==="private"?"#fbbf24":"#60a5fa") : "#475569", fontWeight: 600 }}>✔ {tagLine}</div>
+                            <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.4 }}>{detail}</div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Suporte */}
+                  <div style={{ marginTop: "auto", paddingTop: 16, borderTop: "1px solid #1a1f2e" }}>
+                    <div style={{ fontSize: 12, color: "#475569", marginBottom: 6 }}>Dúvidas? Fale connosco</div>
+                    <a href="mailto:support@decide.pt" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#38bdf8", textDecoration: "none" }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                      support@decide.pt
+                    </a>
+                  </div>
+                </div>
+
+                {/* ── PAINEL DIREITO ── */}
+                <div style={{ background: "#080c14", padding: "44px 44px", display: "flex", flexDirection: "column", gap: 20, borderLeft: "1px solid #1a1f2e" }}>
+
+                  {/* ── Dados de acesso ── */}
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: "#f1f5f9", marginBottom: 16, paddingBottom: 10, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>Dados de acesso</div>
                     <div
                       style={{
                         display: "grid",
                         gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
                         gap: "12px 18px",
                         alignItems: "start",
-                        width: "100%",
+                        marginBottom: 12,
                       }}
                     >
                       {/* ── Email + verificação inline ── */}
@@ -1742,7 +1802,7 @@ export default function ClientRegisterPage() {
                             disabled={signupEmailOk}
                           />
                           {signupEmailOk ? (
-                            <span style={{ color: "#22c55e", fontSize: 18, flexShrink: 0 }}>✓</span>
+                            <button type="button" style={{ flexShrink: 0, background: "rgba(34,197,94,0.12)", border: "1px solid rgba(74,222,128,0.35)", color: "#22c55e", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 700, cursor: "default", whiteSpace: "nowrap" }}>Verificado ✓</button>
                           ) : emailLooksValid && !signupEmailLinkSentOnce ? (
                             <button
                               type="button"
@@ -1824,6 +1884,13 @@ export default function ClientRegisterPage() {
                       <div style={{ minWidth: 0 }}>
                         <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 5, fontWeight: 500 }}>Telemóvel</div>
                         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          {/* PT flag selector (decorativo) */}
+                          <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 4, padding: "11px 10px", background: "#0d1118", border: "1px solid #252a3a", borderRadius: 10, color: "#e2e8f0", lineHeight: 1, cursor: "default", userSelect: "none" }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src="https://flagcdn.com/20x15/pt.png" alt="PT" width={20} height={15} style={{ display: "block", borderRadius: 2 }} />
+                            <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, letterSpacing: "0.02em" }}>+351</span>
+                            <span style={{ fontSize: 9, color: "#475569" }}>▾</span>
+                          </div>
                           <input
                             ref={registerPhoneInputRef}
                             value={phone}
@@ -1842,13 +1909,13 @@ export default function ClientRegisterPage() {
                               { ...baseInput, width: "100%", flex: 1 },
                               !!(regFieldErr.phone || regFieldErr.phoneNotVerified),
                             )}
-                            placeholder="+351912345678"
+                            placeholder="912345678"
                             autoComplete="tel"
                             inputMode="tel"
                             disabled={signupPhoneOk}
                           />
                           {signupPhoneOk ? (
-                            <span style={{ color: "#22c55e", fontSize: 18, flexShrink: 0 }}>✓</span>
+                            <button type="button" style={{ flexShrink: 0, background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.4)", color: "#60a5fa", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 700, cursor: "default", whiteSpace: "nowrap" }}>Verificar ✓</button>
                           ) : smsVerificationEnabled && normalizeClientPhone(phone).ok && !signupPhoneOk ? (
                             <button
                               type="button"
@@ -1917,7 +1984,9 @@ export default function ClientRegisterPage() {
                       </div>
                     </div>
 
-                    <div style={{ width: "100%", marginTop: 2, boxSizing: "border-box" }}>
+                    <div style={{ color: "#475569", fontSize: 12, marginTop: -6, marginBottom: 14 }}>Enviaremos um código por SMS.</div>
+
+                    <div style={{ width: "100%", boxSizing: "border-box" }}>
                       <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 5, fontWeight: 500 }}>
                         Nome de utilizador <span style={{ color: "#ef4444" }}>*</span>
                       </div>
@@ -1950,257 +2019,139 @@ export default function ClientRegisterPage() {
                     </div>
                   </div>
 
-                  <div style={{ width: "100%", boxSizing: "border-box" }}>
-                    <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 10, fontWeight: 500 }}>Tipo de conta</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, width: "100%" }}>
-                      {(["premium", "private"] as const).map((seg) => {
-                        const selected = clientSegment === seg;
-                        const label = seg === "premium" ? "Premium" : "Private";
-                        const minLabel = seg === "premium" ? "mín. 5 000 €" : "mín. 50 000 €";
-                        const tagLine = seg === "premium" ? "Investimento disciplinado com custo fixo mensal" : "Para patrimónios mais elevados";
-                        const detail = seg === "premium"
-                          ? "€25/mês · sem performance fee · controlo total do portefólio."
-                          : "0,6%/ano + performance fee · hedge cambial · análise avançada.";
-                        return (
-                          <label
-                            key={seg}
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 8,
-                              cursor: "pointer",
-                              padding: "14px 14px",
-                              borderRadius: 14,
-                              border: selected ? (seg==="private"?"1.5px solid #d97706":"1.5px solid #3b82f6") : "1px solid #1a1f2e",
-                              background: selected ? (seg==="private"?"rgba(217,119,6,0.08)":"rgba(59,130,246,0.10)") : "#0d1118",
-                              transition: "all 0.15s ease",
-                              minWidth: 0,
-                              position: "relative",
-                            }}
-                          >
-                            {/* Custom radio dot */}
-                            <div style={{
-                              position: "absolute",
-                              top: 12,
-                              right: 12,
-                              width: 18,
-                              height: 18,
-                              borderRadius: "50%",
-                              border: selected ? (seg==="private"?"2px solid #d97706":"2px solid #3b82f6") : "2px solid rgba(255,255,255,0.15)",
-                              background: selected ? (seg==="private"?"#d97706":"#3b82f6") : "transparent",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}>
-                              {selected && <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff" }} />}
-                            </div>
-                            <input
-                              type="radio"
-                              name="client_segment"
-                              checked={selected}
-                              onChange={() => setClientSegmentState(seg)}
-                              style={{ display: "none" }}
-                            />
-                            <div style={{ fontWeight: 700, fontSize: 14, color: "#e2e8f0", paddingRight: 24 }}>
-                              {label} — <span style={{ color: "#64748b", fontWeight: 500, fontSize: 12 }}>{minLabel}</span>
-                            </div>
-                            <div style={{ fontSize: 12, color: selected ? (seg==="private"?"#fbbf24":"#60a5fa") : "#475569", fontWeight: 600 }}>
-                              ✔ {tagLine}
-                            </div>
-                            <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.45 }}>
-                              {detail}
-                            </div>
-                          </label>
-                        );
-                      })}
+                  {/* ── Segurança ── */}
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: "#f1f5f9", marginBottom: 16, paddingBottom: 10, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>Segurança</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <PasswordField
+                          label="Palavra-passe"
+                          value={password}
+                          onChange={(v) => {
+                            setPassword(v);
+                            setRegFieldErr((x) => ({ ...x, password: false }));
+                          }}
+                          placeholder="••••••••"
+                          inputStyle={regInputStyle(baseInput, !!regFieldErr.password)}
+                          inputRef={registerPasswordRef}
+                          onInputKeyDown={(e) => {
+                            if (e.key !== "Enter") return;
+                            e.preventDefault();
+                            registerPasswordConfirmRef.current?.focus();
+                          }}
+                        />
+                        {regFieldErr.password ? (
+                          <div style={{ color: "#fca5a5", fontSize: 12, marginBottom: 4, marginTop: -2 }}>
+                            Password não cumpre os requisitos.
+                          </div>
+                        ) : null}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <PasswordField
+                          label="Repetir palavra-passe"
+                          value={passwordConfirm}
+                          onChange={(v) => {
+                            setPasswordConfirm(v);
+                            setRegFieldErr((x) => ({ ...x, passwordConfirm: false }));
+                          }}
+                          placeholder="••••••••"
+                          inputStyle={regInputStyle(baseInput, !!regFieldErr.passwordConfirm)}
+                          inputRef={registerPasswordConfirmRef}
+                          onInputKeyDown={(e) => {
+                            if (e.key !== "Enter") return;
+                            e.preventDefault();
+                            goWizardNextFromStep1();
+                          }}
+                        />
+                        {regFieldErr.passwordConfirm ? (
+                          <div style={{ color: "#fca5a5", fontSize: 12, marginBottom: 4, marginTop: -2 }}>
+                            As passwords não coincidem.
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
 
-                  <div style={{ ...registerFieldsColumn }}>
-                  <div style={registerPwTwoCol}>
-                  <div style={{ minWidth: 0 }}>
-                    <PasswordField
-                      label="Palavra-passe"
-                      value={password}
-                      onChange={(v) => {
-                        setPassword(v);
-                        setRegFieldErr((x) => ({ ...x, password: false }));
-                      }}
-                      placeholder="••••••••"
-                      inputStyle={regInputStyle(baseInput, !!regFieldErr.password)}
-                      inputRef={registerPasswordRef}
-                      onInputKeyDown={(e) => {
-                        if (e.key !== "Enter") return;
-                        e.preventDefault();
-                        registerPasswordConfirmRef.current?.focus();
-                      }}
-                    />
-                    {regFieldErr.password ? (
-                      <div style={{ color: "#fca5a5", fontSize: 12, marginBottom: 6, marginTop: -4 }}>
-                        Password não cumpre os requisitos.
-                      </div>
-                    ) : null}
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <PasswordField
-                      label="Repetir palavra-passe"
-                      value={passwordConfirm}
-                      onChange={(v) => {
-                        setPasswordConfirm(v);
-                        setRegFieldErr((x) => ({ ...x, passwordConfirm: false }));
-                      }}
-                      placeholder="••••••••"
-                      inputStyle={regInputStyle(baseInput, !!regFieldErr.passwordConfirm)}
-                      inputRef={registerPasswordConfirmRef}
-                      onInputKeyDown={(e) => {
-                        if (e.key !== "Enter") return;
-                        e.preventDefault();
-                        goWizardNextFromStep1();
-                      }}
-                    />
-                    {regFieldErr.passwordConfirm ? (
-                      <div style={{ color: "#fca5a5", fontSize: 12, marginBottom: 6, marginTop: -4 }}>
-                        As passwords não coincidem.
-                      </div>
-                    ) : null}
-                  </div>
-                  </div>
-                  </div>
-
-                  <div style={{ width: "100%", minWidth: 0, boxSizing: "border-box" }}>
-                    <div
-                      style={{
-                        marginTop: -4,
-                        padding: "8px 10px 10px",
-                        borderRadius: 10,
-                        background: "rgba(5,46,26,0.06)",
-                        border: "1px solid rgba(34,197,94,0.14)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: "#71717a",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.05em",
-                          marginBottom: 10,
-                          textAlign: "center",
-                        }}
-                      >
+                    {/* PW requirements */}
+                    <div style={{ marginTop: 8, padding: "8px 10px 10px", borderRadius: 10, background: "rgba(5,46,26,0.06)", border: "1px solid rgba(34,197,94,0.14)" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10, textAlign: "center" }}>
                         Requisitos da palavra‑passe
                       </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          flexWrap: "wrap",
-                          gap: 8,
-                          rowGap: 6,
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <ReqPill
-                          compact
-                          ok={strength.minLength}
-                          title={`≥ ${CLIENT_PASSWORD_MIN_LENGTH} caracteres`}
-                        >
-                          ≥{CLIENT_PASSWORD_MIN_LENGTH}
-                        </ReqPill>
-                        <ReqPill compact ok={strength.hasUpper} title="Maiúscula">
-                          A–Z
-                        </ReqPill>
-                        <ReqPill compact ok={strength.hasLower} title="Minúscula">
-                          a–z
-                        </ReqPill>
-                        <ReqPill compact ok={strength.hasDigit} title="Algarismo">
-                          0–9
-                        </ReqPill>
-                        <ReqPill compact ok={strength.hasSpecial} title="Símbolo (!? etc.)">
-                          #
-                        </ReqPill>
-                        <ReqPill compact ok={strength.ok} title="Requisitos cumpridos">
-                          OK
-                        </ReqPill>
-                        <ReqPill compact ok={passwordsMatch} title="Confirmação igual">
-                          Igual
-                        </ReqPill>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, rowGap: 6, alignItems: "center", justifyContent: "center" }}>
+                        <ReqPill compact ok={strength.minLength} title={`≥ ${CLIENT_PASSWORD_MIN_LENGTH} caracteres`}>≥{CLIENT_PASSWORD_MIN_LENGTH}</ReqPill>
+                        <ReqPill compact ok={strength.hasUpper} title="Maiúscula">A–Z</ReqPill>
+                        <ReqPill compact ok={strength.hasLower} title="Minúscula">a–z</ReqPill>
+                        <ReqPill compact ok={strength.hasDigit} title="Algarismo">0–9</ReqPill>
+                        <ReqPill compact ok={strength.hasSpecial} title="Símbolo (#@&)">#@&</ReqPill>
+                        <ReqPill compact ok={strength.ok} title="Requisitos cumpridos">OK</ReqPill>
                       </div>
                     </div>
                   </div>
 
-                  <div style={{ ...registerFieldsColumn }}>
-                  <div
+                  {/* ── Trust badges ── */}
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+                    {[
+                      { icon: "🔒", title: "Encriptação TLS", sub: "Proteção de ponta a ponta" },
+                      { icon: "🛡️", title: "Em conformidade com o RGPD", sub: "Os seus dados estão seguros" },
+                      { icon: "🏦", title: "Parceiro Interactive Brokers", sub: "Infraestrutura institucional" },
+                    ].map(b => (
+                      <div key={b.title} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, flex: "1 1 0", minWidth: 120 }}>
+                        <span style={{ fontSize: 18, flexShrink: 0 }}>{b.icon}</span>
+                        <div>
+                          <div style={{ color: "#94a3b8", fontWeight: 600, lineHeight: 1.3, fontSize: 12 }}>{b.title}</div>
+                          <div style={{ color: "#334155", fontSize: 11 }}>{b.sub}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* ── CTA ── */}
+                  <button
+                    type="button"
+                    disabled={registerSubmitBusy}
+                    onClick={() => {
+                      resetMsgs();
+                      setRegFieldErr({});
+                      if (!emailLooksValid) { setRegFieldErr({ email: true }); setError("Indique um email válido."); return; }
+                      const ph = normalizeClientPhone(phone);
+                      if (!ph.ok) { setRegFieldErr({ phone: true }); setError(ph.error); return; }
+                      const userErr = validateRegisterUsernameInput();
+                      if (userErr) { setRegFieldErr({ username: true }); setError(userErr); return; }
+                      if (!strength.ok) { setRegFieldErr({ password: true }); setError(`Password fraca. ${passwordStrengthSummary()}`); return; }
+                      if (!passwordsMatch) { setRegFieldErr({ passwordConfirm: true }); setError("As passwords não coincidem."); return; }
+                      void goWizardNextFromStep2();
+                    }}
                     style={{
-                      marginTop: 4,
-                      paddingTop: 14,
-                      borderTop: "1px solid rgba(148,163,184,0.12)",
+                      width: "100%",
                       display: "flex",
-                      flexDirection: "column",
                       alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      background: registerSubmitBusy ? "#334155" : "#3b82f6",
+                      color: "#fff",
+                      borderRadius: 12,
+                      padding: "15px 24px",
+                      fontSize: 15,
+                      fontWeight: 700,
+                      border: "none",
+                      cursor: registerSubmitBusy ? "wait" : "pointer",
+                      boxShadow: registerSubmitBusy ? "none" : "0 4px 20px rgba(59,130,246,0.35)",
+                      transition: "all 0.2s ease",
+                      opacity: registerSubmitBusy ? 0.7 : 1,
                     }}
                   >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          // Valida campos e prossegue (verificação é feita inline)
-                          resetMsgs();
-                          setRegFieldErr({});
-                          if (!emailLooksValid) { setRegFieldErr({ email: true }); setError("Indique um email válido."); return; }
-                          const ph = normalizeClientPhone(phone);
-                          if (!ph.ok) { setRegFieldErr({ phone: true }); setError(ph.error); return; }
-                          const userErr = validateRegisterUsernameInput();
-                          if (userErr) { setRegFieldErr({ username: true }); setError(userErr); return; }
-                          if (!strength.ok) { setRegFieldErr({ password: true }); setError(`Password fraca. ${passwordStrengthSummary()}`); return; }
-                          if (!passwordsMatch) { setRegFieldErr({ passwordConfirm: true }); setError("As passwords não coincidem."); return; }
-                          // Email verification is recommended but no longer blocks account creation.
-                          // A verification email is sent after registration.
-                          void goWizardNextFromStep2();
-                        }}
-                        style={{
-                          width: "100%",
-                          maxWidth: REGISTER_CTA_MAX_PX,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: 8,
-                          background: "#3b82f6",
-                          color: "#fff",
-                          borderRadius: 12,
-                          padding: "15px 24px",
-                          fontSize: 15,
-                          fontWeight: 700,
-                          border: "none",
-                          cursor: "pointer",
-                          boxShadow: "0 4px 20px rgba(59,130,246,0.35)",
-                          transition: "all 0.2s ease",
-                        }}
-                      >
-                        Continuar →
-                      </button>
-                    {/* Trust signals */}
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, marginTop: 16, flexWrap: "wrap" }}>
-                      {[
-                        { icon: "🔒", text: "Encriptação TLS" },
-                        { icon: "🇪🇺", text: "RGPD · dados na UE" },
-                        { icon: "🏦", text: "Parceiro Interactive Brokers" },
-                      ].map(t => (
-                        <div key={t.text} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#334155" }}>
-                          <span>{t.icon}</span>
-                          <span>{t.text}</span>
-                        </div>
-                      ))}
-                    </div>
-                    {/* Próximo passo */}
-                    <div style={{ marginTop: 18, padding: "10px 16px", borderRadius: 10, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", textAlign: "center" }}>
-                      <div style={{ fontSize: 11, color: "#1e293b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Próximo passo</div>
-                      <div style={{ fontSize: 13, color: "#475569" }}>Definir o valor a investir e o perfil de risco</div>
-                    </div>
-                  </div>
-                  </div>
+                    {registerSubmitBusy ? "A criar conta…" : "Continuar →"}
+                  </button>
+                  <p style={{ textAlign: "center", fontSize: 12, color: "#475569", margin: 0, lineHeight: 1.5 }}>
+                    Ao continuar, aceita os{" "}
+                    <a href="/terms" style={{ color: "#60a5fa", textDecoration: "underline" }}>Termos de Utilização</a>
+                    {" "}e a{" "}
+                    <a href="/privacy" style={{ color: "#60a5fa", textDecoration: "underline" }}>Política de Privacidade</a>.
+                  </p>
+
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+
 
             {/* ── Bloco dev: link de confirmação e ferramentas de teste ── */}
             {wizardStep === 2 && (
