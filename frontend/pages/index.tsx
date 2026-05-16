@@ -14,6 +14,14 @@ const NAV_H   = 100;
 const Flex = ({children, style}: {children:React.ReactNode; style?:React.CSSProperties}) =>
   <div style={{display:"flex",...style}}>{children}</div>;
 
+function slugify(s: string): string {
+  return s.toLowerCase()
+    .replace(/[àáâãä]/g,"a").replace(/[èéêë]/g,"e")
+    .replace(/[ìíîï]/g,"i").replace(/[òóôõö]/g,"o")
+    .replace(/[ùúûü]/g,"u").replace(/ç/g,"c")
+    .replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"");
+}
+
 /* ─── nav ───────────────────────────────────────────────────────────────── */
 function Nav() {
   return (
@@ -36,7 +44,7 @@ function Nav() {
         {/* Nav links */}
         <Flex style={{gap:32,alignItems:"center"}}>
           {(["Como funciona","Vantagens","Preços","Segurança","Sobre nós"] as string[]).map(l=>(
-            <a key={l} href={`#${l.toLowerCase().replace(/ /g,"-").replace(/ç/g,"c").replace(/ã/g,"a")}`}
+            <a key={l} href={`#${slugify(l)}`}
               style={{color:"#94a3b8",fontSize:14,fontWeight:500,textDecoration:"none",whiteSpace:"nowrap",
                 cursor:"pointer",transition:"color .15s"}}
               onMouseEnter={e=>(e.currentTarget.style.color="#f1f5f9")}
