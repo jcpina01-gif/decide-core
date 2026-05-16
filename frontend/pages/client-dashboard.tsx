@@ -4220,6 +4220,16 @@ export default function ClientDashboardPage() {
     return ()=>window.removeEventListener("decide:nav",handleNav);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
+
+  // Navigate to page from URL query param (?page=custos, etc.)
+  useEffect(()=>{
+    if(!router.isReady) return;
+    const p=String(router.query.page||"").toLowerCase() as Page;
+    const valid:Page[]=["dashboard","reco","carteira","perf","risco","historico","custos",
+      "robustez","ajuda","contactos","simulador","relatorios","ordens","actividade"];
+    if(p&&valid.includes(p)) setActivePage(p);
+  },[router.isReady,router.query.page]);
+
   // NO redirect — public dashboard shows to all
 
   useEffect(()=>{
