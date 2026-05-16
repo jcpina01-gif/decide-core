@@ -458,7 +458,7 @@ export default function LandingPage() {
 
         {/* ── SEGURANÇA ────────────────────────────────────────────────── */}
         <section id="seguranca" style={{scrollMarginTop:NAV_H,padding:"80px 28px",background:BG,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-          <div style={{maxWidth:1100,margin:"0 auto"}}>
+          <div style={{maxWidth:1200,margin:"0 auto"}}>
             <div style={{textAlign:"center",marginBottom:52}}>
               <div style={{display:"inline-block",fontSize:12,fontWeight:700,letterSpacing:2,
                 color:TEAL,textTransform:"uppercase",marginBottom:14}}>Segurança</div>
@@ -470,7 +470,7 @@ export default function LandingPage() {
                 Somos um serviço de assessoria e recomendação — os seus ativos ficam sempre na sua conta da Interactive Brokers, regulada e segregada.
               </p>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:20}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:24}}>
               {[
                 {icon:"🏦",color:"#2dd4bf",title:"Ativos segregados na IB",
                   desc:"A sua carteira está na Interactive Brokers — líder mundial regulado pela SEC, FCA e CMVM. O DECIDE nunca detém nem movimenta os seus fundos."},
@@ -487,12 +487,12 @@ export default function LandingPage() {
               ].map(c=>(
                 <div key={c.title} style={{
                   background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",
-                  borderRadius:14,padding:"24px 22px",transition:"border-color .2s",
+                  borderRadius:16,padding:"28px 26px",transition:"border-color .2s",
                 }}>
-                  <div style={{width:40,height:40,borderRadius:10,marginBottom:14,fontSize:19,
+                  <div style={{width:44,height:44,borderRadius:12,marginBottom:16,fontSize:21,
                     background:`${c.color}18`,display:"flex",alignItems:"center",justifyContent:"center"}}>{c.icon}</div>
-                  <h3 style={{fontSize:14,fontWeight:700,color:"#f1f5f9",margin:"0 0 8px"}}>{c.title}</h3>
-                  <p style={{fontSize:13,color:"#64748b",lineHeight:1.65,margin:0}}>{c.desc}</p>
+                  <h3 style={{fontSize:15,fontWeight:700,color:"#f1f5f9",margin:"0 0 10px"}}>{c.title}</h3>
+                  <p style={{fontSize:13.5,color:"#64748b",lineHeight:1.7,margin:0}}>{c.desc}</p>
                 </div>
               ))}
             </div>
