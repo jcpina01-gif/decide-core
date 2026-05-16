@@ -422,7 +422,7 @@ export default function LandingPage() {
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,maxWidth:820,margin:"0 auto"}}>
               {[
-                {plan:"Premium",color:TEAL,price:"€25",period:"/mês",desc:"Para investidores que querem recomendações claras e controlo total com carteiras a partir de €10 000.",features:["Recomendações mensais do modelo","Dashboard e performance em tempo real","Relatório detalhado da carteira","Verificação de identidade incluída","Suporte por email"],href:"/client-dashboard?page=custos&plan=premium",cta:"Ver custos Premium"},
+                {plan:"Premium",color:TEAL,price:"€29",period:"/mês",desc:"Para investidores que querem recomendações claras e controlo total com carteiras a partir de €10 000.",features:["Recomendações mensais do modelo","Dashboard e performance em tempo real","Relatório detalhado da carteira","Verificação de identidade incluída","Suporte por email"],href:"/client-dashboard?page=custos&plan=premium",cta:"Ver custos Premium"},
                 {plan:"Private",color:"#a78bfa",price:"Fee NAV",period:"+ performance",desc:"Para carteiras a partir de €50 000 com hedge cambial, relatório avançado e acompanhamento dedicado.",features:["Tudo do plano Premium","Fee alinhada ao desempenho","Hedge cambial configurável","Relatório com análise de risco avançada","Acompanhamento personalizado"],href:"/client-dashboard?page=custos&plan=private",cta:"Ver custos Private"},
               ].map(p=>(
                 <div key={p.plan} style={{

@@ -1207,11 +1207,11 @@ function PerfTooltip({active,payload,label}:any) {
 
 /* ─── CustosPage sub-component ─────────────────────────────── */
 // DECIDE fee structure
-// Premium: AUM €5k–€50k  → €25/mês fixo (sem performance fee)
-// Private: AUM >€50k     → 0,6% aa gestão + 15% performance fee acima HWM
-const DECIDE_MONTHLY_PREMIUM=25;          // €/mês
+// Premium: AUM €5k–€50k  → €29/mês fixo (sem performance fee)
+// Private: AUM >€50k     → 0,6% aa gestão (sem performance fee)
+const DECIDE_MONTHLY_PREMIUM=29;          // €/mês
 const DECIDE_MGMT_PCT_PRIVATE=0.60;       // % aa
-const DECIDE_PERF_PCT_PRIVATE=15;         // % sobre ganhos acima HWM
+const DECIDE_PERF_PCT_PRIVATE=0;          // sem performance fee
 const MARKET_AVG_PCT=0.62;
 const ACTIVE_FUND_PCT=2.0;
 
@@ -1233,17 +1233,17 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
   const ytdMonths=new Date().getMonth()+1;
   const isPrivate=planOverride==="private"?true:planOverride==="premium"?false:aumEur>=50000;
   const MGMT_PCT_AA=0.60;
-  const PERF_RATE=0.15;
+  const PERF_RATE=0;    // sem performance fee
   const HIST_CAGR=0.08; // conservative 8% gross
   const MARKET_ETF=0.62;
   const ACTIVE_FUND=2.00;
   const EXTERN_PCT=0.12; // custody+transactions+fx+other
   const EX_CAP=Math.max(aumEur,25000); const YRS=10;
 
-  // Premium: fixed €25/month
-  const premiumAnnual=25*12;
+  // Premium: fixed €29/month
+  const premiumAnnual=29*12;
   const premiumPct=premiumAnnual/aumEur*100;
-  const premiumYtd=25*ytdMonths;
+  const premiumYtd=29*ytdMonths;
   // Private: 0.6%/year + performance fee
   const privateAnnual=aumEur*(MGMT_PCT_AA/100);
   const privatePct=MGMT_PCT_AA;
@@ -1274,9 +1274,9 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
   const fmtInt=(n:number)=>Math.round(n).toLocaleString("pt-PT");
 
   const FAQS_PREMIUM=[
-    {q:"O que está incluído nos €25/mês?",
+    {q:"O que está incluído nos €29/mês?",
      a:"Recomendações mensais, dashboard completo, monitorização da carteira, histórico de decisões e suporte por email. O modelo quantitativo gera o plano — você decide se executa."},
-    {q:"Existem custos além dos €25/mês?",
+    {q:"Existem custos além dos €29/mês?",
      a:"Sim. Existem custos externos ao DECIDE: custódia (~0,06%), transações (~0,04%), câmbio (~0,01%) e taxas regulatórias (~0,01%). Estes são cobrados pelo broker (Interactive Brokers), não pelo DECIDE."},
     {q:"Posso cancelar quando quiser?",
      a:"Sim. O plano Premium pode ser cancelado a qualquer momento sem penalização. Não há contratos de permanência."},
@@ -1284,14 +1284,14 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
      a:"A mensalidade é cobrada no início de cada mês. O primeiro pagamento é feito na activação do serviço."},
   ];
   const FAQS_PRIVATE=[
-    {q:"Como funciona a performance fee?",
-     a:"A performance fee é de 15% sobre os ganhos acima do high watermark anual. Só é cobrada quando a carteira supera o máximo histórico anterior — garantindo alinhamento total de interesses."},
-    {q:"O que é o high watermark?",
-     a:"O high watermark é o valor máximo histórico da sua carteira. Se a carteira cair e depois recuperar, a performance fee só se aplica quando o valor supera o máximo anterior. Nunca paga duas vezes pelo mesmo ganho."},
+    {q:"O que está incluído no plano Private?",
+     a:"Tudo o que o plano Premium inclui, mais: hedge cambial configurável, relatório de risco avançado e acompanhamento personalizado. Orientado a carteiras a partir de €50 000."},
     {q:"Custos DECIDE vs custos externos — qual a diferença?",
-     a:"Os custos DECIDE (0,6% + performance fee) são a comissão pelo serviço de gestão quantitativa. Os custos externos (custódia, transações, câmbio) são cobrados pelo broker e não beneficiam o DECIDE."},
+     a:"O custo DECIDE (0,6% aa) é a comissão pelo serviço de gestão quantitativa. Os custos externos (custódia, transações, câmbio) são cobrados pelo broker (Interactive Brokers) e não beneficiam o DECIDE."},
     {q:"Quando é cobrada a taxa de gestão?",
-     a:"A taxa de gestão de 0,6% é cobrada mensalmente (0,05%/mês) sobre o valor da carteira. A performance fee é calculada e cobrada anualmente."},
+     a:"A taxa de gestão de 0,6% é cobrada mensalmente (0,05%/mês) sobre o valor da carteira."},
+    {q:"Existe performance fee no plano Private?",
+     a:"Não. O plano Private tem apenas a taxa de gestão de 0,6% ao ano, sem qualquer performance fee. Custo simples, previsível e alinhado com o seu interesse."},
   ];
   const FAQS=isPrivate?FAQS_PRIVATE:FAQS_PREMIUM;
 
@@ -1313,7 +1313,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
             <div>
               <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-2">Plano PREMIUM · DECIDE</div>
               <div className="text-slate-100 font-black text-3xl tracking-tight mb-2">
-                €25<span className="text-slate-400 font-normal text-xl"> / mês</span>
+                €29<span className="text-slate-400 font-normal text-xl"> / mês</span>
               </div>
               <div className="text-slate-400 text-sm max-w-sm leading-relaxed">
                 Investimento disciplinado com custo simples, fixo e totalmente transparente.
@@ -1331,7 +1331,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
           {/* 3-col KPI */}
           <div className="grid grid-cols-3 gap-3 mt-6 pt-5 border-t border-white/[0.05]">
             {[
-              {label:"Gestão DECIDE",val:"€25 / mês",sub:"custo fixo, previsível",note:"sem performance fee"},
+              {label:"Gestão DECIDE",val:"€29 / mês",sub:"custo fixo, previsível",note:"sem performance fee"},
               {label:"Custos externos (broker)",val:`${EXTERN_PCT.toFixed(2)}% / ano`,sub:`≈ €${fmtInt(aumEur*EXTERN_PCT/100)} / ano`,note:"custódia + transações + FX"},
               {label:"Custo total estimado",val:`${totalFixedPct.toFixed(2)}% / ano`,sub:`€${fmtInt(premiumAnnual+aumEur*EXTERN_PCT/100)} anuais`,note:`a preços actuais do portfólio`},
             ].map(k=>(
@@ -1352,11 +1352,10 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
               <div className="text-[10px] uppercase tracking-widest text-amber-700 mb-2">Plano PRIVATE · DECIDE</div>
               <div className="text-slate-100 font-black text-3xl tracking-tight mb-2">
                 0,6%<span className="text-slate-400 font-normal text-xl"> / ano</span>
-                <span className="ml-3 text-amber-400 font-normal text-xl">+ 15% performance</span>
               </div>
               <div className="text-slate-400 text-sm max-w-md leading-relaxed">
-                Gestão quantitativa assistida com alinhamento total de interesses.
-                A performance fee só é cobrada quando ganha — acima do high watermark.
+                Gestão quantitativa assistida com custo simples e transparente.
+                Sem performance fee. Sem high watermark. Só 0,6% ao ano.
               </div>
             </div>
             <div className="text-right space-y-2">
@@ -1370,7 +1369,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
           <div className="grid grid-cols-3 gap-3 mt-6 pt-5 border-t border-white/[0.05]">
             {[
               {label:"Taxa de gestão",val:"0,6% / ano",sub:`≈ €${fmtInt(privateAnnual)} anuais`,note:"cobrada mensalmente (0,05%/mês)"},
-              {label:"Performance fee",val:"15% sobre ganhos",sub:"acima do high watermark",note:"alinhamento total de interesses"},
+              {label:"Performance fee",val:"Não aplicável",sub:"sem performance fee",note:"custo simples e previsível"},
               {label:"Custos externos (broker)",val:`${EXTERN_PCT.toFixed(2)}% / ano`,sub:`≈ €${fmtInt(aumEur*EXTERN_PCT/100)} anuais`,note:"custódia + transações + FX"},
             ].map(k=>(
               <div key={k.label} className="bg-white/[0.03] border border-white/[0.05] rounded-xl px-4 py-3">
@@ -1397,8 +1396,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
                   <div className="text-slate-500 text-xs mt-0.5">Serviço de gestão quantitativa</div>
                 </div>
                 <div className="text-right">
-                  <div className="text-slate-100 font-black text-lg">€25 / mês</div>
-                  <div className="text-slate-600 text-[10px]">= €300 / ano</div>
+                  <div className="text-slate-100 font-black text-lg">€29 / mês</div>
+                  <div className="text-slate-600 text-[10px]">= €348 / ano</div>
                 </div>
               </div>
               <div className="flex items-center justify-between py-2">
@@ -1406,7 +1405,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
                 <div className="text-slate-600 text-xs font-semibold">Não aplicável</div>
               </div>
               <div className="bg-teal-900/15 border border-teal-700/20 rounded-lg px-4 py-3 mt-2">
-                <div className="text-[10px] text-teal-400 font-semibold">Custo DECIDE anual fixo: €300</div>
+                <div className="text-[10px] text-teal-400 font-semibold">Custo DECIDE anual fixo: €348</div>
                 <div className="text-[10px] text-slate-500 mt-0.5">Independentemente da performance da carteira.</div>
               </div>
             </div>
@@ -1422,37 +1421,13 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
                   <div className="text-slate-600 text-[10px]">≈ €{fmtInt(privateAnnual)} / ano</div>
                 </div>
               </div>
-              <div className="flex items-start justify-between py-3 border-b border-[#111827]">
-                <div>
-                  <div className="text-amber-400 text-sm font-bold">Performance fee</div>
-                  <div className="text-slate-500 text-xs mt-0.5">15% sobre ganhos acima do high watermark</div>
-                  <div className="text-slate-600 text-xs mt-1">Cobrada anualmente · Nunca acima do ganho real</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-amber-400 font-black text-lg">15%</div>
-                  <div className="text-slate-600 text-[10px]">só se houver ganhos</div>
-                </div>
+              <div className="flex items-center justify-between py-2">
+                <div className="text-slate-500 text-xs">Performance fee</div>
+                <div className="text-slate-600 text-xs font-semibold">Não aplicável</div>
               </div>
-              {/* HWM explainer */}
               <div className="bg-amber-900/10 border border-amber-700/20 rounded-lg px-4 py-3 mt-1">
-                <div className="text-[10px] text-amber-400 font-semibold mb-1">Como funciona o high watermark</div>
-                <div className="text-[10px] text-slate-500 leading-relaxed">
-                  O high watermark é o valor máximo histórico da carteira. A performance fee
-                  só se aplica quando a carteira supera esse máximo — se cair e recuperar,
-                  só paga quando ultrapassa o topo anterior. <span className="text-slate-400 font-semibold">Nunca paga duas vezes pelo mesmo ganho.</span>
-                </div>
-                <div className="mt-2 grid grid-cols-3 gap-2 text-[9px]">
-                  {[
-                    {s:"Carteira cresce +€5.000",r:"15% × €5.000 = €750"},
-                    {s:"Carteira cai −€3.000",r:"performance fee = €0"},
-                    {s:"Recupera os €3.000",r:"performance fee = €0"},
-                  ].map(e=>(
-                    <div key={e.s} className="bg-white/[0.03] rounded-lg px-2 py-2">
-                      <div className="text-slate-400">{e.s}</div>
-                      <div className="text-amber-400/80 font-semibold mt-1">{e.r}</div>
-                    </div>
-                  ))}
-                </div>
+                <div className="text-[10px] text-amber-400 font-semibold">Custo DECIDE anual: 0,6% do AUM</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Sem performance fee. Custo fixo e previsível independentemente da performance da carteira.</div>
               </div>
             </div>
           )}
@@ -1497,10 +1472,9 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
           <div className="space-y-2.5">
             {(isPrivate?[
               {label:"Taxa de gestão (0,6%)",val:EX_CAP*0.006,c:"text-amber-400"},
-              {label:"Performance fee estimada (8% × 15%)",val:EX_CAP*HIST_CAGR*PERF_RATE,c:"text-amber-400/70"},
               {label:"Custódia + transações + FX",val:EX_CAP*EXTERN_PCT/100,c:"text-slate-400"},
             ]:[
-              {label:"Mensalidade DECIDE (€25 × 12)",val:300,c:"text-teal-400"},
+              {label:`Mensalidade DECIDE (€29 × 12)`,val:29*12,c:"text-teal-400"},
               {label:"Custódia + transações + FX",val:EX_CAP*EXTERN_PCT/100,c:"text-slate-400"},
             ]).map(r=>(
               <div key={r.label} className="flex items-center justify-between">
@@ -1512,11 +1486,11 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
               <div className="text-slate-200 text-xs font-bold">Total estimado / ano</div>
               <div className="text-slate-100 font-black text-base">
                 €{fmtInt(isPrivate
-                  ? EX_CAP*0.006 + EX_CAP*HIST_CAGR*PERF_RATE + EX_CAP*EXTERN_PCT/100
-                  : 300 + EX_CAP*EXTERN_PCT/100)}
+                  ? EX_CAP*0.006 + EX_CAP*EXTERN_PCT/100
+                  : 29*12 + EX_CAP*EXTERN_PCT/100)}
               </div>
             </div>
-            <div className="text-[10px] text-slate-600 italic">Valores estimados. A performance fee depende dos resultados reais.</div>
+            <div className="text-[10px] text-slate-600 italic">Valores estimados baseados no AUM actual.</div>
           </div>
         </div>
 
