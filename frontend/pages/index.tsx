@@ -457,7 +457,7 @@ export default function LandingPage() {
         </section>
 
         {/* ── SEGURANÇA ────────────────────────────────────────────────── */}
-        <section id="seguranca" style={{scrollMarginTop:NAV_H+60,padding:"80px 28px",background:BG,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+        <section id="seguranca" style={{scrollMarginTop:NAV_H,padding:"80px 28px",background:BG,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
           <div style={{maxWidth:1200,margin:"0 auto"}}>
             <div style={{textAlign:"center",marginBottom:52}}>
               <div style={{display:"inline-block",fontSize:12,fontWeight:700,letterSpacing:2,
