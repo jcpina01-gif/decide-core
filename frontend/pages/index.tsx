@@ -526,13 +526,21 @@ export default function LandingPage() {
                 </Link>
               </div>
             </div>
-            <div style={{background:`linear-gradient(135deg,#0d1830 0%,#0a1628 50%,#061020 100%)`,display:"flex",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden"}}>
-              <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 60% 60% at 60% 40%,rgba(45,212,191,0.12) 0%,transparent 70%)"}}/>
-              <div style={{position:"relative",textAlign:"center"}}>
-                <div style={{width:120,height:120,borderRadius:24,background:"rgba(45,212,191,0.08)",border:"1px solid rgba(45,212,191,0.2)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px"}}>
-                  <svg width="56" height="56" viewBox="0 0 56 56" fill="none"><circle cx="28" cy="28" r="28" fill="rgba(45,212,191,0.1)"/><path d="M18 28l7 7 13-13" stroke="#2dd4bf" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                </div>
-                <div style={{fontSize:13,color:"#64748b",letterSpacing:1}}>DECIDE · Lisboa</div>
+            <div style={{position:"relative",overflow:"hidden",minHeight:420}}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/quem-somos-hero.png"
+                alt="DECIDE"
+                style={{
+                  position:"absolute",inset:0,width:"100%",height:"100%",
+                  objectFit:"cover",objectPosition:"right top",
+                  filter:"brightness(0.55) saturate(0.8)",
+                }}
+              />
+              <div style={{position:"absolute",inset:0,background:"linear-gradient(to right,rgba(8,12,20,0.6) 0%,transparent 60%)"}}/>
+              <div style={{position:"absolute",bottom:28,right:28,display:"flex",alignItems:"center",gap:10,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(8px)",borderRadius:10,padding:"10px 16px",border:"1px solid rgba(255,255,255,0.08)"}}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/images/decide-logo-full.png" alt="DECIDE" style={{height:36,width:"auto",mixBlendMode:"screen"}}/>
               </div>
             </div>
           </div>
