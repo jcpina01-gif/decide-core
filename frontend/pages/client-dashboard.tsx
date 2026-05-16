@@ -1581,10 +1581,10 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
           <div className="space-y-4">
             {(isPrivate?[
               {title:"Taxa de gestão (0,6%)",timing:"Mensal",detail:"Débito directo de 0,05%/mês sobre o valor da carteira no início do mês.",color:"text-amber-400"},
-              {title:"Performance fee (15%)",timing:"Anual",detail:"Calculada no final do ano fiscal. Só cobrada se a carteira superar o high watermark. Sem antecipação.",color:"text-amber-300"},
+              {title:"Performance fee",timing:"Não aplicável",detail:"O plano Private não tem performance fee — custo simples e previsível.",color:"text-slate-600"},
               {title:"Custos externos",timing:"Por transação",detail:"Cobrados pelo Interactive Brokers. Custódia debitada mensalmente; transações no momento da execução.",color:"text-slate-400"},
             ]:[
-              {title:"Mensalidade DECIDE (€25)",timing:"Mensal",detail:"Débito directo no início de cada mês. Cancelável a qualquer momento.",color:"text-teal-400"},
+              {title:"Mensalidade DECIDE (€29)",timing:"Mensal",detail:"Débito directo no início de cada mês. Cancelável a qualquer momento.",color:"text-teal-400"},
               {title:"Custos externos",timing:"Por transação",detail:"Cobrados pelo Interactive Brokers no momento da custódia e execução das ordens.",color:"text-slate-400"},
               {title:"Performance fee",timing:"Não aplicável",detail:"O plano Premium não tem performance fee — custo fixo e previsível.",color:"text-slate-600"},
             ]).map(r=>(
