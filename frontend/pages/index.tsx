@@ -615,14 +615,19 @@ export default function LandingPage() {
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:20}}>
                 {[
-                  {name:"Joaquim Pina",role:"Fundador & CEO",roleColor:"#2dd4bf",desc:"Mais de 15 anos em gestão de ativos e estratégia de investimento.",initials:"JP"},
+                  {name:"Joaquim Calça e Pina",role:"Fundador & CEO",roleColor:"#2dd4bf",desc:"Mais de 15 anos em gestão de ativos e estratégia de investimento.",initials:"JP",photo:"/images/team-jcp.png"},
                   {name:"Equipa Quant",role:"Research & Modelos",roleColor:"#60a5fa",desc:"Especialistas em gestão de carteiras e análise quantitativa com experiência institucional.",initials:"EQ"},
                   {name:"Equipa Tech",role:"Engenharia",roleColor:"#a78bfa",desc:"Engenheiros de dados e especialistas em IA aplicada a mercados financeiros.",initials:"ET"},
                   {name:"Equipa Risk",role:"Risco & Compliance",roleColor:"#fb7185",desc:"Especialistas em risco e compliance com experiência em instituições financeiras.",initials:"ER"},
                 ].map(m=>(
                   <div key={m.name} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:"28px 22px"}}>
-                    <div style={{width:64,height:64,borderRadius:"50%",background:`${m.roleColor}18`,border:`1.5px solid ${m.roleColor}40`,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:16,fontSize:18,fontWeight:700,color:m.roleColor}}>
-                      {m.initials}
+                    <div style={{width:64,height:64,borderRadius:"50%",overflow:"hidden",border:`1.5px solid ${m.roleColor}40`,marginBottom:16,flexShrink:0,background:`${m.roleColor}18`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      {"photo" in m && m.photo ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={m.photo} alt={m.name} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"center top"}}/>
+                      ) : (
+                        <span style={{fontSize:18,fontWeight:700,color:m.roleColor}}>{m.initials}</span>
+                      )}
                     </div>
                     <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>{m.name}</div>
                     <div style={{fontSize:12,fontWeight:600,color:m.roleColor,marginBottom:12}}>{m.role}</div>
