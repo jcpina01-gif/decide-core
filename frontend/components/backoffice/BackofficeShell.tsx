@@ -21,7 +21,6 @@ const ITEMS: { id: BackofficeNavId; href: string; label: string }[] = [
   { id: "monitoring", href: "/backoffice/monitoring", label: "Monitorização" },
   { id: "model-monitoring", href: "/backoffice/model-monitoring", label: "Modelo" },
   { id: "rolling-diagnostics", href: "/backoffice/rolling-diagnostics", label: "Diagnóstico" },
-  { id: "kpi-diagnostics", href: "/backoffice/kpi-diagnostics", label: "KPI Flask" },
   { id: "audit", href: "/backoffice/audit", label: "Auditoria" },
   { id: "audit-guide", href: "/backoffice/audit-logs", label: "Guia MiFID" },
 ];
