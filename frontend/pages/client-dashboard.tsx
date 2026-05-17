@@ -2657,14 +2657,9 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         const sentOrders = ibkrPos.filter(p=>p.qty>0).map(p=>({
           ticker:p.ticker, side:"SELL" as const, requested_qty:p.qty, ib_order_id:null,
         }));
-        const fillsForAudit=(j.fills??[]).length>0
-          ?(j.fills as Record<string,unknown>[]).map(f=>{
-            const s=String(f.side??"").toUpperCase();
-            const a=String(f.action??"").toLowerCase();
-            const side:("BUY"|"SELL")=(s==="BUY"||a==="comprar"||a==="buy")?"BUY":"SELL";
-            return {ticker:String(f.ticker??""),side,requested_qty:Number(f.requested_qty??0),ib_order_id:f.ib_order_id as number|null};
-          })
-          :sentOrders;
+        // Use sentOrders for correct side (SELL for longs); enrich with IB order IDs from fills
+        const ibFillMap=new Map((j.fills??[] as Record<string,unknown>[]).map(f=>[String(f.ticker??"").toUpperCase(),f.ib_order_id as number|null]));
+        const fillsForAudit=sentOrders.map(o=>({...o,ib_order_id:ibFillMap.get(o.ticker.toUpperCase())??null}));
         void auditSaveOrders(approvalId, fillsForAudit);
         void fetch("/api/audit/config-change",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
           client_id: auditClientId(), changed_by:"client", change_type:"sell_all",
@@ -2729,14 +2724,9 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
           ...longs.map(p=>({ticker:p.ticker,side:"SELL" as const,requested_qty:p.qty,ib_order_id:null})),
           ...shorts.map(p=>({ticker:p.ticker,side:"BUY" as const,requested_qty:Math.abs(p.qty),ib_order_id:null})),
         ];
-        const fillsForAudit=(j.fills??[]).length>0
-          ?(j.fills as Record<string,unknown>[]).map(f=>{
-            const s=String(f.side??"").toUpperCase();
-            const a=String(f.action??"").toLowerCase();
-            const side:("BUY"|"SELL")=(s==="BUY"||a==="comprar"||a==="buy")?"BUY":"SELL";
-            return {ticker:String(f.ticker??""),side,requested_qty:Number(f.requested_qty??0),ib_order_id:f.ib_order_id as number|null};
-          })
-          :sentFlat2;
+        // Use sentFlat2 for correct side (longs→SELL, shorts→BUY); enrich with IB order IDs from fills
+        const ibFillMap2=new Map((j.fills??[] as Record<string,unknown>[]).map(f=>[String(f.ticker??"").toUpperCase(),f.ib_order_id as number|null]));
+        const fillsForAudit=sentFlat2.map(o=>({...o,ib_order_id:ibFillMap2.get(o.ticker.toUpperCase())??null}));
         try{
           console.log("[audit] flatten: saving approval, clientId=", auditClientId(), "fills=", fillsForAudit.length);
           const approvalId = await auditSaveApproval(null);
@@ -2944,9 +2934,13 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     if (!fills.length) return;
     console.log(`[audit] auditSaveOrders: clientId=${clientId} fills=${fills.length} approvalId=${approvalId}`);
     const results = await Promise.allSettled(fills.map(f => {
-      const s = (f.side ?? "").toUpperCase();
+      // action takes priority (order intent); side is fallback (may reflect position direction)
       const a = (f.action ?? "").toLowerCase();
-      const side: "BUY"|"SELL" = (s === "BUY" || a === "comprar" || a === "buy") ? "BUY" : "SELL";
+      const s = (f.side ?? "").toUpperCase();
+      const side: "BUY"|"SELL" =
+        (a === "comprar" || a === "buy") ? "BUY" :
+        (a === "vender" || a === "reduzir" || a === "sell") ? "SELL" :
+        s === "SELL" ? "SELL" : "BUY";
       return fetch("/api/audit/order", {
         method: "POST", headers: {"Content-Type":"application/json"},
         body: JSON.stringify({
