@@ -116,6 +116,49 @@ export default function BackofficeAuditPage() {
     }
   };
 
+  const [writeTestMsg, setWriteTestMsg] = useState("");
+  const runWriteTest = async () => {
+    setWriteTestMsg("A escrever…");
+    try {
+      // 1. Write an approval
+      const ar = await fetch("/api/audit/approval", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: clientId || "jcpina01", action: "approved", recommendation_id: null }),
+      });
+      const aj = await ar.json() as { ok?: boolean; id?: string; error?: string };
+      if (!ar.ok || !aj.ok) {
+        setWriteTestMsg(`✗ approval falhou HTTP ${ar.status}: ${aj.error ?? "?"}`);
+        return;
+      }
+      // 2. Write an order
+      const or2 = await fetch("/api/audit/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: clientId || "jcpina01",
+          approval_id: aj.id,
+          ticker: "TEST",
+          side: "BUY",
+          qty: 1,
+          status: "submitted",
+          submitted_at: new Date().toISOString(),
+        }),
+      });
+      const oj = await or2.json() as { ok?: boolean; id?: string; error?: string };
+      if (!or2.ok || !oj.ok) {
+        setWriteTestMsg(`✗ order falhou HTTP ${or2.status}: ${oj.error ?? "?"}`);
+        return;
+      }
+      setWriteTestMsg(`✓ approval=${aj.id?.slice(0,8)} order=${oj.id?.slice(0,8)} — carrega "Ordens" para ver`);
+      // Auto-reload
+      void loadRows(clientId || "jcpina01", "orders");
+      setActiveTable("orders");
+    } catch (e) {
+      setWriteTestMsg("Erro de rede: " + (e instanceof Error ? e.message : "falha"));
+    }
+  };
+
   const downloadBundle = useCallback(async () => {
     const id = clientId.trim();
     if (!id) return;
@@ -275,6 +318,9 @@ export default function BackofficeAuditPage() {
             <button style={btn(true)} onClick={() => void runDbTest()}>
               Testar ligação DB
             </button>
+            <button style={btn(false)} onClick={() => void runWriteTest()}>
+              Testar escrita audit
+            </button>
             <Link
               href="/backoffice/audit-logs"
               style={{ color: DECIDE_DASHBOARD.accentSky, fontSize: 13, fontWeight: 600 }}
@@ -290,6 +336,11 @@ export default function BackofficeAuditPage() {
           {testMsg && (
             <p style={{ marginTop: 10, fontSize: 12, color: testMsg.startsWith("✓") ? "#4ade80" : "#f87171", fontFamily: "monospace", wordBreak: "break-all" }}>
               {testMsg}
+            </p>
+          )}
+          {writeTestMsg && (
+            <p style={{ marginTop: 6, fontSize: 12, color: writeTestMsg.startsWith("✓") ? "#4ade80" : "#f87171", fontFamily: "monospace", wordBreak: "break-all" }}>
+              {writeTestMsg}
             </p>
           )}
           <p style={{ marginTop: 12, fontSize: 11, color: "#3f3f46", lineHeight: 1.5 }}>
