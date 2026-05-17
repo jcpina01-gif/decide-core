@@ -677,8 +677,12 @@ function annualVol(r: number[]) {
   const v = Math.sqrt(clean.reduce((a,b)=>a+(b-m)**2,0)/(clean.length-1)*252);
   return Number.isFinite(v) ? v : 0;
 }
+const RISK_FREE_ANNUAL = 0.02; // EUR risk-free rate (approx. long-run ECB/ESTR)
 function sharpe(r: number[]) {
-  const v = annualVol(r)/Math.sqrt(252); return v ? (r.reduce((a,b)=>a+b,0)/r.length/v)*Math.sqrt(252) : 0;
+  const v = annualVol(r)/Math.sqrt(252);
+  if(!v) return 0;
+  const rfDaily = RISK_FREE_ANNUAL/252;
+  return (r.reduce((a,b)=>a+b,0)/r.length - rfDaily)/v*Math.sqrt(252);
 }
 function currentDD(eq: number[]) {
   let pk=eq[0]??1, dd=0;
@@ -5134,7 +5138,7 @@ export default function ClientDashboardPage() {
                         {label:"CAGR histórico",val:fmtPct(scaledAnn,true),c:scaledAnn>=0?"text-teal-400":"text-red-400",sub:"Desde início"},
                         {label:"Volatilidade",val:reportVol>0?`${reportVol.toFixed(1)}%`:"—",c:"text-amber-400",sub:"Anualizada"},
                         {label:"Máx. drawdown",val:scaledDD!==0?fmtPct(scaledDD):"—",c:"text-red-400",sub:"Período completo"},
-                        {label:"Sharpe",val:sharpeVal.toFixed(2),c:sharpeVal>=1?"text-emerald-400":sharpeVal>=0?"text-amber-400":"text-red-400",sub:"Risco/retorno"},
+                        {label:"Sharpe",val:sharpeVal.toFixed(2),c:sharpeVal>=1?"text-emerald-400":sharpeVal>=0?"text-amber-400":"text-red-400",sub:"Rf = 2% EUR ajustado"},
                       ].map(k=>(
                         <div key={k.label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-4 py-4">
                           <div className="text-slate-500 text-[10px] font-semibold mb-2 uppercase tracking-wider">{k.label}</div>
@@ -6694,7 +6698,7 @@ export default function ClientDashboardPage() {
                        m:perfData.m.ann, b:benchPerfData.ann,
                        mFmt:fmtP(perfData.m.ann,true), bFmt:fmtP(benchPerfData.ann,true),
                        delta:perfData.m.ann-benchPerfData.ann, isVol:false},
-                      {label:"Sharpe",
+                      {label:"Sharpe (Rf 2%)",
                        m:perfData.m.shp, b:benchPerfData.shp,
                        mFmt:perfData.m.shp.toFixed(2), bFmt:benchPerfData.shp.toFixed(2),
                        delta:perfData.m.shp-benchPerfData.shp, isVol:false, isDelta:true},
@@ -6995,7 +6999,7 @@ export default function ClientDashboardPage() {
                         <div>
                           <div className="text-slate-500 text-[10px] mb-1 uppercase tracking-wide">Sharpe (20 anos)</div>
                           <div className="text-xl font-bold text-slate-400">{perfData?sharpe20.toFixed(2):"—"}</div>
-                          <div className="text-[10px] text-slate-600 mt-1">retorno / vol · Rf = 0%</div>
+                          <div className="text-[10px] text-slate-600 mt-1">retorno / vol · Rf = 2% (EUR)</div>
                         </div>
                       </div>
                     </div>
