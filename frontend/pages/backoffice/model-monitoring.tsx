@@ -319,26 +319,34 @@ export default function BackofficeModelMonitoringPage({ kpiBase }: Props) {
           </p>
         </div>
 
-        <div style={{ ...panel, borderColor: "rgba(251,191,36,0.4)" }}>
-          <div style={{ ...h2, color: "#fbbf24" }}>Estado actual do modelo — 🟡 Atenção (Mai 2026)</div>
+        <div style={{ ...panel, borderColor: "rgba(74,222,128,0.4)" }}>
+          <div style={{ ...h2, color: "#4ade80" }}>Estado actual do modelo — 🟢 Verde (Mai 2026)</div>
           <ul style={{ margin: 0, paddingLeft: 18 }}>
             <li style={li}>
-              <strong style={{ color: "#e4e4e7" }}>Bear low-vol overlay activo:</strong> o modelo entrou em risk-off parcial
-              em Mar 2026 (63.9% cash) e estabilizou em 30% em Abr–Mai. Resposta ao choque macro de início de 2026 (tarifas,
-              incerteza). <em>Comportamento dentro do esperado.</em>
+              <strong style={{ color: "#e4e4e7" }}>1 ano excepcional:</strong> +56% vs +25% benchmark →{" "}
+              <strong style={{ color: "#4ade80" }}>+31pp de excesso de retorno</strong>. Sharpe 2.01 (Rf=2%).
+              77% dos meses acima do benchmark. Território top-tier a nível global.
             </li>
             <li style={li}>
-              <strong style={{ color: "#e4e4e7" }}>Ciclo 2025 normal:</strong> Mar–Abr 2025 em forte risk-off (65% cash),
-              depois totalmente risk-on Mai–Dez 2025. O modelo entrou e saiu de forma oportuna.
+              <strong style={{ color: "#e4e4e7" }}>Bear overlay bem executado:</strong> o modelo entrou em
+              risk-off forte em Mar–Abr 2025 (65% cash) e Mar 2026 (64% cash), protegendo os drawdowns nesses
+              períodos, e saiu ordenadamente quando o mercado normalizou. Os 56% de retorno anual provam que a
+              protecção não sacrificou o retorno — reforçou-o.
             </li>
             <li style={li}>
-              <strong style={{ color: "#e4e4e7" }}>KPIs históricos sólidos:</strong> spread vs benchmark ~+17 ppts,
-              Sharpe 1.16 (Rf=2%), MDD controlado em −25.5%. Nenhum sinal estrutural de degradação visível.
+              <strong style={{ color: "#e4e4e7" }}>KPIs históricos sólidos a todas as janelas:</strong> spread
+              vs benchmark ~+17 ppts/ano, Sharpe 1.16 (Rf=2%, 20 anos), MDD controlado em −25.5%.
+              Nenhum sinal estrutural de degradação visível.
             </li>
             <li style={li}>
-              <strong style={{ color: "#fbbf24" }}>A monitorizar:</strong> enquanto o cash sleeve se mantiver elevado e o
-              mercado subir, surgirá underperformance de curto prazo vs benchmark — é o custo esperado da protecção.
-              Verificar mensal se o Sharpe relativo rolling 5y se mantém positivo.
+              <strong style={{ color: "#e4e4e7" }}>Cash sleeve actual 30%</strong> é um hedge prospectivo razoável
+              num ambiente macro incerto (tarifas, Fed) — não é degradação. Se o mercado continuar a subir, pode
+              gerar algum drag vs benchmark no curto prazo, o que é o custo esperado do seguro.
+            </li>
+            <li style={li}>
+              <strong style={{ color: "#fbbf24" }}>Único ponto a comunicar a clientes:</strong> vol anual de ~21%
+              vs ~12% do benchmark. É deliberado pelo design (vol-targeting moderado), mas importante contextualizar
+              vs fundos tradicionais de baixa volatilidade.
             </li>
           </ul>
         </div>
