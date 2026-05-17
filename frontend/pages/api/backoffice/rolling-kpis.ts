@@ -18,45 +18,55 @@ const WINDOW_5Y = 252 * 5;
 const WINDOW_10Y = 252 * 10;
 const RF_DAILY = 0.02 / 252;
 
-function readFreezeCsv(): { dates: string[]; equity: number[]; bench: number[] } | null {
-  const csvPath = path.join(
-    process.cwd(),
-    "data",
-    "landing",
-    "freeze-cap15",
-    "model_equity_final_20y.csv",
-  );
-  if (!fs.existsSync(csvPath)) return null;
-  try {
-    const lines = fs.readFileSync(csvPath, "utf8").split(/\r?\n/).filter(Boolean);
-    if (lines.length < 2) return null;
-    const headers = lines[0]!.split(",").map((h) => h.trim().toLowerCase());
-    const dateIdx = headers.findIndex((h) => h.includes("date") || h === "ds");
-    const eqIdx = headers.findIndex((h) =>
-      h.includes("equity_overlayed") || h.includes("equity_final") || h.includes("model_eq"),
-    );
-    const bIdx = headers.findIndex((h) =>
-      h.includes("benchmark") || h.includes("bench_eq") || h.includes("bench"),
-    );
-    if (dateIdx < 0 || eqIdx < 0) return null;
+const FREEZE_DIR = path.join(process.cwd(), "data", "landing", "freeze-cap15");
 
-    const dates: string[] = [];
-    const equity: number[] = [];
-    const bench: number[] = [];
+function parseSingleColCsv(filePath: string, colName: string): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!fs.existsSync(filePath)) return out;
+  try {
+    const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/).filter(Boolean);
+    if (lines.length < 2) return out;
+    const headers = lines[0]!.split(",").map((h) => h.trim().toLowerCase());
+    const dateIdx = headers.findIndex((h) => h === "date" || h === "ds");
+    const valIdx = headers.findIndex((h) => h.includes(colName));
+    if (dateIdx < 0 || valIdx < 0) return out;
     for (let i = 1; i < lines.length; i++) {
       const cols = lines[i]!.split(",");
-      const d = cols[dateIdx]?.trim() ?? "";
-      const e = parseFloat(cols[eqIdx]?.trim() ?? "");
-      const b = bIdx >= 0 ? parseFloat(cols[bIdx]?.trim() ?? "") : NaN;
-      if (!d || !isFinite(e) || e <= 0) continue;
-      dates.push(d);
-      equity.push(e);
-      bench.push(isFinite(b) && b > 0 ? b : e);
+      const d = cols[dateIdx]?.trim().slice(0, 10) ?? ""; // keep YYYY-MM-DD
+      const v = parseFloat(cols[valIdx]?.trim() ?? "");
+      if (d && isFinite(v) && v > 0) out.set(d, v);
     }
-    return { dates, equity, bench };
-  } catch {
-    return null;
+  } catch { /* ignore */ }
+  return out;
+}
+
+function readFreezeCsv(): { dates: string[]; equity: number[]; bench: number[] } | null {
+  const modelMap = parseSingleColCsv(
+    path.join(FREEZE_DIR, "model_equity_final_20y.csv"),
+    "model_equity",
+  );
+  const benchMap = parseSingleColCsv(
+    path.join(FREEZE_DIR, "benchmark_equity_final_20y.csv"),
+    "benchmark_equity",
+  );
+  if (!modelMap.size) return null;
+
+  const dates: string[] = [];
+  const equity: number[] = [];
+  const bench: number[] = [];
+
+  // iterate model dates in order, join benchmark on same date
+  const sortedDates = [...modelMap.keys()].sort();
+  for (const d of sortedDates) {
+    const e = modelMap.get(d)!;
+    const b = benchMap.get(d);
+    if (!b) continue; // skip dates where benchmark is missing
+    dates.push(d);
+    equity.push(e);
+    bench.push(b);
   }
+  if (dates.length < 100) return null;
+  return { dates, equity, bench };
 }
 
 function cagr(eq: number[], years: number): number | null {
