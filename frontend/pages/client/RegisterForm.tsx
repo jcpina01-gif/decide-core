@@ -255,6 +255,60 @@ function DevCommentHoverIcon({ label, children }: { label: string; children: Rea
   );
 }
 
+// ---------------------------------------------------------------------------
+// Country dial codes
+// ---------------------------------------------------------------------------
+const COUNTRIES: { iso: string; name: string; dial: string }[] = [
+  { iso: "pt", name: "Portugal", dial: "+351" },
+  { iso: "br", name: "Brasil", dial: "+55" },
+  { iso: "es", name: "Espanha", dial: "+34" },
+  { iso: "fr", name: "França", dial: "+33" },
+  { iso: "de", name: "Alemanha", dial: "+49" },
+  { iso: "gb", name: "Reino Unido", dial: "+44" },
+  { iso: "us", name: "Estados Unidos", dial: "+1" },
+  { iso: "ca", name: "Canadá", dial: "+1" },
+  { iso: "it", name: "Itália", dial: "+39" },
+  { iso: "nl", name: "Países Baixos", dial: "+31" },
+  { iso: "be", name: "Bélgica", dial: "+32" },
+  { iso: "ch", name: "Suíça", dial: "+41" },
+  { iso: "at", name: "Áustria", dial: "+43" },
+  { iso: "se", name: "Suécia", dial: "+46" },
+  { iso: "no", name: "Noruega", dial: "+47" },
+  { iso: "dk", name: "Dinamarca", dial: "+45" },
+  { iso: "fi", name: "Finlândia", dial: "+358" },
+  { iso: "pl", name: "Polónia", dial: "+48" },
+  { iso: "ie", name: "Irlanda", dial: "+353" },
+  { iso: "lu", name: "Luxemburgo", dial: "+352" },
+  { iso: "mx", name: "México", dial: "+52" },
+  { iso: "ar", name: "Argentina", dial: "+54" },
+  { iso: "au", name: "Austrália", dial: "+61" },
+  { iso: "nz", name: "Nova Zelândia", dial: "+64" },
+  { iso: "jp", name: "Japão", dial: "+81" },
+  { iso: "cn", name: "China", dial: "+86" },
+  { iso: "in", name: "Índia", dial: "+91" },
+  { iso: "za", name: "África do Sul", dial: "+27" },
+  { iso: "ae", name: "Emirados Árabes", dial: "+971" },
+  { iso: "sg", name: "Singapura", dial: "+65" },
+  { iso: "hk", name: "Hong Kong", dial: "+852" },
+  { iso: "mo", name: "Macau", dial: "+853" },
+  { iso: "ao", name: "Angola", dial: "+244" },
+  { iso: "mz", name: "Moçambique", dial: "+258" },
+  { iso: "cv", name: "Cabo Verde", dial: "+238" },
+  { iso: "st", name: "São Tomé e Príncipe", dial: "+239" },
+  { iso: "gw", name: "Guiné-Bissau", dial: "+245" },
+  { iso: "tl", name: "Timor-Leste", dial: "+670" },
+  { iso: "gr", name: "Grécia", dial: "+30" },
+  { iso: "cz", name: "República Checa", dial: "+420" },
+  { iso: "ro", name: "Roménia", dial: "+40" },
+  { iso: "hu", name: "Hungria", dial: "+36" },
+  { iso: "sk", name: "Eslováquia", dial: "+421" },
+  { iso: "hr", name: "Croácia", dial: "+385" },
+  { iso: "il", name: "Israel", dial: "+972" },
+  { iso: "tr", name: "Turquia", dial: "+90" },
+  { iso: "ru", name: "Rússia", dial: "+7" },
+  { iso: "ua", name: "Ucrânia", dial: "+380" },
+];
+
 const baseInput: React.CSSProperties = {
   width: "100%",
   background: "#0d1118",
@@ -512,6 +566,10 @@ export default function ClientRegisterPage() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [phoneDialCode, setPhoneDialCode] = useState("+351");
+  const [phoneIso, setPhoneIso] = useState("pt");
+  const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
+  const [countrySearch, setCountrySearch] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [clientSegment, setClientSegmentState] = useState<ClientSegment>("premium");
@@ -739,6 +797,14 @@ export default function ClientRegisterPage() {
     if (fb.length >= minLen && error.startsWith(fb)) return false;
     return true;
   }, [error, wizardStep, smsVerificationEnabled, phoneVerifyFeedback]);
+
+  /** Fecha o dropdown de país ao clicar fora */
+  useEffect(() => {
+    if (!countryDropdownOpen) return;
+    const handler = () => setCountryDropdownOpen(false);
+    window.addEventListener("click", handler, { capture: true });
+    return () => window.removeEventListener("click", handler, { capture: true });
+  }, [countryDropdownOpen]);
 
   /** Remove `error` duplicado do painel SMS (evita estado «fantasma» noutros fluxos). */
   useEffect(() => {
@@ -1884,18 +1950,61 @@ export default function ClientRegisterPage() {
                       <div style={{ minWidth: 0 }}>
                         <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 5, fontWeight: 500 }}>Telemóvel</div>
                         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                          {/* PT flag selector (decorativo) */}
-                          <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 4, padding: "11px 10px", background: "#0d1118", border: "1px solid #252a3a", borderRadius: 10, color: "#e2e8f0", lineHeight: 1, cursor: "default", userSelect: "none" }}>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src="https://flagcdn.com/20x15/pt.png" alt="PT" width={20} height={15} style={{ display: "block", borderRadius: 2 }} />
-                            <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, letterSpacing: "0.02em" }}>+351</span>
-                            <span style={{ fontSize: 9, color: "#475569" }}>▾</span>
+                          {/* Country dial-code selector */}
+                          <div style={{ position: "relative", flexShrink: 0 }}>
+                            <button
+                              type="button"
+                              disabled={signupPhoneOk}
+                              onClick={(e) => { e.stopPropagation(); setCountryDropdownOpen(o => !o); setCountrySearch(""); }}
+                              style={{ display: "flex", alignItems: "center", gap: 4, padding: "11px 10px", background: "#0d1118", border: "1px solid #252a3a", borderRadius: 10, color: "#e2e8f0", lineHeight: 1, cursor: signupPhoneOk ? "default" : "pointer", userSelect: "none", whiteSpace: "nowrap" }}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={`https://flagcdn.com/20x15/${phoneIso}.png`} alt={phoneIso.toUpperCase()} width={20} height={15} style={{ display: "block", borderRadius: 2 }} />
+                              <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, letterSpacing: "0.02em" }}>{phoneDialCode}</span>
+                              <span style={{ fontSize: 9, color: "#475569" }}>▾</span>
+                            </button>
+                            {countryDropdownOpen && (
+                              <div onClick={e => e.stopPropagation()} style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 999, background: "#0d1118", border: "1px solid #252a3a", borderRadius: 12, width: 240, boxShadow: "0 8px 32px rgba(0,0,0,0.6)", overflow: "hidden" }}>
+                                <div style={{ padding: "8px 10px", borderBottom: "1px solid #1a1f2e" }}>
+                                  <input
+                                    autoFocus
+                                    value={countrySearch}
+                                    onChange={e => setCountrySearch(e.target.value)}
+                                    placeholder="Pesquisar país…"
+                                    style={{ width: "100%", background: "#07090f", border: "1px solid #1a1f2e", borderRadius: 8, padding: "6px 10px", fontSize: 12, color: "#e2e8f0", outline: "none", boxSizing: "border-box" }}
+                                  />
+                                </div>
+                                <div style={{ maxHeight: 220, overflowY: "auto" }}>
+                                  {COUNTRIES.filter(c => !countrySearch || c.name.toLowerCase().includes(countrySearch.toLowerCase()) || c.dial.includes(countrySearch)).map(c => (
+                                    <button
+                                      key={c.iso + c.dial}
+                                      type="button"
+                                      onClick={() => {
+                                        const localPart = phone.startsWith(phoneDialCode) ? phone.slice(phoneDialCode.length) : phone;
+                                        setPhoneDialCode(c.dial);
+                                        setPhoneIso(c.iso);
+                                        setPhone(c.dial + localPart);
+                                        setCountryDropdownOpen(false);
+                                        clearSignupPhoneVerifiedFlag();
+                                      }}
+                                      style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "8px 12px", background: c.iso === phoneIso ? "rgba(59,130,246,0.1)" : "transparent", border: "none", cursor: "pointer", textAlign: "left" }}
+                                    >
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img src={`https://flagcdn.com/20x15/${c.iso}.png`} alt={c.iso} width={20} height={15} style={{ borderRadius: 2, flexShrink: 0 }} />
+                                      <span style={{ fontSize: 12, color: "#e2e8f0", flex: 1 }}>{c.name}</span>
+                                      <span style={{ fontSize: 11, color: "#475569" }}>{c.dial}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                           <input
                             ref={registerPhoneInputRef}
-                            value={phone}
+                            value={phone.startsWith(phoneDialCode) ? phone.slice(phoneDialCode.length) : phone}
                             onChange={(e) => {
-                              setPhone(e.target.value);
+                              const local = e.target.value.replace(/[^\d\s\-\(\)]/g, "");
+                              setPhone(phoneDialCode + local);
                               clearSignupPhoneVerifiedFlag();
                               setPhoneFormatHint(null);
                               setRegFieldErr((x) => ({ ...x, phone: false, phoneNotVerified: false }));
