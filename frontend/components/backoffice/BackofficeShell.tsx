@@ -8,6 +8,7 @@ export type BackofficeNavId =
   | "activity"
   | "monitoring"
   | "model-monitoring"
+  | "rolling-diagnostics"
   | "kpi-diagnostics"
   | "audit"
   | "audit-guide";
@@ -18,7 +19,8 @@ const ITEMS: { id: BackofficeNavId; href: string; label: string }[] = [
   { id: "activity", href: "/backoffice/activity", label: "Atividade" },
   { id: "monitoring", href: "/backoffice/monitoring", label: "Monitorização" },
   { id: "model-monitoring", href: "/backoffice/model-monitoring", label: "Modelo (research)" },
-  { id: "kpi-diagnostics", href: "/backoffice/kpi-diagnostics", label: "Diagnóstico KPI" },
+  { id: "rolling-diagnostics", href: "/backoffice/rolling-diagnostics", label: "Diagnóstico (rolling)" },
+  { id: "kpi-diagnostics", href: "/backoffice/kpi-diagnostics", label: "KPI Flask" },
   { id: "audit", href: "/backoffice/audit", label: "Auditoria" },
   { id: "audit-guide", href: "/backoffice/audit-logs", label: "Guia MiFID" },
 ];
