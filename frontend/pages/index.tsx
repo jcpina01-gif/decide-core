@@ -323,6 +323,7 @@ export default function LandingPage() {
 
         {/* ── COMO FUNCIONA ─────────────────────────────────────────────── */}
         <section id="como-funciona" style={{
+          scrollMarginTop:NAV_H,
           background:`linear-gradient(180deg, ${BG} 0%, ${BG2} 100%)`,
           padding:"80px 28px",
           borderTop:"1px solid rgba(255,255,255,0.06)",
@@ -369,6 +370,7 @@ export default function LandingPage() {
 
         {/* ── O QUE TORNA O DECIDE DIFERENTE ───────────────────────────── */}
         <section id="vantagens" style={{
+          scrollMarginTop:NAV_H,
           background:BG2,
           padding:"80px 28px",
           borderTop:"1px solid rgba(255,255,255,0.06)",
