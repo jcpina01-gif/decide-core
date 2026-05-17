@@ -2746,10 +2746,73 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const budgetEurForDisplay=aum*BUY_SAFETY_FACTOR;
   const investOverBudget=investEur>budgetEurForDisplay+100; // >€100 tolerance
 
+  // ── Audit helpers ──────────────────────────────────────────────────────
+  async function auditSaveRecommendation(): Promise<string|null> {
+    const clientId = sessionUser;
+    if (!clientId) return null;
+    try {
+      const positions = actionCounts.allRows.map(r => ({
+        ticker: r.ticker, weightPct: r.cur, prev: r.prev, action: r.action,
+      }));
+      const r = await fetch("/api/audit/recommendation", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          client_id: clientId,
+          risk_profile: profileLabel,
+          model_version: "CAP15",
+          positions,
+        }),
+      });
+      const j = await r.json() as {ok?:boolean;id?:string};
+      return j.ok && j.id ? j.id : null;
+    } catch { return null; }
+  }
+
+  async function auditSaveApproval(recommendationId: string|null): Promise<string|null> {
+    const clientId = sessionUser;
+    if (!clientId) return null;
+    try {
+      const r = await fetch("/api/audit/approval", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ client_id: clientId, recommendation_id: recommendationId, action: "approved" }),
+      });
+      const j = await r.json() as {ok?:boolean;id?:string};
+      return j.ok && j.id ? j.id : null;
+    } catch { return null; }
+  }
+
+  async function auditSaveOrders(
+    approvalId: string|null,
+    fills: Array<{ticker:string;side?:string;action?:string;requested_qty?:number;ib_order_id?:number|null}>,
+  ) {
+    const clientId = sessionUser;
+    if (!clientId || !fills.length) return;
+    for (const f of fills) {
+      const side = (f.side === "BUY" || f.action === "Comprar") ? "BUY" : "SELL";
+      fetch("/api/audit/order", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          client_id: clientId,
+          approval_id: approvalId,
+          ticker: f.ticker,
+          side,
+          qty: f.requested_qty ?? null,
+          ibkr_order_id: f.ib_order_id ? String(f.ib_order_id) : null,
+          status: "submitted",
+          submitted_at: new Date().toISOString(),
+        }),
+      }).catch(() => {});
+    }
+  }
+  // ───────────────────────────────────────────────────────────────────────
+
   async function submitOrders() {
     setErrMsg("");
     setShowSendConfirm(false);
     setSending(true);
+    // Save recommendation snapshot + approval before sending to IB
+    const recId = await auditSaveRecommendation();
+    const approvalId = await auditSaveApproval(recId);
     try {
       if(paperMode){
         // Simulate locally — no backend required for paper trading
@@ -2795,7 +2858,9 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         const sent={ref,ts:Date.now(),mode:execMode};
         try{localStorage.setItem(ORDERS_SENT_KEY,JSON.stringify(sent));}catch{}
         setLastSent(sent);
-        const fills:Array<{ticker:string;side:string;qty:number}>=j.fills??[];
+        const fills:Array<{ticker:string;side:string;qty:number;ib_order_id?:number|null}>=j.fills??[];
+        // Save audit order logs (fire-and-forget)
+        void auditSaveOrders(approvalId, fills);
         const buys=fills.filter((f)=>f.side==="BUY");
         const sells=fills.filter((f)=>f.side==="SELL");
         logActivity({
