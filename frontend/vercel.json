@@ -4,6 +4,7 @@
     "DECIDE_BACKOFFICE_ENABLED": "1",
     "DATABASE_URL": "postgresql://neondb_owner:npg_m28HwsDAWilY@ep-summer-forest-ap9j1a6k-pooler.c-7.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
     "VAPI_PRIVATE_API_KEY": "30afd334-8e32-466c-8364-7d850674be78",
+    "AUDIT_DEFAULT_CLIENT_ID": "jcpina01",
     "DECIDE_BACKOFFICE_SMOKE_JSON": "{\"selected\":{\"ok\":true,\"accountCode\":\"DUM504002\",\"port\":7497,\"netLiquidation\":{\"value\":252162.61,\"currency\":\"EUR\"},\"cash\":{\"value\":5000},\"positions\":[{\"account\":\"DUM504002\",\"ticker\":\"SAN\",\"secType\":\"STK\",\"exchange\":\"NYSE\",\"currency\":\"USD\",\"position\":100,\"avgCost\":11.68}]}}",
     "DECIDE_BACKOFFICE_STORE_JSON": "{\"version\":1,\"clients\":{\"jcpina01\":{\"displayName\":\"Joaquim Pina\",\"onboardingStatus\":\"complete\",\"mifidStatus\":\"complete\",\"accountStatus\":\"active\",\"riskProfile\":\"moderado\",\"lastRecommendationAt\":\"2026-04-22T16:58:00.000Z\"},\"DUM504002\":{\"displayName\":\"Joaquim Pina (IBKR paper)\",\"onboardingStatus\":\"complete\",\"mifidStatus\":\"complete\",\"accountStatus\":\"active\",\"riskProfile\":\"moderado\",\"lastRecommendationAt\":\"2026-04-22T16:58:00.000Z\"}}}"
   },

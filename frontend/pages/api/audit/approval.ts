@@ -30,6 +30,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!client_id || typeof client_id !== "string") {
     return res.status(400).json({ ok: false, error: "missing client_id" });
   }
+  const resolvedClientId = client_id === "unknown"
+    ? (process.env.AUDIT_DEFAULT_CLIENT_ID ?? client_id)
+    : client_id;
   if (action !== "approved" && action !== "rejected") {
     return res.status(400).json({ ok: false, error: "action must be 'approved' or 'rejected'" });
   }
@@ -50,7 +53,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       [
         id,
         recommendation_id ?? null,
-        client_id,
+        resolvedClientId,
         action,
         payload_hash ?? null,
         ip,

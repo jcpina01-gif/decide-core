@@ -2830,8 +2830,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   }
 
   async function auditSaveRecommendation(): Promise<string|null> {
-    const clientId = auditClientId();
-    if (!clientId) return null;
+    const clientId = auditClientId() ?? "unknown";
     try {
       const positions = actionCounts.allRows.map(r => ({
         ticker: r.ticker, weightPct: r.cur, prev: r.prev, action: r.action,
@@ -2851,8 +2850,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   }
 
   async function auditSaveApproval(recommendationId: string|null): Promise<string|null> {
-    const clientId = auditClientId();
-    if (!clientId) return null;
+    const clientId = auditClientId() ?? "unknown";
     try {
       const r = await fetch("/api/audit/approval", {
         method: "POST", headers: {"Content-Type":"application/json"},
@@ -2867,8 +2865,8 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     approvalId: string|null,
     fills: Array<{ticker:string;side?:string;action?:string;requested_qty?:number;ib_order_id?:number|null}>,
   ) {
-    const clientId = auditClientId();
-    if (!clientId || !fills.length) return;
+    const clientId = auditClientId() ?? "unknown";
+    if (!fills.length) return;
     for (const f of fills) {
       const side = (f.side === "BUY" || f.action === "Comprar") ? "BUY" : "SELL";
       fetch("/api/audit/order", {

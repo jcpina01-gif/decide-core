@@ -37,6 +37,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!client_id || typeof client_id !== "string") {
     return res.status(400).json({ ok: false, error: "missing client_id" });
   }
+  // Resolve "unknown" to the default client configured in env
+  const resolvedClientId = client_id === "unknown"
+    ? (process.env.AUDIT_DEFAULT_CLIENT_ID ?? client_id)
+    : client_id;
   if (!ticker || typeof ticker !== "string") {
     return res.status(400).json({ ok: false, error: "missing ticker" });
   }
@@ -57,7 +61,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         id,
         recommendation_id ?? null,
         approval_id ?? null,
-        client_id,
+        resolvedClientId,
         (ticker as string).toUpperCase(),
         side,
         qty ?? null,

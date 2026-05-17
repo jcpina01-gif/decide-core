@@ -11,9 +11,11 @@ type TableKey = (typeof ALLOWED_TABLES)[number];
 
 // Known aliases: back-office client_id ↔ IBKR account codes
 // When searching, include both so records saved under either ID are returned.
+const DEFAULT_CLIENT = process.env.AUDIT_DEFAULT_CLIENT_ID ?? "jcpina01";
 const CLIENT_ALIASES: Record<string, string[]> = {
-  jcpina01: ["jcpina01", "DUM504002"],
-  DUM504002: ["DUM504002", "jcpina01"],
+  jcpina01: ["jcpina01", "DUM504002", "unknown"],
+  DUM504002: ["DUM504002", "jcpina01", "unknown"],
+  unknown: [DEFAULT_CLIENT, "DUM504002", "unknown"],
 };
 function cids(cid: string): string[] {
   return CLIENT_ALIASES[cid] ?? [cid];
