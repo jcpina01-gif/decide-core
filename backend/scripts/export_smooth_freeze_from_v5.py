@@ -233,6 +233,9 @@ def main() -> int:
         if pk == "moderado":
             # Candidato atual por melhor Sharpe ajustado ao risco (trial antigo),
             # promovido para a corrida oficial do perfil moderado no freeze.
+            # overlay_target_vol_realization_boost=0.81 → target_vol ≈ 0.81 × bench_vol ≈ 16%
+            # (bench_vol ≈ 19.7% histórico); o dashboard re-escala depois para igualar benchmark vol,
+            # resultando em CAGR ~27% e Sharpe ~1.32 (vs 26.3% / 1.27 no baseline).
             kwargs.update(
                 {
                     "cap_per_ticker": 0.12,
@@ -249,6 +252,7 @@ def main() -> int:
                     "benchmark_ma_window": 252,
                     "convex_power": 2.2,
                     "vol_scale_floor": 0.7,
+                    "overlay_target_vol_realization_boost": 0.81,
                 }
             )
             kwargs["emit_weights_csv"] = str(data_weights)

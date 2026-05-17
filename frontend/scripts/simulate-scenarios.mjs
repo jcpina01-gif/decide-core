@@ -21,7 +21,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "../..");
 
 // ── paths ─────────────────────────────────────────────────────────────────
-const MODEL_EQ_PATH  = path.join(ROOT, "freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y_moderado.csv");
+// Use the BASE equity file (model_equity_final_20y.csv), exactly as the API does for
+// the "moderado" profile — the API ignores the _moderado.csv profile file and reads the base.
+const MODEL_EQ_PATH  = path.join(ROOT, "freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y.csv");
 const BENCH_EQ_PATH  = path.join(ROOT, "freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/benchmark_equity_final_20y.csv");
 const FX_PATH        = path.join(ROOT, "backend/data/fx_EURUSD_daily.csv");
 const WEIGHTS_PATH   = path.join(ROOT, "freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/weights_by_rebalance.csv");
@@ -118,16 +120,89 @@ function getXeonPct(dateStr) {
 
 // ── Build aligned daily series ────────────────────────────────────────────
 // Use only dates where BOTH model and benchmark are available
-const allDates = [...modelMap.keys()]
+const allDatesRaw = [...modelMap.keys()]
   .filter(d => benchMap.has(d))
   .sort();
 
-console.log(`Aligned dates: ${allDates[0]} → ${allDates[allDates.length - 1]}  (${allDates.length} days)`);
+// Replicate dashboard's skipWarmup + "20 Anos" window:
+//   1. Find the cut date = last date minus 20 calendar years
+//   2. Find the first index >= cut date
+//   3. Skip forward while model equity == initial value (warmup flat period)
+const lastDate   = allDatesRaw[allDatesRaw.length - 1];
+const lastDateObj = new Date(lastDate);
+const cut20 = new Date(lastDateObj.getFullYear()-20, lastDateObj.getMonth(), lastDateObj.getDate())
+              .toISOString().slice(0, 10);
 
-// Daily returns for baseline
-const dates     = allDates;
-const modelNav  = dates.map(d => modelMap.get(d));
-const benchNav  = dates.map(d => benchMap.get(d));
+let warmupStart = allDatesRaw.findIndex(d => d >= cut20);
+if (warmupStart < 0) warmupStart = 0;
+
+// Skip flat warmup (model equity stays at initial value = 1.0)
+const initialVal = modelMap.get(allDatesRaw[warmupStart]);
+while (warmupStart < allDatesRaw.length - 1 && modelMap.get(allDatesRaw[warmupStart]) === initialVal) {
+  warmupStart++;
+}
+
+// ── Vol-scaling: replicate scaleModelEquityToProfileVol (moderado, mult=1.0) ─────────────
+// CRITICAL: The API applies vol-scaling on the FULL series (all 5121 days), THEN the
+// dashboard's "20 Anos" window takes a post-warmup slice. Must scale on full series first.
+function scaleNavToMatchBenchVol(mNav, bNav, mult = 1.0) {
+  const n = Math.min(mNav.length, bNav.length);
+  const mR = [], bR = [];
+  for (let i = 1; i < n; i++) {
+    const pm = mNav[i - 1], cm = mNav[i], pb = bNav[i - 1], cb = bNav[i];
+    if (pm > 0 && cm > 0 && pb > 0 && cb > 0) {
+      mR.push(cm / pm - 1);
+      bR.push(cb / pb - 1);
+    }
+  }
+  const meanM = mR.reduce((a, b) => a + b, 0) / mR.length;
+  const meanB = bR.reduce((a, b) => a + b, 0) / bR.length;
+  let vm = 0; for (const r of mR) vm += (r - meanM) ** 2; vm = Math.sqrt(vm / (mR.length - 1)) * Math.sqrt(252);
+  let vb = 0; for (const r of bR) vb += (r - meanB) ** 2; vb = Math.sqrt(vb / (bR.length - 1)) * Math.sqrt(252);
+  const scale = (mult * vb) / vm;
+  console.log(`  Vol scaling (full series): modelVol=${(vm*100).toFixed(2)}%  benchVol=${(vb*100).toFixed(2)}%  scale=${scale.toFixed(4)}`);
+  const out = [mNav[0]];
+  for (let i = 1; i < n; i++) {
+    const r = mNav[i] / mNav[i - 1] - 1;
+    out.push(out[i - 1] * (1 + r * scale));
+  }
+  return out;
+}
+
+// ── Benchmark rail cap: replicate capEquitySeriesVsBenchmarkRail ─────────────────────────
+// Caps each model value to: min(hardCap=120×bench, prev_model × min(1.22, (bench/bench_prev)×1.08))
+function capVsBenchRail(mNav, bNav) {
+  const MAX_OVER = 120, MAX_DAILY = 1.22;
+  const out = mNav.slice();
+  for (let i = 0; i < out.length; i++) {
+    const b = bNav[i];
+    if (!(b > 0)) continue;
+    const hardCap = b * MAX_OVER;
+    if (i === 0) { out[i] = Math.min(out[i], hardCap); continue; }
+    const b0 = bNav[i - 1], v0 = out[i - 1];
+    if (!(b0 > 0) || !(v0 > 0)) { out[i] = Math.min(out[i], hardCap); continue; }
+    const benchLinked = v0 * Math.min(MAX_DAILY, Math.max(1 / MAX_DAILY, (b / b0) * 1.08));
+    out[i] = Math.min(out[i], hardCap, benchLinked);
+  }
+  return out;
+}
+
+// Apply vol-scaling and cap on the FULL series, then slice to post-warmup window
+console.log("Applying vol-scaling (full series) and benchmark rail…");
+const fullModelNavRaw = allDatesRaw.map(d => modelMap.get(d));
+const fullBenchNavRaw = allDatesRaw.map(d => benchMap.get(d));
+const fullModelScaled = scaleNavToMatchBenchVol(fullModelNavRaw, fullBenchNavRaw, 1.0);
+const fullModelNav    = capVsBenchRail(fullModelScaled, fullBenchNavRaw);
+
+// Now slice to post-warmup window for KPI calculation
+const allDates = allDatesRaw.slice(warmupStart);
+const modelNav = fullModelNav.slice(warmupStart);
+const benchNav = fullBenchNavRaw.slice(warmupStart);
+
+console.log(`Full CSV:          ${allDatesRaw[0]} → ${allDatesRaw[allDatesRaw.length - 1]}  (${allDatesRaw.length} days)`);
+console.log(`After skipWarmup:  ${allDates[0]}  → ${allDates[allDates.length - 1]}  (${allDates.length} days)  [skipped ${warmupStart} warmup days]`);
+
+const dates = allDates; // alias used throughout the rest of the script
 
 // Log-returns for computation (safer for compounding)
 function logRets(nav) {
@@ -292,9 +367,10 @@ function computeKPIs(rets, navSeries, bRets, bNavSeries, label, window = null) {
   const bVar   = br.reduce((s, v) => s + (v - bMean) ** 2, 0) / N;
   const bVol   = Math.sqrt(bVar * TRADING_DAYS);
 
-  // Sharpe (using ~4% annual risk-free for EUR, 2024–2026)
-  const rfAnnual = 0.03;
-  const sharpe = (cagr - rfAnnual) / annVol;
+  // Sharpe — same formula as client-dashboard.tsx: (mean_daily * 252) / annualVol
+  // i.e. arithmetic annual return / vol, NO risk-free rate subtracted
+  const meanDaily = r.reduce((s, v) => s + v, 0) / N;
+  const sharpe = annVol > 0 ? (meanDaily * 252) / annVol : 0;
 
   // Max drawdown
   let peak = nav[0], mdd = 0;
@@ -341,12 +417,36 @@ const WINDOWS = [
   { label: "20 Anos (série completa)", days: null },
 ];
 
+// ── Scenario B2: CAP15 @ 16% + vol-rescaled back to benchmark vol ─────────────────────────
+// In the actual system, if CAP15@16% were implemented at model level, the vol-scaling rule
+// would then re-scale daily returns so that model vol = benchmark vol (×1.0 for moderado).
+// We compute the scale factor from scenario B's vol and apply it.
+function rescaleRetsToTargetVol(rets, targetVolAnn) {
+  const n = rets.length;
+  if (n < 30) return rets;
+  const mean = rets.reduce((s,v)=>s+v,0)/n;
+  const variance = rets.reduce((s,v)=>s+(v-mean)**2,0)/(n-1);
+  const currentVol = Math.sqrt(variance * 252);
+  const scale = targetVolAnn / currentVol;
+  console.log(`  Re-scale B→B2: currentVol=${(currentVol*100).toFixed(2)}%  targetVol=${(targetVolAnn*100).toFixed(2)}%  scale=${scale.toFixed(4)}`);
+  return rets.map(r => r * scale);
+}
+
+// Compute benchmark vol over the same post-warmup window
+const benchMean = benchRets.reduce((s,v)=>s+v,0)/benchRets.length;
+const benchVariance = benchRets.reduce((s,v)=>s+(v-benchMean)**2,0)/(benchRets.length-1);
+const benchVolAnn = Math.sqrt(benchVariance * TRADING_DAYS);
+
+const scenB2Rets = rescaleRetsToTargetVol(scenBRets, benchVolAnn);
+const navB2 = navFromRets(scenB2Rets);
+
 const scenarios = [
-  { name: "Baseline (actual)", retSeries: modelRets, nav: navBase },
-  { name: "A — FX Hedge",     retSeries: scenARets, nav: navA },
-  { name: "B — CAP15 @ 16%", retSeries: scenBRets, nav: navB },
-  { name: "C — Cap 6% pos.",  retSeries: scenCRets, nav: navC },
-  { name: "D — A + B + C",   retSeries: scenDRets, nav: navD },
+  { name: "Baseline (actual)",     retSeries: modelRets,  nav: navBase },
+  { name: "A — FX Hedge",         retSeries: scenARets,  nav: navA },
+  { name: "B — CAP15 @ 16%",     retSeries: scenBRets,  nav: navB },
+  { name: "B2— CAP15@16%+reescala", retSeries: scenB2Rets, nav: navB2 },
+  { name: "C — Cap 6% pos.",      retSeries: scenCRets,  nav: navC },
+  { name: "D — A + B + C",       retSeries: scenDRets,  nav: navD },
 ];
 
 console.log("\n");
