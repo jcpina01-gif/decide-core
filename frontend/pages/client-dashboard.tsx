@@ -3436,11 +3436,9 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                           </div>
                           <button onClick={()=>{setFlatResult(null);setFlatFills([]);setIbkrPos(null);setAuditStatus(null);}} className="ml-auto text-slate-500 hover:text-slate-300"><X size={12}/></button>
                         </div>
-                        {auditStatus&&(
-                          <div className={`px-3 py-2 rounded-lg text-xs font-mono border ${auditStatus.ok?"bg-emerald-500/10 border-emerald-500/30 text-emerald-300":"bg-red-500/10 border-red-500/30 text-red-300"}`}>
-                            {auditStatus.msg}
-                          </div>
-                        )}
+                        <div className={`px-3 py-2 rounded-lg text-xs font-mono border ${auditStatus?.ok?"bg-emerald-500/10 border-emerald-500/30 text-emerald-300":"bg-slate-800/60 border-slate-700/40 text-slate-400"}`}>
+                          {auditStatus?.msg ?? "⏳ a guardar audit…"}
+                        </div>
                         {flatFills.length>0&&(
                           <div className="rounded-lg border border-[#1a1f2e] overflow-hidden max-h-48 overflow-y-auto">
                             <table className="w-full text-[11px]">
