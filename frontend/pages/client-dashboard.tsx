@@ -4479,8 +4479,8 @@ export default function ClientDashboardPage() {
     const vol20y=annualVol(allRets)*100;
     const benchVol20y=annualVol(allBRets)*100;
     const curVol=annualVol(allRets.slice(-252))*100;
-    const curDD=currentDD(activeEquity.slice(-252*3))*100;
     const dd5Start=skipWarmup(activeEquity,periodStart(dates,"20 Anos"));
+    const curDD=currentDD(activeEquity.slice(dd5Start))*100;
     const modelDD=rollingDD(dates.slice(dd5Start),activeEquity.slice(dd5Start),10);
     let bpk=benchRaw[dd5Start]??1;
     const ddChart=modelDD.map((pt,j)=>{
@@ -5484,7 +5484,7 @@ export default function ClientDashboardPage() {
                            icon:<div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center"><ShieldCheck size={15} className="text-amber-400"/></div>,
                            c:"text-amber-400",accent:"border-amber-500/20"},
                           {label:"Drawdown máx.",val:scaledDD!==0?fmtP(scaledDD):"—",
-                           sub:"pior queda histórica",
+                           sub:"pior queda (20 anos)",
                            icon:<div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center"><TrendingDown size={15} className="text-red-400"/></div>,
                            c:"text-red-400",accent:"border-red-500/20"},
                         ].map(k=>(
@@ -6907,7 +6907,7 @@ export default function ClientDashboardPage() {
                 const dateLabel=date?new Date(date).toLocaleDateString("pt-PT",{month:"short",year:"numeric"}):"";
                 // Advisory narrative
                 const volOk=vol>0&&benchVolTarget>0&&Math.abs(vol-benchVolTarget)/benchVolTarget<0.15;
-                const ddSevere=dd<-15;
+                const ddSevere=dd<-25;
                 const topSectorName=sectorAlloc[0]?.name??"Tecnologia";
                 const topSectorPct=sectorAlloc[0]?.pct??0;
                 const topSectorRisk=sectorAlloc[0]?.risk??0;
@@ -6917,8 +6917,8 @@ export default function ClientDashboardPage() {
                     ?`A volatilidade actual (${vol.toFixed(1)}%) está alinhada com o alvo do perfil ${profileLabel}.`
                     :`A volatilidade actual (${vol.toFixed(1)}%) está ${vol>benchVolTarget?"acima":"abaixo"} do alvo para o perfil ${profileLabel} (${benchVolTarget.toFixed(1)}%).`,
                   ddSevere
-                    ?`O drawdown actual de ${dd.toFixed(1)}% merece acompanhamento — o modelo está em fase de recuperação.`
-                    :`O drawdown actual é controlado (${dd.toFixed(1)}%), sem sinais de deterioração relevante.`,
+                    ?`O drawdown máx. histórico (20 anos) atingiu ${dd.toFixed(1)}%, acima do limiar típico para o perfil ${profileLabel}.`
+                    :`O drawdown máx. histórico (20 anos) é de ${dd.toFixed(1)}%, dentro dos parâmetros esperados para o perfil ${profileLabel}.`,
                   sectorConcentrated
                     ?`A concentração em ${topSectorName} (${topSectorPct.toFixed(0)}% da carteira) é o principal factor de risco a monitorizar.`
                     :`A exposição sectorial está bem distribuída — ${topSectorName} representa ${topSectorPct.toFixed(0)}% da carteira.`,
@@ -6968,9 +6968,9 @@ export default function ClientDashboardPage() {
                           <div className="text-[10px] text-slate-600 mt-1">Alvo ~{benchVolTarget>0?benchVolTarget.toFixed(1):(profileFactor<1?"14.6":profileFactor>1?"24.3":"19.4")}% · 20 anos</div>
                         </div>
                         <div>
-                          <div className="text-slate-500 text-[10px] mb-1 uppercase tracking-wide">Drawdown actual</div>
-                          <div className={`text-3xl font-black ${dd<-15?"text-rose-400":dd<-5?"text-amber-400":"text-slate-300"}`}>{dd?`${dd.toFixed(1)}%`:"—"}</div>
-                          <div className="text-[10px] text-slate-600 mt-1">vs pico histórico</div>
+                          <div className="text-slate-500 text-[10px] mb-1 uppercase tracking-wide">Drawdown máx. (20a)</div>
+                          <div className={`text-3xl font-black ${dd<-25?"text-rose-400":dd<-15?"text-amber-400":"text-slate-300"}`}>{dd?`${dd.toFixed(1)}%`:"—"}</div>
+                          <div className="text-[10px] text-slate-600 mt-1">pior queda histórica</div>
                         </div>
                         <div>
                           <div className="text-slate-500 text-[10px] mb-1 uppercase tracking-wide">VaR 95% (diário)</div>
