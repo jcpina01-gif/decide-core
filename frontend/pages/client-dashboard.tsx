@@ -2424,7 +2424,7 @@ function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,prof
 }
 
 /* ─── Página: Confirmar e enviar ordens para IB ────────────── */
-function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onShowRegister,profileLabel,fxExposure,marginEnabled,prices}:{
+function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onShowRegister,profileLabel,fxExposure,marginEnabled,prices,sessionUser}:{
   actionCounts:{comprar:number;aumentar:number;reduzir:number;vender:number;manter:number;
     rows:{ticker:string;prev:number;cur:number;delta:number;action:string}[];
     allRows:{ticker:string;prev:number;cur:number;delta:number;action:string}[];};
@@ -2432,6 +2432,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   recoLabel:string;aum:number;loggedIn:boolean;onBack:()=>void;onShowRegister:()=>void;
   profileLabel:string;fxExposure:string;marginEnabled:boolean;
   prices:Record<string,{price:number;currency:string}|null>;
+  sessionUser:string|null;
 }) {
   const [sending,setSending]=React.useState(false);
   const [done,setDone]=React.useState(false);
@@ -7532,6 +7533,7 @@ export default function ClientDashboardPage() {
                   fxExposure={fxExposure}
                   marginEnabled={marginEnabled}
                   prices={prices}
+                  sessionUser={sessionUser}
                 />
               )}
 
