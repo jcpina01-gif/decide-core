@@ -822,7 +822,20 @@ export default function ApprovePage({
             </div>
           </header>
 
-          {flowReady && !canApproveAll && (
+          {/* While the plan API is still loading and all gate flags are already OK, show a neutral
+              loading state instead of the "blocked" banner — the block was just a loading artifact. */}
+          {flowReady && !canApproveAll && clientRefPlanBusy && mifidDone && kycDone && ibkrPrepDone && (
+            <section className="mb-6 rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+              <div className="text-sm font-semibold text-slate-300">
+                A carregar plano de investimento…
+              </div>
+              <div className="mt-1 text-xs text-slate-400">
+                Aguarde enquanto o plano personalizado é calculado.
+              </div>
+            </section>
+          )}
+
+          {flowReady && !canApproveAll && !(clientRefPlanBusy && mifidDone && kycDone && ibkrPrepDone) && (
             <section className="mb-6 rounded-xl border border-amber-800 bg-amber-950/40 p-4">
               <div className="text-sm font-semibold text-amber-100">
                 Aprovação bloqueada: passos em falta ou sem plano
