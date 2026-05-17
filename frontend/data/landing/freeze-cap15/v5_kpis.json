@@ -1,7 +1,7 @@
 {
   "benchmark_cagr": 0.0887748327919411,
-  "overlayed_cagr": 0.2505228140671856,
-  "overlayed_sharpe": 1.2403890582889034,
+  "overlayed_cagr": 0.24941012627230674,
+  "overlayed_sharpe": 1.2358372619022573,
   "data_start": "2006-03-15",
   "data_end": "2026-05-15",
   "profile": "moderado",
@@ -308,7 +308,7 @@
   "export_slippage_bps": 5.0,
   "export_fx_conversion_bps": 0.0,
   "export_friction_bps": "5+5+0",
-  "max_drawdown": -0.26074350356580983,
+  "max_drawdown": -0.25455170021835705,
   "vol_rule_applied": true,
   "vol_rule_bench_vol_ann": 0.194193,
   "vol_rule_moderado_mult": 1.0,

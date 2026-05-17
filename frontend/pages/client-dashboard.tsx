@@ -2470,6 +2470,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [flatSending,setFlatSending]=React.useState(false);
   const [flatResult,setFlatResult]=React.useState<{ref:string;longs:number;shorts:number}|null>(null);
   const [flatFills,setFlatFills]=React.useState<FillRow[]>([]);
+  const [auditStatus,setAuditStatus]=React.useState<{ok:boolean;msg:string}|null>(null);
   const [cancelSending,setCancelSending]=React.useState(false);
   const [cancelResult,setCancelResult]=React.useState<string|null>(null);
   const [pollCount,setPollCount]=React.useState(0);
@@ -2595,7 +2596,18 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     try{
       if(paperMode){
         await new Promise(r=>setTimeout(r,1400));
-        setSellAllResult({ref:"SIM-SELLALL-"+Date.now().toString(36).toUpperCase(),fills:ibkrPos.length});
+        const simRef="SIM-SELLALL-"+Date.now().toString(36).toUpperCase();
+        setSellAllResult({ref:simRef,fills:ibkrPos.length});
+        setAuditStatus(null);
+        console.log("[audit] sellAll paper: saving approval, clientId=", auditClientId());
+        const approvalId=await auditSaveApproval(null);
+        const sentSell=ibkrPos.filter(p=>p.qty>0).map(p=>({ticker:p.ticker,side:"SELL" as const,requested_qty:p.qty,ib_order_id:null}));
+        try{
+          await auditSaveOrders(approvalId,sentSell);
+          setAuditStatus({ok:true,msg:`✓ Audit guardado · approvalId=${approvalId??"null"} · ${sentSell.length} ordens`});
+        }catch(e){
+          setAuditStatus({ok:false,msg:`✗ Audit falhou: ${String(e)}`});
+        }
         return;
       }
       const body={
@@ -2641,7 +2653,22 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     try{
       if(paperMode){
         await new Promise(r=>setTimeout(r,1400));
-        setFlatResult({ref:"SIM-FLAT-"+Date.now().toString(36).toUpperCase(),longs:longs.length,shorts:shorts.length});
+        const simRef="SIM-FLAT-"+Date.now().toString(36).toUpperCase();
+        setFlatResult({ref:simRef,longs:longs.length,shorts:shorts.length});
+        // Save audit even in paper mode so you can verify DB connectivity
+        setAuditStatus(null);
+        console.log("[audit] flatten paper: saving approval, clientId=", auditClientId());
+        const approvalId=await auditSaveApproval(null);
+        const sentFlat=[
+          ...longs.map(p=>({ticker:p.ticker,side:"SELL" as const,requested_qty:p.qty,ib_order_id:null})),
+          ...shorts.map(p=>({ticker:p.ticker,side:"BUY" as const,requested_qty:Math.abs(p.qty),ib_order_id:null})),
+        ];
+        try{
+          await auditSaveOrders(approvalId,sentFlat);
+          setAuditStatus({ok:true,msg:`✓ Audit guardado · approvalId=${approvalId??"null"} · ${sentFlat.length} ordens`});
+        }catch(e){
+          setAuditStatus({ok:false,msg:`✗ Audit falhou: ${String(e)}`});
+        }
         return;
       }
       const orders=[
@@ -2665,7 +2692,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         setFlatFills(j.fills??[]);
         setIbkrPos(null);  // force refresh
         // Audit: log flatten approval + orders
-        // Use j.fills when available; fall back to the orders we submitted
+        setAuditStatus(null);
         console.log("[audit] flatten: saving approval, clientId=", auditClientId(), "longs=", longs.length, "shorts=", shorts.length);
         const approvalId = await auditSaveApproval(null);
         const sentFlat=[
@@ -2675,7 +2702,12 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         const fillsForAudit=(j.fills??[]).length>0
           ?(j.fills as Record<string,unknown>[]).map(f=>({ticker:String(f.ticker??""),side:(String(f.side??"BUY").toUpperCase()==="BUY"?"BUY":"SELL") as "BUY"|"SELL",requested_qty:Number(f.requested_qty??0),ib_order_id:f.ib_order_id as number|null}))
           :sentFlat;
-        void auditSaveOrders(approvalId, fillsForAudit);
+        try{
+          await auditSaveOrders(approvalId, fillsForAudit);
+          setAuditStatus({ok:true,msg:`✓ Audit guardado · ${fillsForAudit.length} ordens · approvalId=${approvalId??"null"}`});
+        }catch(e){
+          setAuditStatus({ok:false,msg:`✗ Audit falhou: ${String(e)}`});
+        }
         void fetch("/api/audit/config-change",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
           client_id: auditClientId(), changed_by:"client", change_type:"flatten_all",
           new_value:{ref:j.order_ref, longs:longs.length, shorts:shorts.length}, changed_at: new Date().toISOString(),
@@ -2855,14 +2887,19 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
 
   async function auditSaveApproval(recommendationId: string|null): Promise<string|null> {
     const clientId = auditClientId() ?? "unknown";
+    console.log("[audit] auditSaveApproval called, clientId=", clientId);
     try {
       const r = await fetch("/api/audit/approval", {
         method: "POST", headers: {"Content-Type":"application/json"},
         body: JSON.stringify({ client_id: clientId, recommendation_id: recommendationId, action: "approved" }),
       });
-      const j = await r.json() as {ok?:boolean;id?:string};
+      const j = await r.json() as {ok?:boolean;id?:string;error?:string};
+      console.log("[audit] approval response:", r.status, JSON.stringify(j));
       return j.ok && j.id ? j.id : null;
-    } catch { return null; }
+    } catch(e) {
+      console.error("[audit] approval fetch error:", e);
+      return null;
+    }
   }
 
   async function auditSaveOrders(
@@ -2871,9 +2908,10 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   ) {
     const clientId = auditClientId() ?? "unknown";
     if (!fills.length) return;
-    for (const f of fills) {
+    console.log(`[audit] auditSaveOrders: clientId=${clientId} fills=${fills.length} approvalId=${approvalId}`);
+    const results = await Promise.allSettled(fills.map(f => {
       const side = (f.side === "BUY" || f.action === "Comprar") ? "BUY" : "SELL";
-      fetch("/api/audit/order", {
+      return fetch("/api/audit/order", {
         method: "POST", headers: {"Content-Type":"application/json"},
         body: JSON.stringify({
           client_id: clientId,
@@ -2886,9 +2924,18 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
           submitted_at: new Date().toISOString(),
         }),
       }).then(async r => {
-        if (!r.ok) console.error(`[audit] order save failed ${r.status}:`, await r.text());
-      }).catch(e => console.error("[audit] order save error:", e));
+        const j = await r.json().catch(() => ({})) as {ok?:boolean;error?:string};
+        if (!r.ok || !j.ok) throw new Error(`HTTP ${r.status}: ${j.error ?? "unknown"}`);
+        return j;
+      });
+    }));
+    const failed = results.filter(r => r.status === "rejected");
+    if (failed.length > 0) {
+      const reasons = failed.map(r => (r as PromiseRejectedResult).reason as string).join("; ");
+      console.error(`[audit] ${failed.length}/${fills.length} order saves failed:`, reasons);
+      throw new Error(`${failed.length} order(s) failed: ${reasons}`);
     }
+    console.log(`[audit] auditSaveOrders: all ${fills.length} saved OK`);
   }
   // ───────────────────────────────────────────────────────────────────────
 
@@ -3387,8 +3434,9 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                           <div>
                             <div className="text-[10px] font-bold text-emerald-300">Carteira zerada</div>
                             <div className="text-[10px] text-slate-500">{flatResult.longs} longs + {flatResult.shorts} shorts · ref {flatResult.ref}</div>
+                            {auditStatus&&<div className={`text-[10px] mt-0.5 font-mono ${auditStatus.ok?"text-emerald-400":"text-red-400"}`}>{auditStatus.msg}</div>}
                           </div>
-                          <button onClick={()=>{setFlatResult(null);setFlatFills([]);setIbkrPos(null);}} className="ml-auto text-slate-500 hover:text-slate-300"><X size={12}/></button>
+                          <button onClick={()=>{setFlatResult(null);setFlatFills([]);setIbkrPos(null);setAuditStatus(null);}} className="ml-auto text-slate-500 hover:text-slate-300"><X size={12}/></button>
                         </div>
                         {flatFills.length>0&&(
                           <div className="rounded-lg border border-[#1a1f2e] overflow-hidden max-h-48 overflow-y-auto">
