@@ -3,7 +3,7 @@ import { denyIfBackofficeDisabled } from "../../../../lib/server/backofficeApiGu
 import { listBackofficeClients, projectRoot } from "../../../../lib/server/backofficeData";
 
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (denyIfBackofficeDisabled(res)) return;
+  if (denyIfBackofficeDisabled(res, req)) return;
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return res.status(405).json({ ok: false, error: "Method not allowed" });
@@ -12,3 +12,4 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   const { clients, meta } = listBackofficeClients(root);
   return res.status(200).json({ ok: true, clients, meta });
 }
+
