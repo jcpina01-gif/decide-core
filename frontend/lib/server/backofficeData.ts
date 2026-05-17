@@ -190,6 +190,14 @@ function col(row: Record<string, string>, names: string[]): string {
 }
 
 function loadSmoke(root: string): Record<string, unknown> | null {
+  // Env var override — useful in Vercel
+  const envJson = process.env.DECIDE_BACKOFFICE_SMOKE_JSON?.trim();
+  if (envJson) {
+    try {
+      const parsed = JSON.parse(envJson) as Record<string, unknown>;
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch { /* ignore */ }
+  }
   const p = path.join(tmpDir(root), "ibkr_paper_smoke_test.json");
   return readJson<Record<string, unknown>>(p);
 }
@@ -219,6 +227,17 @@ function loadStatusJson(root: string): Record<string, unknown> | null {
 }
 
 function loadStore(root: string): BackofficeStoreV1 {
+  // 1. Env var DECIDE_BACKOFFICE_STORE_JSON — takes priority (useful in Vercel where tmp_diag/ isn't deployed)
+  const envJson = process.env.DECIDE_BACKOFFICE_STORE_JSON?.trim();
+  if (envJson) {
+    try {
+      const parsed = JSON.parse(envJson) as BackofficeStoreV1;
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch {
+      // malformed — fall through to file
+    }
+  }
+  // 2. File on disk (local dev / persistent server)
   const p = path.join(tmpDir(root), "backoffice_store.json");
   const j = readJson<BackofficeStoreV1>(p);
   return j && typeof j === "object" ? j : {};
