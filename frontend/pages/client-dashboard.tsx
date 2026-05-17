@@ -4378,25 +4378,35 @@ export default function ClientDashboardPage() {
     return {comprar:c,aumentar:au,reduzir:rd,vender:v,manter:m,rows:changedRows,allRows};
   },[latestMonth,prevMonth]);
 
-  /** Counts from the official backend flow (entries/exits) — matches the Histórico page exactly.
-   *  Falls back to actionCounts if entries/exits are not available. */
+  /** Counts using the same logic as histRows (WMIN 0.5, DMIN 1, no US filter, no top-20 cap)
+   *  so the Recomendações badges match the Histórico tab exactly. */
   const officialCounts=useMemo(()=>{
-    const entries=latestMonth?.entries;
-    const exits=latestMonth?.exits;
-    if(!entries||!exits) return null;
-    const isCash=(t:string)=>{const u=t.trim().toUpperCase();return u==="TBILL_PROXY"||u==="EUR_MM_PROXY"||u==="XEON";};
-    const comprar=entries.filter(e=>e.kind==="new"&&!isCash(e.ticker)).length;
-    const aumentar=entries.filter(e=>e.kind==="increase"&&!isCash(e.ticker)).length;
-    const vender=exits.filter(e=>e.kind==="remove"&&!isCash(e.ticker)).length;
-    const reduzir=exits.filter(e=>e.kind==="decrease"&&!isCash(e.ticker)).length;
-    // Manter = positions in plan that are neither entries nor exits
-    const changedTickers=new Set([
-      ...entries.map(e=>e.ticker.trim().toUpperCase()),
-      ...exits.map(e=>e.ticker.trim().toUpperCase()),
-    ]);
-    const manter=(latestMonth?.rows??[]).filter(r=>r.weightPct>0&&!isCash(r.ticker)&&!changedTickers.has(r.ticker.trim().toUpperCase())).length;
-    return {comprar,aumentar,vender,reduzir,manter};
-  },[latestMonth]);
+    if(!latestMonth||!prevMonth) return null;
+    const WMIN=0.5,DMIN_OC=1.0;
+    const pm=new Map((prevMonth.rows??[]).map((r:WRow)=>[r.ticker,r.weightPct??0]));
+    const cm=new Map((latestMonth.rows??[]).map((r:WRow)=>[r.ticker,r.weightPct??0]));
+    const tickers=[...new Set([...pm.keys(),...cm.keys()])].filter(t=>{
+      if(t==="TBILL_PROXY"||t.startsWith("TBILL")||t.startsWith("CASH")||t==="XEON") return false;
+      return Math.max(pm.get(t)??0,cm.get(t)??0)>=WMIN;
+    });
+    type TW={t:string;w:number};
+    const comprasRaw:TW[]=[],aumentosRaw:TW[]=[],vendasRaw:TW[]=[],reducoesRaw:TW[]=[],manterArr:TW[]=[];
+    tickers.forEach(t=>{
+      const p=pm.get(t)??0,cu=cm.get(t)??0,d=cu-p;
+      if(p<WMIN&&cu>=WMIN) comprasRaw.push({t,w:cu});
+      else if(cu<WMIN&&p>=WMIN) vendasRaw.push({t,w:p});
+      else if(d>=DMIN_OC) aumentosRaw.push({t,w:cu});
+      else if(d<=-DMIN_OC) reducoesRaw.push({t,w:cu});
+      else if(cu>=WMIN) manterArr.push({t,w:cu});
+    });
+    return {
+      comprar:dedupTW(comprasRaw).length,
+      aumentar:dedupTW(aumentosRaw).length,
+      vender:dedupTW(vendasRaw).length,
+      reduzir:dedupTW(reducoesRaw).length,
+      manter:dedupTW(manterArr).length,
+    };
+  },[latestMonth,prevMonth]);
 
   const sectorData=useMemo(()=>{
     // Use actionCounts.allRows (already US-only + normalised) so the chart matches the plan
