@@ -2543,6 +2543,9 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         const n=j.cancellations?.length??j.cancelled??0;
         setCancelResult(`${n} ordem(ns) cancelada(s)`);
         setIbkrOpenOrders([]);
+        // Clear stale fills so the UI no longer shows "Em curso" for cancelled orders
+        setFills(prev => prev.map(f => ({ ...f, status: "Cancelled" })));
+        setDone(false);
         logActivity({type:"cancelamento",label:`${n} ordem(ns) cancelada(s) na IB Gateway`,icon:"✕",color:"text-red-400"});
       } else {
         setCancelResult("Erro: "+(j.error||j.detail||`HTTP ${resp.status}`));
@@ -3334,15 +3337,16 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                               <tbody>
                                 {flatFills.map((f,i)=>{
                                   const filled=f.status==="Filled";
+                                  const cancelled=f.status==="Cancelled"||f.status==="Canceled";
                                   const skipped=["skip_zero","skip_sell_no_long","contract_not_qualified"].includes(f.status);
                                   return(
-                                    <tr key={i} className={`border-b border-[#1a1f2e] ${i%2===0?"":"bg-[#080c14]"} ${skipped?"opacity-50":""}`}>
+                                    <tr key={i} className={`border-b border-[#1a1f2e] ${i%2===0?"":"bg-[#080c14]"} ${skipped||cancelled?"opacity-50":""}`}>
                                       <td className="px-3 py-1 font-bold text-orange-400">{f.ticker}</td>
                                       <td className={`px-2 py-1 font-semibold text-[10px] ${f.action==="BUY"||f.action==="Comprar"?"text-emerald-400":"text-red-400"}`}>{f.action==="BUY"||f.action==="Comprar"?"Comprar (cover)":"Vender"}</td>
                                       <td className="px-2 py-1 text-right text-slate-300">{f.filled||f.requested_qty}</td>
                                       <td className="px-3 py-1">
-                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${filled?"bg-emerald-900/40 text-emerald-300":skipped?"bg-slate-800 text-slate-500":"bg-amber-900/40 text-amber-300"}`}>
-                                          {filled?"OK":skipped?"Ignorada":"Em curso"}
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${filled?"bg-emerald-900/40 text-emerald-300":cancelled?"bg-slate-800 text-slate-400":skipped?"bg-slate-800 text-slate-500":"bg-amber-900/40 text-amber-300"}`}>
+                                          {filled?"OK":cancelled?"Cancelada":skipped?"Ignorada":"Em curso"}
                                         </span>
                                       </td>
                                     </tr>
@@ -3386,14 +3390,15 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                                 {sellAllFills.map((f,i)=>{
                                   const skipped=["skip_zero","skip_sell_no_long","contract_not_qualified"].includes(f.status);
                                   const filled=f.status==="Filled";
+                                  const cancelled=f.status==="Cancelled"||f.status==="Canceled";
                                   return(
-                                    <tr key={i} className={`border-b border-[#1a1f2e] ${i%2===0?"":"bg-[#080c14]"} ${skipped?"opacity-50":""}`}>
+                                    <tr key={i} className={`border-b border-[#1a1f2e] ${i%2===0?"":"bg-[#080c14]"} ${skipped||cancelled?"opacity-50":""}`}>
                                       <td className="px-3 py-1 font-bold text-red-400">{f.ticker}</td>
                                       <td className="px-2 py-1 text-right text-slate-300">{f.filled||f.requested_qty||"—"}</td>
                                       <td className="px-2 py-1 text-right text-slate-400">{f.avg_fill_price?f.avg_fill_price.toFixed(2):"—"}</td>
                                       <td className="px-3 py-1">
-                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${filled?"bg-emerald-900/40 text-emerald-300":skipped?"bg-slate-800 text-slate-500":"bg-amber-900/40 text-amber-300"}`}>
-                                          {filled?"Vendida":skipped?"Ignorada":f.status==="Submitted"?"Em curso":f.status}
+                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${filled?"bg-emerald-900/40 text-emerald-300":cancelled?"bg-slate-800 text-slate-400":skipped?"bg-slate-800 text-slate-500":"bg-amber-900/40 text-amber-300"}`}>
+                                          {filled?"Vendida":cancelled?"Cancelada":skipped?"Ignorada":f.status==="Submitted"?"Em curso":f.status}
                                         </span>
                                       </td>
                                     </tr>
@@ -3531,6 +3536,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                           const SKIP_ST=["skip_zero","skip_sell_no_long","contract_not_qualified","skip_fx_below_min","error"];
                           const skipped=SKIP_ST.includes(f.status);
                           const isFilled=f.status==="Filled";
+                          const isCancelled=f.status==="Cancelled"||f.status==="Canceled";
                           const isSubmitted=["Submitted","PreSubmitted","PendingSubmit"].includes(f.status);
                           const isError=f.status==="error";
                           // value_eur: backend already converts USD→EUR; fallback assumes EUR
@@ -3538,12 +3544,14 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                           const rowBg=isFx?"bg-violet-950/30":i%2===0?"":"bg-[#080c14]";
                           const statusBadge=isFilled
                             ?"bg-emerald-900/50 text-emerald-300 border-emerald-700/40"
-                            :skipped
-                              ?"bg-slate-800/60 text-slate-500 border-slate-700/30"
-                              :isError
-                                ?"bg-red-900/40 text-red-300 border-red-700/30"
-                                :"bg-amber-900/40 text-amber-300 border-amber-700/30";
-                          const statusLabel=isFilled?"✓ Preenchida":skipped?"— Ignorada":isSubmitted?"⟳ Em curso":isError?"✕ Erro":f.status;
+                            :isCancelled
+                              ?"bg-slate-800/60 text-slate-400 border-slate-700/30"
+                              :skipped
+                                ?"bg-slate-800/60 text-slate-500 border-slate-700/30"
+                                :isError
+                                  ?"bg-red-900/40 text-red-300 border-red-700/30"
+                                  :"bg-amber-900/40 text-amber-300 border-amber-700/30";
+                          const statusLabel=isFilled?"✓ Preenchida":isCancelled?"✕ Cancelada":skipped?"— Ignorada":isSubmitted?"⟳ Em curso":isError?"✕ Erro":f.status;
                           return(
                             <tr key={i} className={`border-b border-[#1a1f2e] ${skipped?"opacity-50":""} ${rowBg} transition-colors hover:brightness-110`}>
                               <td className="px-3 py-2">
