@@ -2881,7 +2881,9 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
           status: "submitted",
           submitted_at: new Date().toISOString(),
         }),
-      }).catch(() => {});
+      }).then(async r => {
+        if (!r.ok) console.error(`[audit] order save failed ${r.status}:`, await r.text());
+      }).catch(e => console.error("[audit] order save error:", e));
     }
   }
   // ───────────────────────────────────────────────────────────────────────

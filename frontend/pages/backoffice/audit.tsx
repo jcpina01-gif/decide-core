@@ -100,6 +100,22 @@ export default function BackofficeAuditPage() {
     }
   };
 
+  const [testMsg, setTestMsg] = useState("");
+  const runDbTest = async () => {
+    setTestMsg("A testar…");
+    try {
+      const r = await fetch("/api/backoffice/audit-test", {
+        method: "POST", credentials: "same-origin",
+      });
+      const j = await r.json() as Record<string, unknown>;
+      setTestMsg(j.ok
+        ? `✓ ${String(j.message)} | DATABASE_URL=${String(j.env && (j.env as Record<string,unknown>).DATABASE_URL_set)}`
+        : `✗ ${String(j.error)} | DATABASE_URL=${String(j.env && (j.env as Record<string,unknown>).DATABASE_URL_set)}`);
+    } catch (e) {
+      setTestMsg("Erro de rede: " + (e instanceof Error ? e.message : "falha"));
+    }
+  };
+
   const downloadBundle = useCallback(async () => {
     const id = clientId.trim();
     if (!id) return;
@@ -256,6 +272,9 @@ export default function BackofficeAuditPage() {
             <button style={btn()} onClick={() => void runMigration()} disabled={migrating}>
               {migrating ? "A executar…" : "Executar migrações DB"}
             </button>
+            <button style={btn(true)} onClick={() => void runDbTest()}>
+              Testar ligação DB
+            </button>
             <Link
               href="/backoffice/audit-logs"
               style={{ color: DECIDE_DASHBOARD.accentSky, fontSize: 13, fontWeight: 600 }}
@@ -266,6 +285,11 @@ export default function BackofficeAuditPage() {
           {migrateMsg && (
             <p style={{ marginTop: 10, fontSize: 13, color: migrateMsg.startsWith("✓") ? "#4ade80" : "#f87171" }}>
               {migrateMsg}
+            </p>
+          )}
+          {testMsg && (
+            <p style={{ marginTop: 10, fontSize: 12, color: testMsg.startsWith("✓") ? "#4ade80" : "#f87171", fontFamily: "monospace", wordBreak: "break-all" }}>
+              {testMsg}
             </p>
           )}
           <p style={{ marginTop: 12, fontSize: 11, color: "#3f3f46", lineHeight: 1.5 }}>
