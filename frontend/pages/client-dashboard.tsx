@@ -3061,246 +3061,433 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     } finally { setSending(false); }
   }
 
-  const stepsDef=[
-    {n:1,label:"Revisão do plano",done:true},
-    {n:2,label:"Confirmação",active:!done},
-    {n:3,label:"Envio para IB",active:done},
-  ];
+  const [execMethod,setExecMethod]=React.useState("smart");
+  const [showAlertas,setShowAlertas]=React.useState(false);
+  const [showExposicao,setShowExposicao]=React.useState(false);
 
   return (
-    <div className="space-y-4">
-      {/* Back link */}
-      <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors -mt-1">
-        <ArrowUpRight size={12} className="rotate-[225deg]"/>Voltar ao plano
-      </button>
-
-      {/* Step progress */}
-      <div className="flex items-center gap-0 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-6 py-4">
-        {stepsDef.map((s,i)=>(
-          <React.Fragment key={s.n}>
-            <div className="flex items-center gap-2 shrink-0">
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black border-2 transition-colors ${
-                s.done?"bg-emerald-600 border-emerald-500 text-white":
-                s.active?"bg-blue-600 border-blue-500 text-white":
-                "bg-[#111827] border-[#252a3a] text-slate-500"}`}>
-                {s.done?<CheckCircle2 size={14}/>:s.n}
+    <div className="flex flex-col h-full bg-[#07090f] -m-4 md:-m-6">
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div className="bg-[#07090f] border-b border-[#1a1f2e] px-8 py-5 shrink-0">
+        <div className="flex items-start justify-between mb-5">
+          <div>
+            <h1 className="text-xl font-bold text-slate-100">Confirmar e enviar ordens</h1>
+            <p className="text-sm text-slate-400 mt-1">Valide os detalhes da nova ordem antes de a submeter ao sistema.</p>
+          </div>
+          <span className="text-xs text-slate-500 mt-1 shrink-0">1 de 1</span>
+        </div>
+        {/* Progress steps */}
+        <div className="flex items-center">
+          {[
+            {label:"Seleção da Carteira",done:true},
+            {label:"Revisão e validação da lista de ordem",done:true},
+            {label:"Confirmação",active:true},
+          ].map((s,i)=>(
+            <React.Fragment key={s.label}>
+              <div className="flex items-center gap-2 shrink-0">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors ${s.done?"bg-emerald-600 border-emerald-500 text-white":"bg-blue-600 border-blue-500 text-white"}`}>
+                  {s.done?<CheckCircle2 size={12}/>:<span className="w-2 h-2 rounded-full bg-white inline-block"/>}
+                </div>
+                <span className={`text-xs font-semibold whitespace-nowrap ${s.done?"text-emerald-400":"text-slate-100"}`}>{s.label}</span>
               </div>
-              <span className={`text-xs font-semibold ${s.done?"text-emerald-400":s.active?"text-slate-100":"text-slate-500"}`}>{s.label}</span>
-            </div>
-            {i<stepsDef.length-1&&<div className="flex-1 h-px bg-[#1a1f2e] mx-4"/>}
-          </React.Fragment>
-        ))}
-      </div>
-
-      {/* Info banner — informativo, não crítico */}
-      <div className="flex items-center gap-3 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-5 py-3.5">
-        <div className="w-7 h-7 rounded-lg bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
-          <ShieldCheck size={14} className="text-teal-400"/>
-        </div>
-        <div>
-          <div className="text-xs font-semibold text-slate-200">Execução controlada via Interactive Brokers</div>
-          <div className="text-[11px] text-slate-500 mt-0.5">As ordens serão enviadas ao mercado só após revisão e confirmação explícita. Pode cancelar a qualquer momento antes do envio final.</div>
+              {i<2&&<div className="flex-1 h-px bg-[#1a1f2e] mx-4 min-w-6"/>}
+            </React.Fragment>
+          ))}
         </div>
       </div>
 
-      {/* Main 2-col layout */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* ── Body: two-column layout ──────────────────────────────────────── */}
+      <div className="flex flex-1 overflow-hidden">
 
-        {/* LEFT: what happens + order list */}
-        <div className="col-span-2 space-y-4">
+        {/* LEFT COLUMN — scrollable main content */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
 
-          {/* What happens now */}
+          {/* O que mais a confirmar */}
           <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-            <div className="font-bold text-slate-200 text-sm mb-4">O que vai acontecer agora</div>
-            <div className="space-y-4">
+            <div className="font-semibold text-slate-200 text-sm mb-4">O que mais a confirmar</div>
+            <div className="grid grid-cols-2 gap-4">
               {[
-                {icon:<ShieldCheck size={18} className="text-blue-400"/>,title:"Validação das ordens",desc:"Vamos validar todas as ordens e verificar disponibilidade de caixa e margem na sua conta IB."},
-                {icon:<Send size={18} className="text-blue-400"/>,title:"Envio para a Interactive Brokers",desc:"As ordens serão enviadas de forma atómica e segura através da API da IB."},
-                {icon:<Activity size={18} className="text-blue-400"/>,title:"Execução",desc:"A IB executará as ordens ao melhor preço disponível no mercado."},
-                {icon:<CheckCircle2 size={18} className="text-blue-400"/>,title:"Confirmação",desc:"Receberá uma notificação quando todas as ordens estiverem executadas."},
+                {icon:<ShieldCheck size={15} className="text-blue-400"/>,title:"Validação das ordens",desc:"Serão validadas a conformidade, disponibilidade de liquidez e regras de investimento."},
+                {icon:<Activity size={15} className="text-blue-400"/>,title:"Impacto na carteira e risco",desc:"Serão confirmados os limites de risco impostos na carteira e o impacto nas novas ordens."},
+                {icon:<Send size={15} className="text-blue-400"/>,title:"Execução",desc:"As ordens serão enviadas para a Interactive Brokers para execução ao melhor preço."},
+                {icon:<CheckCircle2 size={15} className="text-blue-400"/>,title:"Notificação",desc:"Será enviada uma notificação após a conclusão das ordens."},
               ].map(x=>(
                 <div key={x.title} className="flex gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-blue-600/10 border border-blue-500/20 flex items-center justify-center shrink-0">{x.icon}</div>
+                  <div className="w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-500/20 flex items-center justify-center shrink-0">{x.icon}</div>
                   <div>
-                    <div className="text-sm font-semibold text-slate-200">{x.title}</div>
-                    <div className="text-xs text-slate-500 mt-0.5">{x.desc}</div>
+                    <div className="text-xs font-semibold text-slate-200">{x.title}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">{x.desc}</div>
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Exec mode toggle + Order list */}
+          {/* Lista de ordens */}
           <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="font-bold text-slate-200 text-sm">Lista de ordens</div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-slate-500">{allPlanRows.length} posições no plano</span>
-                {/* execMode toggle */}
-                <div className="flex rounded-lg border border-[#252a3a] overflow-hidden text-[10px] font-semibold">
-                  <button onClick={()=>setExecMode("full")}
-                    className={`px-3 py-1.5 transition-colors ${execMode==="full"?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}
-                    title="Construção inicial: compra todas as posições ao peso-alvo. Ideal para conta vazia.">
-                    Construção inicial
-                  </button>
-                  <button onClick={()=>setExecMode("delta")}
-                    className={`px-3 py-1.5 transition-colors border-l border-[#252a3a] ${execMode==="delta"?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}
-                    title="Rebalanceamento: envia apenas as ordens com alteração ≥ 1 pp face ao mês anterior.">
-                    Rebalanceamento
-                  </button>
-                </div>
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <div className="font-semibold text-slate-200 text-sm">Lista de ordens</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Reveja todas as ordens antes de confirmar. Pode expandir cada ordem para ver mais detalhes.</div>
+              </div>
+              <div className="text-right shrink-0 ml-4">
+                <div className="text-xs font-bold text-slate-100">Total em EUR · € {fmtEm(investEur+reduceEur)}</div>
+                <div className="text-[10px] text-slate-500">{nOrdens} ordens</div>
               </div>
             </div>
-            <div className="text-[10px] text-slate-500 mb-1">
-              {execMode==="full"
-                ? `Construção inicial: ${nOrdens} ordens BUY ao peso-alvo (para conta vazia ou reset completo)`
-                : `Rebalanceamento: ${nOrdens} ordens com alteração ≥ 1 pp face ao mês anterior`}
+            {/* execMode toggle */}
+            <div className="flex rounded-lg border border-[#252a3a] overflow-hidden text-[10px] font-semibold mb-3">
+              <button onClick={()=>setExecMode("full")}
+                className={`flex-1 px-3 py-1.5 transition-colors ${execMode==="full"?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}
+                title="Construção inicial: compra todas as posições ao peso-alvo. Ideal para conta vazia.">
+                Construção inicial
+              </button>
+              <button onClick={()=>setExecMode("delta")}
+                className={`flex-1 px-3 py-1.5 transition-colors border-l border-[#252a3a] ${execMode==="delta"?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}
+                title="Rebalanceamento: envia apenas as ordens com alteração ≥ 1 pp face ao mês anterior.">
+                Rebalanceamento
+              </button>
             </div>
-            <div className="text-[10px] text-sky-400/80 mb-3 flex items-center gap-1">
-              <span>ℹ</span>
-              <span>Total de compras limitado a <strong>{Math.round(BUY_SAFETY_FACTOR*100)}% do plano (≤ {fmtE(aum*BUY_SAFETY_FACTOR)} €)</strong> — reserva de {Math.round((1-BUY_SAFETY_FACTOR)*100)}% em cash para cobrir variações de preço, spread e arredondamento. Evita exceder o saldo disponível em contas sem margem.</span>
-            </div>
-            {/* Budget diagnostic bar */}
-            <div className={`mb-3 rounded-lg border px-3 py-2 text-[10px] space-y-1.5 ${investEur>aum*BUY_SAFETY_FACTOR+50?"border-red-600/60 bg-red-950/30":"border-slate-700/50 bg-slate-800/40"}`}>
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-slate-300 text-[11px]">Diagnóstico de budget</span>
-                <span className="text-slate-500">pesos modelo: {adjustedOrderRows.reduce((s,r)=>s+r.cur,0).toFixed(1)}%</span>
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                <span className="text-slate-400">Montante plano (AUM): <strong className="text-slate-100">€{aum.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
-                <span className="text-slate-400">Budget 97%: <strong className="text-slate-200">€{(aum*BUY_SAFETY_FACTOR).toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
-                <span className="text-slate-400">Total a investir: <strong className={investEur>aum*BUY_SAFETY_FACTOR+50?"text-red-400 font-black":"text-emerald-400"}>€{investEur.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong>{investEur>aum*BUY_SAFETY_FACTOR+50&&<span className="text-red-400 ml-1">⚠ acima do budget!</span>}</span>
-                <span className="text-slate-400">Já na IB: <strong className={totalHeldEur>aum*1.05?"text-amber-400":"text-slate-200"}>€{totalHeldEur.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
-              </div>
-              {investEur>aum*BUY_SAFETY_FACTOR+50&&(
-                <p className="text-red-300 text-[10px] font-semibold">⚠ O total a investir excede o budget. Verifica o campo "Montante plano (€)" na página Carteira e confirma que está correcto (ex: €25 000).</p>
-              )}
+            <div className="text-[10px] text-sky-400/70 mb-3 flex items-center gap-1.5 bg-sky-500/5 border border-sky-500/15 rounded-lg px-3 py-1.5">
+              <Info size={10} className="shrink-0"/>
+              <span>Total de compras limitado a <strong>{Math.round(BUY_SAFETY_FACTOR*100)}%</strong> do plano (≤ € {fmtE(aum*BUY_SAFETY_FACTOR)}) — reserva de {Math.round((1-BUY_SAFETY_FACTOR)*100)}% em cash.</span>
             </div>
             <table className="w-full text-xs">
               <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
-                <th className="pb-2 font-semibold">Ativo</th>
-                <th className="pb-2 font-semibold">Ação</th>
-                <th className="pb-2 font-semibold text-right">
-                  <span title="Peso no plano do mês anterior">Mês ant.</span>
-                </th>
-                <th className="pb-2 font-semibold text-right">
-                  <span title="Peso alvo no plano deste mês">Este mês</span>
-                </th>
-                <th className="pb-2 font-semibold text-right">Δ Peso</th>
-                <th className="pb-2 font-semibold text-right">Val. estimado</th>
+                <th className="pb-2 font-semibold">Ordem / Ticker</th>
+                <th className="pb-2 font-semibold">Acção</th>
+                <th className="pb-2 font-semibold text-right">QTY / Valor</th>
+                <th className="pb-2 font-semibold text-right">Acr / Preço</th>
+                <th className="pb-2 font-semibold text-right">Est. Impacto</th>
+                <th className="pb-2 font-semibold text-center">Status</th>
               </tr></thead>
               <tbody>
                 {allPlanRows.map(r=>{
                   const isManter=r.action==="Manter";
-                  const isBuy=r.action==="Comprar";const isUp=r.action==="Aumentar";
+                  const isBuy=r.action==="Comprar";
+                  const isUp=r.action==="Aumentar";
                   const isSell=r.action==="Vender";
                   const inExec=activeOrderRows.some(x=>x.ticker===r.ticker);
                   const notOrderable=!isOrderable(r.ticker);
                   const adjRow=adjustedOrderRows.find(x=>x.ticker===r.ticker);
-                  const heldEur=ibkrHoldingsMap.get(toIbTicker(r.ticker))??ibkrHoldingsMap.get(r.ticker.toUpperCase())??0;
-                  const acBg=isManter?"bg-slate-700/30 text-slate-500 border-slate-700/50":
-                             isBuy?"bg-emerald-500/15 text-emerald-300 border-emerald-500/30":
-                             isUp?"bg-cyan-500/15 text-cyan-300 border-cyan-500/30":
-                             isSell?"bg-red-500/15 text-red-300 border-red-500/30":
-                             "bg-amber-500/15 text-amber-300 border-amber-500/30";
-                  const acIcon=isManter?"=":isBuy?"↑":isUp?"↗":isSell?"↓":"↙";
                   const skipped=adjRow?.skipReason;
                   const displayVal=adjRow?adjRow.adjEur:(execMode==="full"?(isSell?r.prev/100*aum:r.cur/100*aum):Math.abs(r.delta)/100*aum);
+                  const refP=prices[r.ticker]??prices[toIbTicker(r.ticker)]??null;
+                  const acBg=isManter?"bg-slate-700/20 text-slate-500 border-slate-700/30":
+                    isBuy?"bg-emerald-500/15 text-emerald-300 border-emerald-500/30":
+                    isUp?"bg-cyan-500/15 text-cyan-300 border-cyan-500/30":
+                    isSell?"bg-red-500/15 text-red-300 border-red-500/30":
+                    "bg-amber-500/15 text-amber-300 border-amber-500/30";
                   return (
-                    <tr key={r.ticker} className={`border-b border-[#111520] hover:bg-white/[0.02] ${(isManter&&execMode==="delta")||notOrderable||skipped?"opacity-40":""}`}>
+                    <tr key={r.ticker} className={`border-b border-[#111520] hover:bg-white/[0.02] transition-colors ${(isManter&&execMode==="delta")||notOrderable||skipped?"opacity-40":""}`}>
                       <td className="py-2.5">
-                        <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
-                          className={`font-bold hover:underline ${inExec?"text-blue-400":skipped?"text-slate-600":"text-slate-500"}`}>{displayTicker(r.ticker)}</a>
-                        {notOrderable&&<span className="ml-1 text-[9px] text-amber-600" title="Não listada nos EUA — excluída do envio à IB">⚠ não-US</span>}
-                        {!notOrderable&&toIbTicker(r.ticker)!==r.ticker.toUpperCase()&&
-                          <span className="ml-1 text-[9px] text-sky-500" title={`Enviado à IB como ${toIbTicker(r.ticker)}`}>→ {toIbTicker(r.ticker)}</span>}
-                        {skipped&&<span className="ml-1 text-[9px] text-slate-600" title={adjRow?.skipReason}>✓ {adjRow?.skipReason}</span>}
-                        {!notOrderable&&!inExec&&!skipped&&execMode==="delta"&&<span className="ml-1 text-[9px] text-slate-600">(não enviada)</span>}
+                        <div className="flex items-center gap-1.5">
+                          <a href={`https://finance.yahoo.com/quote/${getYFTicker(r.ticker)}`} target="_blank" rel="noopener noreferrer"
+                            className={`font-bold hover:underline ${inExec?"text-slate-100":skipped?"text-slate-600":"text-slate-500"}`}>{displayTicker(r.ticker)}</a>
+                          {notOrderable&&<span className="text-[9px] text-amber-600" title="Não listada nos EUA">⚠</span>}
+                          {!notOrderable&&toIbTicker(r.ticker)!==r.ticker.toUpperCase()&&
+                            <span className="text-[9px] text-sky-500" title={`IB: ${toIbTicker(r.ticker)}`}>→{toIbTicker(r.ticker)}</span>}
+                        </div>
+                        {skipped&&<div className="text-[9px] text-slate-600 mt-0.5">{adjRow?.skipReason}</div>}
                       </td>
                       <td className="py-2.5">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${acBg}`}>
-                          <span className="font-black">{acIcon}</span>{r.action}
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${acBg}`}>
+                          {r.action}
                         </span>
                       </td>
-                      <td className="py-2.5 text-right text-slate-400">{r.prev.toFixed(1)}%</td>
-                      <td className="py-2.5 text-right text-slate-300">{r.cur.toFixed(1)}%</td>
-                      <td className={`py-2.5 text-right font-semibold ${r.delta>0?"text-emerald-400":r.delta<0?"text-red-400":"text-slate-500"}`}>
-                        {r.delta>0?"+":""}{r.delta.toFixed(2)}%
+                      <td className="py-2.5 text-right font-mono">
+                        {inExec&&!skipped?(
+                          <span className="text-slate-200">€ {fmtEm(displayVal)}</span>
+                        ):<span className="text-slate-600">—</span>}
                       </td>
-                      <td className={`py-2.5 text-right font-semibold ${inExec?(isSell?"text-amber-400":"text-emerald-400"):skipped?"text-slate-600":"text-slate-600"}`}>
-                        {(inExec||skipped)?(
-                          <div className="flex flex-col items-end gap-0.5">
-                            <span>{inExec?`€ ${fmtEm(displayVal)}`:"—"}</span>
-                            {heldEur>0&&execMode==="full"&&!isSell&&(
-                              <span className="text-[9px] text-slate-500" title={`Tens €${fmtEm(heldEur)} em carteira. Alvo: €${fmtEm(adjRow?.targetEur??0)}`}>
-                                já tens € {fmtEm(heldEur)}
-                              </span>
-                            )}
-                          </div>
-                        ):"—"}
+                      <td className="py-2.5 text-right font-mono text-slate-400 text-[10px]">
+                        {refP?`${refP.price.toFixed(2)}`:"—"}
+                      </td>
+                      <td className={`py-2.5 text-right font-semibold font-mono ${r.delta>0?"text-emerald-400":r.delta<0?"text-red-400":"text-slate-600"}`}>
+                        {r.delta!==0?`${r.delta>0?"+":""}${r.delta.toFixed(2)}%`:"—"}
+                      </td>
+                      <td className="py-2.5 text-center">
+                        {inExec&&!skipped?(
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/15 text-sky-300 border border-sky-500/30">A enviar</span>
+                        ):skipped?(
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-700/30 text-slate-500 border border-slate-700/30">Ignorar</span>
+                        ):notOrderable?(
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">Não-US</span>
+                        ):(
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-700/20 text-slate-600 border border-slate-700/20">—</span>
+                        )}
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
               <tfoot>
-                <tr className="border-t-2 border-[#252a3a] bg-[#0b0f1a]">
-                  <td colSpan={2} className="py-2.5 text-xs font-bold text-slate-400">
+                <tr className="border-t-2 border-[#252a3a] bg-[#080c14]">
+                  <td colSpan={3} className="py-2.5 text-xs font-bold text-slate-400">
                     {nOrdens} ordens a enviar
-                    {ibkrPos&&execMode==="full"&&<span className="ml-1.5 text-[10px] font-normal text-sky-400" title="Valores ajustados para posições já existentes na carteira IB">· ajustado vs carteira IB</span>}
+                    {ibkrPos&&execMode==="full"&&<span className="ml-1.5 text-[10px] font-normal text-sky-400">· ajustado vs carteira IB</span>}
                   </td>
-                  <td className="py-2.5 text-right text-xs text-slate-500">—</td>
-                  <td className="py-2.5 text-right text-xs text-slate-500">—</td>
-                  <td className="py-2.5 text-right text-xs text-slate-500">—</td>
-                  <td className="py-2.5 text-right text-xs font-black text-emerald-400">
+                  <td colSpan={2} className="py-2.5 text-right text-[10px] text-slate-500">
+                    Comissões est.: <span className="font-semibold text-slate-300">€ {fmtE(tradeCost)}</span>
+                  </td>
+                  <td className="py-2.5 text-right text-xs font-black text-emerald-400 pr-1">
                     € {fmtEm(investEur+reduceEur)}
                   </td>
                 </tr>
-                {aum>0&&(
-                  <tr className="bg-[#080c14]">
-                    <td colSpan={5} className="py-2 text-xs font-bold text-slate-200">Montante de referência (NAV)</td>
-                    <td className="py-2 text-right text-xs font-black text-white">€ {fmtEm(aum)}</td>
-                  </tr>
-                )}
               </tfoot>
             </table>
+            <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#1a1f2e]">
+              <button onClick={onBack} className="text-xs text-sky-400 hover:text-sky-300 transition-colors">Ver recomendações</button>
+              <span className="text-[10px] text-slate-600">Estimativa de comissões ({nOrdens>0&&(investEur+reduceEur)>0?(tradeCost/(investEur+reduceEur)*100).toFixed(3):"0.000"}%): € {fmtE(tradeCost)}</span>
+            </div>
           </div>
 
-          {/* Mode-specific warning */}
-          {execMode==="full"?(
-            <div className="flex items-start gap-3 bg-amber-500/[0.08] border border-amber-500/30 rounded-xl px-4 py-4">
-              <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5"/>
-              <div>
-                <div className="text-xs font-bold text-amber-300 mb-1">Construção inicial — compra a diferença para o peso-alvo</div>
-                <div className="text-xs text-slate-400 space-y-1">
-                  <p>Para cada posição do plano, compra apenas a <strong className="text-slate-300">diferença entre o peso-alvo e o que já tens em carteira</strong>. Posições acima do alvo não são reduzidas.</p>
-                  <p>Para ajustar posições que excedem o alvo, usa o modo <strong className="text-slate-300">Rebalanceamento</strong> que envia tanto compras como vendas parciais.</p>
+          {/* Alertas e validações — collapsible */}
+          <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+            <button onClick={()=>setShowAlertas(v=>!v)} className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.02] transition-colors">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={14} className="text-amber-400 shrink-0"/>
+                <span className="text-xs font-semibold text-slate-200">Alertas e validações</span>
+                {[investOverBudget, !ibkrPos&&!ibkrLoading&&!done, recentlySent].filter(Boolean).length>0&&(
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                    {[investOverBudget,!ibkrPos&&!ibkrLoading&&!done,recentlySent].filter(Boolean).length}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-sky-400 hover:text-sky-300">Ver detalhes</span>
+                <span className="text-slate-600 text-xs ml-2">{showAlertas?"▲":"▼"}</span>
+              </div>
+            </button>
+            {showAlertas&&(
+              <div className="px-5 pb-4 space-y-3 border-t border-[#1a1f2e] pt-3">
+                {/* Budget */}
+                <div className={`rounded-lg border px-3 py-2.5 text-[11px] space-y-1.5 ${investOverBudget?"border-red-600/60 bg-red-950/30":"border-slate-700/50 bg-slate-800/40"}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-300">Diagnóstico de budget</span>
+                    <span className="text-slate-500 text-[10px]">pesos: {adjustedOrderRows.reduce((s,r)=>s+r.cur,0).toFixed(1)}%</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                    <span className="text-slate-400">AUM: <strong className="text-slate-100">€{aum.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
+                    <span className="text-slate-400">Budget {Math.round(BUY_SAFETY_FACTOR*100)}%: <strong className="text-slate-200">€{(aum*BUY_SAFETY_FACTOR).toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
+                    <span className="text-slate-400">A investir: <strong className={investOverBudget?"text-red-400 font-black":"text-emerald-400"}>€{investEur.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong>{investOverBudget&&<span className="text-red-400 ml-1">⚠</span>}</span>
+                    <span className="text-slate-400">Já na IB: <strong className={totalHeldEur>aum*1.05?"text-amber-400":"text-slate-200"}>€{totalHeldEur.toLocaleString("pt-PT",{maximumFractionDigits:0})}</strong></span>
+                  </div>
+                  {investOverBudget&&<p className="text-red-300 text-[10px] font-semibold">⚠ Total a investir excede o budget. Verifica o campo "Montante plano (€)".</p>}
+                </div>
+                {/* Mode info */}
+                {execMode==="full"?(
+                  <div className="flex items-start gap-2 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-3 py-2.5 text-xs">
+                    <AlertTriangle size={12} className="text-amber-400 shrink-0 mt-0.5"/>
+                    <div>
+                      <div className="font-semibold text-amber-300 mb-0.5">Construção inicial</div>
+                      <div className="text-slate-400">Compra apenas a diferença entre o peso-alvo e o que já tens em carteira. Posições acima do alvo não são reduzidas.</div>
+                    </div>
+                  </div>
+                ):(
+                  <div className="flex items-start gap-2 bg-blue-500/[0.06] border border-blue-500/20 rounded-lg px-3 py-2.5 text-xs">
+                    <Info size={12} className="text-blue-400 shrink-0 mt-0.5"/>
+                    <div>
+                      <div className="font-semibold text-blue-300 mb-0.5">Rebalanceamento mensal</div>
+                      <div className="text-slate-400">Apenas posições com variação ≥ 1 pp face ao mês anterior são enviadas.</div>
+                    </div>
+                  </div>
+                )}
+                {/* IB status */}
+                {ibkrLoading&&!ibkrPos&&(
+                  <div className="flex items-center gap-2 bg-sky-500/10 border border-sky-500/30 rounded-lg px-3 py-2.5 text-xs text-sky-300">
+                    <span className="animate-spin text-sm">⟳</span>
+                    <span className="font-semibold">A verificar carteira e ordens pendentes na IB…</span>
+                  </div>
+                )}
+                {!ibkrPos&&!ibkrLoading&&!done&&(
+                  <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2.5 text-xs text-amber-300">
+                    <AlertTriangle size={12} className="shrink-0 mt-0.5"/>
+                    <div>
+                      <span className="font-semibold">Não foi possível verificar a carteira IB automaticamente.</span>
+                      <button onClick={fetchIbkrPositions} disabled={ibkrLoading} className="ml-2 underline hover:no-underline disabled:opacity-50">Tentar de novo</button>
+                    </div>
+                  </div>
+                )}
+                {ibkrPos&&ibkrOpenOrders.length>0&&!done&&(
+                  <div className="flex items-center gap-2 bg-sky-500/10 border border-sky-500/30 rounded-lg px-3 py-2.5 text-xs text-sky-300">
+                    <Info size={12} className="shrink-0"/>
+                    <span><strong>{ibkrOpenOrders.filter(o=>o.side==="BUY").length}</strong> ordem(ns) BUY pendente(s) — excluídas do novo cálculo automaticamente.</span>
+                  </div>
+                )}
+                {ibkrPos&&!done&&(()=>{
+                  const ibNav=ibkrPos.reduce((s,p)=>s+Math.abs(p.value_eur??p.value),0);
+                  if(ibNav<=aum*1.5) return null;
+                  return (
+                    <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/40 rounded-lg px-3 py-2.5 text-xs text-red-300">
+                      <AlertTriangle size={12} className="shrink-0 mt-0.5"/>
+                      <span><strong>Carteira acumulada ({(ibNav/aum*100).toFixed(0)}% do objectivo)</strong> — não é seguro rebalancear. Usa "Zerar toda a carteira (FLAT)" no Diagnóstico abaixo.</span>
+                    </div>
+                  );
+                })()}
+                {recentlySent&&lastSent&&(
+                  <div className="flex items-start gap-2 bg-red-950/60 border border-red-700/60 rounded-lg px-3 py-2.5 text-xs text-red-300">
+                    <AlertTriangle size={12} className="shrink-0 mt-0.5"/>
+                    <div className="flex-1">
+                      <span className="font-semibold">Ordens enviadas há {Math.round((Date.now()-lastSent.ts)/60000)} min (ref: <code className="font-mono">{lastSent.ref}</code>). Enviar de novo pode <strong>duplicar posições</strong>.</span>
+                    </div>
+                    <button onClick={()=>{try{localStorage.removeItem(ORDERS_SENT_KEY);}catch{}setLastSent(null);}} className="text-[10px] text-red-400 hover:text-red-300 underline shrink-0">Ignorar</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Exposição e limites — collapsible */}
+          <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+            <button onClick={()=>setShowExposicao(v=>!v)} className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.02] transition-colors">
+              <div className="flex items-center gap-2">
+                <Activity size={14} className="text-slate-400 shrink-0"/>
+                <span className="text-xs font-semibold text-slate-200">Exposição e limites após execução (estimada)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-sky-400 hover:text-sky-300">Ver detalhes</span>
+                <span className="text-slate-600 text-xs ml-2">{showExposicao?"▲":"▼"}</span>
+              </div>
+            </button>
+            {showExposicao&&(
+              <div className="px-5 pb-4 border-t border-[#1a1f2e] pt-3 space-y-3">
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  {[
+                    {label:"Total a investir",val:`€ ${fmtE(investEur)}`,c:"text-emerald-400"},
+                    {label:"Total a reduzir",val:`€ ${fmtE(reduceEur)}`,c:"text-red-400"},
+                    {label:"NAV referência",val:`€ ${fmtE(aum)}`,c:"text-slate-200"},
+                  ].map(k=>(
+                    <div key={k.label} className="bg-[#111827] rounded-lg px-3 py-2.5 border border-[#1a1f2e]">
+                      <div className="text-[9px] text-slate-500 mb-1">{k.label}</div>
+                      <div className={`text-sm font-bold ${k.c}`}>{k.val}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-[11px] text-slate-500 space-y-1.5 border-t border-[#1a1f2e] pt-3">
+                  <div className="flex justify-between"><span>Perfil de risco</span><span className="text-slate-300 font-semibold">{profileLabel}</span></div>
+                  <div className="flex justify-between"><span>Exposição FX</span><span className="text-slate-300 font-semibold capitalize">{ibkrFxBlocked?"Conta Caixa — hedge desativado":fxExposure}</span></div>
+                  <div className="flex justify-between"><span>Margem</span><span className={`font-semibold ${marginEnabled?"text-amber-400":"text-slate-400"}`}>{marginEnabled?"Ativa":"Desativada"}</span></div>
+                  <div className="flex justify-between"><span>Modo</span><span className={`font-semibold ${paperMode?"text-amber-400":"text-emerald-400"}`}>{paperMode?"Simulação local":"Envia à IB"}</span></div>
                 </div>
               </div>
-            </div>
-          ):(
-            <div className="flex items-start gap-3 bg-blue-500/[0.06] border border-blue-500/20 rounded-xl px-4 py-4">
-              <Info size={15} className="text-blue-400 shrink-0 mt-0.5"/>
-              <div>
-                <div className="text-xs font-bold text-blue-300 mb-1">Rebalanceamento mensal</div>
-                <div className="text-xs text-slate-400">
-                  Apenas as posições com variação ≥ 1 pp face ao mês anterior são enviadas. O tamanho de cada ordem corresponde ao <strong className="text-slate-300">delta de peso × montante NAV</strong>.
-                </div>
+            )}
+          </div>
+
+          {/* Método de execução */}
+          {!done&&(
+            <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+              <div className="font-semibold text-slate-200 text-sm mb-3">Método de execução</div>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  {id:"smart",label:"Smart",badge:"Recomendado",desc:"Rota automaticamente para o melhor preço disponível combinando estratégias globais."},
+                  {id:"vwap",label:"VWAP",badge:null,desc:"Divide a ordem ao longo do dia seguindo o volume, reduzindo impacto de mercado."},
+                  {id:"twap",label:"TWAP",badge:null,desc:"Divide a ordem em intervalos regulares de tempo. Bom para ativos com volumes irregulares."},
+                  {id:"immediate",label:"Execução imediata",badge:null,desc:"Executa ao preço de mercado imediato. Melhor para ordens urgentes em mercados líquidos."},
+                ] as {id:string;label:string;badge:string|null;desc:string}[]).map(m=>(
+                  <label key={m.id} onClick={()=>setExecMethod(m.id)} className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-all ${execMethod===m.id?"border-blue-500/50 bg-blue-600/10":"border-[#1a1f2e] bg-[#080c14] hover:border-[#252a3a]"}`}>
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${execMethod===m.id?"border-blue-500":"border-slate-600"}`}>
+                      {execMethod===m.id&&<div className="w-2 h-2 rounded-full bg-blue-500"/>}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-xs font-semibold ${execMethod===m.id?"text-blue-300":"text-slate-300"}`}>{m.label}</span>
+                        {m.badge&&<span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">{m.badge}</span>}
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">{m.desc}</p>
+                    </div>
+                  </label>
+                ))}
               </div>
             </div>
           )}
 
-          {/* Paper mode toggle */}
-          <div className="flex items-center justify-between bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-4 py-3">
-            <div>
-              <div className="text-xs font-semibold text-slate-300">Simulação local (não envia à IB)</div>
-              <div className="text-[10px] text-slate-500">Ligado = apenas animação local, sem ordens reais · Desligado = envia ordens ao IB Gateway (paper ou real)</div>
+          {/* Confirmation + submit */}
+          {!done&&!showSendConfirm&&(
+            <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 space-y-4">
+              <div className="font-semibold text-slate-200 text-sm">Confirmação e envio</div>
+              <div className="text-[11px] text-slate-500">Confirme todas as ordens e clique no botão abaixo para enviar as ordens para execução.</div>
+
+              {/* Summary grid */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-[#111827] rounded-xl px-4 py-3 border border-[#1a1f2e] text-center">
+                  <div className="text-[9px] text-slate-500 mb-1">Total de ordens</div>
+                  <div className="text-xl font-black text-slate-100">{nOrdens}</div>
+                </div>
+                <div className="bg-[#111827] rounded-xl px-4 py-3 border border-[#1a1f2e] text-center">
+                  <div className="text-[9px] text-slate-500 mb-1">Valor total</div>
+                  <div className="text-sm font-black text-emerald-400">€ {fmtE(investEur)}</div>
+                </div>
+                <div className="bg-[#111827] rounded-xl px-4 py-3 border border-[#1a1f2e] text-center">
+                  <div className="text-[9px] text-slate-500 mb-1">Comissões estimadas</div>
+                  <div className="text-sm font-black text-slate-300">€ {fmtE(tradeCost)}</div>
+                </div>
+              </div>
+
+              {/* Paper mode toggle */}
+              <div className="flex items-center justify-between py-2.5 px-3 bg-[#080c14] rounded-xl border border-[#1a1f2e]">
+                <div>
+                  <div className="text-xs font-semibold text-slate-300">Simulação local (não envia à IB)</div>
+                  <div className="text-[10px] text-slate-500">Ligado = animação local · Desligado = envia ordens à IB Gateway</div>
+                </div>
+                <button onClick={()=>setPaperMode(v=>!v)}
+                  className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ml-4 ${paperMode?"bg-blue-600":"bg-slate-700"}`}>
+                  <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${paperMode?"translate-x-5":"translate-x-0.5"}`}/>
+                </button>
+              </div>
+
+              {/* Checkboxes */}
+              <div className="space-y-2.5">
+                {[
+                  "Confirmo que todas as ordens e entendo os seus impactos.",
+                  "Confirmo que esta ação cumpre a minha política de investimento.",
+                  "Quero receber uma notificação quando todas as ordens forem executadas.",
+                ].map((text,ci)=>(
+                  <label key={ci} onClick={()=>setConfirmChecks(prev=>prev.map((v,j)=>j===ci?!v:v))} className="flex items-start gap-3 cursor-pointer group">
+                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${confirmChecks[ci]?"bg-blue-600 border-blue-500":"border-slate-600 bg-[#111827] group-hover:border-slate-500"}`}>
+                      {confirmChecks[ci]&&<CheckCircle2 size={12} className="text-white"/>}
+                    </div>
+                    <span className={`text-xs leading-relaxed transition-colors ${confirmChecks[ci]?"text-slate-300":"text-slate-500 group-hover:text-slate-400"}`}>{text}</span>
+                  </label>
+                ))}
+              </div>
+
+              {/* Error banner */}
+              {errMsg&&(
+                <div className="flex items-start justify-between gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5"/>
+                    <div>
+                      <div className="text-xs font-bold text-red-300 mb-0.5">Erro ao enviar ordens</div>
+                      <div className="text-[10px] text-slate-400 leading-snug">{errMsg}</div>
+                    </div>
+                  </div>
+                  <button onClick={()=>setErrMsg("")} className="text-slate-500 hover:text-slate-300 shrink-0 mt-0.5"><X size={14}/></button>
+                </div>
+              )}
+
+              {/* Submit button */}
+              <button
+                onClick={()=>setShowSendConfirm(true)}
+                disabled={sending||ibkrLoading||nOrdens===0||done||aum<=0||!allChecked||investOverBudget||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value_eur??p.value),0)>aum*1.5)}
+                className={`w-full flex items-center justify-center gap-2 py-3.5 text-sm font-black disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl transition-all ${
+                  !allChecked?"bg-slate-700 cursor-not-allowed":
+                  paperMode?"bg-slate-600 hover:bg-slate-500 shadow-lg":
+                  investOverBudget?"bg-red-900 cursor-not-allowed":
+                  recentlySent?"bg-amber-600 hover:bg-amber-500 shadow-xl shadow-amber-900/40":
+                  "bg-blue-600 hover:bg-blue-500 shadow-xl shadow-blue-900/40"}`}>
+                <Send size={16}/>
+                {!allChecked?"Confirme os pontos acima para prosseguir":
+                 paperMode?`Simular envio de ${nOrdens} ordens (simulação local)`:
+                 investOverBudget?"⛔ Bloqueado — total excede budget":
+                 recentlySent?"⚠ Já enviou recentemente — confirmar envio?":
+                 `Confirmar e enviar ordens`}
+              </button>
+              <p className="text-center text-[10px] text-slate-700 flex items-center justify-center gap-1">
+                <ShieldCheck size={10}/> As ordens só são enviadas após a sua confirmação explícita.
+              </p>
             </div>
-            <button onClick={()=>setPaperMode(v=>!v)}
-              className={`w-11 h-6 rounded-full transition-colors relative ${paperMode?"bg-blue-600":"bg-slate-700"}`}>
-              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${paperMode?"translate-x-5":"translate-x-0.5"}`}/>
-            </button>
-          </div>
+          )}
 
           {/* ── Diagnóstico / Testes ─────────────────────────────────────── */}
           <div className="bg-[#080c14] border border-amber-500/20 rounded-xl p-4">
@@ -3661,20 +3848,6 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             )}
           </div>
 
-          {/* Error banner */}
-          {errMsg&&!done&&(
-            <div className="flex items-start justify-between gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
-              <div className="flex items-start gap-2">
-                <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5"/>
-                <div>
-                  <div className="text-xs font-bold text-red-300 mb-0.5">Erro ao enviar ordens</div>
-                  <div className="text-[10px] text-slate-400 leading-snug">{errMsg}</div>
-                </div>
-              </div>
-              <button onClick={()=>setErrMsg("")} className="text-slate-500 hover:text-slate-300 shrink-0 mt-0.5"><X size={14}/></button>
-            </div>
-          )}
-
           {/* Sending progress bar */}
           {sending&&(
             <div className="bg-[#0b0f1a] border border-blue-500/30 rounded-xl px-5 py-4 space-y-3">
@@ -3872,60 +4045,6 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             </div>
           )}
 
-          {/* Mandatory: load IB positions + open orders before sending — auto-fetched on mount */}
-          {ibkrLoading&&!ibkrPos&&(
-            <div className="flex items-center gap-3 bg-sky-500/10 border border-sky-500/30 rounded-xl px-4 py-3 text-[11px] text-sky-300">
-              <span className="animate-spin text-sm">⟳</span>
-              <span className="font-semibold">A verificar carteira e ordens pendentes na IB…</span>
-              <span className="text-sky-400/60">O botão de envio só fica disponível após verificação — evita duplicação de ordens.</span>
-            </div>
-          )}
-          {!ibkrPos&&!ibkrLoading&&!done&&(
-            <div className="flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-[11px] text-amber-300">
-              <span className="text-base shrink-0">⚠</span>
-              <div>
-                <span className="font-semibold">Não foi possível verificar a carteira IB automaticamente.</span>
-                <span className="text-amber-400/70"> O sistema calcula as ordens em função do que já existe em carteira e das ordens pendentes; sem verificação pode duplicar posições.</span>
-                <button onClick={fetchIbkrPositions} disabled={ibkrLoading} className="mt-1.5 block text-xs font-semibold text-white bg-amber-600 hover:bg-amber-500 disabled:opacity-50 px-3 py-1 rounded-lg transition-colors">
-                  {ibkrLoading?"A verificar…":"→ Tentar de novo"}
-                </button>
-              </div>
-            </div>
-          )}
-          {ibkrPos&&ibkrOpenOrders.length>0&&!done&&(
-            <div className="flex items-center gap-2.5 bg-sky-500/10 border border-sky-500/30 rounded-xl px-4 py-3 text-[11px] text-sky-300">
-              <span className="text-sm">ℹ</span>
-              <span><strong>{ibkrOpenOrders.filter(o=>o.side==="BUY").length} ordem(ns) BUY pendente(s)</strong> já submetidas — excluídas do novo cálculo automaticamente.</span>
-            </div>
-          )}
-          {/* Warn if portfolio is too far from model target to safely rebalance */}
-          {ibkrPos&&!done&&(()=>{
-            const ibNav=ibkrPos.reduce((s,p)=>s+Math.abs(p.value_eur??p.value),0);
-            if(ibNav<=aum*1.5) return null;
-            return (
-              <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/40 rounded-xl px-4 py-3 text-[11px] text-red-300">
-                <AlertTriangle size={13} className="shrink-0 mt-0.5"/>
-                <div>
-                  <span className="font-semibold">Carteira acumulada ({(ibNav/aum*100).toFixed(0)}% do objectivo) — não é seguro rebalancear.</span>
-                  <span className="text-red-400/70"> Usa <strong>"Zerar toda a carteira (FLAT)"</strong> no Diagnóstico abaixo e depois faz uma Construção inicial limpa.</span>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Action buttons */}
-          {/* ── Re-send warning banner ── */}
-          {recentlySent&&!done&&lastSent&&(
-            <div className="bg-red-950/60 border border-red-700/60 rounded-xl px-4 py-3 flex items-start gap-3">
-              <AlertTriangle size={16} className="text-red-400 shrink-0 mt-0.5"/>
-              <div className="flex-1 text-xs leading-relaxed">
-                <span className="font-bold text-red-300">Atenção: ordens já enviadas recentemente.</span>
-                <span className="text-red-200/80"> Enviou ordens há {Math.round((Date.now()-lastSent.ts)/60000)} min (ref: <code className="font-mono">{lastSent.ref}</code>). Enviar de novo irá <strong>duplicar posições</strong> na sua conta IB. Só prossiga se tiver cancelado as ordens anteriores.</span>
-              </div>
-              <button onClick={()=>{try{localStorage.removeItem(ORDERS_SENT_KEY);}catch{}setLastSent(null);}} className="text-[10px] text-red-400 hover:text-red-300 shrink-0 font-semibold underline">Ignorar aviso</button>
-            </div>
-          )}
-
           {/* ── Confirmation modal ── */}
           {showSendConfirm&&(
             <div className="bg-[#0b0f1a] border-2 border-amber-500/60 rounded-xl px-5 py-4 space-y-3">
@@ -3967,218 +4086,159 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
             </div>
           )}
 
-          {/* ── Final Review Card ── */}
-          {!done&&!showSendConfirm&&(
-            <div className="bg-gradient-to-br from-[#0d1628] to-[#0b0f1a] border border-[#1a2540] rounded-2xl p-6 space-y-5">
-              <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Resumo executivo</div>
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  {label:"Ordens",val:nOrdens,c:"text-blue-300"},
-                  {label:"A investir",val:`€${Math.round(investEur).toLocaleString("pt-PT")}`,c:"text-teal-400"},
-                  {label:"Perfil",val:profileLabel,c:"text-amber-400"},
-                ].map(x=>(
-                  <div key={x.label} className="bg-white/[0.03] rounded-xl px-4 py-3 border border-white/[0.05] text-center">
-                    <div className="text-[10px] text-slate-600 mb-1">{x.label}</div>
-                    <div className={`text-lg font-black ${x.c}`}>{x.val}</div>
-                  </div>
-                ))}
-              </div>
-              {latestMonth&&(
-                <div className="flex items-center gap-3 flex-wrap text-[11px]">
-                  <span className="px-2.5 py-1 rounded-lg bg-teal-500/10 border border-teal-500/20 text-teal-400 font-semibold">Acções {(100-(latestMonth.tbillsTotalPct??0)).toFixed(0)}%</span>
-                  <span className="px-2.5 py-1 rounded-lg bg-slate-700/30 border border-slate-600/20 text-slate-400">Liquidez {(latestMonth.tbillsTotalPct??0).toFixed(0)}%</span>
-                  <span className="px-2.5 py-1 rounded-lg bg-slate-700/30 border border-slate-600/20 text-slate-400">Via Interactive Brokers</span>
-                  <span className="px-2.5 py-1 rounded-lg bg-slate-700/30 border border-slate-600/20 text-slate-400">Melhor preço disponível</span>
-                </div>
-              )}
-              {/* Checklist */}
-              <div className="border-t border-white/[0.06] pt-4 space-y-3">
-                <div className="text-[10px] text-slate-600 uppercase tracking-wide mb-1">Antes de prosseguir</div>
-                {[
-                  "Revi a lista de ordens e confirmo que reflecte as minhas intenções de investimento.",
-                  "Compreendo que os preços de execução podem diferir dos valores estimados.",
-                  "Aceito que as ordens serão enviadas ao mercado e não podem ser canceladas após execução.",
-                ].map((text,ci)=>(
-                  <label key={ci} className="flex items-start gap-3 cursor-pointer group">
-                    <div
-                      onClick={()=>setConfirmChecks(prev=>prev.map((v,j)=>j===ci?!v:v))}
-                      className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${confirmChecks[ci]?"bg-teal-600 border-teal-500":"border-slate-600 bg-[#111827] group-hover:border-slate-500"}`}>
-                      {confirmChecks[ci]&&<CheckCircle2 size={12} className="text-white"/>}
-                    </div>
-                    <span className={`text-xs leading-relaxed transition-colors ${confirmChecks[ci]?"text-slate-300":"text-slate-500 group-hover:text-slate-400"}`}>{text}</span>
-                  </label>
-                ))}
-              </div>
-              {/* Hero CTA */}
-              <button
-                onClick={()=>setShowSendConfirm(true)}
-                disabled={sending||ibkrLoading||nOrdens===0||done||aum<=0||paperMode||!ibkrPos||showSendConfirm||investOverBudget||!allChecked||(ibkrPos!==null&&ibkrPos.reduce((s,p)=>s+Math.abs(p.value_eur??p.value),0)>aum*1.5)}
-                className={`w-full flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black py-4 rounded-xl transition-all text-base ${
-                  !allChecked?"bg-slate-700 cursor-not-allowed":
-                  paperMode?"bg-slate-700 cursor-not-allowed":
-                  investOverBudget?"bg-red-900 cursor-not-allowed":
-                  recentlySent?"bg-amber-600 hover:bg-amber-500 shadow-xl shadow-amber-900/40 hover:scale-[1.01]":
-                  "bg-teal-600 hover:bg-teal-500 shadow-xl shadow-teal-900/40 hover:scale-[1.01]"}`}>
-                <Send size={18}/>
-                {!allChecked?"Confirme os 3 pontos acima para prosseguir":
-                 paperMode?"Desliga 'Simulação local' para enviar à IB →":
-                 investOverBudget?`⛔ Bloqueado — total excede budget`:
-                 recentlySent?"⚠ Já enviou recentemente — confirmar envio?":
-                 `Enviar ${nOrdens} ${nOrdens===1?"ordem":"ordens"} à Interactive Brokers →`}
-              </button>
-              <p className="text-center text-[10px] text-slate-700 flex items-center justify-center gap-1">
-                <ShieldCheck size={10}/> Conexão segura · Execução controlada pelo DECIDE
-              </p>
-            </div>
-          )}
-
-          {/* Legacy cancel button for when review card is hidden */}
+          {/* Cancel button when confirm modal or done */}
           {(done||showSendConfirm)&&(
-          <div className="flex gap-3">
-            <button onClick={onBack} className="px-6 py-3 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">
-              Cancelar
-            </button>
-          </div>
+            <div className="flex gap-3">
+              <button onClick={onBack} className="px-6 py-3 bg-[#0b0f1a] border border-[#1a1f2e] text-slate-300 text-sm font-semibold rounded-xl hover:bg-[#111827] transition-colors">
+                Cancelar
+              </button>
+            </div>
           )}
         </div>
 
-        {/* RIGHT: summary */}
-        <div className="space-y-4">
-          <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="font-bold text-slate-200 text-sm">Resumo do plano</div>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-bold border ${execMode==="full"?"bg-blue-600/15 text-blue-300 border-blue-500/30":"bg-slate-700/30 text-slate-400 border-slate-600/30"}`}>
-                {execMode==="full"?"Construção inicial":"Rebalanceamento"}
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-3 mb-5">
-              {[
-                {label:"Ordens a enviar",val:`${nOrdens}`,c:"text-blue-300"},
-                {label:"Valor a investir",val:`€ ${fmtE(investEur)}`,c:"text-emerald-400"},
-                {label:"Custo estimado",val:`€ ${fmtE(tradeCost)}`,c:"text-slate-300"},
-              ].map(k=>(
-                <div key={k.label} className="text-center">
-                  <div className="text-[9px] text-slate-500 mb-1">{k.label}</div>
-                  <div className={`text-sm font-black ${k.c}`}>{k.val}</div>
-                </div>
-              ))}
+        {/* ── RIGHT PANEL — sticky "Resumo da ordem" ─────────────────────── */}
+        <div className="w-72 shrink-0 border-l border-[#1a1f2e] overflow-y-auto bg-[#07090f]">
+          <div className="p-4 space-y-3">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-slate-200 text-sm">Resumo da ordem</div>
+              <button className="text-[10px] text-sky-400 hover:text-sky-300 px-2 py-1 border border-sky-500/30 rounded-lg transition-colors">
+                Exportar pré-ordem
+              </button>
             </div>
 
-            <div className="border-t border-[#1a1f2e] pt-4 mb-4">
-              <div className="text-xs font-semibold text-slate-400 mb-3">
-                {execMode==="full"?"Composição do plano":"Alterações na carteira"}
-              </div>
-              <div className="space-y-2">
-                {(execMode==="full"?[
-                  {label:`Comprar / Manter (${orderRows.filter(r=>r.action!=="Vender").length})`,val:`€ ${fmtE(investEur)}`,c:"text-emerald-400",dot:"bg-emerald-500"},
-                  {label:`Vender (${orderRows.filter(r=>r.action==="Vender").length})`,val:`-€ ${fmtE(reduceEur)}`,c:"text-red-400",dot:"bg-red-500"},
-                ]:[
-                  {label:`A aumentar / comprar (${actionCounts.comprar+actionCounts.aumentar})`,val:`€ ${fmtE(investEur)}`,c:"text-emerald-400",dot:"bg-emerald-500"},
-                  {label:`A reduzir / vender (${actionCounts.reduzir+actionCounts.vender})`,val:`-€ ${fmtE(reduceEur)}`,c:"text-red-400",dot:"bg-red-500"},
-                  {label:`Manter (${actionCounts.manter})`,val:"0,00 €",c:"text-slate-400",dot:"bg-slate-500"},
-                ]).map(x=>(
-                  <div key={x.label} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full shrink-0 ${x.dot}`}/><span className="text-slate-400">{x.label}</span></div>
-                    <span className={`font-semibold ${x.c}`}>{x.val}</span>
-                  </div>
-                ))}
-                <div className="flex items-center justify-between text-xs border-t border-[#1a1f2e] pt-2 mt-2">
-                  <span className="text-slate-300 font-semibold">Total ordens</span>
-                  <span className="font-bold text-blue-300">€ {fmtE(investEur+reduceEur)}</span>
+            {/* Impacto estimado */}
+            <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
+              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-3">Impacto estimado</div>
+              <div className="space-y-2 text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Exposição adicional (%)</span>
+                  <span className="font-mono font-semibold text-emerald-400">+{totalBuyPct.toFixed(2)}%</span>
                 </div>
-                <div className="flex items-center justify-between text-xs text-slate-500 mt-1">
-                  <span title="Reserva mínima para cobrir variações de preço e spread — evita exceder saldo em contas sem margem">Reserva cash (cap {Math.round(BUY_SAFETY_FACTOR*100)}%) ℹ</span>
-                  <span>≥ € {fmtE(Math.max(0, aum - investEur))}</span>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Risco (Volatilidade)</span>
+                  <span className="font-mono text-red-400">—</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Tracking error</span>
+                  <span className="font-mono text-sky-400">—</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Exposição da carteira</span>
+                  <span className="font-mono text-slate-300">{(100-(latestMonth?.tbillsTotalPct??0)).toFixed(1)}%</span>
                 </div>
               </div>
             </div>
 
-            {/* Top changes */}
-            <div className="border-t border-[#1a1f2e] pt-4">
-              <div className="text-xs font-semibold text-slate-400 mb-3">Principais alterações</div>
-              <table className="w-full text-[10px]">
-                <thead><tr className="text-slate-600 border-b border-[#1a1f2e]">
-                  <th className="text-left pb-1.5">Ativo</th>
-                  <th className="text-left pb-1.5">Ação</th>
-                  <th className="text-right pb-1.5">Val. est.</th>
-                </tr></thead>
-                <tbody>
-                  {orderRows.slice(0,6).map(r=>{
-                    const isBuy=r.action==="Comprar"||r.action==="Aumentar";
-                    const est=Math.abs(r.delta)/100*aum;
-                    return (
-                      <tr key={r.ticker} className="border-b border-[#0d1017]">
-                        <td className="py-1.5 font-bold text-slate-200">{displayTicker(r.ticker)}</td>
-                        <td className="py-1.5">
-                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${isBuy?"bg-emerald-500/15 text-emerald-300":"bg-amber-500/15 text-amber-300"}`}>{r.action}</span>
-                        </td>
-                        <td className={`py-1.5 text-right font-semibold ${isBuy?"text-emerald-400":"text-amber-400"}`}>{isBuy?"+":"-"}€ {fmtEm(est)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* NAV reference */}
-            <div className="border-t border-[#1a1f2e] pt-4 mt-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-500">Montante de referência (NAV)</span>
-                <span className="text-xs font-bold text-white">€ {fmtE(aum)}</span>
+            {/* Principais alterações */}
+            <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
+              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-3">Principais alterações</div>
+              <div className="space-y-1.5">
+                {orderRows.slice(0,8).map(r=>{
+                  const isBuy=r.action==="Comprar"||r.action==="Aumentar";
+                  const isSell=r.action==="Vender"||r.action==="Reduzir";
+                  const adjRow=adjustedOrderRows.find(x=>x.ticker===r.ticker);
+                  const est=adjRow?adjRow.adjEur:Math.abs(r.delta)/100*aum;
+                  return (
+                    <div key={r.ticker} className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-semibold text-slate-200 text-[11px] truncate">{displayTicker(r.ticker)}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 ${
+                          isBuy?"bg-emerald-500/15 text-emerald-300":
+                          isSell?"bg-red-500/15 text-red-300":
+                          "bg-amber-500/15 text-amber-300"}`}>{r.action}</span>
+                      </div>
+                      <span className={`text-[10px] font-mono font-semibold shrink-0 ${r.delta>0?"text-emerald-400":r.delta<0?"text-red-400":"text-slate-500"}`}>
+                        {r.delta>0?"+":""}{r.delta.toFixed(2)}%
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
-              {/* Warn if IB NAV is known and differs significantly from aum */}
+
+              {/* Impacto total */}
+              <div className="border-t border-[#1a1f2e] mt-3 pt-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-300">Impacto total</span>
+                  <span className={`text-sm font-black font-mono ${investEur>=reduceEur?"text-emerald-400":"text-red-400"}`}>
+                    {investEur>=reduceEur?"+":"-"}{Math.abs(totalBuyPct-totalSellPct).toFixed(2)}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Warning if over limit */}
               {ibkrPos!==null&&(()=>{
                 const ibNav=ibkrPos.reduce((s,p)=>s+Math.abs(p.value_eur??p.value),0);
-                const diff=Math.abs(ibNav-aum);
-                const pct=aum>0?diff/aum*100:0;
-                const isHugelyOver=ibNav>aum*1.5;
-                if(pct<5) return null;
-                if(isHugelyOver) return (
-                  <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/40 rounded-lg px-2.5 py-2 text-[10px] text-red-300">
-                    <AlertTriangle size={11} className="shrink-0 mt-0.5 text-red-400"/>
-                    <span><strong>Carteira acumulada de sessões anteriores ({fmtE(ibNav)} €  = {(ibNav/aum*100).toFixed(0)}% do objectivo).</strong> Envia novas ordens poderia duplicar posições já existentes. Usa <strong>"Zerar toda a carteira"</strong> no Diagnóstico para começar do zero.</span>
-                  </div>
-                );
+                if(ibNav<=aum*1.5) return null;
                 return (
-                  <div className="flex items-start gap-2 bg-amber-500/[0.08] border border-amber-500/20 rounded-lg px-2.5 py-2 text-[10px] text-amber-300">
-                    <AlertTriangle size={11} className="shrink-0 mt-0.5"/>
-                    <span>NAV IB ({fmtE(ibNav)} €) diverge {pct.toFixed(0)}% do montante de referência ({fmtE(aum)} €). Considera actualizar o montante abaixo ou na Carteira.</span>
+                  <div className="mt-2 flex items-start gap-2 bg-amber-500/[0.08] border border-amber-500/20 rounded-lg px-2.5 py-2 text-[10px] text-amber-300">
+                    <AlertTriangle size={10} className="shrink-0 mt-0.5"/>
+                    <span>A redução da carteira ({(ibNav/aum*100).toFixed(0)}%) excede o limite preferido (≤ 25%). Considere rever o tamanho das ordens ou ajustar a lista.</span>
                   </div>
                 );
               })()}
             </div>
-          </div>
 
-          {/* Security badges */}
-          <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4 space-y-3">
-            {[
-              {icon:<ShieldCheck size={14} className="text-emerald-400"/>,title:"Ligação segura",desc:"Comunicação encriptada com a IB"},
-              {icon:<CheckCircle2 size={14} className="text-blue-400"/>,title:"Sem intervenção manual",desc:"Execução automática e optimizada"},
-              {icon:<Activity size={14} className="text-slate-400"/>,title:"Transparência total",desc:"Acompanhe todas as execuções no histórico"},
-            ].map(x=>(
-              <div key={x.title} className="flex gap-3 items-start">
-                <div className="mt-0.5 shrink-0">{x.icon}</div>
-                <div>
-                  <div className="text-[10px] font-semibold text-slate-300">{x.title}</div>
-                  <div className="text-[9px] text-slate-500">{x.desc}</div>
+            {/* Custos estimados */}
+            <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
+              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-3">Custos estimados</div>
+              <div className="space-y-2 text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Comissões estimadas</span>
+                  <span className="font-mono font-semibold text-slate-200">€ {fmtE(tradeCost)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Impacto do mercado estimado</span>
+                  <span className="font-mono text-slate-400">€ {fmtE(Math.max(1.5, nOrdens*0.4))}</span>
+                </div>
+                <div className="border-t border-[#1a1f2e] pt-2 mt-1 flex justify-between">
+                  <span className="text-slate-300 font-semibold">Total estimado</span>
+                  <span className="font-mono font-semibold text-slate-200">€ {fmtE(tradeCost+Math.max(1.5,nOrdens*0.4))}</span>
                 </div>
               </div>
-            ))}
-          </div>
-
-          {/* Profile context */}
-          <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
-            <div className="text-[10px] text-slate-500 space-y-1">
-              <div className="flex justify-between"><span>Perfil</span><span className="text-slate-300 font-semibold">{profileLabel}</span></div>
-              <div className="flex justify-between"><span>Exposição FX</span>
-                {ibkrFxBlocked
-                  ?<span className="text-amber-400 font-semibold text-[9px]">Conta Caixa — hedge desactivado</span>
-                  :<span className="text-slate-300 font-semibold capitalize">{fxExposure}</span>
-                }
-              </div>
-              <div className="flex justify-between"><span>Margem</span><span className={`font-semibold ${marginEnabled?"text-amber-400":"text-slate-400"}`}>{marginEnabled?"Activa":"Desactivada"}</span></div>
-              <div className="flex justify-between"><span>Modo</span><span className={`font-semibold ${paperMode?"text-amber-400":"text-emerald-400"}`}>{paperMode?"Simulação local":"Envia à IB"}</span></div>
             </div>
+
+            {/* Informação adicional */}
+            <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
+              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-3">Informação adicional</div>
+              <div className="space-y-2 text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Haircut do curto</span>
+                  <span className="font-mono text-slate-300">16,35 (Lsbot)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Liquidação prevista</span>
+                  <span className="font-mono text-slate-300">T+2 dias úteis</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Modo</span>
+                  <span className={`font-semibold ${paperMode?"text-amber-400":"text-emerald-400"}`}>{paperMode?"Simulação":"Produção"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Perfil</span>
+                  <span className="text-slate-300 font-semibold">{profileLabel}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* NAV + IB divergence warning */}
+            {ibkrPos!==null&&(()=>{
+              const ibNav=ibkrPos.reduce((s,p)=>s+Math.abs(p.value_eur??p.value),0);
+              const pct=aum>0?Math.abs(ibNav-aum)/aum*100:0;
+              if(pct<5) return null;
+              return (
+                <div className={`flex items-start gap-2 rounded-xl px-3 py-2.5 text-[10px] ${ibNav>aum*1.5?"bg-red-500/10 border border-red-500/40 text-red-300":"bg-amber-500/[0.08] border border-amber-500/20 text-amber-300"}`}>
+                  <AlertTriangle size={11} className="shrink-0 mt-0.5"/>
+                  <span>NAV IB ({fmtE(ibNav)} €) diverge {pct.toFixed(0)}% do montante de referência ({fmtE(aum)} €).</span>
+                </div>
+              );
+            })()}
+
+            {/* Exportar button */}
+            <button className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-semibold text-sky-400 border border-sky-500/30 rounded-xl hover:bg-sky-500/10 transition-colors">
+              <ArrowUpRight size={13}/>
+              Exportar pré-ordem
+            </button>
           </div>
         </div>
       </div>
