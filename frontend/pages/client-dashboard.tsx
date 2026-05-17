@@ -2460,6 +2460,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   );
   const ibkrFxBlocked=ibkrFxManualOverride||(ibkrFxSupported===false);
   const [ibkrAcctType,setIbkrAcctType]=React.useState("");
+  const [ibkrAcctCode,setIbkrAcctCode]=React.useState("");
   const [ibkrLoading,setIbkrLoading]=React.useState(false);
   const [ibkrErr,setIbkrErr]=React.useState("");
   const [sellAllSending,setSellAllSending]=React.useState(false);
@@ -2523,6 +2524,9 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         if(typeof j.fx_supported==="boolean") setIbkrFxSupported(j.fx_supported);
         if(j.account_type) setIbkrAcctType(j.account_type);
         else if(j.meta?.account_type_raw) setIbkrAcctType(j.meta.account_type_raw);
+        // Capture account code for audit fallback (e.g. "DUM504002" → client_id when not logged in)
+        const acctCode=j.accountCode??j.account_code??j.account??j.selected?.accountCode??"";
+        if(acctCode) { setIbkrAcctCode(acctCode); try{localStorage.setItem("decide_ibkr_acct_code",acctCode);}catch{} }
 
         // Sync fill statuses: any fill that was "Em curso" but is no longer
         // in IB open orders was cancelled or filled externally (e.g. via TWS).
@@ -2812,11 +2816,17 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
 
   // ── Audit helpers ──────────────────────────────────────────────────────
   function auditClientId(): string | null {
-    // sessionUser is the primary source; fallback to localStorage for reliability
+    // 1. Client session (logged-in client)
     if (sessionUser) return sessionUser;
     try {
-      return localStorage.getItem("decide_client_session_user") ?? null;
-    } catch { return null; }
+      // 2. Client session from localStorage
+      const clientSession = localStorage.getItem("decide_client_session_user");
+      if (clientSession) return clientSession;
+      // 3. IBKR account code (e.g. "DUM504002") — set when snapshot is fetched
+      const acct = ibkrAcctCode || localStorage.getItem("decide_ibkr_acct_code");
+      if (acct) return acct;
+    } catch { /* ignore */ }
+    return null;
   }
 
   async function auditSaveRecommendation(): Promise<string|null> {

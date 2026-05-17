@@ -9,39 +9,49 @@ import { getDb } from "../../../lib/server/db";
 const ALLOWED_TABLES = ["recommendations", "approvals", "orders", "executions", "funding", "config"] as const;
 type TableKey = (typeof ALLOWED_TABLES)[number];
 
+// Known aliases: back-office client_id ↔ IBKR account codes
+// When searching, include both so records saved under either ID are returned.
+const CLIENT_ALIASES: Record<string, string[]> = {
+  jcpina01: ["jcpina01", "DUM504002"],
+  DUM504002: ["DUM504002", "jcpina01"],
+};
+function cids(cid: string): string[] {
+  return CLIENT_ALIASES[cid] ?? [cid];
+}
+
 const TABLE_SQL: Record<TableKey, (clientId: string, limit: number, offset: number) => [string, unknown[]]> = {
   recommendations: (cid, lim, off) => [
     `SELECT id, client_id, generated_at, risk_profile, model_version, model_hash, positions, kpis, created_at
-     FROM recommendation_snapshots WHERE client_id=$1 ORDER BY generated_at DESC LIMIT $2 OFFSET $3`,
-    [cid, lim, off],
+     FROM recommendation_snapshots WHERE client_id = ANY($1) ORDER BY generated_at DESC LIMIT $2 OFFSET $3`,
+    [cids(cid), lim, off],
   ],
   approvals: (cid, lim, off) => [
     `SELECT ca.id, ca.recommendation_id, ca.client_id, ca.action, ca.payload_hash,
             ca.ip_address, ca.approved_at, ca.created_at
-     FROM client_approvals ca WHERE ca.client_id=$1 ORDER BY ca.approved_at DESC LIMIT $2 OFFSET $3`,
-    [cid, lim, off],
+     FROM client_approvals ca WHERE ca.client_id = ANY($1) ORDER BY ca.approved_at DESC LIMIT $2 OFFSET $3`,
+    [cids(cid), lim, off],
   ],
   orders: (cid, lim, off) => [
     `SELECT id, recommendation_id, approval_id, client_id, ticker, side, qty,
             order_type, limit_price, status, ibkr_order_id, submitted_at, updated_at, created_at
-     FROM order_logs WHERE client_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-    [cid, lim, off],
+     FROM order_logs WHERE client_id = ANY($1) ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+    [cids(cid), lim, off],
   ],
   executions: (cid, lim, off) => [
     `SELECT id, order_id, client_id, ticker, side, qty_filled, price_executed,
             commission, ibkr_exec_id, executed_at, created_at
-     FROM execution_logs WHERE client_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-    [cid, lim, off],
+     FROM execution_logs WHERE client_id = ANY($1) ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+    [cids(cid), lim, off],
   ],
   funding: (cid, lim, off) => [
     `SELECT id, client_id, amount, currency, type, source, ibkr_ref, occurred_at, created_at
-     FROM funding_logs WHERE client_id=$1 ORDER BY occurred_at DESC LIMIT $2 OFFSET $3`,
-    [cid, lim, off],
+     FROM funding_logs WHERE client_id = ANY($1) ORDER BY occurred_at DESC LIMIT $2 OFFSET $3`,
+    [cids(cid), lim, off],
   ],
   config: (cid, lim, off) => [
     `SELECT id, client_id, changed_by, change_type, old_value, new_value, changed_at, created_at
-     FROM config_change_logs WHERE (client_id=$1 OR client_id IS NULL) ORDER BY changed_at DESC LIMIT $2 OFFSET $3`,
-    [cid, lim, off],
+     FROM config_change_logs WHERE (client_id = ANY($1) OR client_id IS NULL) ORDER BY changed_at DESC LIMIT $2 OFFSET $3`,
+    [cids(cid), lim, off],
   ],
 };
 
