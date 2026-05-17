@@ -2472,6 +2472,9 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [flatResult,setFlatResult]=React.useState<{ref:string;longs:number;shorts:number}|null>(null);
   const [flatFills,setFlatFills]=React.useState<FillRow[]>([]);
   const [auditStatus,setAuditStatus]=React.useState<{ok:boolean;msg:string}|null>(null);
+  // Confirmation flow state for flatten
+  const [flatStep,setFlatStep]=React.useState<"idle"|"preview">("idle");
+  const [flatChecks,setFlatChecks]=React.useState([false,false,false]);
   const [cancelSending,setCancelSending]=React.useState(false);
   const [cancelResult,setCancelResult]=React.useState<string|null>(null);
   const [pollCount,setPollCount]=React.useState(0);
@@ -3456,18 +3459,9 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                       {cancelResult&&<div className="mt-1.5 text-[10px] text-center text-slate-400">{cancelResult}</div>}
                     </div>
 
-                    {/* FLAT button — closes ALL positions (longs + shorts) */}
-                    {!flatResult?(
-                      <button onClick={flattenAllPositions}
-                        disabled={flatSending||ibkrPos.length===0||(ibkrPos.every(p=>p.qty===0))||(!paperMode&&ibkrOpenOrders.length>0)}
-                        className="w-full flex items-center justify-center gap-2 py-3 text-xs font-black bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/50 text-orange-300 rounded-xl disabled:opacity-50 transition-colors">
-                        {flatSending?<span className="animate-spin text-sm">⟳</span>:<span className="text-base leading-none">⊘</span>}
-                        {flatSending?"A zerar carteira (longs + shorts)…":
-                          (!paperMode&&ibkrOpenOrders.length>0)?`⚠ Cancela as ${ibkrOpenOrders.length} ordens pendentes antes de zerar`:
-                          paperMode?`⚠ Desliga "Simulação local" para zerar à IB`:
-                          `ZERAR CARTEIRA IB — ${ibkrPos.filter(p=>p.qty>0).length} longs + ${ibkrPos.filter(p=>p.qty<0).length} shorts — TESTE`}
-                      </button>
-                    ):(
+                    {/* FLAT — closes ALL positions: confirmation flow */}
+                    {flatResult?(
+                      /* ── POST-SUBMIT result ── */
                       <div className="space-y-2">
                         <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2.5">
                           <CheckCircle2 size={14} className="text-emerald-400 shrink-0"/>
@@ -3475,7 +3469,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                             <div className="text-[10px] font-bold text-emerald-300">Carteira zerada</div>
                             <div className="text-[10px] text-slate-500">{flatResult.longs} longs + {flatResult.shorts} shorts · ref {flatResult.ref}</div>
                           </div>
-                          <button onClick={()=>{setFlatResult(null);setFlatFills([]);setIbkrPos(null);setAuditStatus(null);}} className="ml-auto text-slate-500 hover:text-slate-300"><X size={12}/></button>
+                          <button onClick={()=>{setFlatResult(null);setFlatFills([]);setIbkrPos(null);setAuditStatus(null);setFlatStep("idle");setFlatChecks([false,false,false]);}} className="ml-auto text-slate-500 hover:text-slate-300"><X size={12}/></button>
                         </div>
                         <div className={`px-3 py-2 rounded-lg text-xs font-mono border ${auditStatus?.ok?"bg-emerald-500/10 border-emerald-500/30 text-emerald-300":"bg-slate-800/60 border-slate-700/40 text-slate-400"}`}>
                           {auditStatus?.msg ?? "⏳ a guardar audit…"}
@@ -3512,6 +3506,95 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                           </div>
                         )}
                       </div>
+                    ):flatStep==="preview"?(
+                      /* ── CONFIRMATION STEP ── */
+                      <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 overflow-hidden">
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-orange-500/20">
+                          <div>
+                            <div className="text-xs font-black text-orange-300 flex items-center gap-1.5">
+                              <span className="text-base leading-none">⊘</span> Confirmar — Zerar Carteira
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-0.5">
+                              {ibkrPos.filter(p=>p.qty>0).length} longs + {ibkrPos.filter(p=>p.qty<0).length} shorts · ordens de mercado (MKT)
+                            </div>
+                          </div>
+                          <button onClick={()=>{setFlatStep("idle");setFlatChecks([false,false,false]);}} className="text-slate-500 hover:text-slate-300"><X size={12}/></button>
+                        </div>
+                        {/* Order table */}
+                        <div className="max-h-52 overflow-y-auto">
+                          <table className="w-full text-[10px]">
+                            <thead className="sticky top-0 bg-[#0d1117]">
+                              <tr className="text-slate-500 border-b border-[#1a1f2e]">
+                                <th className="text-left px-3 py-1.5">Ticker</th>
+                                <th className="text-left px-2 py-1.5">Acção</th>
+                                <th className="text-right px-2 py-1.5">Qtd</th>
+                                <th className="text-right px-3 py-1.5">Valor est.</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {[...ibkrPos.filter(p=>p.qty>0).map(p=>({...p,act:"SELL"})),
+                                ...ibkrPos.filter(p=>p.qty<0).map(p=>({...p,act:"BUY"}))].map((p,i)=>(
+                                <tr key={i} className={`border-b border-[#1a1f2e] ${i%2===0?"":"bg-[#080c14]"}`}>
+                                  <td className="px-3 py-1 font-bold text-slate-200">{p.ticker}</td>
+                                  <td className={`px-2 py-1 font-semibold ${p.act==="SELL"?"text-red-400":"text-emerald-400"}`}>
+                                    {p.act==="SELL"?"▼ Vender":"▲ Comprar (cover)"}
+                                  </td>
+                                  <td className="px-2 py-1 text-right text-slate-300">{Math.abs(p.qty)}</td>
+                                  <td className="px-3 py-1 text-right text-slate-400">
+                                    {p.value!=null?`€${Math.abs(p.value).toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})}`:"—"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {/* Summary row */}
+                        <div className="flex items-center justify-between px-4 py-2 border-t border-orange-500/20 bg-orange-500/5">
+                          <span className="text-[10px] text-slate-400">{ibkrPos.filter(p=>p.qty!==0).length} ordens · execução imediata (MKT)</span>
+                          <span className="text-[10px] font-bold text-orange-300">
+                            €{ibkrPos.reduce((s,p)=>s+Math.abs(p.value??0),0).toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})}
+                          </span>
+                        </div>
+                        {/* Confirmation checkboxes */}
+                        <div className="px-4 py-3 border-t border-orange-500/20 space-y-2">
+                          {[
+                            "Confirmo que todas as ordens são de venda a mercado e entendo o impacto imediato.",
+                            "Confirmo que esta operação cumpre a política de investimento do cliente.",
+                            "Confirmo que já cancelei todas as ordens pendentes na IB Gateway.",
+                          ].map((label,i)=>(
+                            <label key={i} className="flex items-start gap-2 cursor-pointer group">
+                              <input type="checkbox" checked={flatChecks[i]}
+                                onChange={e=>{const c=[...flatChecks];c[i]=e.target.checked;setFlatChecks(c);}}
+                                className="mt-0.5 accent-orange-400 shrink-0"/>
+                              <span className={`text-[10px] leading-relaxed transition-colors ${flatChecks[i]?"text-slate-300":"text-slate-500 group-hover:text-slate-400"}`}>{label}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {/* Send button */}
+                        <div className="px-4 pb-4">
+                          <button
+                            onClick={()=>void flattenAllPositions()}
+                            disabled={!flatChecks.every(Boolean)||flatSending||(!paperMode&&ibkrOpenOrders.length>0)}
+                            className="w-full flex items-center justify-center gap-2 py-3 text-xs font-black bg-orange-600/30 hover:bg-orange-600/40 border border-orange-500/60 text-orange-200 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                            {flatSending?<span className="animate-spin">⟳</span>:<span>⊘</span>}
+                            {flatSending?"A zerar carteira…":"Confirmar e enviar ordens"}
+                          </button>
+                          {!paperMode&&ibkrOpenOrders.length>0&&(
+                            <p className="text-[9px] text-amber-400 text-center mt-1.5">⚠ Cancela as {ibkrOpenOrders.length} ordens pendentes primeiro</p>
+                          )}
+                        </div>
+                      </div>
+                    ):(
+                      /* ── IDLE: initial button ── */
+                      <button
+                        onClick={()=>{setFlatStep("preview");setFlatChecks([false,false,false]);}}
+                        disabled={ibkrPos.length===0||(ibkrPos.every(p=>p.qty===0))}
+                        className="w-full flex items-center justify-center gap-2 py-3 text-xs font-black bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/50 text-orange-300 rounded-xl disabled:opacity-50 transition-colors">
+                        <span className="text-base leading-none">⊘</span>
+                        {paperMode?`Rever e zerar carteira (simulação)`:
+                          `Rever e zerar carteira — ${ibkrPos.filter(p=>p.qty>0).length} longs + ${ibkrPos.filter(p=>p.qty<0).length} shorts`}
+                      </button>
                     )}
 
                     {/* Original sell-longs-only button */}
