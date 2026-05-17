@@ -4495,10 +4495,14 @@ export default function ClientDashboardPage() {
     // Rolling 20-year window — mesma lógica do NativeSimulator para consistência
     const last20=new Date(dates[dates.length-1]);
     const cut20=new Date(last20.getFullYear()-20,last20.getMonth(),last20.getDate());
-    let s20=dates.findIndex(d=>new Date(d)>=cut20);
-    if(s20<0) s20=0;
-    const v20=activeEquity[s20];
-    while(s20<activeEquity.length-1&&activeEquity[s20]===v20) s20++;
+    let s20cut=dates.findIndex(d=>new Date(d)>=cut20);
+    if(s20cut<0) s20cut=0;
+    // Find warmup end robustly from the series start (first non-flat index)
+    const initVal=activeEquity[0]??1;
+    let warmupEnd=1;
+    while(warmupEnd<activeEquity.length-1&&Math.abs((activeEquity[warmupEnd]??0)-initVal)<1e-12) warmupEnd++;
+    // s20 = first non-warmup day on or after the rolling cut date
+    const s20=Math.max(s20cut,warmupEnd);
     const calYearsInc=calYearsFromDates(dates.slice(s20))??20;
     const inception=periodMetrics(activeEquity.slice(s20),benchRaw.slice(s20),"20 Anos",calYearsInc);
     return {vol20y,benchVol20y,curVol,curDD,ddChart,inception};
@@ -4506,13 +4510,16 @@ export default function ClientDashboardPage() {
 
   const perfData=useMemo(()=>{
     if(!dates.length||!activeEquity.length) return null;
-    // "20 Anos" — janela rolante (mesmo corte do NativeSimulator) com skip de warmup
+    // "20 Anos" — janela rolante; warmup detectado desde o início da série (robusto)
     const s20start=(()=>{
       const last=new Date(dates[dates.length-1]);
       const cut=new Date(last.getFullYear()-20,last.getMonth(),last.getDate());
-      let idx=dates.findIndex(d=>new Date(d)>=cut);
-      if(idx<0) idx=0;
-      return skipWarmup(activeEquity,idx);
+      let cutIdx=dates.findIndex(d=>new Date(d)>=cut);
+      if(cutIdx<0) cutIdx=0;
+      const iv=activeEquity[0]??1;
+      let we=1;
+      while(we<activeEquity.length-1&&Math.abs((activeEquity[we]??0)-iv)<1e-12) we++;
+      return Math.max(cutIdx,we);
     })();
     const s=period==="20 Anos"?s20start:skipWarmup(activeEquity,periodStart(dates,period));
     const calYears=period==="20 Anos"?calYearsFromDates(dates.slice(s)):undefined;
