@@ -2584,6 +2584,29 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         setFills(prev => prev.map(f => ({ ...f, status: "Cancelled" })));
         setDone(false);
         logActivity({type:"cancelamento",label:`${n} ordem(ns) cancelada(s) na IB Gateway`,icon:"✕",color:"text-red-400"});
+        // ── Audit log: cancellation event ──────────────────────────────────
+        const clientId = auditClientId() ?? "unknown";
+        const cancelledAt = new Date().toISOString();
+        // 1. Config-change log (always — even if no per-ticker detail)
+        void fetch("/api/audit/config-change",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+          client_id: clientId, changed_by:"client", change_type:"cancel_orders",
+          new_value:{cancelled:n, orders: j.cancellations ?? [], cancelled_at: cancelledAt},
+          changed_at: cancelledAt,
+        })}).catch(()=>{});
+        // 2. Individual order_logs entries — one per cancelled order (if IB returns ticker detail)
+        const cancels:Array<{ticker?:string;side?:string;order_id?:number;ibOrderId?:number}> = j.cancellations ?? [];
+        for(const c of cancels){
+          const ticker = c.ticker ?? "";
+          if(!ticker) continue;
+          void fetch("/api/audit/order",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+            client_id: clientId,
+            ticker,
+            side: (String(c.side??"SELL").toUpperCase()==="BUY"?"BUY":"SELL"),
+            ibkr_order_id: String(c.order_id ?? c.ibOrderId ?? ""),
+            status: "cancelled",
+            submitted_at: cancelledAt,
+          })}).catch(()=>{});
+        }
       } else {
         setCancelResult("Erro: "+(j.error||j.detail||`HTTP ${resp.status}`));
       }
