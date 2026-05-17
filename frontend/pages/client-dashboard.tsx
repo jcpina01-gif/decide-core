@@ -4513,7 +4513,12 @@ export default function ClientDashboardPage() {
     const s=period==="20 Anos"?s20start:skipWarmup(activeEquity,periodStart(dates,period));
     const calYears=period==="20 Anos"?calYearsFromDates(dates.slice(s)):undefined;
     const chart=makeChartData(dates,activeEquity,benchRaw,period);
-    const m=periodMetrics(activeEquity.slice(s),benchRaw.slice(s),period,calYears);
+    const mRaw=periodMetrics(activeEquity.slice(s),benchRaw.slice(s),period,calYears);
+    // For "20 Anos" use riskData.inception directly (same window as Dashboard card)
+    // to avoid any edge-case divergence between the two warmup-skip paths.
+    const m=period==="20 Anos"&&riskData?.inception
+      ?{...mRaw,ret:riskData.inception.ret,ann:riskData.inception.ann,shp:riskData.inception.shp}
+      :mRaw;
     // Anchor YTD to the last year present in the series (not the client's wall clock)
     // so freeze data from Dec 2024 still shows "2024 YTD" correctly.
     const seriesEndYear = dates.length ? new Date(dates[dates.length-1]).getFullYear() : new Date().getFullYear();
