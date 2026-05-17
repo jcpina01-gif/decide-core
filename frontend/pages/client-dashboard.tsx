@@ -2518,10 +2518,41 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
       const j=await resp.json();
       if(j.status==="ok"){
         setIbkrPos(j.positions);
-        setIbkrOpenOrders(j.open_orders??[]);
+        const openOrders:(typeof ibkrOpenOrders)=j.open_orders??[];
+        setIbkrOpenOrders(openOrders);
         if(typeof j.fx_supported==="boolean") setIbkrFxSupported(j.fx_supported);
         if(j.account_type) setIbkrAcctType(j.account_type);
         else if(j.meta?.account_type_raw) setIbkrAcctType(j.meta.account_type_raw);
+
+        // Sync fill statuses: any fill that was "Em curso" but is no longer
+        // in IB open orders was cancelled or filled externally (e.g. via TWS).
+        const openTickers=new Set(openOrders.map((o:{ticker:string})=>o.ticker.toUpperCase()));
+        const heldTickers=new Set((j.positions??[]).map((p:{ticker:string})=>p.ticker.toUpperCase()));
+        setFills(prev=>prev.map(f=>{
+          const pending=f.status==="Submitted"||f.status==="PreSubmitted"||f.status==="PendingSubmit";
+          if(!pending) return f;
+          const t=(f.ticker||"").toUpperCase();
+          if(openTickers.has(t)) return f; // still open in IB
+          // Not in open orders anymore — determine if filled or cancelled
+          const nowHeld=heldTickers.has(t);
+          const wasSell=f.side==="SELL"||f.action==="Vender"||f.action==="SELL";
+          const newStatus=(!wasSell&&nowHeld)||( wasSell&&!nowHeld)?"Filled":"Cancelled";
+          return {...f,status:newStatus};
+        }));
+        setSellAllFills(prev=>prev.map(f=>{
+          const pending=f.status==="Submitted"||f.status==="PreSubmitted"||f.status==="PendingSubmit";
+          if(!pending) return f;
+          const t=(f.ticker||"").toUpperCase();
+          if(openTickers.has(t)) return f;
+          return {...f,status:heldTickers.has(t)?"Filled":"Cancelled"};
+        }));
+        setFlatFills(prev=>prev.map(f=>{
+          const pending=f.status==="Submitted"||f.status==="PreSubmitted"||f.status==="PendingSubmit";
+          if(!pending) return f;
+          const t=(f.ticker||"").toUpperCase();
+          if(openTickers.has(t)) return f;
+          return {...f,status:heldTickers.has(t)?"Filled":"Cancelled"};
+        }));
       }
       else{setIbkrErr(j.error||"Erro ao obter posições IB");}
     }catch(e:unknown){setIbkrErr(e instanceof Error?e.message:"Erro de ligação");}
@@ -3297,11 +3328,18 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
 
                     {/* Cancel pending orders */}
                     <div>
-                      <button onClick={cancelPendingOrders} disabled={cancelSending}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold bg-slate-700/40 hover:bg-slate-600/40 border border-slate-500/30 text-slate-300 rounded-xl disabled:opacity-50 transition-colors">
-                        {cancelSending?<span className="animate-spin text-xs">⟳</span>:<span className="text-xs">✕</span>}
-                        {cancelSending?"A cancelar ordens pendentes…":"Cancelar ordens pendentes (Em curso)"}
-                      </button>
+                      <div className="flex gap-2">
+                        <button onClick={cancelPendingOrders} disabled={cancelSending}
+                          className="flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold bg-slate-700/40 hover:bg-slate-600/40 border border-slate-500/30 text-slate-300 rounded-xl disabled:opacity-50 transition-colors">
+                          {cancelSending?<span className="animate-spin text-xs">⟳</span>:<span className="text-xs">✕</span>}
+                          {cancelSending?"A cancelar ordens pendentes…":"Cancelar ordens pendentes (Em curso)"}
+                        </button>
+                        <button
+                          onClick={()=>{setFills([]);setSellAllFills([]);setFlatFills([]);setDone(false);setSellAllResult(null);setFlatResult(null);setCancelResult(null);void fetchIbkrPositions();}}
+                          title="Cancelaste as ordens no TWS? Clica para sincronizar o estado aqui."
+                          className="px-3 py-2.5 text-xs font-bold bg-slate-800 hover:bg-slate-700 border border-slate-600/40 text-slate-400 rounded-xl transition-colors shrink-0"
+                        >⟳ Sync</button>
+                      </div>
                       {cancelResult&&<div className="mt-1.5 text-[10px] text-center text-slate-400">{cancelResult}</div>}
                     </div>
 
