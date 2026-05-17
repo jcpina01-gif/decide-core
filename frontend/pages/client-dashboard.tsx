@@ -2572,6 +2572,16 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
       if(resp.ok&&j.ok){
         setSellAllResult({ref:j.order_ref||"ORD-"+Date.now().toString(36).toUpperCase(),fills:j.submitted??ibkrPos.length});
         setSellAllFills(j.fills??[]);
+        // Audit: log sell-all approval + orders
+        const approvalId = await auditSaveApproval(null);
+        void auditSaveOrders(approvalId, (j.fills??[]).map((f:Record<string,unknown>)=>({
+          ticker: String(f.ticker??""), side:"SELL", requested_qty: Number(f.requested_qty??0),
+          ib_order_id: f.ib_order_id as number|null,
+        })));
+        void fetch("/api/audit/config-change",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+          client_id: auditClientId(), changed_by:"client", change_type:"sell_all",
+          new_value:{ref:j.order_ref, positions:ibkrPos.length}, changed_at: new Date().toISOString(),
+        })}).catch(()=>{});
       } else{setIbkrErr(j.error||j.detail||`Erro ${resp.status}`);}
     }catch(e:unknown){setIbkrErr(e instanceof Error?e.message:"Erro de ligação");}
     finally{setSellAllSending(false);}
@@ -2608,6 +2618,18 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         setFlatResult({ref:j.order_ref||"ORD-"+Date.now().toString(36).toUpperCase(),longs:longs.length,shorts:shorts.length});
         setFlatFills(j.fills??[]);
         setIbkrPos(null);  // force refresh
+        // Audit: log flatten approval + orders
+        const approvalId = await auditSaveApproval(null);
+        void auditSaveOrders(approvalId, (j.fills??[]).map((f:Record<string,unknown>)=>({
+          ticker: String(f.ticker??""),
+          side: (String(f.side??"").toUpperCase()==="BUY"?"BUY":"SELL") as "BUY"|"SELL",
+          requested_qty: Number(f.requested_qty??0),
+          ib_order_id: f.ib_order_id as number|null,
+        })));
+        void fetch("/api/audit/config-change",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+          client_id: auditClientId(), changed_by:"client", change_type:"flatten_all",
+          new_value:{ref:j.order_ref, longs:longs.length, shorts:shorts.length}, changed_at: new Date().toISOString(),
+        })}).catch(()=>{});
       } else {setIbkrErr(j.error||j.detail||`Erro ${resp.status}`);}
     }catch(e:unknown){setIbkrErr(e instanceof Error?e.message:"Erro de ligação");}
     finally{setFlatSending(false);}
@@ -2747,8 +2769,16 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const investOverBudget=investEur>budgetEurForDisplay+100; // >€100 tolerance
 
   // ── Audit helpers ──────────────────────────────────────────────────────
+  function auditClientId(): string | null {
+    // sessionUser is the primary source; fallback to localStorage for reliability
+    if (sessionUser) return sessionUser;
+    try {
+      return localStorage.getItem("decide_client_session_user") ?? null;
+    } catch { return null; }
+  }
+
   async function auditSaveRecommendation(): Promise<string|null> {
-    const clientId = sessionUser;
+    const clientId = auditClientId();
     if (!clientId) return null;
     try {
       const positions = actionCounts.allRows.map(r => ({
@@ -2769,7 +2799,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   }
 
   async function auditSaveApproval(recommendationId: string|null): Promise<string|null> {
-    const clientId = sessionUser;
+    const clientId = auditClientId();
     if (!clientId) return null;
     try {
       const r = await fetch("/api/audit/approval", {
@@ -2785,7 +2815,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     approvalId: string|null,
     fills: Array<{ticker:string;side?:string;action?:string;requested_qty?:number;ib_order_id?:number|null}>,
   ) {
-    const clientId = sessionUser;
+    const clientId = auditClientId();
     if (!clientId || !fills.length) return;
     for (const f of fills) {
       const side = (f.side === "BUY" || f.action === "Comprar") ? "BUY" : "SELL";
