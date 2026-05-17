@@ -1,0 +1,404 @@
+/**
+ * Simulation: three risk-reduction scenarios vs baseline.
+ *
+ * Scenarios:
+ *  A - Full FX Hedge (EUR/USD)
+ *  B - CAP15 ceiling lowered from 20% → 16%
+ *  C - Individual position cap 6%  (analytical estimate — needs XEON allocation data)
+ *  D - All three combined
+ *
+ * All KPIs computed for the LAST 12 MONTHS and for the FULL 20-year series.
+ *
+ * Usage (from repo root):
+ *   node frontend/scripts/simulate-scenarios.mjs
+ */
+
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, "../..");
+
+// ── paths ─────────────────────────────────────────────────────────────────
+const MODEL_EQ_PATH  = path.join(ROOT, "freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/model_equity_final_20y_moderado.csv");
+const BENCH_EQ_PATH  = path.join(ROOT, "freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/benchmark_equity_final_20y.csv");
+const FX_PATH        = path.join(ROOT, "backend/data/fx_EURUSD_daily.csv");
+const WEIGHTS_PATH   = path.join(ROOT, "freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/weights_by_rebalance.csv");
+const CASH_PATH      = path.join(ROOT, "freeze/DECIDE_MODEL_V5_V2_3_SMOOTH/model_outputs/cash_sleeve_daily.csv");
+
+// ── CSV helpers ───────────────────────────────────────────────────────────
+function readCsv(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  const lines = fs.readFileSync(filePath, "utf-8").replace(/\r/g, "").split("\n").filter(Boolean);
+  const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
+  return lines.slice(1).map(line => {
+    const cols = line.split(",");
+    const row = {};
+    headers.forEach((h, i) => { row[h] = cols[i]?.trim(); });
+    return row;
+  });
+}
+
+function parseDate(s) {
+  return s ? s.slice(0, 10) : null; // "YYYY-MM-DD"
+}
+
+// ── Load series ───────────────────────────────────────────────────────────
+console.log("Loading data files…");
+
+const modelRows = readCsv(MODEL_EQ_PATH);
+if (!modelRows) { console.error("❌  Model equity file not found:", MODEL_EQ_PATH); process.exit(1); }
+
+const benchRows = readCsv(BENCH_EQ_PATH);
+if (!benchRows) { console.error("❌  Benchmark equity file not found:", BENCH_EQ_PATH); process.exit(1); }
+
+const fxRows = readCsv(FX_PATH);
+if (!fxRows) { console.error("❌  FX file not found:", FX_PATH); process.exit(1); }
+
+const weightsRows = readCsv(WEIGHTS_PATH);
+if (!weightsRows) { console.error("❌  Weights file not found:", WEIGHTS_PATH); process.exit(1); }
+
+// Optional: cash sleeve (XEON allocation by day)
+const cashRows = readCsv(CASH_PATH); // may be null
+
+// ── Index data by date ────────────────────────────────────────────────────
+const modelMap  = new Map(modelRows.map(r  => [parseDate(r.date), parseFloat(r.model_equity)]));
+const benchMap  = new Map(benchRows.map(r  => [parseDate(r.date), parseFloat(r.benchmark_equity)]));
+const fxMap     = new Map(fxRows.map(r     => [parseDate(r.date), parseFloat(r.ret)]));
+
+// Cash sleeve: date → xeon_pct (0–100)
+const cashMap = new Map();
+if (cashRows) {
+  const xeonCol = cashRows[0] ? Object.keys(cashRows[0]).find(k => k.includes("xeon") || k.includes("cash") || k.includes("tbill") || k.includes("mm")) : null;
+  if (xeonCol) {
+    cashRows.forEach(r => {
+      const d = parseDate(r.date);
+      const v = parseFloat(r[xeonCol]);
+      if (d && isFinite(v)) cashMap.set(d, v);
+    });
+  }
+}
+
+// ── Monthly USD exposure from weights CSV ─────────────────────────────────
+// Compute USD zone exposure per rebalancing date
+const rebalDates = [...new Set(weightsRows.map(r => r.rebalance_date))].sort();
+const usdExposureByRebalDate = new Map();
+
+for (const d of rebalDates) {
+  const rows = weightsRows.filter(r => r.rebalance_date === d);
+  const total = rows.reduce((s, r) => s + parseFloat(r.final_weight || r.base_weight || 0), 0);
+  const usd   = rows.filter(r => r.zone === "US" || r.country === "US")
+                    .reduce((s, r) => s + parseFloat(r.final_weight || r.base_weight || 0), 0);
+  const intl  = rows.filter(r => (r.zone !== "US" && r.country !== "US") &&
+                                  r.ticker !== "TBILL_PROXY" && r.ticker !== "XEON" &&
+                                  !r.ticker?.startsWith("CASH"))
+                    .reduce((s, r) => s + parseFloat(r.final_weight || r.base_weight || 0), 0);
+  // USD exposure = fraction of equity sleeve in USD stocks
+  usdExposureByRebalDate.set(d, total > 0 ? usd / total : 0.70);
+}
+
+// Interpolate USD exposure to daily frequency
+function getUsdExposure(dateStr) {
+  // Find the most recent rebal date <= dateStr
+  let expo = 0.70; // default
+  for (const d of rebalDates) {
+    if (d <= dateStr) expo = usdExposureByRebalDate.get(d) ?? expo;
+    else break;
+  }
+  return expo;
+}
+
+// Interpolate cash (XEON) allocation to daily frequency
+function getXeonPct(dateStr) {
+  if (cashMap.has(dateStr)) return cashMap.get(dateStr) / 100;
+  // Fallback: no cash data → use 0 (fully invested)
+  return 0;
+}
+
+// ── Build aligned daily series ────────────────────────────────────────────
+// Use only dates where BOTH model and benchmark are available
+const allDates = [...modelMap.keys()]
+  .filter(d => benchMap.has(d))
+  .sort();
+
+console.log(`Aligned dates: ${allDates[0]} → ${allDates[allDates.length - 1]}  (${allDates.length} days)`);
+
+// Daily returns for baseline
+const dates     = allDates;
+const modelNav  = dates.map(d => modelMap.get(d));
+const benchNav  = dates.map(d => benchMap.get(d));
+
+// Log-returns for computation (safer for compounding)
+function logRets(nav) {
+  const r = [];
+  for (let i = 1; i < nav.length; i++) {
+    r.push(nav[i] / nav[i - 1] - 1);
+  }
+  return r; // length = nav.length - 1
+}
+
+const modelRets = logRets(modelNav);
+const benchRets = logRets(benchNav);
+
+// ── Scenario A: FX Hedge ─────────────────────────────────────────────────
+// For each day t, adjust model return:
+//   ret_hedged[t] = ret_model[t] - usdExposure * equityPct * fxRet[t]
+//   (FX ret is the daily CHANGE in EURUSD rate; positive = EUR appreciates = bad for unhedged USD)
+// Note: fxMap has EUR/USD daily returns (positive = USD depreciates vs EUR)
+const scenARets = dates.slice(1).map((d, i) => {
+  const fxRet      = fxMap.get(d) ?? 0;
+  const usdExp     = getUsdExposure(d);
+  const xeonPct    = getXeonPct(d);
+  const equityPct  = 1 - xeonPct;
+  // Remove FX contribution from model return (hedging = receiving the forward/swap, approx cancels FX)
+  return modelRets[i] - usdExp * equityPct * fxRet;
+});
+
+// ── Scenario B: CAP15 ceiling at 16% ────────────────────────────────────
+// Rolling 60-day realised vol of model returns; if annualised > 16%, scale equity down
+const TRADING_DAYS = 252;
+const ROLL_WIN     = 60;   // lookback for vol estimate
+const OLD_CAP_PCT  = 0.20; // current CAP15 ceiling (20%)
+const NEW_CAP_PCT  = 0.16; // new ceiling
+const RF_DAILY     = 0.04 / TRADING_DAYS; // ~4% annual risk-free (approx ECB rate 2024)
+
+function rollingVol(rets, window) {
+  const vols = [];
+  for (let i = 0; i < rets.length; i++) {
+    if (i < window) { vols.push(null); continue; }
+    const slice = rets.slice(i - window, i);
+    const mean  = slice.reduce((s, v) => s + v, 0) / slice.length;
+    const variance = slice.reduce((s, v) => s + (v - mean) ** 2, 0) / slice.length;
+    vols.push(Math.sqrt(variance * TRADING_DAYS));
+  }
+  return vols;
+}
+
+const modelVolSeries = rollingVol(modelRets, ROLL_WIN);
+
+const scenBRets = modelRets.map((r, i) => {
+  const volEst = modelVolSeries[i];
+  if (!volEst) return r; // not enough history yet
+  if (volEst <= NEW_CAP_PCT) return r; // vol within new target → no change
+  // Vol exceeds 16%: compute old equity pct from CAP15 mechanism, apply new ceiling
+  // Old equity_pct (CAP15@20%) ≈ 20% / volEst (capped at 1)
+  const oldEquityPct = Math.min(1, OLD_CAP_PCT / volEst);
+  const newEquityPct = Math.min(oldEquityPct, NEW_CAP_PCT / volEst);
+  const xeonIncrease = oldEquityPct - newEquityPct;
+  // Adjusted return: more in cash (RF), less in model equity
+  return r * (newEquityPct / Math.max(oldEquityPct, 0.01)) + RF_DAILY * xeonIncrease;
+});
+
+// ── Scenario C: Position cap 6% (analytical approximation) ───────────────
+// Without individual stock daily returns, estimate vol reduction factor.
+// Logic: if top positions (8-9%) are capped at 6%, effective concentration drops.
+// Approximation using Herfindahl index reduction from weights CSV (latest month).
+const latestRebalDate  = rebalDates[rebalDates.length - 1];
+const latestWeights    = weightsRows
+  .filter(r => r.rebalance_date === latestRebalDate && r.ticker !== "TBILL_PROXY" && r.ticker !== "XEON" && !r.ticker?.startsWith("CASH"))
+  .map(r => parseFloat(r.final_weight || r.base_weight || 0))
+  .filter(w => w > 0);
+
+function herfindahl(weights) {
+  const total = weights.reduce((s, w) => s + w, 0);
+  return weights.reduce((s, w) => s + (w / total) ** 2, 0);
+}
+
+const weightsBefore = latestWeights;
+const weightsAfter  = latestWeights.map(w => Math.min(w, 0.06));
+const hBefore = herfindahl(weightsBefore);
+const hAfter  = herfindahl(weightsAfter);
+// Vol scales approximately with sqrt(HHI) — estimate vol reduction factor
+const volReductionFactor = Math.sqrt(hAfter / hBefore);
+
+// Apply a return reduction (capping top performers slightly reduces return)
+// Estimate: the top 2 overweight positions contributed ~0.5% excess return annually
+const ANNUAL_RETURN_DRAG_C = 0.005; // 0.5% per year
+const DAILY_RETURN_DRAG_C  = ANNUAL_RETURN_DRAG_C / TRADING_DAYS;
+
+const scenCRets = modelRets.map(r => r * volReductionFactor - DAILY_RETURN_DRAG_C);
+
+// ── Scenario D: A + B + C ─────────────────────────────────────────────────
+// Compose all three adjustments
+const scenDRets = dates.slice(1).map((d, i) => {
+  // A: FX hedge
+  const fxRet      = fxMap.get(d) ?? 0;
+  const usdExp     = getUsdExposure(d);
+  const xeonPct    = getXeonPct(d);
+  const equityPct  = 1 - xeonPct;
+  const hedgeAdj   = usdExp * equityPct * fxRet;
+
+  // B: CAP15 @16%
+  const volEst    = modelVolSeries[i];
+  let capAdj = 0;
+  if (volEst && volEst > NEW_CAP_PCT) {
+    const oldEq    = Math.min(1, OLD_CAP_PCT / volEst);
+    const newEq    = Math.min(oldEq, NEW_CAP_PCT / volEst);
+    const xeonInc  = oldEq - newEq;
+    const scaledR  = modelRets[i] * (newEq / Math.max(oldEq, 0.01)) + RF_DAILY * xeonInc;
+    capAdj = scaledR - modelRets[i];
+  }
+
+  // C: concentration cap (multiplicative vol reduction + small drag)
+  const baseRet = modelRets[i] + hedgeAdj + capAdj;
+  return baseRet * volReductionFactor - DAILY_RETURN_DRAG_C;
+});
+
+// ── NAV from returns ──────────────────────────────────────────────────────
+function navFromRets(rets, startNav = 1.0) {
+  const nav = [startNav];
+  for (const r of rets) nav.push(nav[nav.length - 1] * (1 + r));
+  return nav;
+}
+
+const navBase = navFromRets(modelRets);
+const navA    = navFromRets(scenARets);
+const navB    = navFromRets(scenBRets);
+const navC    = navFromRets(scenCRets);
+const navD    = navFromRets(scenDRets);
+const navBnch = navFromRets(benchRets);
+
+// ── KPI computation ───────────────────────────────────────────────────────
+function computeKPIs(rets, navSeries, bRets, bNavSeries, label, window = null) {
+  // If window specified, use only last N trading days
+  let r = rets, bn = bNavSeries.slice(-bRets.length - 1), br = bRets;
+  let nav = navSeries;
+  if (window) {
+    const n = Math.min(window, rets.length);
+    r   = rets.slice(-n);
+    br  = bRets.slice(-n);
+    nav = navSeries.slice(-n - 1);
+    bn  = bNavSeries.slice(-n - 1);
+  }
+
+  const N = r.length;
+  if (N === 0) return null;
+
+  // Total return over period
+  const totalRet = nav[nav.length - 1] / nav[0] - 1;
+  const bTotalRet = bn[bn.length - 1] / bn[0] - 1;
+
+  // Annualised return (geometric)
+  const years = N / TRADING_DAYS;
+  const cagr  = (1 + totalRet) ** (1 / years) - 1;
+  const bCagr = (1 + bTotalRet) ** (1 / years) - 1;
+
+  // Annualised vol
+  const mean = r.reduce((s, v) => s + v, 0) / N;
+  const variance = r.reduce((s, v) => s + (v - mean) ** 2, 0) / N;
+  const annVol = Math.sqrt(variance * TRADING_DAYS);
+  const bMean  = br.reduce((s, v) => s + v, 0) / N;
+  const bVar   = br.reduce((s, v) => s + (v - bMean) ** 2, 0) / N;
+  const bVol   = Math.sqrt(bVar * TRADING_DAYS);
+
+  // Sharpe (using ~4% annual risk-free for EUR, 2024–2026)
+  const rfAnnual = 0.03;
+  const sharpe = (cagr - rfAnnual) / annVol;
+
+  // Max drawdown
+  let peak = nav[0], mdd = 0;
+  for (const v of nav) {
+    if (v > peak) peak = v;
+    const dd = (v - peak) / peak;
+    if (dd < mdd) mdd = dd;
+  }
+
+  // Monthly aggregation (approximate: group trading days into ~21-day chunks)
+  const MONTH_DAYS = 21;
+  const nMonths = Math.floor(N / MONTH_DAYS);
+  let mAboveBench = 0, mPositive = 0;
+  for (let m = 0; m < nMonths; m++) {
+    const start = m * MONTH_DAYS, end = (m + 1) * MONTH_DAYS;
+    const mr = r.slice(start, end).reduce((s, v) => s + v, 0);
+    const brm = br.slice(start, end).reduce((s, v) => s + v, 0);
+    if (mr > brm) mAboveBench++;
+    if (mr > 0) mPositive++;
+  }
+
+  return {
+    label,
+    window: window ? `${Math.round(years * 12)} meses` : `${Math.round(years * 10) / 10} anos`,
+    totalRet: pct(totalRet),
+    cagr: pct(cagr),
+    bCagr: pct(bCagr),
+    excessCagr: `${((cagr - bCagr) * 100).toFixed(2)}pp`,
+    annVol: pct(annVol),
+    bVol: pct(bVol),
+    excessVol: `${((annVol - bVol) * 100).toFixed(2)}pp`,
+    sharpe: sharpe.toFixed(2),
+    mdd: pct(mdd),
+    mAboveBench: `${mAboveBench}/${nMonths}`,
+    mPositive: `${mPositive}/${nMonths}`,
+  };
+}
+
+function pct(v) { return `${(v * 100).toFixed(2)}%`; }
+
+// ── Run for 1-year and 20-year windows ───────────────────────────────────
+const WINDOWS = [
+  { label: "1 Ano (últimos 252 dias)", days: 252 },
+  { label: "20 Anos (série completa)", days: null },
+];
+
+const scenarios = [
+  { name: "Baseline (actual)", retSeries: modelRets, nav: navBase },
+  { name: "A — FX Hedge",     retSeries: scenARets, nav: navA },
+  { name: "B — CAP15 @ 16%", retSeries: scenBRets, nav: navB },
+  { name: "C — Cap 6% pos.",  retSeries: scenCRets, nav: navC },
+  { name: "D — A + B + C",   retSeries: scenDRets, nav: navD },
+];
+
+console.log("\n");
+
+for (const { label: wLabel, days } of WINDOWS) {
+  console.log("═".repeat(100));
+  console.log(`  ${wLabel}`);
+  console.log("═".repeat(100));
+
+  const header = [
+    "Cenário".padEnd(22),
+    "Retorno".padStart(9),
+    "CAGR".padStart(9),
+    "CAGR Bench".padStart(11),
+    "Excesso".padStart(9),
+    "Vol".padStart(8),
+    "Vol Bench".padStart(10),
+    "ΔVol".padStart(8),
+    "Sharpe".padStart(8),
+    "MDD".padStart(8),
+    ">Bench".padStart(8),
+    "Pos".padStart(6),
+  ].join("  ");
+  console.log(header);
+  console.log("─".repeat(100));
+
+  for (const sc of scenarios) {
+    const kpi = computeKPIs(sc.retSeries, sc.nav, benchRets, navBnch, sc.name, days);
+    if (!kpi) continue;
+    const row = [
+      sc.name.padEnd(22),
+      kpi.cagr.padStart(9),
+      kpi.cagr.padStart(9),
+      kpi.bCagr.padStart(11),
+      kpi.excessCagr.padStart(9),
+      kpi.annVol.padStart(8),
+      kpi.bVol.padStart(10),
+      kpi.excessVol.padStart(8),
+      kpi.sharpe.padStart(8),
+      kpi.mdd.padStart(8),
+      kpi.mAboveBench.padStart(8),
+      kpi.mPositive.padStart(6),
+    ].join("  ");
+    console.log(row);
+  }
+  console.log();
+}
+
+console.log("Notas:");
+console.log("  • Cenário A usa exposição USD diária por zona (weights CSV) e retornos EUR/USD diários.");
+console.log("  • Cenário B simula novo CAP15: se vol estimada (60d) > 16%, reduz equity proporcionalmente.");
+console.log("  • Cenário C é estimativa analítica: vol reduzida pelo índice Herfindahl (concentração).");
+console.log(`    HHI antes: ${hBefore.toFixed(4)}  →  depois: ${hAfter.toFixed(4)}  →  factor vol: ${volReductionFactor.toFixed(4)}`);
+console.log("  • Cenário D combina A + B + C.");
+console.log("  • Sharpe usa taxa livre de risco 3% a.a. (€STR aproximado 2024-2026).");

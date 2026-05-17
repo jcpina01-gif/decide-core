@@ -9,6 +9,11 @@ import {
   buildPlafonadoEmbedLikeSeries,
   normalizeRiskProfileKeyForKpi,
 } from "../../../lib/plafonadoFeesSeries";
+import {
+  applyFxHedgeToSeries,
+  FX_HEDGE_PCT,
+  normalizeFxExposure,
+} from "../../../lib/server/applyFxHedge";
 
 function normalizeProfileParam(raw: unknown): string {
   return normalizeRiskProfileKeyForKpi(
@@ -26,6 +31,11 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     typeof req.query.profile === "string" ? req.query.profile : undefined,
   );
 
+  const fxExposure = normalizeFxExposure(
+    typeof req.query.fx_exposure === "string" ? req.query.fx_exposure : "aberta",
+  );
+  const hedgePct = FX_HEDGE_PCT[fxExposure];
+
   res.setHeader("Cache-Control", "no-store, no-cache, max-age=0, s-maxage=0, must-revalidate");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
@@ -41,6 +51,11 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     });
   }
 
+  const cwd = resolveNextFrontendAppDir();
+  const equity_overlayed = hedgePct > 0
+    ? applyFxHedgeToSeries(built.dates, built.equity_overlayed, hedgePct, cwd)
+    : built.equity_overlayed;
+
   const lastD =
     built.dates.length > 0 ? String(built.dates[built.dates.length - 1]) : null;
   const m = lastD && lastD.match(/(\d{4}-\d{2}-\d{2})/);
@@ -54,7 +69,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     series: {
       dates: built.dates,
       benchmark_equity: built.benchmark_equity,
-      equity_overlayed: built.equity_overlayed,
+      equity_overlayed,
       equity_raw: built.equity_raw,
     },
     result: {
@@ -62,6 +77,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       series_end: seriesEndYmd,
       series_data_source: seriesDataSource,
       profile: built.meta.profile,
+      fx_exposure: fxExposure,
+      fx_hedge_pct: hedgePct,
       note:
         "Mesma construção que o cartão «Modelo CAP15» / `/api/embed-plafonado-cagr` (kpi_server): CAP15 + m100 plafonado; moderado ≈1× vol ref. (motor + alinhamento no cliente); conservador/dinâmico com alvo vs benchmark.",
       aligned_cap15_m100: built.meta.aligned_cap15_m100,
