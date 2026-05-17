@@ -2607,12 +2607,14 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
       };
       const resp=await fetch("/api/ibkr-orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       const j=await resp.json();
-      if(resp.ok&&j.ok){
+      console.log("[sellAll] ibkr-orders response:", JSON.stringify({ok:j.ok,status:j.status,submitted:j.submitted,fills_len:(j.fills??[]).length}));
+      if(resp.ok&&j.status!=="rejected"&&j.status!=="error"){
         setSellAllResult({ref:j.order_ref||"ORD-"+Date.now().toString(36).toUpperCase(),fills:j.submitted??ibkrPos.length});
         setSellAllFills(j.fills??[]);
         // Audit: log sell-all approval + orders
         // Use j.fills when available; fall back to the orders we submitted
         // (IB returns empty fills for PreSubmitted orders queued for next market open)
+        console.log("[audit] sellAll: saving approval, clientId=", auditClientId(), "positions=", ibkrPos.length);
         const approvalId = await auditSaveApproval(null);
         const sentOrders = ibkrPos.filter(p=>p.qty>0).map(p=>({
           ticker:p.ticker, side:"SELL" as const, requested_qty:p.qty, ib_order_id:null,
@@ -2657,12 +2659,14 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
       };
       const resp=await fetch("/api/ibkr-orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       const j=await resp.json().catch(()=>({}));
+      console.log("[flatten] ibkr-orders response:", JSON.stringify({ok:j.ok,status:j.status,submitted:j.submitted,fills_len:(j.fills??[]).length}));
       if(resp.ok&&j.status!=="rejected"&&j.status!=="error"){
         setFlatResult({ref:j.order_ref||"ORD-"+Date.now().toString(36).toUpperCase(),longs:longs.length,shorts:shorts.length});
         setFlatFills(j.fills??[]);
         setIbkrPos(null);  // force refresh
         // Audit: log flatten approval + orders
         // Use j.fills when available; fall back to the orders we submitted
+        console.log("[audit] flatten: saving approval, clientId=", auditClientId(), "longs=", longs.length, "shorts=", shorts.length);
         const approvalId = await auditSaveApproval(null);
         const sentFlat=[
           ...longs.map(p=>({ticker:p.ticker,side:"SELL" as const,requested_qty:p.qty,ib_order_id:null})),
