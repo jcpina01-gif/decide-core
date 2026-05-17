@@ -1,7 +1,7 @@
 import Head from "next/head";
 import { useRouter } from "next/router";
 import { useState } from "react";
-import { DECIDE_APP_FONT_FAMILY } from "../../lib/decideClientTheme";
+import { DecideBrandImage } from "../../components/DecideLogoHeader";
 
 export default function BackofficeLoginPage() {
   const router = useRouter();
@@ -43,27 +43,30 @@ export default function BackofficeLoginPage() {
       <div
         style={{
           minHeight: "100vh",
-          background: "#09090b",
+          background: "#080c14",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontFamily: DECIDE_APP_FONT_FAMILY,
+          fontFamily: "'Nunito', system-ui, sans-serif",
         }}
       >
         <div
           style={{
-            background: "rgba(24, 24, 27, 0.95)",
-            border: "1px solid rgba(63, 63, 70, 0.8)",
+            background: "rgba(15, 23, 42, 0.9)",
+            border: "1px solid rgba(255,255,255,0.07)",
             borderRadius: 20,
             padding: "36px 40px",
             width: "100%",
             maxWidth: 380,
           }}
         >
-          <div style={{ fontSize: 11, color: "#71717a", letterSpacing: "0.06em", marginBottom: 6 }}>
-            DECIDE · Área interna
+          <div style={{ marginBottom: 20, display: "flex", justifyContent: "center" }}>
+            <DecideBrandImage height={48} maxWidth="160px" sizes="160px" knockoutBackground={false} className="decide-logo-img--plain" />
           </div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: "#fafafa", marginBottom: 28 }}>
+          <div style={{ fontSize: 11, color: "#475569", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4, textAlign: "center" }}>
+            Área interna
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "#f1f5f9", marginBottom: 24, textAlign: "center" }}>
             Back-office
           </div>
 
@@ -80,9 +83,9 @@ export default function BackofficeLoginPage() {
                 width: "100%",
                 padding: "10px 12px",
                 borderRadius: 10,
-                border: "1px solid #3f3f46",
-                background: "#18181b",
-                color: "#fafafa",
+                border: "1px solid rgba(255,255,255,0.1)",
+                background: "rgba(255,255,255,0.04)",
+                color: "#f1f5f9",
                 fontSize: 15,
                 outline: "none",
                 boxSizing: "border-box",
@@ -103,12 +106,13 @@ export default function BackofficeLoginPage() {
                 padding: "11px 0",
                 borderRadius: 10,
                 border: "none",
-                background: loading || !password ? "#27272a" : "rgba(45, 212, 191, 0.85)",
-                color: loading || !password ? "#71717a" : "#0a0a0a",
+                background: loading || !password ? "rgba(255,255,255,0.06)" : "rgba(45,212,191,0.85)",
+                color: loading || !password ? "#475569" : "#030712",
                 fontSize: 15,
                 fontWeight: 800,
                 cursor: loading || !password ? "not-allowed" : "pointer",
                 transition: "background 0.15s",
+                fontFamily: "inherit",
               }}
             >
               {loading ? "A entrar…" : "Entrar"}

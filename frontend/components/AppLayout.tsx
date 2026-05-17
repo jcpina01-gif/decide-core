@@ -31,7 +31,9 @@ export default function AppLayout({
     "/client/login",
     "/client/verify-email",
   ].includes(router.pathname);
-  const isEmbedChromeless = router.pathname.startsWith("/embed/") || isFeesClientEmbed || isDashboardWithOwnNav || isOnboardingPage;
+  /** Back-office tem o seu próprio shell com logo e nav — sem header global duplicado */
+  const isBackoffice = router.pathname.startsWith("/backoffice");
+  const isEmbedChromeless = router.pathname.startsWith("/embed/") || isFeesClientEmbed || isDashboardWithOwnNav || isOnboardingPage || isBackoffice;
 
   return (
     <div
