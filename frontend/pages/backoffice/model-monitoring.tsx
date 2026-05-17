@@ -286,12 +286,71 @@ export default function BackofficeModelMonitoringPage({ kpiBase }: Props) {
         </div>
 
         <div style={panel}>
-          <div style={h2}>Nota (V2.3 smooth)</div>
+          <div style={{ ...h2, color: "#5eead4" }}>KPIs de referência actuais — Moderado (dados: 2006–Mai 2026)</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12, marginBottom: 8 }}>
+            {[
+              { label: "CAGR (20 anos)", value: "~26.4%", note: "após vol-scaling" },
+              { label: "Benchmark CAGR", value: "8.9%", note: "MSCI World equiv." },
+              { label: "Spread anual", value: "~+17 ppts", note: "modelo − benchmark" },
+              { label: "Sharpe (Rf=2%)", value: "~1.16", note: "20 anos" },
+              { label: "Max Drawdown", value: "−25.5%", note: "20 anos" },
+              { label: "Vol anualizada", value: "~19%", note: "moderado target" },
+              { label: "Cash sleeve actual", value: "30%", note: "bear_low_vol activo" },
+              { label: "Nº posições", value: "25", note: "Mai 2026" },
+            ].map((k) => (
+              <div
+                key={k.label}
+                style={{
+                  background: "#18181b",
+                  border: "1px solid #3f3f46",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                }}
+              >
+                <div style={{ fontSize: 11, color: "#71717a", marginBottom: 2 }}>{k.label}</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: "#fafafa" }}>{k.value}</div>
+                <div style={{ fontSize: 11, color: "#52525b" }}>{k.note}</div>
+              </div>
+            ))}
+          </div>
+          <p style={{ ...muted, marginTop: 8, marginBottom: 0 }}>
+            Freeze gerado em 15 Mai 2026 · engine_research_v5 · momentum_mode v2_prudent · CAP12 por ticker ·
+            fricção 10 bps total (5 comissão + 5 slippage).
+          </p>
+        </div>
+
+        <div style={{ ...panel, borderColor: "rgba(251,191,36,0.4)" }}>
+          <div style={{ ...h2, color: "#fbbf24" }}>Estado actual do modelo — 🟡 Atenção (Mai 2026)</div>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            <li style={li}>
+              <strong style={{ color: "#e4e4e7" }}>Bear low-vol overlay activo:</strong> o modelo entrou em risk-off parcial
+              em Mar 2026 (63.9% cash) e estabilizou em 30% em Abr–Mai. Resposta ao choque macro de início de 2026 (tarifas,
+              incerteza). <em>Comportamento dentro do esperado.</em>
+            </li>
+            <li style={li}>
+              <strong style={{ color: "#e4e4e7" }}>Ciclo 2025 normal:</strong> Mar–Abr 2025 em forte risk-off (65% cash),
+              depois totalmente risk-on Mai–Dez 2025. O modelo entrou e saiu de forma oportuna.
+            </li>
+            <li style={li}>
+              <strong style={{ color: "#e4e4e7" }}>KPIs históricos sólidos:</strong> spread vs benchmark ~+17 ppts,
+              Sharpe 1.16 (Rf=2%), MDD controlado em −25.5%. Nenhum sinal estrutural de degradação visível.
+            </li>
+            <li style={li}>
+              <strong style={{ color: "#fbbf24" }}>A monitorizar:</strong> enquanto o cash sleeve se mantiver elevado e o
+              mercado subir, surgirá underperformance de curto prazo vs benchmark — é o custo esperado da protecção.
+              Verificar mensal se o Sharpe relativo rolling 5y se mantém positivo.
+            </li>
+          </ul>
+        </div>
+
+        <div style={panel}>
+          <div style={h2}>Nota (V2.3 smooth → engine_research_v5)</div>
           <p style={muted}>
-            Degradação com Sharpe relativo persistente, z-score extremo e recovery muito alto foi parte da justificação
-            para iterar o modelo. Com <strong style={{ color: "#e4e4e7" }}>momentum smooth</strong>, espera-se Sharpe
-            mais estável, recovery menos extremo e z-score menos negativo — isso valida o processo de revisão, não
-            elimina a necessidade de continuar a monitorizar com esta grelha.
+            A iteração V2.3 smooth (momentum_mode v2_prudent, buffer assimétrico, hysteresis no bear_low_vol) foi
+            motivada por Sharpe relativo persistentemente fraco e z-score negativo na versão anterior. Os resultados
+            confirmam o objectivo: Sharpe mais estável, recovery menos extremo, turnover reduzido (avg 32.5% por
+            rebalanceamento vs &gt;50% anterior). Isso valida o processo, não elimina a necessidade de continuar a
+            monitorizar com esta grelha — especialmente nas janelas rolling de 3y e 5y.
           </p>
         </div>
       </BackofficeShell>
