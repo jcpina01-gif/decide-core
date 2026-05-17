@@ -2617,6 +2617,10 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
 
   async function sellAllPositions(){
     if(!ibkrPos||ibkrPos.length===0) return;
+    if(!paperMode&&ibkrOpenOrders.length>0){
+      setIbkrErr(`⚠ Tens ${ibkrOpenOrders.length} ordens pendentes na IB. Cancela-as primeiro.`);
+      return;
+    }
     setSellAllSending(true);setIbkrErr("");
     try{
       if(paperMode){
@@ -2672,6 +2676,11 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
 
   async function flattenAllPositions(){
     if(!ibkrPos||ibkrPos.length===0) return;
+    // Safety: never send flatten if there are already open orders (prevents duplicates)
+    if(!paperMode&&ibkrOpenOrders.length>0){
+      setIbkrErr(`⚠ Tens ${ibkrOpenOrders.length} ordens pendentes na IB. Cancela-as primeiro antes de zerar.`);
+      return;
+    }
     const longs=ibkrPos.filter(p=>p.qty>0);
     const shorts=ibkrPos.filter(p=>p.qty<0);
     if(longs.length===0&&shorts.length===0) return;
@@ -3450,10 +3459,11 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                     {/* FLAT button — closes ALL positions (longs + shorts) */}
                     {!flatResult?(
                       <button onClick={flattenAllPositions}
-                        disabled={flatSending||ibkrPos.length===0||(ibkrPos.every(p=>p.qty===0))}
+                        disabled={flatSending||ibkrPos.length===0||(ibkrPos.every(p=>p.qty===0))||(!paperMode&&ibkrOpenOrders.length>0)}
                         className="w-full flex items-center justify-center gap-2 py-3 text-xs font-black bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/50 text-orange-300 rounded-xl disabled:opacity-50 transition-colors">
                         {flatSending?<span className="animate-spin text-sm">⟳</span>:<span className="text-base leading-none">⊘</span>}
                         {flatSending?"A zerar carteira (longs + shorts)…":
+                          (!paperMode&&ibkrOpenOrders.length>0)?`⚠ Cancela as ${ibkrOpenOrders.length} ordens pendentes antes de zerar`:
                           paperMode?`⚠ Desliga "Simulação local" para zerar à IB`:
                           `ZERAR CARTEIRA IB — ${ibkrPos.filter(p=>p.qty>0).length} longs + ${ibkrPos.filter(p=>p.qty<0).length} shorts — TESTE`}
                       </button>
@@ -3506,10 +3516,11 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
 
                     {/* Original sell-longs-only button */}
                     {!sellAllResult?(
-                      <button onClick={sellAllPositions} disabled={sellAllSending||ibkrPos.filter(p=>p.qty>0).length===0}
+                      <button onClick={sellAllPositions} disabled={sellAllSending||ibkrPos.filter(p=>p.qty>0).length===0||(!paperMode&&ibkrOpenOrders.length>0)}
                         className="w-full flex items-center justify-center gap-2 py-2 text-[10px] font-bold bg-red-600/10 hover:bg-red-600/20 border border-red-500/20 text-red-400 rounded-xl disabled:opacity-50 transition-colors">
                         {sellAllSending?<span className="animate-spin text-xs">⟳</span>:<Trash2 size={11}/>}
                         {sellAllSending?"A vender longs…":
+                          (!paperMode&&ibkrOpenOrders.length>0)?`⚠ Cancela pendentes antes de vender`:
                           `Vender só longs (${ibkrPos.filter(p=>p.qty>0).length}) — TESTE`}
                       </button>
                     ):(
