@@ -4153,6 +4153,8 @@ export default function ClientDashboardPage() {
   const [dates,setDates]=useState<string[]>([]);
   const [equityRaw,setEquityRaw]=useState<number[]>([]);
   const [benchRaw,setBenchRaw]=useState<number[]>([]);
+  // Pre-computed inception KPIs from API (server-side, avoids client warmup detection issues)
+  const [apiInceptionKpis,setApiInceptionKpis]=useState<{ann:number;shp:number;ret:number}|null>(null);
 
   // recommendations
   const [recoMonths,setRecoMonths]=useState<RecoMonth[]>([]);
@@ -4213,10 +4215,13 @@ export default function ClientDashboardPage() {
 
   useEffect(()=>{
     const _v=new Date().toISOString().slice(0,10).replace(/-/g,"");
-    fetch(`/api/landing/freeze-cap15-data?v=${_v}&fx_exposure=${encodeURIComponent(fxExposure)}`).then(r=>r.json())
-      .then((d:any)=>{ if(d?.series){ setDates(d.series.dates??[]); setEquityRaw(d.series.equity_overlayed??[]); setBenchRaw(d.series.benchmark_equity??[]); } })
+    fetch(`/api/landing/freeze-cap15-data?v=${_v}&fx_exposure=${encodeURIComponent(fxExposure)}&profile=${encodeURIComponent(riskProfileLocal)}`).then(r=>r.json())
+      .then((d:any)=>{
+        if(d?.series){ setDates(d.series.dates??[]); setEquityRaw(d.series.equity_overlayed??[]); setBenchRaw(d.series.benchmark_equity??[]); }
+        if(d?.result?.inception_kpis){ const k=d.result.inception_kpis; setApiInceptionKpis({ann:k.ann,shp:k.shp,ret:k.ret}); }
+      })
       .catch(()=>{});
-  },[fxExposure]);
+  },[fxExposure,riskProfileLocal]);
 
   useEffect(()=>{
     setRecoLoading(true);
@@ -4504,9 +4509,13 @@ export default function ClientDashboardPage() {
     // s20 = first non-warmup day on or after the rolling cut date
     const s20=Math.max(s20cut,warmupEnd);
     const calYearsInc=calYearsFromDates(dates.slice(s20))??20;
-    const inception=periodMetrics(activeEquity.slice(s20),benchRaw.slice(s20),"20 Anos",calYearsInc);
+    const inceptionRaw=periodMetrics(activeEquity.slice(s20),benchRaw.slice(s20),"20 Anos",calYearsInc);
+    // Use server-side pre-computed KPIs when available (avoids client warmup detection edge cases)
+    const inception=apiInceptionKpis
+      ?{...inceptionRaw,ret:apiInceptionKpis.ret,ann:apiInceptionKpis.ann,shp:apiInceptionKpis.shp}
+      :inceptionRaw;
     return {vol20y,benchVol20y,curVol,curDD,ddChart,inception};
-  },[dates,activeEquity,benchRaw]);
+  },[dates,activeEquity,benchRaw,apiInceptionKpis]);
 
   const perfData=useMemo(()=>{
     if(!dates.length||!activeEquity.length) return null;
@@ -4525,10 +4534,11 @@ export default function ClientDashboardPage() {
     const calYears=period==="20 Anos"?calYearsFromDates(dates.slice(s)):undefined;
     const chart=makeChartData(dates,activeEquity,benchRaw,period);
     const mRaw=periodMetrics(activeEquity.slice(s),benchRaw.slice(s),period,calYears);
-    // For "20 Anos" use riskData.inception directly (same window as Dashboard card)
-    // to avoid any edge-case divergence between the two warmup-skip paths.
-    const m=period==="20 Anos"&&riskData?.inception
-      ?{...mRaw,ret:riskData.inception.ret,ann:riskData.inception.ann,shp:riskData.inception.shp}
+    // For "20 Anos": use server pre-computed KPIs if available, otherwise riskData.inception
+    const m=period==="20 Anos"
+      ?(apiInceptionKpis
+        ?{...mRaw,ret:apiInceptionKpis.ret,ann:apiInceptionKpis.ann,shp:apiInceptionKpis.shp}
+        :(riskData?.inception?{...mRaw,ret:riskData.inception.ret,ann:riskData.inception.ann,shp:riskData.inception.shp}:mRaw))
       :mRaw;
     // Anchor YTD to the last year present in the series (not the client's wall clock)
     // so freeze data from Dec 2024 still shows "2024 YTD" correctly.
@@ -4545,7 +4555,7 @@ export default function ClientDashboardPage() {
       curDD:riskData?.curDD??0,
       ddChart:riskData?.ddChart??[],
       inception:riskData?.inception??{ret:0,ann:0,shp:0,vol:0,alpha:0,mVol:0}};
-  },[dates,activeEquity,benchRaw,period,riskData]);
+  },[dates,activeEquity,benchRaw,period,riskData,apiInceptionKpis]);
 
   // Convenience aliases — direct from recomputed curve (no post-hoc multiply)
   const scaledVol  =perfData?.curVol??0;
