@@ -819,7 +819,8 @@ function calYearsFromDates(dates:string[]):number|undefined {
 
 /* â”€â”€â”€ types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 type WRow={ticker:string;weight:number;weightPct:number;score:number};
-type RecoMonth={date?:string;rebalance_date?:string;rows:WRow[];tbillsTotalPct?:number};
+type FlowRowDash={ticker:string;company?:string;weightPct?:number;prevWeightPct?:number;deltaWeightPct?:number;kind?:"new"|"increase"|"decrease"|"remove"|"cash_synthetic"};
+type RecoMonth={date?:string;rebalance_date?:string;rows:WRow[];tbillsTotalPct?:number;entries?:FlowRowDash[];exits?:FlowRowDash[]};
 
 /* â”€â”€â”€ sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const NAV=[
@@ -4377,6 +4378,26 @@ export default function ClientDashboardPage() {
     return {comprar:c,aumentar:au,reduzir:rd,vender:v,manter:m,rows:changedRows,allRows};
   },[latestMonth,prevMonth]);
 
+  /** Counts from the official backend flow (entries/exits) — matches the Histórico page exactly.
+   *  Falls back to actionCounts if entries/exits are not available. */
+  const officialCounts=useMemo(()=>{
+    const entries=latestMonth?.entries;
+    const exits=latestMonth?.exits;
+    if(!entries||!exits) return null;
+    const isCash=(t:string)=>{const u=t.trim().toUpperCase();return u==="TBILL_PROXY"||u==="EUR_MM_PROXY"||u==="XEON";};
+    const comprar=entries.filter(e=>e.kind==="new"&&!isCash(e.ticker)).length;
+    const aumentar=entries.filter(e=>e.kind==="increase"&&!isCash(e.ticker)).length;
+    const vender=exits.filter(e=>e.kind==="remove"&&!isCash(e.ticker)).length;
+    const reduzir=exits.filter(e=>e.kind==="decrease"&&!isCash(e.ticker)).length;
+    // Manter = positions in plan that are neither entries nor exits
+    const changedTickers=new Set([
+      ...entries.map(e=>e.ticker.trim().toUpperCase()),
+      ...exits.map(e=>e.ticker.trim().toUpperCase()),
+    ]);
+    const manter=(latestMonth?.rows??[]).filter(r=>r.weightPct>0&&!isCash(r.ticker)&&!changedTickers.has(r.ticker.trim().toUpperCase())).length;
+    return {comprar,aumentar,vender,reduzir,manter};
+  },[latestMonth]);
+
   const sectorData=useMemo(()=>{
     // Use actionCounts.allRows (already US-only + normalised) so the chart matches the plan
     if(!actionCounts.allRows.length) return [];
@@ -5362,7 +5383,7 @@ export default function ClientDashboardPage() {
                         {changes.length>0&&(
                           <p>
                             Neste ciclo de rebalanceamento foram introduzidas <span className="text-slate-200 font-semibold">{changes.length} alterações</span>,
-                            com {actionCounts.comprar+actionCounts.aumentar} novas entradas ou reforços e {actionCounts.reduzir+actionCounts.vender} reduções ou saídas.
+                            com {(officialCounts??actionCounts).comprar+(officialCounts??actionCounts).aumentar} novas entradas ou reforços e {(officialCounts??actionCounts).reduzir+(officialCounts??actionCounts).vender} reduções ou saídas.
                             {top3Changes[0]&&(()=>{const ch=top3Changes[0];const d=ch.cur-ch.prev;return <> A alteração de maior impacto foi em <span className="text-slate-200 font-semibold">{getCompany(ch.ticker)||ch.ticker}</span>{" "}({ch.action.toLowerCase()}, {d>0?"+":""}{d.toFixed(1)}pp).</>;})()}
                           </p>
                         )}
@@ -5522,11 +5543,12 @@ export default function ClientDashboardPage() {
                     {/* Action count badges (1/3) */}
                     <div className="space-y-3">
                       {(()=>{
-                        const buy =actionCounts.comprar;
-                        const up  =actionCounts.aumentar;
-                        const down=actionCounts.reduzir;
-                        const sell=actionCounts.vender;
-                        const hold=actionCounts.manter;
+                        const oc=officialCounts??actionCounts;
+                        const buy =oc.comprar;
+                        const up  =oc.aumentar;
+                        const down=oc.reduzir;
+                        const sell=oc.vender;
+                        const hold=oc.manter;
                         return [
                           {label:"Comprar",  n:buy,  bg:"bg-teal-500/10",   border:"border-teal-500/20",   tc:"text-teal-400",   nc:"text-teal-300"},
                           {label:"Aumentar", n:up,   bg:"bg-blue-500/10",   border:"border-blue-500/20",   tc:"text-blue-400",   nc:"text-blue-300"},
@@ -5840,11 +5862,11 @@ export default function ClientDashboardPage() {
                     <div className="text-xs text-slate-500 font-medium mb-4 uppercase tracking-widest">Recomendação · {recoLabel}</div>
                     <div className="flex gap-6">
                       {[
-                        {label:"Nova posição", count:recoLoading?0:actionCounts.comprar,  c:"text-teal-400",  bg:"bg-teal-500/10",  b:"border-teal-500/20"},
-                        {label:"Reforçar",     count:recoLoading?0:actionCounts.aumentar, c:"text-blue-400",  bg:"bg-blue-500/10",  b:"border-blue-500/20"},
-                        {label:"Reduzir",      count:recoLoading?0:actionCounts.reduzir,  c:"text-amber-400", bg:"bg-amber-500/10", b:"border-amber-500/20"},
-                        {label:"Encerrar",     count:recoLoading?0:actionCounts.vender,   c:"text-red-400",   bg:"bg-red-500/10",   b:"border-red-500/20"},
-                        {label:"Manter",       count:recoLoading?0:actionCounts.manter,   c:"text-slate-400", bg:"bg-slate-800/40", b:"border-slate-700/30"},
+                        {label:"Nova posição", count:recoLoading?0:(officialCounts??actionCounts).comprar,  c:"text-teal-400",  bg:"bg-teal-500/10",  b:"border-teal-500/20"},
+                        {label:"Reforçar",     count:recoLoading?0:(officialCounts??actionCounts).aumentar, c:"text-blue-400",  bg:"bg-blue-500/10",  b:"border-blue-500/20"},
+                        {label:"Reduzir",      count:recoLoading?0:(officialCounts??actionCounts).reduzir,  c:"text-amber-400", bg:"bg-amber-500/10", b:"border-amber-500/20"},
+                        {label:"Encerrar",     count:recoLoading?0:(officialCounts??actionCounts).vender,   c:"text-red-400",   bg:"bg-red-500/10",   b:"border-red-500/20"},
+                        {label:"Manter",       count:recoLoading?0:(officialCounts??actionCounts).manter,   c:"text-slate-400", bg:"bg-slate-800/40", b:"border-slate-700/30"},
                       ].map(x=>(
                         <div key={x.label} className={`flex flex-col items-center gap-1.5 rounded-xl px-5 py-4 ${x.bg} border ${x.b} min-w-[80px]`}>
                           <span className={`text-3xl font-black tabular-nums ${x.c}`}>{x.count}</span>
