@@ -2607,11 +2607,16 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         setSellAllResult({ref:j.order_ref||"ORD-"+Date.now().toString(36).toUpperCase(),fills:j.submitted??ibkrPos.length});
         setSellAllFills(j.fills??[]);
         // Audit: log sell-all approval + orders
+        // Use j.fills when available; fall back to the orders we submitted
+        // (IB returns empty fills for PreSubmitted orders queued for next market open)
         const approvalId = await auditSaveApproval(null);
-        void auditSaveOrders(approvalId, (j.fills??[]).map((f:Record<string,unknown>)=>({
-          ticker: String(f.ticker??""), side:"SELL", requested_qty: Number(f.requested_qty??0),
-          ib_order_id: f.ib_order_id as number|null,
-        })));
+        const sentOrders = ibkrPos.filter(p=>p.qty>0).map(p=>({
+          ticker:p.ticker, side:"SELL" as const, requested_qty:p.qty, ib_order_id:null,
+        }));
+        const fillsForAudit=(j.fills??[]).length>0
+          ?(j.fills as Record<string,unknown>[]).map(f=>({ticker:String(f.ticker??""),side:"SELL" as const,requested_qty:Number(f.requested_qty??0),ib_order_id:f.ib_order_id as number|null}))
+          :sentOrders;
+        void auditSaveOrders(approvalId, fillsForAudit);
         void fetch("/api/audit/config-change",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
           client_id: auditClientId(), changed_by:"client", change_type:"sell_all",
           new_value:{ref:j.order_ref, positions:ibkrPos.length}, changed_at: new Date().toISOString(),
@@ -2653,13 +2658,16 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         setFlatFills(j.fills??[]);
         setIbkrPos(null);  // force refresh
         // Audit: log flatten approval + orders
+        // Use j.fills when available; fall back to the orders we submitted
         const approvalId = await auditSaveApproval(null);
-        void auditSaveOrders(approvalId, (j.fills??[]).map((f:Record<string,unknown>)=>({
-          ticker: String(f.ticker??""),
-          side: (String(f.side??"").toUpperCase()==="BUY"?"BUY":"SELL") as "BUY"|"SELL",
-          requested_qty: Number(f.requested_qty??0),
-          ib_order_id: f.ib_order_id as number|null,
-        })));
+        const sentFlat=[
+          ...longs.map(p=>({ticker:p.ticker,side:"SELL" as const,requested_qty:p.qty,ib_order_id:null})),
+          ...shorts.map(p=>({ticker:p.ticker,side:"BUY" as const,requested_qty:Math.abs(p.qty),ib_order_id:null})),
+        ];
+        const fillsForAudit=(j.fills??[]).length>0
+          ?(j.fills as Record<string,unknown>[]).map(f=>({ticker:String(f.ticker??""),side:(String(f.side??"BUY").toUpperCase()==="BUY"?"BUY":"SELL") as "BUY"|"SELL",requested_qty:Number(f.requested_qty??0),ib_order_id:f.ib_order_id as number|null}))
+          :sentFlat;
+        void auditSaveOrders(approvalId, fillsForAudit);
         void fetch("/api/audit/config-change",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
           client_id: auditClientId(), changed_by:"client", change_type:"flatten_all",
           new_value:{ref:j.order_ref, longs:longs.length, shorts:shorts.length}, changed_at: new Date().toISOString(),
@@ -2923,8 +2931,13 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         try{localStorage.setItem(ORDERS_SENT_KEY,JSON.stringify(sent));}catch{}
         setLastSent(sent);
         const fills:Array<{ticker:string;side:string;qty:number;ib_order_id?:number|null}>=j.fills??[];
-        // Save audit order logs (fire-and-forget)
-        void auditSaveOrders(approvalId, fills);
+        // Save audit order logs — fall back to activeOrderRows if IB returns no fills (PreSubmitted)
+        const fillsForAudit=fills.length>0?fills:activeOrderRows.map(r=>({
+          ticker:r.ticker,
+          side:(r.action==="Vender"||r.action==="Reduzir"?"SELL":"BUY"),
+          qty:r.adjEur,ib_order_id:null,
+        }));
+        void auditSaveOrders(approvalId, fillsForAudit);
         const buys=fills.filter((f)=>f.side==="BUY");
         const sells=fills.filter((f)=>f.side==="SELL");
         logActivity({
