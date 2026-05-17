@@ -617,7 +617,7 @@ export default function LandingPage() {
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:20}}>
                 {[
-                  {name:"Joaquim Calça e Pina",role:"Fundador & CEO",roleColor:"#2dd4bf",desc:"Cerca de 30 anos na banca e 10 anos como CEO em Gestão de Ativos — CEO da Santander Asset Management e Santander Pensões.",initials:"JP",photo:"/images/team-jcp.png"},
+                  {name:"Joaquim Calça e Pina",role:"Fundador & CEO",roleColor:"#2dd4bf",desc:"Cerca de 30 anos na banca e 10 anos em Gestão de Activos como CEO da Santander Asset Management e Santander Pensões.",initials:"JP",photo:"/images/team-jcp.png"},
                   {name:"Equipa Quant",role:"Research & Modelos",roleColor:"#60a5fa",desc:"Especialistas em gestão de carteiras e análise quantitativa com experiência institucional.",initials:"EQ"},
                   {name:"Equipa Tech",role:"Engenharia",roleColor:"#a78bfa",desc:"Engenheiros de dados e especialistas em IA aplicada a mercados financeiros.",initials:"ET"},
                   {name:"Equipa Risk",role:"Risco & Compliance",roleColor:"#fb7185",desc:"Especialistas em risco e compliance com experiência em instituições financeiras.",initials:"ER"},
