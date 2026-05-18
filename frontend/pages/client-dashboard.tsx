@@ -1422,8 +1422,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
         </div>
       )}
 
-      {/* ── Custos separados: DECIDE vs Externos — mobile: duas colunas lado a lado ── */}
-      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:gap-4">
+      {/* ── Custos separados: DECIDE vs Externos — mobile: lista vertical; sm+: duas colunas ── */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:gap-4">
         {/* Custos DECIDE */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5 min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Custos DECIDE</div>
@@ -1502,8 +1502,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
         </div>
       </div>
 
-      {/* ── Exemplo real + Comparação de mercado ── */}
-      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:gap-4">
+      {/* ── Exemplo real + Comparação de mercado — mobile: lista vertical ── */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:gap-4">
         {/* Exemplo real */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5 min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Exemplo concreto</div>
