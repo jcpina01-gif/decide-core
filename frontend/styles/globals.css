@@ -189,6 +189,26 @@ aside.decide-dashboard-sidebar .decide-sidebar-logo-slot img.decide-logo-img--he
   box-sizing: border-box;
 }
 
+@media (min-width: 1024px) {
+  /* Sem scroll interno no menu desktop — Tailwind + alguns browsers mantinham barra; forçamos aqui. */
+  aside.decide-dashboard-sidebar > nav.decide-dashboard-sidebar-nav {
+    overflow: hidden !important;
+    overscroll-behavior: auto !important;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+  aside.decide-dashboard-sidebar > nav.decide-dashboard-sidebar-nav::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  .decide-client-dashboard-root .decide-dashboard-desktop-logo .decide-sidebar-logo-slot img.decide-logo-img--header-lockup {
+    max-width: min(10rem, 93%) !important;
+    transform: translateX(-4px) !important;
+  }
+}
+
 img.decide-logo-img:not(.decide-logo-img--plain) {
   -webkit-mask-image: url("/images/logo-decide-principal.png?v=9");
   -webkit-mask-size: contain;

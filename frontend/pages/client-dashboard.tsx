@@ -885,36 +885,36 @@ function Sidebar({user,profile,loggedIn,onRegister,activePage,onNavigate,open,on
             <X size={18}/>
           </button>
         </div>
-        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-2.5 py-3">
+        <nav className="decide-dashboard-sidebar-nav min-h-0 flex-1 space-y-1 px-2.5 py-3 max-lg:overflow-y-auto max-lg:overscroll-contain max-lg:min-h-0 lg:flex-none lg:overflow-hidden lg:overscroll-auto lg:space-y-0.5 lg:px-2 lg:py-2 lg:pb-3">
           {NAV.map(({id,label,Icon})=>(
             <button key={id} onClick={()=>{onNavigate(id as Page);onClose();}}
-              className={["group w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-semibold leading-snug tracking-tight transition-colors min-h-[44px] border",
+              className={["group w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-semibold leading-snug tracking-tight transition-colors min-h-[44px] border lg:min-h-[36px] lg:gap-2 lg:px-2.5 lg:py-1.5 lg:text-[11px]",
                 activePage===id
                   ? "border-teal-500/35 bg-teal-500/[0.08] text-teal-300 shadow-[inset_3px_0_0_0_rgba(45,212,191,0.75)]"
                   : "border-transparent text-slate-400 hover:border-[#1f2937] hover:bg-white/[0.05] hover:text-slate-100 active:bg-white/[0.07]"].join(" ")}>
-              <Icon size={18} className={activePage===id?"text-teal-400":"text-slate-500 group-hover:text-slate-300"} strokeWidth={activePage===id?2.25:2}/>
+              <Icon className={`shrink-0 w-[18px] h-[18px] lg:w-[15px] lg:h-[15px] ${activePage===id?"text-teal-400":"text-slate-500 group-hover:text-slate-300"}`} strokeWidth={activePage===id?2.25:2}/>
               <span className="text-left">{label}</span>
             </button>
           ))}
         </nav>
-        <div className="px-3 py-4 border-t border-[#1a1f2e] space-y-1">
+        <div className="px-3 py-4 lg:mt-auto lg:py-2.5 border-t border-[#1a1f2e] space-y-1 lg:space-y-0 shrink-0">
           {loggedIn ? (
             <>
-              <div className="flex items-center gap-3 px-3 py-2">
-                <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs shrink-0">{initials}</div>
+              <div className="flex items-center gap-3 px-3 py-2 lg:py-1.5">
+                <div className="w-9 h-9 lg:w-8 lg:h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs shrink-0">{initials}</div>
                 <div className="min-w-0">
                   <div className="text-slate-200 text-xs font-semibold truncate">{user??"Utilizador"}</div>
                   <div className="text-slate-400 text-[10px]">Perfil: {profilePt}</div>
                 </div>
               </div>
               <button onClick={()=>void router.push("/client/logout")}
-                className="w-full flex items-center gap-3 px-3 py-2.5 text-slate-500 hover:text-slate-300 text-xs rounded-lg hover:bg-white/5 transition-colors min-h-[44px]">
+                className="w-full flex items-center gap-3 px-3 py-2.5 lg:py-2 text-slate-500 hover:text-slate-300 text-xs rounded-lg hover:bg-white/5 transition-colors min-h-[44px] lg:min-h-0">
                 <LogOut size={14}/>Sair
               </button>
             </>
           ) : (
             <button onClick={()=>{onRegister();onClose();}}
-              className="w-full flex items-center gap-3 px-3 py-2.5 text-slate-400 hover:text-slate-200 text-xs rounded-lg hover:bg-white/5 transition-colors min-h-[44px]">
+              className="w-full flex items-center gap-3 px-3 py-2.5 lg:py-2 text-slate-400 hover:text-slate-200 text-xs rounded-lg hover:bg-white/5 transition-colors min-h-[44px] lg:min-h-0">
               <LogOut size={14}/>Entrar / Criar conta
             </button>
           )}
@@ -5359,18 +5359,18 @@ export default function ClientDashboardPage() {
         className="decide-client-dashboard-root flex h-full min-h-0 w-full max-h-full flex-1 flex-col overflow-hidden bg-[#080c14] text-slate-200 lg:grid lg:h-full lg:max-h-full lg:min-h-0 lg:w-full lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] lg:grid-rows-[auto_1fr]"
         style={{fontFamily:"'Nunito',system-ui,sans-serif"}}>
         {/* Logo desktop: mesma linha que o header à direita — stretch à altura da grelha */}
-        <div className="relative z-40 hidden min-h-0 items-stretch border-b border-[#1a1f2e] bg-[#07090f] px-3 py-0 lg:flex lg:row-start-1 lg:col-start-1 lg:col-end-2 lg:h-full lg:self-stretch">
+        <div className="relative z-40 decide-dashboard-desktop-logo hidden min-h-0 items-stretch border-b border-[#1a1f2e] bg-[#07090f] py-0 pl-1 pr-2 lg:flex lg:row-start-1 lg:col-start-1 lg:col-end-2 lg:h-full lg:self-stretch">
           <div
             className="decide-sidebar-logo-slot flex h-full min-h-[4.5rem] w-full min-w-0 flex-1 items-center justify-start"
             style={{ maxWidth: "100%", boxSizing: "border-box" }}>
             <DecideBrandImage
               priority
               height="100%"
-              maxWidth="100%"
+              maxWidth="min(11rem, 92%)"
               sizes="256px"
               className="decide-header-brand-mark decide-logo-img--plain decide-logo-img--header-lockup"
               knockoutBackground={false}
-              style={{ maxHeight: "min(10rem, 100%)", objectFit: "contain", objectPosition: "left center" }}
+              style={{ maxHeight: "min(9rem, 100%)", objectFit: "contain", objectPosition: "left center" }}
             />
           </div>
         </div>
