@@ -1367,8 +1367,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
               </div>
             </div>
           </div>
-          {/* 3 KPI — sempre em linha (mobile: 3 colunas compactas) */}
-          <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-6 pt-5 border-t border-white/[0.05]">
+          {/* 3 KPI — mobile/tablet: lista; lg+: três colunas */}
+          <div className="grid grid-cols-1 gap-2 lg:grid-cols-3 lg:gap-3 mt-6 pt-5 border-t border-white/[0.05]">
             {[
               {label:"Gestão DECIDE",val:"€29 / mês",sub:"custo fixo, previsível",note:"sem performance fee"},
               {label:"Custos externos (broker)",val:`${EXTERN_PCT.toFixed(2)}% / ano`,sub:`≈ €${fmtInt(aumEur*EXTERN_PCT/100)} / ano`,note:"custódia + transações + FX"},
@@ -1405,7 +1405,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-6 pt-5 border-t border-white/[0.05]">
+          <div className="grid grid-cols-1 gap-2 lg:grid-cols-3 lg:gap-3 mt-6 pt-5 border-t border-white/[0.05]">
             {[
               {label:"Taxa de gestão",val:"0,6% / ano",sub:`≈ €${fmtInt(privateAnnual)} anuais`,note:"0,05%/mês sobre o valor actual da carteira"},
               {label:"Performance fee",val:"Não aplicável",sub:"sem performance fee",note:"custo simples e previsível"},
@@ -1422,8 +1422,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
         </div>
       )}
 
-      {/* ── Custos separados: DECIDE vs Externos — mobile: lista vertical; sm+: duas colunas ── */}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:gap-4">
+      {/* ── Custos separados: DECIDE vs Externos — até lg: uma coluna (lista); lg+: duas ── */}
+      <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 lg:gap-4">
         {/* Custos DECIDE */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5 min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Custos DECIDE</div>
@@ -1502,8 +1502,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
         </div>
       </div>
 
-      {/* ── Exemplo real + Comparação de mercado — mobile: lista vertical ── */}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:gap-4">
+      {/* ── Exemplo real + Comparação de mercado — até lg: uma coluna ── */}
+      <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 lg:gap-4">
         {/* Exemplo real */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5 min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Exemplo concreto</div>
@@ -1562,14 +1562,14 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
         </div>
       </div>
 
-      {/* ── Projecção longo prazo + Quando pagas ── */}
-      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:gap-4">
+      {/* ── Projecção longo prazo + Quando pagas — até lg: uma coluna ── */}
+      <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 lg:gap-4">
         {/* Projecção */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5 min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Impacto dos custos a longo prazo</div>
           <div className="text-[10px] text-slate-600 mb-4 italic">Simulação: €{fmtInt(EX_CAP)} · {YRS} anos · {(HIST_CAGR*100).toFixed(0)}% retorno bruto estimado · simulado, não garantido</div>
-          {/* Cost comparison row — duas colunas também em telemóvel */}
-          <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-4">
+          {/* Cost comparison row — até lg: lista vertical */}
+          <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 lg:gap-3 mb-4">
             <div className="bg-teal-900/15 border border-teal-700/25 rounded-xl p-3">
               <div className="text-[10px] text-teal-400 font-semibold mb-1">DECIDE — custo anual</div>
               <div className="text-xl font-black text-teal-300">{totalFixedPct.toFixed(2)}%</div>
@@ -1582,7 +1582,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
             </div>
           </div>
           {/* Projected final values */}
-          <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-3">
+          <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 lg:gap-3 mb-3">
             <div className="bg-teal-900/10 border border-teal-700/15 rounded-lg px-3 py-2">
               <div className="text-[9px] text-slate-500">Capital final (DECIDE)</div>
               <div className="text-base font-black text-slate-100">€ {fmtInt(dVal)}</div>
