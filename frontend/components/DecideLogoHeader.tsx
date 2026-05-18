@@ -19,7 +19,7 @@ import ClientFundDepositNavLink from "./ClientFundDepositNavLink";
  * Para atualizar o branding: substituir esse PNG e incrementar `?v=` em `DECIDE_LOGO_SRC`
  * (opcional: `python scripts/trim-decide-logo.py` se precisar de margens mais apertadas).
  */
-export const DECIDE_LOGO_SRC = "/images/decide-logo-new.png?v=5";
+export const DECIDE_LOGO_SRC = "/images/decide-logo-new.png?v=6";
 
 /** Dimensões em pixels do PNG (largura × altura). Manter sincronizado com o ficheiro em `public/images`. */
 export const DECIDE_LOGO_INTRINSIC_WIDTH = 1024;
@@ -32,19 +32,20 @@ export const DECIDE_LOGO_SRC_2X = DECIDE_LOGO_SRC;
 export const DECIDE_HEADER_LOGO_BAR_BG = "transparent";
 
 /** Barra de identidade — ocupa a altura útil do header (entre bordas). */
-export const DECIDE_HEADER_LOGO_HEIGHT = "clamp(52px, 12vw, 80px)";
-export const DECIDE_HEADER_LOGO_MAX_WIDTH = "min(calc(100vw - 140px), 720px)";
+export const DECIDE_HEADER_LOGO_HEIGHT = "clamp(64px, 15vw, 120px)";
+export const DECIDE_HEADER_LOGO_MAX_WIDTH = "min(calc(100vw - 120px), 960px)";
 
 /** Landing: hero — lockup mais largo possível dentro da grelha. */
 export const DECIDE_LANDING_LOGO_HEIGHT = "clamp(72px, 16vw, 160px)";
 export const DECIDE_LANDING_LOGO_MAX_WIDTH = "min(92vw, 640px)";
 
 /**
- * Fallback para `paddingTop` antes do `ResizeObserver`.
- * Logo ~148px + padding vertical + borda.
+ * Referência aproximada para layouts (nav + hero KPI + hedge); ajustar se mudar o header.
  */
-/** Referência aproximada para layouts (nav + hero KPI + hedge); ajustar se mudar o header. */
-export const DECIDE_TOP_BAR_HEIGHT_PX = 112;
+export const DECIDE_TOP_BAR_HEIGHT_PX = 168;
+
+/** Altura mínima da linha logo | IBKR/conta — logo enche esta altura (flex + max-height 100%). */
+export const HEADER_TOOLBAR_MIN_HEIGHT_PX = 64;
 
 /** Largura útil opcional para conteúdo. */
 export const DECIDE_HEADER_INNER_MAX_WIDTH_PX = 1400;
@@ -156,12 +157,16 @@ export const decideHeaderNavLinkStyle: CSSProperties = {
   fontWeight: 600,
   color: "var(--text-secondary)",
   textDecoration: "none",
-  padding: "5px 11px",
+  padding: "8px 14px",
   borderRadius: 8,
   border: "1px solid rgba(255, 255, 255, 0.1)",
   background: "rgba(255, 255, 255, 0.04)",
   lineHeight: 1.2,
   whiteSpace: "nowrap",
+  minHeight: HEADER_TOOLBAR_MIN_HEIGHT_PX,
+  boxSizing: "border-box",
+  display: "inline-flex",
+  alignItems: "center",
 };
 
 const accountMenuPanelStyle: CSSProperties = {
@@ -261,54 +266,78 @@ export default function DecideLogoHeader() {
         className="decide-app-header-row"
         style={{
           display: "grid",
-          /* Com chrome cliente: linha 1 = logo | conta; linha 2 = menu (sempre abaixo do logo) */
-          gridTemplateColumns: showClientChrome ? "minmax(0, 1fr) auto" : "auto minmax(0, 1fr) auto",
+          gridTemplateColumns: "minmax(0, 1fr)",
           gridTemplateRows: showClientChrome ? "auto auto" : "auto",
-          columnGap: showClientChrome ? 8 : 10,
+          columnGap: 0,
           rowGap: showClientChrome ? 0 : 0,
-          alignItems: "center",
+          alignItems: "stretch",
           width: "100%",
-          padding: "8px 12px 8px 10px",
+          padding: "10px 12px 10px 10px",
           boxSizing: "border-box",
         }}
       >
+        {/* Uma linha flex: a caixa do logo estica à mesma altura que IBKR + conta (cross-axis stretch). */}
+        <div
+          style={{
+            gridColumn: 1,
+            gridRow: 1,
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "stretch",
+            gap: showClientChrome ? 8 : 10,
+            minWidth: 0,
+            width: "100%",
+            minHeight: HEADER_TOOLBAR_MIN_HEIGHT_PX,
+          }}
+        >
         <Link
           href={logoHref}
           style={{
             display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-start",
-            justifyContent: "center",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "flex-start",
             lineHeight: 0,
-            flexShrink: 0,
-            overflow: "hidden",
-            alignSelf: "center",
-            gridRow: 1,
-            gridColumn: 1,
+            flex: "1 1 auto",
+            flexShrink: 1,
+            minWidth: 0,
+            overflow: "visible",
+            alignSelf: "stretch",
             margin: 0,
             padding: 0,
-            maxWidth: "min(calc(100vw - 150px), 720px)",
-            maxHeight: 88,
+            maxWidth: "min(calc(100vw - 120px), 960px)",
           }}
           aria-label="DECIDE — início"
         >
+          <div
+            className="decide-header-logo-slot"
+            style={{
+              height: "100%",
+              maxHeight: "100%",
+              display: "flex",
+              alignItems: "center",
+              maxWidth: "100%",
+              boxSizing: "border-box",
+            }}
+          >
           <DecideBrandImage
             priority
-            height={84}
-            maxWidth="min(calc(100vw - 150px), 720px)"
-            sizes="(max-width: 768px) calc(100vw - 150px), 720px"
+            height="100%"
+            maxWidth="100%"
+            sizes="(max-width: 768px) calc(100vw - 120px), 960px"
             className="decide-header-brand-mark decide-logo-img--plain decide-logo-img--header-lockup"
             knockoutBackground={false}
+            style={{ objectFit: "contain", objectPosition: "left center" }}
           />
+          </div>
         </Link>
 
         <div
           ref={accountWrapRef}
+          className="decide-app-header-toolbar-actions"
           style={{
-            gridRow: 1,
-            gridColumn: showClientChrome ? 2 : 3,
-            justifySelf: "end",
-            alignSelf: "center",
+            flexShrink: 0,
+            alignSelf: "stretch",
             paddingTop: 0,
             display: "flex",
             alignItems: "center",
@@ -317,6 +346,7 @@ export default function DecideLogoHeader() {
             justifyContent: "flex-end",
             minWidth: 0,
             position: "relative",
+            boxSizing: "border-box",
           }}
         >
           {loggedIn && showClientChrome ? (
@@ -342,7 +372,7 @@ export default function DecideLogoHeader() {
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 6,
-                  minHeight: 30,
+                  minHeight: HEADER_TOOLBAR_MIN_HEIGHT_PX,
                   borderRadius: 8,
                   border: "1px solid rgba(255, 255, 255, 0.12)",
                   background: "rgba(255, 255, 255, 0.04)",
@@ -353,7 +383,7 @@ export default function DecideLogoHeader() {
                   maxWidth: "min(220px, 100%)",
                   fontFamily: "inherit",
                   boxSizing: "border-box",
-                  padding: "4px 10px",
+                  padding: "8px 12px",
                 }}
                 title={sessionUser || "Conta"}
               >
@@ -417,19 +447,20 @@ export default function DecideLogoHeader() {
             </>
           )}
         </div>
+        </div>
 
         {showClientChrome ? (
           <div
             className="decide-app-header-main-nav-wrap"
             style={{
               gridRow: 2,
-              gridColumn: "1 / -1",
+              gridColumn: 1,
               minWidth: 0,
               width: "100%",
               paddingTop: 0,
               marginTop: 0,
               /* Compensa logo maior + margem negativa — menu junto ao bloco sem empurrar a página */
-              transform: "translateY(-28px)",
+              transform: "translateY(-44px)",
               position: "relative",
               zIndex: 2,
               display: "flex",
@@ -469,9 +500,7 @@ export default function DecideLogoHeader() {
               </ClientFundDepositNavLink>
             </div>
           </div>
-        ) : (
-          <div aria-hidden style={{ gridRow: 1, gridColumn: 2, minWidth: 0 }} />
-        )}
+        ) : null}
       </div>
 
       {showClientChrome ? <ClientHedgeMicroLine /> : null}

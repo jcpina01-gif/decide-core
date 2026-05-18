@@ -29,6 +29,7 @@ import {
 } from "../lib/clientAuth";
 import { useSyncedRiskProfileFromOnboarding } from "../hooks/useSyncedRiskProfileFromOnboarding";
 import { KPI_IFRAME_SRC_REV } from "../lib/kpiFlaskBuildGate";
+import { DecideBrandImage, HEADER_TOOLBAR_MIN_HEIGHT_PX } from "../components/DecideLogoHeader";
 
 /* ─── native simulator ──────────────────────────────────────── */
 const PRAZO_OPTS=[1,3,5,10,15,20] as const; // v2
@@ -858,25 +859,41 @@ function Sidebar({user,profile,loggedIn,onRegister,activePage,onNavigate,open,on
       {open&&<div className="fixed inset-0 bg-black/60 z-40 lg:hidden" onClick={onClose}/>}
 
       <aside className={[
-        "flex flex-col w-64 bg-[#07090f] border-r border-[#1a1f2e] shrink-0 z-50",
-        // Mobile: fixed overlay drawer, slide in/out
-        "fixed inset-y-0 left-0 lg:static lg:translate-x-0",
-        "transition-transform duration-200 ease-in-out",
+        /* Desktop: 2ª linha da grelha — nav fica sempre visível ao scroll do main */
+        "decide-dashboard-sidebar flex min-h-0 min-w-0 w-64 shrink-0 flex-col bg-[#07090f] border-r border-[#1a1f2e] z-50",
+        "fixed inset-y-0 left-0 h-full max-h-full transition-transform duration-200 ease-in-out lg:relative lg:inset-auto lg:translate-x-0 lg:row-start-2 lg:col-start-1 lg:col-end-2 lg:h-full lg:w-full lg:max-w-none lg:max-h-full lg:min-h-0 lg:overflow-hidden lg:self-stretch",
         open?"translate-x-0":"-translate-x-full lg:translate-x-0",
       ].join(" ")}>
-        <div className="border-b border-[#1a1f2e] flex items-center justify-between pr-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/images/decide-logo-new.png?v=5" alt="DECIDE" className="h-11 w-auto max-w-[min(100%,280px)] object-contain object-left pl-3" />
-          <button onClick={onClose} className="lg:hidden p-2 text-slate-500 hover:text-slate-300" aria-label="Fechar menu">
+        {/* Logo só no drawer telemóvel; no desktop o logo está na célula da grelha alinhada ao <header> */}
+        <div
+          className="flex shrink-0 items-stretch justify-between gap-2 border-b border-[#1a1f2e] pr-2 lg:hidden"
+          style={{ height: HEADER_TOOLBAR_MIN_HEIGHT_PX, minHeight: HEADER_TOOLBAR_MIN_HEIGHT_PX }}>
+          <div
+            className="decide-sidebar-logo-slot flex min-h-0 flex-1 items-center self-stretch overflow-visible pl-3 py-0"
+            style={{ minHeight: HEADER_TOOLBAR_MIN_HEIGHT_PX, maxWidth: "100%", boxSizing: "border-box" }}>
+            <DecideBrandImage
+              priority
+              height={HEADER_TOOLBAR_MIN_HEIGHT_PX}
+              maxWidth="100%"
+              sizes="256px"
+              className="decide-header-brand-mark decide-logo-img--plain decide-logo-img--header-lockup"
+              knockoutBackground={false}
+              style={{ objectFit: "contain", objectPosition: "left center" }}
+            />
+          </div>
+          <button onClick={onClose} className="flex shrink-0 items-center justify-center self-stretch px-3 min-w-[44px] text-slate-500 hover:text-slate-300" aria-label="Fechar menu">
             <X size={18}/>
           </button>
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-2.5 py-3">
           {NAV.map(({id,label,Icon})=>(
             <button key={id} onClick={()=>{onNavigate(id as Page);onClose();}}
-              className={["w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors min-h-[44px]",
-                activePage===id?"bg-blue-600/15 text-blue-400 border border-blue-500/25":"text-slate-400 hover:text-slate-200 hover:bg-white/5 active:bg-white/10"].join(" ")}>
-              <Icon size={17}/>{label}
+              className={["group w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-semibold leading-snug tracking-tight transition-colors min-h-[44px] border",
+                activePage===id
+                  ? "border-teal-500/35 bg-teal-500/[0.08] text-teal-300 shadow-[inset_3px_0_0_0_rgba(45,212,191,0.75)]"
+                  : "border-transparent text-slate-400 hover:border-[#1f2937] hover:bg-white/[0.05] hover:text-slate-100 active:bg-white/[0.07]"].join(" ")}>
+              <Icon size={18} className={activePage===id?"text-teal-400":"text-slate-500 group-hover:text-slate-300"} strokeWidth={activePage===id?2.25:2}/>
+              <span className="text-left">{label}</span>
             </button>
           ))}
         </nav>
@@ -1350,18 +1367,18 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
               </div>
             </div>
           </div>
-          {/* 3-col KPI */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-6 pt-5 border-t border-white/[0.05]">
+          {/* 3 KPI — sempre em linha (mobile: 3 colunas compactas) */}
+          <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-6 pt-5 border-t border-white/[0.05]">
             {[
               {label:"Gestão DECIDE",val:"€29 / mês",sub:"custo fixo, previsível",note:"sem performance fee"},
               {label:"Custos externos (broker)",val:`${EXTERN_PCT.toFixed(2)}% / ano`,sub:`≈ €${fmtInt(aumEur*EXTERN_PCT/100)} / ano`,note:"custódia + transações + FX"},
               {label:"Custo total estimado",val:`${totalFixedPct.toFixed(2)}% / ano`,sub:`€${fmtInt(premiumAnnual+aumEur*EXTERN_PCT/100)} anuais`,note:`a preços actuais do portfólio`},
             ].map(k=>(
-              <div key={k.label} className="bg-white/[0.03] border border-white/[0.05] rounded-xl px-4 py-3">
-                <div className="text-[10px] text-slate-600 mb-2">{k.label}</div>
-                <div className="text-lg font-black text-slate-100">{k.val}</div>
-                <div className="text-[10px] text-slate-500 mt-1">{k.sub}</div>
-                <div className="text-[10px] text-slate-600 mt-0.5 italic">{k.note}</div>
+              <div key={k.label} className="bg-white/[0.03] border border-white/[0.05] rounded-xl px-2 py-2.5 sm:px-4 sm:py-3 min-w-0">
+                <div className="text-[9px] sm:text-[10px] text-slate-600 mb-1 sm:mb-2 leading-tight">{k.label}</div>
+                <div className="text-sm sm:text-lg font-black text-slate-100 leading-tight break-words">{k.val}</div>
+                <div className="text-[9px] sm:text-[10px] text-slate-500 mt-1 leading-tight">{k.sub}</div>
+                <div className="text-[8px] sm:text-[10px] text-slate-600 mt-0.5 italic leading-tight">{k.note}</div>
               </div>
             ))}
           </div>
@@ -1388,27 +1405,27 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-6 pt-5 border-t border-white/[0.05]">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-6 pt-5 border-t border-white/[0.05]">
             {[
               {label:"Taxa de gestão",val:"0,6% / ano",sub:`≈ €${fmtInt(privateAnnual)} anuais`,note:"0,05%/mês sobre o valor actual da carteira"},
               {label:"Performance fee",val:"Não aplicável",sub:"sem performance fee",note:"custo simples e previsível"},
               {label:"Custos externos (broker)",val:`${EXTERN_PCT.toFixed(2)}% / ano`,sub:`≈ €${fmtInt(aumEur*EXTERN_PCT/100)} anuais`,note:"custódia + transações + FX"},
             ].map(k=>(
-              <div key={k.label} className="bg-white/[0.03] border border-white/[0.05] rounded-xl px-4 py-3">
-                <div className="text-[10px] text-slate-600 mb-2">{k.label}</div>
-                <div className="text-lg font-black text-slate-100">{k.val}</div>
-                <div className="text-[10px] text-slate-500 mt-1">{k.sub}</div>
-                <div className="text-[10px] text-slate-600 mt-0.5 italic">{k.note}</div>
+              <div key={k.label} className="bg-white/[0.03] border border-white/[0.05] rounded-xl px-2 py-2.5 sm:px-4 sm:py-3 min-w-0">
+                <div className="text-[9px] sm:text-[10px] text-slate-600 mb-1 sm:mb-2 leading-tight">{k.label}</div>
+                <div className="text-sm sm:text-lg font-black text-slate-100 leading-tight break-words">{k.val}</div>
+                <div className="text-[9px] sm:text-[10px] text-slate-500 mt-1 leading-tight">{k.sub}</div>
+                <div className="text-[8px] sm:text-[10px] text-slate-600 mt-0.5 italic leading-tight">{k.note}</div>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* ── Custos separados: DECIDE vs Externos — 1 coluna em telemóvel/tablet até lg ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* ── Custos separados: DECIDE vs Externos — mobile: duas colunas lado a lado ── */}
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:gap-4">
         {/* Custos DECIDE */}
-        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5 min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Custos DECIDE</div>
           {!isPrivate?(
             <div className="space-y-3">
@@ -1456,9 +1473,9 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
         </div>
 
         {/* Custos externos */}
-        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
-          <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Custos externos (Interactive Brokers)</div>
-          <div className="text-[11px] text-slate-500 mb-4 leading-relaxed">
+        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5 min-w-0">
+          <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-3 sm:mb-4">Custos externos (IB)</div>
+          <div className="text-[10px] sm:text-[11px] text-slate-500 mb-3 sm:mb-4 leading-relaxed">
             Estes custos são cobrados directamente pelo broker e <span className="text-slate-400 font-semibold">não beneficiam o DECIDE</span>. São estimativas baseadas na actividade típica de carteiras com o seu perfil.
           </div>
           <div className="space-y-0">
@@ -1486,9 +1503,9 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
       </div>
 
       {/* ── Exemplo real + Comparação de mercado ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:gap-4">
         {/* Exemplo real */}
-        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5 min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Exemplo concreto</div>
           <div className="text-[11px] text-slate-500 mb-4">Carteira de €{fmtInt(EX_CAP)} · estimativa anual</div>
           <div className="space-y-2.5">
@@ -1517,7 +1534,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
         </div>
 
         {/* Comparação mercado — sóbria */}
-        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5 min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Contexto de mercado</div>
           <div className="space-y-4">
             {[
@@ -1546,13 +1563,13 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
       </div>
 
       {/* ── Projecção longo prazo + Quando pagas ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:gap-4">
         {/* Projecção */}
-        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5 min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Impacto dos custos a longo prazo</div>
           <div className="text-[10px] text-slate-600 mb-4 italic">Simulação: €{fmtInt(EX_CAP)} · {YRS} anos · {(HIST_CAGR*100).toFixed(0)}% retorno bruto estimado · simulado, não garantido</div>
-          {/* Cost comparison row — 1 coluna em telemóvel */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
+          {/* Cost comparison row — duas colunas também em telemóvel */}
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-4">
             <div className="bg-teal-900/15 border border-teal-700/25 rounded-xl p-3">
               <div className="text-[10px] text-teal-400 font-semibold mb-1">DECIDE — custo anual</div>
               <div className="text-xl font-black text-teal-300">{totalFixedPct.toFixed(2)}%</div>
@@ -1565,7 +1582,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
             </div>
           </div>
           {/* Projected final values */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-3">
             <div className="bg-teal-900/10 border border-teal-700/15 rounded-lg px-3 py-2">
               <div className="text-[9px] text-slate-500">Capital final (DECIDE)</div>
               <div className="text-base font-black text-slate-100">€ {fmtInt(dVal)}</div>
@@ -1598,7 +1615,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
         </div>
 
         {/* Quando pagas */}
-        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5 min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Quando e como paga</div>
           <div className="space-y-4">
             {(isPrivate?[
@@ -1956,14 +1973,14 @@ function AjudaPage() {
       {/* ── Como começar ── */}
       <div className="bg-gradient-to-br from-[#0b0f1a] to-[#0d1220] border border-[#1a1f2e] rounded-xl p-5">
         <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Como começar</div>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="-mx-1 flex flex-row gap-3 overflow-x-auto px-1 pb-1 [-webkit-overflow-scrolling:touch] sm:mx-0 sm:grid sm:grid-cols-4 sm:overflow-visible sm:px-0 sm:pb-0">
           {[
             {n:"1",title:"Definir o teu perfil",desc:"Selecciona o perfil de risco (Conservador, Moderado, Dinâmico) e preferência de hedge cambial no onboarding ou no topo da plataforma.",icon:<ShieldCheck size={14} className="text-teal-400"/>},
             {n:"2",title:"Rever as recomendações",desc:"No início de cada mês, o modelo gera um novo plano. Revê na página Recomendações e aprova se concordas.",icon:<BookOpen size={14} className="text-blue-400"/>},
             {n:"3",title:"Enviar ordens",desc:"Depois de aprovares o plano, envia as ordens à Interactive Brokers. O sistema gera e envia automaticamente.",icon:<Send size={14} className="text-emerald-400"/>},
             {n:"4",title:"Acompanhar o desempenho",desc:"Consulta as páginas Performance, Risco e Histórico para acompanhar a evolução da carteira ao longo do tempo.",icon:<TrendingUp size={14} className="text-amber-400"/>},
           ].map(s=>(
-            <div key={s.n} className="bg-white/[0.03] border border-white/[0.05] rounded-xl p-4">
+            <div key={s.n} className="w-[min(100%,17rem)] shrink-0 bg-white/[0.03] border border-white/[0.05] rounded-xl p-4 sm:w-auto sm:min-w-0">
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-6 h-6 rounded-full bg-white/[0.05] flex items-center justify-center text-[10px] font-black text-slate-400">{s.n}</div>
                 {s.icon}
@@ -2105,7 +2122,7 @@ function AjudaPage() {
           O DECIDE é construído e gerido por pessoas reais. Se tiveres dúvidas que a plataforma não resolve,
           ou simplesmente quiseres perceber melhor como funciona — estamos disponíveis.
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {[
             {icon:<Mail size={16} className="text-teal-400"/>,label:"Email",sub:"Resposta em 24–48h",action:"jcpina01@decidepoweredbyai.com",href:"mailto:jcpina01@decidepoweredbyai.com",bg:"bg-teal-900/10 border-teal-700/20"},
             {icon:<Activity size={16} className="text-amber-400"/>,label:"Agendar chamada",sub:"Revisão da carteira",action:"15 min · gratuito",href:"mailto:jcpina01@decidepoweredbyai.com?subject=Agendar%20chamada%20DECIDE",bg:"bg-amber-900/10 border-amber-700/20"},
@@ -5337,11 +5354,31 @@ export default function ClientDashboardPage() {
       <Head><title>Dashboard — DECIDE</title></Head>
       {showRegModal&&<RegisterModal onClose={()=>setShowRegModal(false)} onSuccess={handleRegisterSuccess}/>}
 
-      <div className="flex min-h-screen bg-[#080c14] text-slate-200" style={{fontFamily:"'Nunito',system-ui,sans-serif"}}>
+      {/* Desktop: grelha — linha 1 [logo | header] mesma altura; linha 2 [nav | main scroll]. Mobile: coluna + drawer. */}
+      <div
+        className="decide-client-dashboard-root flex h-full min-h-0 w-full max-h-full flex-1 flex-col overflow-hidden bg-[#080c14] text-slate-200 lg:grid lg:h-full lg:max-h-full lg:min-h-0 lg:w-full lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] lg:grid-rows-[auto_1fr]"
+        style={{fontFamily:"'Nunito',system-ui,sans-serif"}}>
+        {/* Logo desktop: mesma linha que o header à direita — stretch à altura da grelha */}
+        <div className="relative z-40 hidden min-h-0 items-stretch border-b border-[#1a1f2e] bg-[#07090f] px-3 py-0 lg:flex lg:row-start-1 lg:col-start-1 lg:col-end-2 lg:h-full lg:self-stretch">
+          <div
+            className="decide-sidebar-logo-slot flex h-full min-h-[4.5rem] w-full min-w-0 flex-1 items-center justify-start"
+            style={{ maxWidth: "100%", boxSizing: "border-box" }}>
+            <DecideBrandImage
+              priority
+              height="100%"
+              maxWidth="100%"
+              sizes="256px"
+              className="decide-header-brand-mark decide-logo-img--plain decide-logo-img--header-lockup"
+              knockoutBackground={false}
+              style={{ maxHeight: "min(10rem, 100%)", objectFit: "contain", objectPosition: "left center" }}
+            />
+          </div>
+        </div>
+
         <Sidebar user={sessionUser} profile={profile} loggedIn={loggedIn} onRegister={()=>setShowRegModal(true)}
           activePage={activePage} onNavigate={navigateToPage} open={sidebarOpen} onClose={()=>setSidebarOpen(false)}/>
 
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden lg:col-start-2 lg:col-end-3 lg:row-start-1 lg:min-h-0">
           {/* discrete top bar for guests */}
           {!loggedIn&&<div className="bg-blue-950/60 border-b border-blue-800/30 px-8 py-2 flex items-center gap-3 text-xs text-slate-400">
             <span className="text-blue-400">●</span>
@@ -5353,9 +5390,8 @@ export default function ClientDashboardPage() {
             </div>
           )}
 
-          <main className="flex-1 overflow-y-auto overflow-x-hidden lg:overflow-x-visible">
-            {/* ── Page title bar + faixa de config — sticky dentro do main (menu sempre visível ao scroll) ── */}
-            <div className="sticky top-0 z-30 flex flex-col border-b border-[#1a1f2e] bg-[#080c14]/98 backdrop-blur-md supports-[backdrop-filter]:bg-[#080c14]/92">
+            {/* Título + filtros — linha 1 da grelha (desktop), alinhados à altura do logo */}
+            <header className="z-30 shrink-0 flex flex-col border-b border-[#1a1f2e] bg-[#080c14]/98 backdrop-blur-md supports-[backdrop-filter]:bg-[#080c14]/92">
               {/* Top row: hamburger + title + quick actions */}
               <div className="flex items-center gap-3 px-3 sm:px-6 lg:px-8 py-3 lg:py-4">
                 {/* Hamburger (mobile only) */}
@@ -5500,8 +5536,10 @@ export default function ClientDashboardPage() {
                   <Bell size={15} className="text-slate-400"/>
                 </button>
               </div>
-            </div>
+            </header>
+          </div>
 
+            <main className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-y-contain lg:col-start-2 lg:col-end-3 lg:row-start-2 lg:min-h-0">
             {/* ── Config side panel overlay ── */}
             {configPanelOpen&&(
               <div className="fixed inset-0 z-50 flex" onClick={()=>setConfigPanelOpen(false)}>
@@ -5608,7 +5646,7 @@ export default function ClientDashboardPage() {
               </div>
             )}
 
-            <div className="px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-5">
+            <div className="w-full min-w-0 px-3 py-4 space-y-4 sm:px-6 sm:py-5 sm:space-y-5 lg:px-8 lg:py-6">
 
 
               {/* ── RELATÓRIOS ── */}
@@ -6432,12 +6470,12 @@ export default function ClientDashboardPage() {
               {/* ── RECOMENDAÇÕES ── */}
               {activePage==="reco"&&(
               <>{/* 1. recomendação */}
-              <div data-section="reco" className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 lg:p-6">
+              <div data-section="reco" className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 lg:p-6 w-full min-w-0">
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5 lg:gap-8">
                   {/* Action counts */}
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-slate-500 font-medium mb-4 uppercase tracking-widest">Recomendação · {recoLabel}</div>
-                    <div className="flex flex-wrap gap-2 lg:gap-4">
+                    <div className="-mx-1 flex flex-nowrap gap-2 overflow-x-auto overflow-y-visible pb-1 px-1 scrollbar-none snap-x snap-mandatory [-webkit-overflow-scrolling:touch] lg:mx-0 lg:flex-wrap lg:gap-4 lg:overflow-visible lg:px-0 lg:pb-0">
                       {[
                         {label:"Nova posição", count:recoLoading?0:(officialCounts??actionCounts).comprar,  c:"text-teal-400",  bg:"bg-teal-500/10",  b:"border-teal-500/20"},
                         {label:"Reforçar",     count:recoLoading?0:(officialCounts??actionCounts).aumentar, c:"text-blue-400",  bg:"bg-blue-500/10",  b:"border-blue-500/20"},
@@ -6445,7 +6483,7 @@ export default function ClientDashboardPage() {
                         {label:"Encerrar",     count:recoLoading?0:(officialCounts??actionCounts).vender,   c:"text-red-400",   bg:"bg-red-500/10",   b:"border-red-500/20"},
                         {label:"Manter",       count:recoLoading?0:(officialCounts??actionCounts).manter,   c:"text-slate-400", bg:"bg-slate-800/40", b:"border-slate-700/30"},
                       ].map(x=>(
-                        <div key={x.label} className={`flex flex-col items-center gap-1.5 rounded-xl px-4 py-3 ${x.bg} border ${x.b} min-w-[68px]`}>
+                        <div key={x.label} className={`flex shrink-0 snap-start flex-col items-center gap-1.5 rounded-xl px-4 py-3 ${x.bg} border ${x.b} min-w-[4.75rem] lg:min-w-[68px] lg:shrink`}>
                           <span className={`text-2xl lg:text-3xl font-black tabular-nums ${x.c}`}>{x.count}</span>
                           <span className={`text-[10px] font-semibold ${x.c} opacity-80`}>{x.label}</span>
                         </div>
@@ -6474,7 +6512,7 @@ export default function ClientDashboardPage() {
               </div>
 
               {/* O que mudou (full width) */}
-              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 w-full min-w-0">
                 <SH title="O que mudou"/>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-6 mt-3">
                   {whatChanged.map((b,i)=>(
@@ -6492,8 +6530,8 @@ export default function ClientDashboardPage() {
               </div>
 
               {/* Recomendações completas */}
-              <div className="bg-[#0b0f1a] border-y lg:border border-[#1a1f2e] lg:rounded-xl py-3 lg:p-5 max-lg:w-screen max-lg:max-w-[100vw] max-lg:ml-[calc(50%-50vw)] max-lg:mr-[calc(50%-50vw)] lg:mx-0 lg:w-auto lg:max-w-none">
-                <div className="flex items-center justify-between mb-4 px-3 lg:px-0">
+              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden p-5 w-full min-w-0 max-w-full">
+                <div className="flex items-center justify-between mb-4 px-3 lg:mb-4 lg:px-0">
                   <SH title="Recomendações"/>
                   <span className="text-slate-500 text-xs -mt-4">{actionCounts.allRows.length} posições</span>
                 </div>
@@ -6502,20 +6540,20 @@ export default function ClientDashboardPage() {
                 ):actionCounts.allRows.length===0?(
                   <div className="text-slate-500 text-sm text-center py-6">Sem recomendações este mês</div>
                 ):(
-                  <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
+                  <div className="w-full min-w-0 overflow-x-auto px-0 sm:px-0 lg:px-0">
+                  <table className="w-full min-w-[640px] border-collapse text-xs">
                     <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
-                      <th className="text-left py-2 pl-3 sm:pl-4 font-semibold w-full">Ativo</th>
-                      <th className="text-left py-2 px-3 font-semibold hidden sm:table-cell">Setor</th>
-                      <th className="text-left py-2 px-3 font-semibold hidden sm:table-cell">País</th>
-                      <th className="text-right py-2 px-4 font-semibold whitespace-nowrap">
+                      <th className="py-2 pl-0 pr-2 text-left font-semibold">Ativo</th>
+                      <th className="hidden py-2 px-2 text-left font-semibold sm:table-cell">Setor</th>
+                      <th className="hidden py-2 px-2 text-left font-semibold sm:table-cell">País</th>
+                      <th className="whitespace-nowrap py-2 px-2 text-right font-semibold sm:px-3">
                         <span title="Peso no plano do mês anterior">Mês ant.</span>
                       </th>
-                      <th className="text-right py-2 px-4 font-semibold whitespace-nowrap">
+                      <th className="whitespace-nowrap py-2 px-2 text-right font-semibold sm:px-3">
                         <span title="Peso no plano deste mês">Este mês</span>
                       </th>
-                      <th className="text-right py-2 px-3 font-semibold hidden sm:table-cell">&#916;</th>
-                      <th className="text-right py-2 pr-3 sm:pr-4 font-semibold whitespace-nowrap">Ação</th>
+                      <th className="hidden py-2 px-2 text-right font-semibold sm:table-cell">&#916;</th>
+                      <th className="whitespace-nowrap py-2 pl-2 pr-0 text-right font-semibold sm:pr-1">Ação</th>
                     </tr></thead>
                     <tbody>
                       {(()=>{
@@ -6535,7 +6573,7 @@ export default function ClientDashboardPage() {
                               <tr
                                 onClick={!isXeon?()=>setExpandedReco(v=>v===r.ticker?null:r.ticker):undefined}
                                 className={`border-b border-[#0d1220] transition-colors duration-100 ${isXeon?"opacity-60":"cursor-pointer hover:bg-white/[0.03]"} ${!isXeon?rowAccent(r.action):""} ${expandedReco===r.ticker?"bg-white/[0.03]":""}`}>
-                                <td className="py-3 pl-3 sm:pl-4">
+                                <td className="py-3 pl-0 pr-2 sm:pl-1">
                                   {isXeon?(
                                     <span className="font-bold text-slate-400">XEON</span>
                                   ):(
@@ -6648,7 +6686,7 @@ export default function ClientDashboardPage() {
 
               {/* ── CARTEIRA ── */}
               {activePage==="carteira"&&(
-                <div className="space-y-4 sm:space-y-5">
+                <div className="w-full min-w-0 space-y-4 sm:space-y-5">
 
                   {/* ── Summary strip ── */}
                   {(()=>{
@@ -6680,7 +6718,7 @@ export default function ClientDashboardPage() {
                       return Math.abs(pct-tgt)>=1;
                     }).length:0;
                     return(
-                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div className="grid grid-cols-4 gap-3 max-lg:grid-cols-2">
                         {[
                           {label:"Acções", val:`${equityPct.toFixed(0)}%`, sub:"exposição a acções", c:"text-teal-400", acc:"border-teal-500/20", bg:"bg-teal-500/5"},
                           {label:"Liquidez (MM)", val:`${cashPct.toFixed(0)}%`, sub:"XEON / cash", c:"text-slate-300", acc:"border-slate-600/30", bg:"bg-slate-800/20"},
@@ -6762,18 +6800,18 @@ export default function ClientDashboardPage() {
                         </div>
                       )}
                       {cartIbPos!==null&&cartIbPos.length>0&&(
-                        <div className="bg-[#0b0f1a] border-y lg:border border-[#1a1f2e] lg:rounded-xl overflow-hidden max-lg:w-screen max-lg:max-w-[100vw] max-lg:ml-[calc(50%-50vw)] max-lg:mr-[calc(50%-50vw)] lg:mx-0 lg:w-auto lg:max-w-none">
-                          <div className="overflow-x-auto">
-                          <table className="w-full text-xs">
+                        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden w-full min-w-0 max-w-full">
+                          <div className="w-full min-w-0 overflow-x-auto px-0">
+                          <table className="w-full min-w-[520px] border-collapse text-xs">
                             <thead><tr className="text-slate-500 border-b border-[#1a1f2e] font-semibold">
-                              <th className="text-left px-3 sm:px-4 py-3 w-full">Ativo</th>
-                              <th className="text-left px-2 py-3 hidden sm:table-cell">Nome</th>
-                              <th className="text-left px-2 py-3 hidden sm:table-cell">Setor</th>
-                              <th className="text-left px-2 py-3 hidden sm:table-cell">País</th>
-                              <th className="text-right px-2 py-3 hidden sm:table-cell">Qtd</th>
-                              <th className="text-right px-3 sm:px-4 py-3 whitespace-nowrap">Valor</th>
-                              <th className="text-right px-3 sm:px-4 py-3 whitespace-nowrap">Peso %</th>
-                              <th className="text-right px-3 sm:px-4 py-3 text-slate-600 whitespace-nowrap" title="Diferença face ao peso-alvo do plano">Desvio</th>
+                              <th className="px-2 py-3 text-left sm:px-3">Ativo</th>
+                              <th className="hidden px-2 py-3 text-left sm:table-cell">Nome</th>
+                              <th className="hidden px-2 py-3 text-left sm:table-cell">Setor</th>
+                              <th className="hidden px-2 py-3 text-left sm:table-cell">País</th>
+                              <th className="hidden px-2 py-3 text-right sm:table-cell">Qtd</th>
+                              <th className="whitespace-nowrap px-2 py-3 text-right sm:px-3">Valor</th>
+                              <th className="whitespace-nowrap px-2 py-3 text-right sm:px-3">Peso %</th>
+                              <th className="whitespace-nowrap px-2 py-3 text-right text-slate-600 sm:px-3" title="Diferença face ao peso-alvo do plano">Desvio</th>
                             </tr></thead>
                             <tbody>
                               {(()=>{
@@ -7092,8 +7130,8 @@ export default function ClientDashboardPage() {
                     );
                   })()}
 
-                  <div className="bg-[#0b0f1a] border-y lg:border border-[#1a1f2e]/60 lg:rounded-xl p-5 max-lg:w-screen max-lg:max-w-[100vw] max-lg:ml-[calc(50%-50vw)] max-lg:mr-[calc(50%-50vw)] lg:mx-0 lg:w-auto lg:max-w-none">
-                    <div className="flex items-center justify-between mb-4">
+                  <div className="bg-[#0b0f1a] border border-[#1a1f2e]/60 rounded-xl p-5 w-full min-w-0 max-w-full">
+                    <div className="flex items-center justify-between mb-4 max-lg:px-3 lg:mb-4 lg:px-0">
                       <div>
                         <div className="font-bold text-slate-200 text-sm">Posições do plano</div>
                         <div className="text-[10px] text-slate-600 mt-0.5">{actionCounts.allRows.length} posições · {nChanges} com alteração · {actionCounts.manter} sem alteração</div>
@@ -7118,20 +7156,20 @@ export default function ClientDashboardPage() {
                         </label>
                       </div>
                     </div>
-                    <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
+                    <div className="w-full min-w-0 overflow-x-auto">
+                    <table className="w-full min-w-[720px] border-collapse text-xs">
                       <thead><tr className="text-slate-500 border-b border-[#1a1f2e] font-semibold">
-                        <th className="text-left pb-2">Ativo</th>
-                        <th className="text-left pb-2 hidden sm:table-cell">Nome</th>
-                        <th className="text-left pb-2 text-slate-600 font-medium hidden sm:table-cell">Setor</th>
-                        <th className="text-left pb-2 text-slate-600 font-medium hidden sm:table-cell">País</th>
-                        {portfolioQuality&&<th className="text-right pb-2 text-slate-600 font-medium hidden sm:table-cell" title="Return on Invested Capital (TTM)">ROIC</th>}
-                        <th className="text-right pb-2">Mês ant.</th>
-                        <th className="text-right pb-2">Este mês</th>
-                        <th className="text-right pb-2">Δ</th>
-                        <th className="text-right pb-2 hidden sm:table-cell">Preço</th>
-                        <th className="text-right pb-2 hidden sm:table-cell">Acções</th>
-                        <th className="text-right pb-2">Acção</th>
+                        <th className="pb-2 pr-2 text-left">Ativo</th>
+                        <th className="hidden pb-2 px-2 text-left sm:table-cell">Nome</th>
+                        <th className="hidden pb-2 px-2 text-left text-slate-600 font-medium sm:table-cell">Setor</th>
+                        <th className="hidden pb-2 px-2 text-left text-slate-600 font-medium sm:table-cell">País</th>
+                        {portfolioQuality&&<th className="hidden pb-2 px-2 text-right text-slate-600 font-medium sm:table-cell" title="Return on Invested Capital (TTM)">ROIC</th>}
+                        <th className="pb-2 px-2 text-right whitespace-nowrap">Mês ant.</th>
+                        <th className="pb-2 px-2 text-right whitespace-nowrap">Este mês</th>
+                        <th className="pb-2 px-2 text-right whitespace-nowrap">Δ</th>
+                        <th className="hidden pb-2 px-2 text-right sm:table-cell whitespace-nowrap">Preço</th>
+                        <th className="hidden pb-2 px-2 text-right sm:table-cell whitespace-nowrap">Acções</th>
+                        <th className="pb-2 pl-2 text-right whitespace-nowrap">Acção</th>
                       </tr></thead>
                       <tbody>
                         {(()=>{
@@ -7212,16 +7250,12 @@ export default function ClientDashboardPage() {
                                 <td className={`py-2.5 text-right font-semibold tabular-nums ${isHedge?"text-slate-600":delta>0?"text-teal-400":delta<0?"text-red-400":"text-slate-600"}`}>
                                   {isHedge?"—":Math.abs(delta)>=0.05?`${delta>0?"+":""}${delta.toFixed(1)}pp`:"—"}
                                 </td>
-                                <td className="py-2.5 text-right hidden sm:table-cell">
-                                  {!isHedge&&!isXeon&&r.action!=="Manter"&&<span className={`text-[10px] font-semibold ${actionColor2(r.action)}`}>{actionLabel2(r.action)}</span>}
-                                </td>
                                 {(()=>{
                                   if(isHedge||isXeon) return <><td className="py-2 text-right text-slate-600 hidden sm:table-cell">—</td><td className="py-2 text-right text-slate-600 hidden sm:table-cell">—</td></>;
                                   const p=prices[r.ticker];
                                   const priceVal=p?.price;
                                   const ccy=p?.currency??"USD";
                                   const ccySym=ccy==="EUR"?"€":ccy==="GBp"?"p":ccy==="GBP"?"£":"$";
-                                  // redistribute unpriced weights to priced tickers for share calculation
                                   const effW=priceVal&&pricedWsum>0?(r.cur/pricedWsum)*equityTotal:r.cur;
                                   const shares=p?.qty!=null?Math.round(p.qty):priceVal&&effW>0?Math.round((effW/100)*aum/priceVal):null;
                                   return (
@@ -7235,6 +7269,9 @@ export default function ClientDashboardPage() {
                                     </>
                                   );
                                 })()}
+                                <td className="py-2.5 text-right">
+                                  {!isHedge&&!isXeon&&r.action!=="Manter"&&<span className={`text-[10px] font-semibold ${actionColor2(r.action)}`}>{actionLabel2(r.action)}</span>}
+                                </td>
                               </tr>
                             );
                           });
@@ -7243,7 +7280,7 @@ export default function ClientDashboardPage() {
                         <tr className="border-t-2 border-slate-600 bg-slate-800/40">
                           <td colSpan={portfolioQuality?6:5} className="py-2 text-right text-slate-400 font-semibold text-xs pr-3">Total</td>
                           <td className="py-2 text-right font-bold text-emerald-400">100.0%</td>
-                          <td colSpan={2} className="py-2 text-slate-600 text-xs pl-2">(normalizado)</td>
+                          <td colSpan={portfolioQuality?4:4} className="py-2 text-slate-600 text-xs pl-2">(normalizado)</td>
                         </tr>
                       </tbody>
                     </table>
@@ -7877,8 +7914,7 @@ export default function ClientDashboardPage() {
               )}
 
             </div>
-          </main>
-        </div>
+            </main>
       </div>
     </>
   );

@@ -126,15 +126,15 @@ header.decide-top-header--app img.decide-header-brand-mark.decide-logo-img--plai
   filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.42)) !important;
 }
 
-/* Lockup header — proporção = DECIDE_LOGO_INTRINSIC_WIDTH / HEIGHT em DecideLogoHeader.tsx */
+/* Lockup header — proporção = DECIDE_LOGO_INTRINSIC_WIDTH / HEIGHT em DecideLogoHeader.tsx.
+ * Altura máxima vem do inline style em DecideBrandImage (evita !important aqui a sobrepor o React). */
 header.decide-top-header--app img.decide-logo-img--header-lockup {
   object-fit: contain !important;
   object-position: left center !important;
-  aspect-ratio: 732 / 200 !important;
+  aspect-ratio: 1024 / 330 !important;
   width: auto !important;
   height: auto !important;
-  max-height: min(84px, 20vw) !important;
-  max-width: min(calc(100vw - 150px), 720px) !important;
+  max-width: min(calc(100vw - 120px), 960px) !important;
   transform: none !important;
   transform-origin: left center;
 }
@@ -145,11 +145,48 @@ header.decide-top-header--app a[aria-label="DECIDE — início"] {
   background-color: transparent !important;
 }
 
+/* Slot à esquerda: altura = linha IBKR/conta; imagem escala até encostar (max cap em desktop). */
+header.decide-top-header--app .decide-header-logo-slot {
+  min-height: 100%;
+}
+
+header.decide-top-header--app .decide-header-logo-slot img.decide-logo-img--header-lockup {
+  /* Até à altura da linha IBKR/conta (stretch); teto só para não dominar em ecrãs enormes */
+  max-height: min(176px, 100%) !important;
+  max-width: 100% !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+header.decide-top-header--app .decide-app-header-toolbar-actions {
+  align-content: center;
+}
+
 /* Garantir que o canal alpha do PNG não é tapado por fundo implícito */
 header.decide-top-header--app img.decide-logo-img--header-lockup.decide-header-brand-mark {
   background: transparent !important;
   background-color: transparent !important;
   box-shadow: none;
+}
+
+/* `/client-dashboard`: sidebar — mesmo lockup que `decide-top-header--app` (sem DecideLogoHeader nesta rota). */
+aside.decide-dashboard-sidebar .decide-sidebar-logo-slot img.decide-logo-img--header-lockup {
+  object-fit: contain !important;
+  object-position: left center !important;
+  aspect-ratio: 1024 / 330 !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: 100% !important;
+  transform: none !important;
+  transform-origin: left center;
+  max-height: min(176px, 100%) !important;
+}
+
+/* Dashboard v2 (`/client-dashboard`): raiz da grelha ocupa 100% da coluna — evita margem fantasma à esquerda do main. */
+.decide-client-dashboard-root {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 img.decide-logo-img:not(.decide-logo-img--plain) {

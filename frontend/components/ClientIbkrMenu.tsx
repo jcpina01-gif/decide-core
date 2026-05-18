@@ -107,7 +107,7 @@ export default function ClientIbkrMenu({ open, onOpenChange }: ClientIbkrMenuPro
           display: "inline-flex",
           alignItems: "center",
           gap: 6,
-          minHeight: 30,
+          minHeight: 64,
           borderRadius: 8,
           border: "1px solid rgba(255, 255, 255, 0.12)",
           background: "rgba(255, 255, 255, 0.04)",
@@ -116,8 +116,9 @@ export default function ClientIbkrMenu({ open, onOpenChange }: ClientIbkrMenuPro
           fontWeight: 800,
           letterSpacing: "0.06em",
           cursor: "pointer",
-          padding: "4px 10px",
+          padding: "8px 12px",
           fontFamily: "ui-monospace, monospace",
+          boxSizing: "border-box",
         }}
         title="Conta Interactive Brokers"
       >
