@@ -6549,20 +6549,20 @@ export default function ClientDashboardPage() {
                 ):actionCounts.allRows.length===0?(
                   <div className="text-slate-500 text-sm text-center py-6">Sem recomendações este mês</div>
                 ):(
-                  <div className="-mx-4 w-[calc(100%+2rem)] min-w-0 px-4 sm:mx-0 sm:w-full sm:max-w-full sm:px-0 overflow-x-auto overscroll-x-contain [scrollbar-gutter:stable]">
-                  <table className="w-full min-w-[520px] border-collapse text-xs">
+                  <div className="-mx-4 w-[calc(100%+2rem)] min-w-0 max-w-full box-border px-4 sm:mx-0 sm:w-full sm:max-w-full sm:px-0 overflow-x-auto overscroll-x-contain [scrollbar-gutter:auto] sm:[scrollbar-gutter:stable]">
+                  <table className="w-full min-w-[min(100%,520px)] sm:min-w-[520px] border-collapse text-xs">
                     <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
                       <th className="py-2 pl-0 pr-2 text-left font-semibold">Ativo</th>
                       <th className="hidden py-2 px-2 text-left font-semibold sm:table-cell">Setor</th>
                       <th className="hidden py-2 px-2 text-left font-semibold sm:table-cell">País</th>
-                      <th className="whitespace-nowrap py-2 px-2 text-right font-semibold sm:px-3">
+                      <th className="whitespace-nowrap py-2 px-2 text-right font-semibold max-sm:px-1.5 sm:px-3">
                         <span title="Peso no plano do mês anterior">Mês ant.</span>
                       </th>
-                      <th className="whitespace-nowrap py-2 px-2 text-right font-semibold sm:px-3">
+                      <th className="whitespace-nowrap py-2 px-2 text-right font-semibold max-sm:px-1.5 sm:px-3">
                         <span title="Peso no plano deste mês">Este mês</span>
                       </th>
                       <th className="hidden py-2 px-2 text-right font-semibold sm:table-cell">&#916;</th>
-                      <th className="whitespace-nowrap py-2 pl-2 pr-0 text-right font-semibold sm:pr-1">Ação</th>
+                      <th className="whitespace-nowrap py-2 pl-2 pr-0 text-right font-semibold max-sm:pl-1 max-sm:pr-0 sm:pr-1">Ação</th>
                     </tr></thead>
                     <tbody>
                       {(()=>{
@@ -6596,10 +6596,10 @@ export default function ClientDashboardPage() {
                                 </td>
                                 <td className="py-3 px-3 text-slate-500 text-[11px] hidden sm:table-cell">{getSector(r.ticker)}</td>
                                 <td className="py-3 px-3 text-slate-500 text-[11px] hidden sm:table-cell">{getZone(r.ticker)}</td>
-                                <td className="py-3 px-4 text-right text-slate-500 whitespace-nowrap">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
-                                <td className="py-3 px-4 text-right text-slate-200 font-semibold whitespace-nowrap">{r.cur>0?`${r.cur.toFixed(1)}%`:"—"}</td>
+                                <td className="py-3 px-4 text-right text-slate-500 whitespace-nowrap max-sm:px-1.5">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
+                                <td className="py-3 px-4 text-right text-slate-200 font-semibold whitespace-nowrap max-sm:px-1.5">{r.cur>0?`${r.cur.toFixed(1)}%`:"—"}</td>
                                 <td className={`py-3 px-3 text-right font-semibold whitespace-nowrap hidden sm:table-cell ${dc}`}>{r.delta!==0?`${r.delta>0?"+":""}${r.delta.toFixed(1)}%`:"—"}</td>
-                                <td className="py-3 pr-3 sm:pr-4 text-right whitespace-nowrap">
+                                <td className="py-3 pr-2 text-right whitespace-nowrap max-sm:pl-1 sm:pr-4">
                                   {!isXeon&&<span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${actionColor(r.action)}`}>{actionLabel(r.action)}</span>}
                                 </td>
                               </tr>
@@ -6672,18 +6672,21 @@ export default function ClientDashboardPage() {
                       })()}
                     </tbody>
                     <tfoot>
+                      {/* Uma célula por coluna do thead — hidden sm:table-cell espelha cabeçalhos ocultos em mobile (evita colspan vs colunas colapsadas). */}
                       <tr className="border-t-2 border-[#252a3a] bg-[#0b0f1a]">
-                        <td colSpan={3} className="py-2.5 px-0 text-xs font-bold text-slate-400">
+                        <td className="py-2.5 pl-0 pr-2 text-xs font-bold text-slate-400 sm:pl-1">
                           Total ({actionCounts.allRows.length} posições)
                         </td>
-                        <td className="py-2.5 text-right text-xs font-semibold text-slate-300">
+                        <td className="hidden py-2.5 px-3 sm:table-cell" aria-hidden/>
+                        <td className="hidden py-2.5 px-3 sm:table-cell" aria-hidden/>
+                        <td className="py-2.5 px-4 text-right text-xs font-semibold text-slate-300 whitespace-nowrap max-sm:px-1.5">
                           {actionCounts.allRows.reduce((s,r)=>s+r.prev,0).toFixed(1)}%
                         </td>
-                        <td className="py-2.5 text-right text-xs font-bold text-slate-200">
+                        <td className="py-2.5 px-4 text-right text-xs font-bold text-slate-200 whitespace-nowrap max-sm:px-1.5">
                           {actionCounts.allRows.reduce((s,r)=>s+r.cur,0).toFixed(1)}%
                         </td>
-                        <td className="py-2.5 text-right text-xs text-slate-500">—</td>
-                        <td className="py-2.5 text-right text-xs text-slate-500">—</td>
+                        <td className="hidden py-2.5 px-3 text-right text-xs text-slate-500 sm:table-cell">—</td>
+                        <td className="py-2.5 pr-2 text-right text-xs text-slate-500 max-sm:pl-1 sm:pr-4">—</td>
                       </tr>
                     </tfoot>
                   </table>
