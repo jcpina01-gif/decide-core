@@ -6553,15 +6553,15 @@ export default function ClientDashboardPage() {
                                 const qd=portfolioQuality?.tickers?.find(t=>t.ticker===r.ticker);
                                 const scoreRaw=(latestMonth?.rows??[]).find((x:any)=>x.ticker===r.ticker||x.ticker===r.ticker.replace("XYZ","SQ"))?.score??null;
                                 const score=scoreRaw??0;
-                                const momentumLabel=score>50?"Momentum muito forte":score>30?"Momentum forte":score>15?"Momentum moderado":"Momentum fraco";
+                                const momentumLabel=score>50?"Convicção máxima no modelo":score>30?"Convicção forte no modelo":score>15?"Convicção moderada no modelo":"Convicção reduzida no modelo";
                                 const momentumColor=score>50?"text-emerald-400":score>30?"text-teal-400":score>15?"text-amber-400":"text-slate-500";
                                 type Bullet={dot:string;text:string};
                                 const bullets:Bullet[]=[];
-                                bullets.push({dot:score>30?"bg-teal-500":"bg-amber-500",text:momentumLabel});
+                                bullets.push({dot:score>30?"bg-teal-500":score>15?"bg-amber-500":"bg-slate-600",text:momentumLabel});
                                 if(qd?.roic!=null){
                                   const roic=qd.roic as number;
                                   const roicPct=(roic*100).toFixed(1);
-                                  const roicLabel=roic>0.25?`ROIC ${roicPct}% — rentabilidade operacional elevada`:roic>0.12?`ROIC ${roicPct}% — rentabilidade sólida`:roic>0?`ROIC ${roicPct}%`:`ROIC ${roicPct}% — abaixo do threshold`;
+                                  const roicLabel=roic>0.25?`ROIC ${roicPct}% — rentabilidade operacional elevada`:roic>0.12?`ROIC ${roicPct}% — rentabilidade sólida`:roic>0?`ROIC ${roicPct}% — rentabilidade moderada`:`ROIC ${roicPct}% — rentabilidade reduzida`;
                                   bullets.push({dot:roic>0.12?"bg-emerald-500":roic>0?"bg-amber-500":"bg-red-500",text:roicLabel});
                                 }
                                 if(qd?.revenue_growth!=null){
@@ -6571,11 +6571,11 @@ export default function ClientDashboardPage() {
                                 }
                                 if(qd?.gross_margin!=null){
                                   const gm=qd.gross_margin as number;
-                                  bullets.push({dot:gm>0.40?"bg-emerald-500":gm>0.20?"bg-amber-500":"bg-slate-500",text:`Margem bruta ${(gm*100).toFixed(1)}%${gm>0.40?" — acima da mediana":gm>0.20?" — moderada":" — baixa"}`});
+                                  bullets.push({dot:gm>0.40?"bg-emerald-500":gm>0.20?"bg-amber-500":"bg-slate-500",text:`Margem bruta ${(gm*100).toFixed(1)}%${gm>0.40?" — perfil de qualidade elevado":gm>0.20?" — perfil moderado":" — margens sob pressão"}`});
                                 }
                                 if(qd?.debt_equity!=null){
                                   const de=qd.debt_equity as number;
-                                  bullets.push({dot:de<1.0?"bg-emerald-500":de<2.5?"bg-amber-500":"bg-red-500",text:`Dívida/Capital ${de.toFixed(2)}x${de<1.0?" — alavancagem reduzida":de<2.5?" — alavancagem moderada":" — alavancagem elevada"}`});
+                                  bullets.push({dot:de<1.0?"bg-emerald-500":de<2.5?"bg-amber-500":"bg-red-500",text:`Dívida/Capital ${de.toFixed(2)}x${de<1.0?" — balanço sólido":de<2.5?" — estrutura financeira moderada":" — exposição a dívida significativa"}`});
                                 }
                                 const hasFmp=qd&&(qd.roic!=null||qd.revenue_growth!=null);
                                 return(
@@ -6583,7 +6583,7 @@ export default function ClientDashboardPage() {
                                     <td colSpan={7} className="px-6 py-4">
                                       <div className="flex items-start gap-8">
                                         <div className="flex-1">
-                                          <div className="text-[10px] text-slate-600 uppercase tracking-widest mb-3 font-semibold">Racional de investimento</div>
+                                          <div className="text-[10px] text-slate-600 uppercase tracking-widest mb-3 font-semibold">Análise da posição</div>
                                           <div className="space-y-2">
                                             {bullets.map((b,i)=>(
                                               <div key={i} className="flex items-center gap-2.5">
@@ -6594,16 +6594,16 @@ export default function ClientDashboardPage() {
                                             {!hasFmp&&(
                                               <div className="flex items-center gap-2.5">
                                                 <div className="w-1.5 h-1.5 rounded-full bg-slate-700 shrink-0"/>
-                                                <span className="text-xs text-slate-600 italic">Dados fundamentais não disponíveis para esta posição</span>
+                                                <span className="text-xs text-slate-600 italic">Análise detalhada não disponível para esta posição</span>
                                               </div>
                                             )}
                                           </div>
                                         </div>
                                         {scoreRaw!=null&&(
                                           <div className="shrink-0 text-right">
-                                            <div className="text-[10px] text-slate-600 uppercase tracking-widest mb-2 font-semibold">Score</div>
+                                            <div className="text-[10px] text-slate-600 uppercase tracking-widest mb-2 font-semibold">Convicção</div>
                                             <div className={`text-2xl font-black tabular-nums ${momentumColor}`}>{score.toFixed(0)}</div>
-                                            <div className="text-[10px] text-slate-600 mt-0.5">momentum</div>
+                                            <div className="text-[10px] text-slate-600 mt-0.5">quantitativo</div>
                                           </div>
                                         )}
                                       </div>
