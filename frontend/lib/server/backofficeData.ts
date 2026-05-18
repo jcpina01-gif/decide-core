@@ -10,6 +10,8 @@ export type OnboardingStatus = "unknown" | "pending" | "complete";
 export type MifidStatus = "unknown" | "pending" | "complete";
 export type AccountStatus = "unknown" | "active" | "inactive";
 
+export type ClientPlan = "premium" | "private";
+
 export type BackofficeStoreV1 = {
   version?: number;
   clients?: Record<
@@ -20,6 +22,7 @@ export type BackofficeStoreV1 = {
       mifidStatus?: MifidStatus;
       accountStatus?: AccountStatus;
       riskProfile?: string;
+      plan?: ClientPlan;
       planApprovedAt?: string | null;
       lastRecommendationAt?: string | null;
       notes?: string;
@@ -35,6 +38,7 @@ export type BackofficeClientSummary = {
   mifidStatus: MifidStatus;
   accountStatus: AccountStatus;
   riskProfile: string | null;
+  plan: ClientPlan | null;
   navIbkr: number | null;
   navCurrency: string;
   lastRecommendationAt: string | null;
@@ -264,6 +268,8 @@ export function listBackofficeClients(root: string): {
   if (net.accountCode || net.value > 0 || planRows.length) {
     const clientId = normalizeClientId(net.accountCode);
     const st = store.clients?.[clientId] ?? store.clients?.[net.accountCode || ""] ?? {};
+    const navVal = net.value > 0 ? net.value : null;
+    const autoPlan: ClientPlan = navVal != null && navVal >= 50000 ? "private" : "premium";
     clients.push({
       clientId,
       displayName: safeString(st.displayName, net.accountCode || clientId),
@@ -272,7 +278,8 @@ export function listBackofficeClients(root: string): {
       mifidStatus: st.mifidStatus ?? "unknown",
       accountStatus: st.accountStatus ?? (net.value > 0 ? "active" : "unknown"),
       riskProfile: st.riskProfile ?? null,
-      navIbkr: net.value > 0 ? net.value : null,
+      plan: st.plan ?? autoPlan,
+      navIbkr: navVal,
       navCurrency: net.ccy,
       lastRecommendationAt: st.lastRecommendationAt ?? planMtime,
       tradePlanRowCount: planRows.length,
@@ -297,6 +304,7 @@ export function listBackofficeClients(root: string): {
       mifidStatus: st.mifidStatus ?? "unknown",
       accountStatus: st.accountStatus ?? "unknown",
       riskProfile: st.riskProfile ?? null,
+      plan: st.plan ?? null,
       navIbkr: null,
       navCurrency: "EUR",
       lastRecommendationAt: st.lastRecommendationAt ?? null,
@@ -323,6 +331,7 @@ export function getDemoClient(): BackofficeClientSummary {
     mifidStatus: "complete",
     accountStatus: "active",
     riskProfile: "moderado",
+    plan: "private",
     navIbkr: 200_000,
     navCurrency: "EUR",
     lastRecommendationAt: new Date().toISOString(),

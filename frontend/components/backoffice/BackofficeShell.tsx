@@ -6,6 +6,7 @@ import { DecideBrandImage } from "../DecideLogoHeader";
 export type BackofficeNavId =
   | "dashboard"
   | "clients"
+  | "custos"
   | "activity"
   | "monitoring"
   | "model-monitoring"
@@ -18,6 +19,7 @@ export type BackofficeNavId =
 const ITEMS: { id: BackofficeNavId; href: string; label: string }[] = [
   { id: "dashboard", href: "/backoffice", label: "Painel" },
   { id: "clients", href: "/backoffice/clients", label: "Clientes" },
+  { id: "custos", href: "/backoffice/custos", label: "Custos" },
   { id: "activity", href: "/backoffice/activity", label: "Atividade" },
   { id: "monitoring", href: "/backoffice/monitoring", label: "Monitorização" },
   { id: "model-monitoring", href: "/backoffice/model-monitoring", label: "Modelo" },
