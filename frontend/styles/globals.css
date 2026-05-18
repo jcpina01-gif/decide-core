@@ -1899,3 +1899,36 @@ a.landing-cta:active {
 @media (max-width: 768px) {
   .table-scroll-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
+
+/* ── Onboarding header mobile ────────────────────────────────── */
+@media (max-width: 520px) {
+  .onboarding-security-text { display: none !important; }
+}
+
+/* ── RegisterForm mobile responsive ─────────────────────────── */
+@media (max-width: 768px) {
+  /* Outer 2-column grid → single column, hide left marketing panel */
+  .register-layout {
+    grid-template-columns: 1fr !important;
+    min-height: unset !important;
+  }
+  .register-left-panel {
+    display: none !important;
+  }
+  /* Right panel: reduce padding */
+  .register-right-panel {
+    padding: 24px 18px !important;
+  }
+  /* Email + Phone grid → single column (each field full-width) */
+  .register-fields-row {
+    grid-template-columns: 1fr !important;
+  }
+  /* Phone row: allow the SMS button to wrap to a new line if needed */
+  .register-phone-row {
+    flex-wrap: wrap !important;
+  }
+  .register-phone-row input {
+    min-width: 0;
+    flex: 1 1 100px !important;
+  }
+}

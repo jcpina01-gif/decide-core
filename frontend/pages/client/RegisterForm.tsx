@@ -1744,7 +1744,7 @@ export default function ClientRegisterPage() {
 
             {/* ── PASSO 1: layout de duas colunas ── */}
             {wizardStep === 1 && (
-              <div style={{
+              <div className="register-layout" style={{
                 display: "grid",
                 gridTemplateColumns: "minmax(0, 360px) 1fr",
                 maxWidth: "min(1200px, 100%)",
@@ -1756,7 +1756,7 @@ export default function ClientRegisterPage() {
               }}>
 
                 {/* ── PAINEL ESQUERDO ── */}
-                <div style={{ background: "#07090f", padding: "44px 36px", borderRight: "1px solid #1a1f2e", display: "flex", flexDirection: "column", gap: 20 }}>
+                <div className="register-left-panel" style={{ background: "#07090f", padding: "44px 36px", borderRight: "1px solid #1a1f2e", display: "flex", flexDirection: "column", gap: 20 }}>
 
                   {/* Título */}
                   <div>
@@ -1829,12 +1829,13 @@ export default function ClientRegisterPage() {
                 </div>
 
                 {/* ── PAINEL DIREITO ── */}
-                <div style={{ background: "#080c14", padding: "44px 44px", display: "flex", flexDirection: "column", gap: 20, borderLeft: "1px solid #1a1f2e" }}>
+                <div className="register-right-panel" style={{ background: "#080c14", padding: "44px 44px", display: "flex", flexDirection: "column", gap: 20, borderLeft: "1px solid #1a1f2e" }}>
 
                   {/* ── Dados de acesso ── */}
                   <div>
                     <div style={{ fontSize: 16, fontWeight: 700, color: "#f1f5f9", marginBottom: 16, paddingBottom: 10, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>Dados de acesso</div>
                     <div
+                      className="register-fields-row"
                       style={{
                         display: "grid",
                         gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
@@ -1949,7 +1950,7 @@ export default function ClientRegisterPage() {
                       {/* ── Telemóvel + verificação SMS inline ── */}
                       <div style={{ minWidth: 0 }}>
                         <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 5, fontWeight: 500 }}>Telemóvel</div>
-                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <div className="register-phone-row" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                           {/* Country dial-code selector */}
                           <div style={{ position: "relative", flexShrink: 0 }}>
                             <button

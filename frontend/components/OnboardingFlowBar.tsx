@@ -394,7 +394,7 @@ export default function OnboardingFlowBar({
         </div>
 
         {/* Indicador compacto + badge de segurança */}
-        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 12 }}>
           {allFlowDone ? (
             <span style={{ fontSize: 12, fontWeight: 700, color: "#22c55e" }}>Concluído ✓</span>
           ) : (
@@ -402,11 +402,11 @@ export default function OnboardingFlowBar({
               {currentIndex + 1} / {totalSteps}
             </span>
           )}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+          <div className="onboarding-security-badge" style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#334155" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             </svg>
-            <div style={{ lineHeight: 1.2 }}>
+            <div className="onboarding-security-text" style={{ lineHeight: 1.2 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", whiteSpace: "nowrap" }}>Seguro e privado</div>
               <div style={{ fontSize: 10, color: "#334155", whiteSpace: "nowrap" }}>Os seus dados estão protegidos</div>
             </div>
