@@ -1213,9 +1213,9 @@ function ActionBadge({label,count,color}:{label:string;count:number;color:string
 }
 function SH({title}:{title:string}) {
   return (
-    <div className="flex items-center gap-2 mb-4">
-      <h2 className="text-slate-200 text-sm font-bold tracking-wide uppercase">{title}</h2>
-      <Info size={13} className="text-slate-500"/>
+    <div className="flex min-w-0 items-center gap-2 mb-4">
+      <h2 className="min-w-0 flex-1 break-words text-slate-200 text-sm font-bold tracking-wide uppercase">{title}</h2>
+      <Info size={13} className="shrink-0 text-slate-500"/>
     </div>
   );
 }
@@ -6473,13 +6473,15 @@ export default function ClientDashboardPage() {
 
               {/* ── RECOMENDAÇÕES ── */}
               {activePage==="reco"&&(
-              <div className="w-full min-w-0 max-w-full space-y-4">{/* contenção: evita largura da página > viewport no mobile */}
-              <div data-section="reco" className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 lg:p-6 w-full min-w-0 max-w-full overflow-hidden">
-                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5 lg:gap-8 min-w-0">
+              <div className="w-full min-w-0 max-w-full space-y-4 overflow-x-hidden">{/* clip horizontal — scroll só dentro das zonas marcadas */}
+              <div data-section="reco" className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4 sm:p-5 lg:p-6 w-full min-w-0 max-w-full overflow-hidden">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5 lg:gap-8 min-w-0 w-full">
                   {/* Action counts */}
-                  <div className="flex-1 min-w-0 max-w-full">
-                    <div className="text-xs text-slate-500 font-medium mb-4 uppercase tracking-widest">Recomendação · {recoLabel}</div>
-                    <div className="flex max-w-full flex-nowrap gap-2 overflow-x-auto overflow-y-visible pb-1 scrollbar-none snap-x snap-mandatory [-webkit-overflow-scrolling:touch] lg:flex-wrap lg:gap-4 lg:overflow-visible lg:pb-0">
+                  <div className="flex-1 min-w-0 max-w-full w-full">
+                    <div className="text-xs text-slate-500 font-medium mb-4 uppercase tracking-widest break-words hyphens-auto">
+                      Recomendação · <span className="text-slate-400 normal-case font-semibold">{recoLabel}</span>
+                    </div>
+                    <div className="flex w-full min-w-0 max-w-full flex-nowrap gap-2 overflow-x-auto overscroll-x-contain overflow-y-visible pb-1 scrollbar-none snap-x snap-mandatory [-webkit-overflow-scrolling:touch] touch-pan-x lg:flex-wrap lg:gap-4 lg:overflow-visible lg:pb-0 lg:touch-auto">
                       {[
                         {label:"Nova posição", count:recoLoading?0:(officialCounts??actionCounts).comprar,  c:"text-teal-400",  bg:"bg-teal-500/10",  b:"border-teal-500/20"},
                         {label:"Reforçar",     count:recoLoading?0:(officialCounts??actionCounts).aumentar, c:"text-blue-400",  bg:"bg-blue-500/10",  b:"border-blue-500/20"},
@@ -6501,14 +6503,14 @@ export default function ClientDashboardPage() {
                       <span>Perfil: <span className="text-slate-300 font-semibold">{profileLabel}</span></span>
                     </div>
                   </div>
-                  {/* CTA */}
-                  <div className="flex flex-row lg:flex-col gap-2 lg:min-w-[200px] shrink-0">
+                  {/* CTA — mobile: coluna completa evita largura intrínseca > viewport */}
+                  <div className="flex w-full min-w-0 flex-col gap-2 lg:w-72 lg:shrink-0 lg:min-w-[200px] lg:flex-col">
                     <button onClick={()=>navigateToPage(loggedIn?"ordens":"reco")}
                       onClickCapture={!loggedIn?()=>setShowRegModal(true):undefined}
-                      className="flex-1 lg:flex-none bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold px-5 py-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-teal-900/40 ring-1 ring-teal-500/30 active:scale-100 min-h-[48px]">
+                      className="w-full lg:w-auto bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold px-5 py-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-teal-900/40 ring-1 ring-teal-500/30 active:scale-100 min-h-[48px]">
                       <CheckCircle2 size={16}/> Aprovar Plano
                     </button>
-                    <button onClick={()=>navigateToPage("carteira")} className="flex-1 lg:flex-none bg-[#111827] border border-[#252a3a] hover:bg-[#151929] text-slate-400 text-xs font-semibold px-4 py-3 rounded-lg transition-colors min-h-[44px]">
+                    <button onClick={()=>navigateToPage("carteira")} className="w-full lg:w-auto bg-[#111827] border border-[#252a3a] hover:bg-[#151929] text-slate-400 text-xs font-semibold px-4 py-3 rounded-lg transition-colors min-h-[44px]">
                       Ver carteira completa
                     </button>
                   </div>
@@ -6516,35 +6518,38 @@ export default function ClientDashboardPage() {
               </div>
 
               {/* O que mudou (full width) */}
-              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 w-full min-w-0 max-w-full overflow-hidden">
+              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4 sm:p-5 w-full min-w-0 max-w-full overflow-hidden">
                 <SH title="O que mudou"/>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-6 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-6 mt-3 min-w-0">
                   {whatChanged.map((b,i)=>(
-                    <div key={i} className="flex gap-3">
+                    <div key={i} className="flex min-w-0 gap-3">
                       <div className="mt-0.5 shrink-0">
                         {b.icon==="up"&&<TrendingUp size={18} className="text-emerald-400"/>}
                         {b.icon==="down"&&<TrendingDown size={18} className="text-red-400"/>}
                         {b.icon==="globe"&&<Globe size={18} className="text-blue-400"/>}
                         {b.icon==="wave"&&<Activity size={18} className="text-slate-400"/>}
                       </div>
-                      <div><div className="text-slate-200 text-sm font-semibold">{b.title}</div><div className="text-slate-400 text-xs mt-0.5">{b.desc}</div></div>
+                      <div className="min-w-0">
+                        <div className="break-words text-slate-200 text-sm font-semibold">{b.title}</div>
+                        <div className="break-words text-slate-400 text-xs mt-0.5">{b.desc}</div>
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
 
               {/* Recomendações completas */}
-              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden p-5 w-full min-w-0 max-w-full">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-4 px-0 lg:mb-4 lg:px-0 min-w-0">
-                  <SH title="Recomendações"/>
-                  <span className="text-slate-500 text-xs -mt-4">{actionCounts.allRows.length} posições</span>
+              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden p-4 sm:p-5 w-full min-w-0 max-w-full">
+                <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 mb-4 min-w-0">
+                  <div className="min-w-0 flex-1 basis-full sm:basis-auto"><SH title="Recomendações"/></div>
+                  <span className="shrink-0 whitespace-nowrap text-slate-500 text-xs pt-0.5">{actionCounts.allRows.length} posições</span>
                 </div>
                 {recoLoading?(
                   <div className="text-slate-500 text-sm text-center py-6">A carregar…</div>
                 ):actionCounts.allRows.length===0?(
                   <div className="text-slate-500 text-sm text-center py-6">Sem recomendações este mês</div>
                 ):(
-                  <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
+                  <div className="-mx-4 w-[calc(100%+2rem)] min-w-0 px-4 sm:mx-0 sm:w-full sm:max-w-full overflow-x-auto overscroll-x-contain touch-pan-x [scrollbar-gutter:stable]">
                   <table className="w-full min-w-[520px] border-collapse text-xs">
                     <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
                       <th className="py-2 pl-0 pr-2 text-left font-semibold">Ativo</th>
@@ -6586,7 +6591,7 @@ export default function ClientDashboardPage() {
                                       <span className={`transition-transform duration-150 text-slate-600 text-[9px] ${expandedReco===r.ticker?"rotate-90":"rotate-0"}`}>▶</span>
                                     </span>
                                   )}
-                                  {getCompany(r.ticker)&&<div className="text-slate-600 font-normal text-[10px] mt-0.5 leading-tight">{getCompany(r.ticker)}</div>}
+                                  {getCompany(r.ticker)&&<div className="text-slate-600 font-normal text-[10px] mt-0.5 leading-tight break-words">{getCompany(r.ticker)}</div>}
                                   <div className="sm:hidden text-slate-600 text-[10px] mt-0.5">{getSector(r.ticker)}</div>
                                 </td>
                                 <td className="py-3 px-3 text-slate-500 text-[11px] hidden sm:table-cell">{getSector(r.ticker)}</td>
@@ -6630,15 +6635,15 @@ export default function ClientDashboardPage() {
                                 const hasFmp=qd&&(qd.roic!=null||qd.revenue_growth!=null);
                                 return(
                                   <tr className="bg-[#080c14] border-b border-[#0d1220]">
-                                    <td colSpan={7} className="px-6 py-4">
+                                    <td colSpan={7} className="px-3 py-4 sm:px-6">
                                       <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-start sm:gap-8 min-w-0">
                                         <div className="flex-1">
                                           <div className="text-[10px] text-slate-600 uppercase tracking-widest mb-3 font-semibold">Análise da posição</div>
                                           <div className="space-y-2">
                                             {bullets.map((b,i)=>(
-                                              <div key={i} className="flex items-center gap-2.5">
-                                                <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${b.dot}`}/>
-                                                <span className="text-xs text-slate-300">{b.text}</span>
+                                              <div key={i} className="flex min-w-0 items-start gap-2.5">
+                                                <div className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${b.dot}`}/>
+                                                <span className="text-xs text-slate-300 break-words">{b.text}</span>
                                               </div>
                                             ))}
                                             {!hasFmp&&(
