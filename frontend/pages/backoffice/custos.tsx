@@ -82,10 +82,29 @@ function fmtPct(n: number): string {
   return n.toFixed(2) + "%";
 }
 
+type RealCommission = {
+  client_id: string;
+  commission_total: number;
+  commission_ytd: number;
+  execution_count: number;
+  execution_count_ytd: number;
+  last_execution: string | null;
+};
+
+type RealOrderCount = {
+  client_id: string;
+  order_count: number;
+  order_count_ytd: number;
+  last_order: string | null;
+};
+
 export default function BackofficeCustosPage() {
   const [clients, setClients] = useState<BackofficeClientSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [realCommissions, setRealCommissions] = useState<RealCommission[]>([]);
+  const [realOrders, setRealOrders] = useState<RealOrderCount[]>([]);
+  const [realLoading, setRealLoading] = useState(true);
 
   const ytdMonths = new Date().getMonth() + 1;
 
@@ -98,9 +117,42 @@ export default function BackofficeCustosPage() {
       })
       .catch(() => setError("Erro ao carregar clientes."))
       .finally(() => setLoading(false));
+
+    fetch("/api/backoffice/client-costs")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.ok) {
+          setRealCommissions(d.commissions ?? []);
+          setRealOrders(d.orders ?? []);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setRealLoading(false));
   }, []);
 
   const rows = clients.map((c) => computeCosts(c, ytdMonths));
+
+  // Build lookup: clientId → real commission data (try exact + known aliases)
+  const KNOWN_ALIASES: Record<string, string[]> = {
+    jcpina01: ["jcpina01", "DUM504002", "unknown"],
+    DUM504002: ["DUM504002", "jcpina01", "unknown"],
+  };
+  function getRealComm(clientId: string): RealCommission | null {
+    const aliases = KNOWN_ALIASES[clientId] ?? [clientId];
+    for (const alias of aliases) {
+      const found = realCommissions.find((r) => r.client_id === alias);
+      if (found) return found;
+    }
+    return null;
+  }
+  function getRealOrders(clientId: string): RealOrderCount | null {
+    const aliases = KNOWN_ALIASES[clientId] ?? [clientId];
+    for (const alias of aliases) {
+      const found = realOrders.find((r) => r.client_id === alias);
+      if (found) return found;
+    }
+    return null;
+  }
 
   const totalAum = rows.reduce((s, r) => s + r.aum, 0);
   const totalMgmt = rows.reduce((s, r) => s + r.mgmtAnnual, 0);
@@ -109,6 +161,11 @@ export default function BackofficeCustosPage() {
   const totalCost = rows.reduce((s, r) => s + r.totalAnnual, 0);
   const totalYtd = rows.reduce((s, r) => s + r.ytdEstimate, 0);
   const anyMargin = rows.some((r) => r.client.marginEnabled);
+
+  // Real commission totals (from execution_logs)
+  const totalRealCommYtd = realCommissions.reduce((s, r) => s + (r.commission_ytd ?? 0), 0);
+  const totalRealCommAll = realCommissions.reduce((s, r) => s + (r.commission_total ?? 0), 0);
+  const hasAnyRealComm = totalRealCommAll > 0;
 
   return (
     <>
@@ -119,7 +176,7 @@ export default function BackofficeCustosPage() {
       <BackofficeShell
         active="custos"
         title="Custos por cliente"
-        subtitle="Estimativa de encargos anuais e YTD por cliente. Baseado no NAV IB e plano atribuído (Premium €29/mês | Private 0,6%/ano). Custos externos: 0,12%/ano (custódia + transações + FX)."
+        subtitle="Encargos reais (comissões IB de execuções registadas) e estimados (custódia, margem, gestão) por cliente."
       >
         {loading && (
           <p style={{ color: "#64748b", fontSize: 14 }}>A carregar clientes…</p>
@@ -145,6 +202,43 @@ export default function BackofficeCustosPage() {
 
         {!loading && rows.length > 0 && (
           <>
+            {/* ── Real commissions banner ─────────────────────────────────── */}
+            {!realLoading && (
+              <div
+                style={{
+                  background: hasAnyRealComm
+                    ? "rgba(52,211,153,0.06)"
+                    : "rgba(245,158,11,0.06)",
+                  border: `1px solid ${hasAnyRealComm ? "rgba(52,211,153,0.2)" : "rgba(245,158,11,0.2)"}`,
+                  borderRadius: 10,
+                  padding: "12px 18px",
+                  marginBottom: 20,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span style={{ fontSize: 12, fontWeight: 800, color: hasAnyRealComm ? "#34d399" : "#fbbf24" }}>
+                  {hasAnyRealComm ? "✓ Comissões reais disponíveis" : "⚠ Sem dados reais de execuções ainda"}
+                </span>
+                {hasAnyRealComm ? (
+                  <>
+                    <span style={{ fontSize: 12, color: "#94a3b8" }}>
+                      Total acumulado: <strong style={{ color: "#e2e8f0" }}>€ {fmtEur(totalRealCommAll)}</strong>
+                    </span>
+                    <span style={{ fontSize: 12, color: "#94a3b8" }}>
+                      YTD {new Date().getFullYear()}: <strong style={{ color: "#34d399" }}>€ {fmtEur(totalRealCommYtd)}</strong>
+                    </span>
+                  </>
+                ) : (
+                  <span style={{ fontSize: 11, color: "#71717a" }}>
+                    As comissões reais serão registadas automaticamente após a próxima execução de ordens pelo dashboard.
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* ── Summary cards ──────────────────────────────────────────── */}
             <div
               style={{
@@ -157,9 +251,12 @@ export default function BackofficeCustosPage() {
               {[
                 { label: "AUM total", value: `€ ${fmtEur(totalAum)}`, sub: `${clients.length} cliente${clients.length !== 1 ? "s" : ""}`, color: "#38bdf8" },
                 { label: "Receita gestão (ano)", value: `€ ${fmtEur(totalMgmt)}`, sub: "fees DECIDE anuais estimados", color: "#34d399" },
-                { label: "Custos externos (ano)", value: `€ ${fmtEur(totalExtern)}`, sub: `${fmtPct(EXTERN_PCT)} do AUM`, color: "#94a3b8" },
+                ...(hasAnyRealComm
+                  ? [{ label: "Comissões IB reais (YTD)", value: `€ ${fmtEur(totalRealCommYtd)}`, sub: "comissões reais registadas", color: "#34d399" }]
+                  : [{ label: "Custos externos (ano)", value: `€ ${fmtEur(totalExtern)}`, sub: `${fmtPct(EXTERN_PCT)} do AUM (estimado)`, color: "#94a3b8" }]
+                ),
                 ...(anyMargin ? [{ label: "Custo margem (ano)", value: `€ ${fmtEur(totalMargin)}`, sub: `~${MARGIN_AVG_BORROW_PCT}% AUM × ${MARGIN_RATE_AA}% (estimado)`, color: "#f472b6" }] : []),
-                { label: "Total encargos (ano)", value: `€ ${fmtEur(totalCost)}`, sub: anyMargin ? "gestão + externos + margem" : "gestão + externos", color: "#fb923c" },
+                { label: "Total encargos (ano)", value: `€ ${fmtEur(totalCost)}`, sub: anyMargin ? "gestão + externos + margem" : "gestão + externos (est.)", color: "#fb923c" },
                 { label: `YTD estimado (${ytdMonths}m)`, value: `€ ${fmtEur(totalYtd)}`, sub: `pro-rata ${ytdMonths}/12 do ano`, color: "#a78bfa" },
               ].map((k) => (
                 <div
@@ -196,15 +293,17 @@ export default function BackofficeCustosPage() {
                   Encargos detalhados por cliente
                 </span>
                 <span style={{ fontSize: 11, color: "#52525b", marginLeft: 10 }}>
-                  valores anuais estimados · plano auto-detetado pelo NAV se não configurado
+                  comissões: dados reais (IB) · custódia + margem: estimado
                 </span>
               </div>
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
                   <thead>
                     <tr style={{ background: "rgba(0,0,0,0.3)" }}>
                       {[
-                        "Cliente", "Plano", "AUM (€)", "Gestão DECIDE", "Custos externos",
+                        "Cliente", "Plano", "AUM (€)", "Gestão DECIDE",
+                        "Comissões IB",
+                        "Custódia + outros",
                         ...(anyMargin ? ["Custo margem"] : []),
                         "Total encargos", "% total do AUM", "YTD estimado",
                       ].map((h) => (
@@ -230,6 +329,11 @@ export default function BackofficeCustosPage() {
                   <tbody>
                     {rows.map((r, i) => {
                       const isPrivate = r.plan === "private";
+                      const realComm = getRealComm(r.client.clientId);
+                      const realOrd = getRealOrders(r.client.clientId);
+                      const hasReal = (realComm?.commission_total ?? 0) > 0;
+                      // Custody = total external minus transaction commissions (0.04% of AUM)
+                      const custodyAnnual = r.aum * ((EXTERN_PCT - 0.04) / 100);
                       return (
                         <tr
                           key={r.client.clientId}
@@ -307,18 +411,53 @@ export default function BackofficeCustosPage() {
                             </div>
                           </td>
 
-                          {/* Custos externos */}
+                          {/* Comissões IB – real */}
+                          <td style={{ padding: "14px 16px", fontVariantNumeric: "tabular-nums" }}>
+                            {hasReal ? (
+                              <>
+                                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                  <div style={{ fontSize: 14, fontWeight: 700, color: "#34d399" }}>
+                                    € {fmtEur(realComm!.commission_ytd)}
+                                  </div>
+                                  <span style={{ fontSize: 9, fontWeight: 800, background: "rgba(52,211,153,0.15)", color: "#34d399", border: "1px solid rgba(52,211,153,0.3)", borderRadius: 4, padding: "1px 5px" }}>REAL</span>
+                                </div>
+                                <div style={{ fontSize: 10, color: "#52525b", marginTop: 2 }}>
+                                  YTD · {realComm!.execution_count_ytd} exec.
+                                </div>
+                                {(realComm!.commission_total ?? 0) > (realComm!.commission_ytd ?? 0) && (
+                                  <div style={{ fontSize: 9, color: "#3f3f46", marginTop: 1 }}>
+                                    All-time: € {fmtEur(realComm!.commission_total)}
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <div style={{ fontSize: 13, color: "#52525b" }}>
+                                  {realOrd && (realOrd.order_count_ytd ?? 0) > 0
+                                    ? `${realOrd.order_count_ytd} ord. YTD`
+                                    : "—"}
+                                </div>
+                                <div style={{ fontSize: 9, color: "#3f3f46", marginTop: 2 }}>
+                                  {realOrd && (realOrd.order_count_ytd ?? 0) > 0
+                                    ? "execuções não registadas"
+                                    : "sem execuções"}
+                                </div>
+                              </>
+                            )}
+                          </td>
+
+                          {/* Custódia + outros – estimado */}
                           <td style={{ padding: "14px 16px", fontVariantNumeric: "tabular-nums" }}>
                             {r.aum > 0 ? (
                               <>
                                 <div style={{ fontSize: 14, fontWeight: 700, color: "#94a3b8" }}>
-                                  € {fmtEur(r.externAnnual)}
+                                  € {fmtEur(custodyAnnual)}
                                   <span style={{ fontSize: 10, fontWeight: 400, color: "#52525b", marginLeft: 4 }}>
                                     /ano
                                   </span>
                                 </div>
                                 <div style={{ fontSize: 10, color: "#52525b", marginTop: 2 }}>
-                                  {fmtPct(EXTERN_PCT)}/ano (broker)
+                                  {fmtPct(EXTERN_PCT - 0.04)}/ano est.
                                 </div>
                               </>
                             ) : (
@@ -401,8 +540,13 @@ export default function BackofficeCustosPage() {
                         <td style={{ padding: "12px 16px", fontSize: 14, fontWeight: 900, color: "#34d399" }}>
                           € {fmtEur(totalMgmt)}
                         </td>
+                        {/* Comissões IB total */}
+                        <td style={{ padding: "12px 16px", fontSize: 14, fontWeight: 900, color: hasAnyRealComm ? "#34d399" : "#52525b" }}>
+                          {hasAnyRealComm ? `€ ${fmtEur(totalRealCommYtd)}` : "—"}
+                        </td>
+                        {/* Custódia total */}
                         <td style={{ padding: "12px 16px", fontSize: 14, fontWeight: 900, color: "#94a3b8" }}>
-                          € {fmtEur(totalExtern)}
+                          € {fmtEur(rows.reduce((s, r) => s + r.aum * ((EXTERN_PCT - 0.04) / 100), 0))}
                         </td>
                         {anyMargin && (
                           <td style={{ padding: "12px 16px", fontSize: 14, fontWeight: 900, color: "#f472b6" }}>
@@ -459,10 +603,10 @@ export default function BackofficeCustosPage() {
                   title: "Custos externos (todos os planos)",
                   color: "#94a3b8",
                   lines: [
-                    { k: "Custódia (IB)", v: "≈ 0,06% / ano" },
-                    { k: "Comissões negociação", v: "≈ 0,04% / ano" },
-                    { k: "Câmbio (FX spread)", v: "≈ 0,01% / ano" },
-                    { k: "Taxas regulatórias", v: "≈ 0,01% / ano" },
+                    { k: "Custódia (IB)", v: "≈ 0,06% / ano (est.)" },
+                    { k: "Comissões negociação", v: "real · max(€1,25; 0,05% × trade)" },
+                    { k: "Câmbio (FX spread)", v: "≈ 0,01% / ano (est.)" },
+                    { k: "Taxas regulatórias", v: "≈ 0,01% / ano (est.)" },
                   ],
                 },
                 {
@@ -501,9 +645,10 @@ export default function BackofficeCustosPage() {
             </div>
 
             <p style={{ marginTop: 20, fontSize: 11, color: "#3f3f46", lineHeight: 1.6 }}>
-              Valores estimados com base no NAV IBKR atual. Custos externos são estimativas médias — o valor real depende do número de transações, câmbios efectuados e taxas regulatórias variáveis.
-              O custo de margem assume alavancagem média de ~{MARGIN_AVG_BORROW_PCT}% do AUM a {MARGIN_RATE_AA}%/ano (IB debit rate); o valor real varia com a alavancagem diária efectiva.
-              O plano e a margem são configuráveis em <code style={{ color: "#52525b" }}>backoffice_store.json</code>: campos <code style={{ color: "#52525b" }}>plan</code> ("premium" | "private") e <code style={{ color: "#52525b" }}>marginEnabled</code> (true | false).
+              <strong style={{ color: "#52525b" }}>Comissões IB</strong>: valores reais calculados automaticamente no momento da execução de ordens (max(€1,25; 0,05% × valor da transação)). Acumulam-se na base de dados a cada ordem executada.{" "}
+              <strong style={{ color: "#52525b" }}>Custódia + outros</strong>: estimativa baseada em 0,08%/ano (custódia IB + FX + taxas regulatórias).{" "}
+              <strong style={{ color: "#52525b" }}>Margem</strong>: assume alavancagem média de ~{MARGIN_AVG_BORROW_PCT}% do AUM a {MARGIN_RATE_AA}%/ano; o valor real varia com a alavancagem diária.{" "}
+              Plano e margem configuráveis em <code style={{ color: "#52525b" }}>backoffice_store.json</code>: campos <code style={{ color: "#52525b" }}>plan</code> e <code style={{ color: "#52525b" }}>marginEnabled</code>.
             </p>
           </>
         )}

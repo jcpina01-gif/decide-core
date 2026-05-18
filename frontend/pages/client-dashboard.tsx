@@ -2670,6 +2670,12 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         const ibFillMap=new Map((j.fills??[] as Record<string,unknown>[]).map(f=>[String(f.ticker??"").toUpperCase(),f.ib_order_id as number|null]));
         const fillsForAudit=sentOrders.map(o=>({...o,ib_order_id:ibFillMap.get(o.ticker.toUpperCase())??null}));
         void auditSaveOrders(approvalId, fillsForAudit);
+        // Log executions with real fill values (commission computed from value_eur)
+        void auditSaveExecutions((j.fills??[]).map((f:Record<string,unknown>)=>({
+          ticker:String(f.ticker??""),action:"Vender",
+          filled:Number(f.filled??0)||0,avg_fill_price:Number(f.avg_fill_price??0)||null,
+          value_eur:Number(f.value_eur??0)||null,ib_order_id:Number(f.ib_order_id??0)||null,
+        })));
         void fetch("/api/audit/config-change",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
           client_id: auditClientId(), changed_by:"client", change_type:"sell_all",
           new_value:{ref:j.order_ref, positions:ibkrPos.length}, changed_at: new Date().toISOString(),
@@ -2745,6 +2751,12 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
           console.log("[audit] flatten: saving approval, clientId=", auditClientId(), "fills=", fillsForAudit.length);
           const approvalId = await auditSaveApproval(null);
           await auditSaveOrders(approvalId, fillsForAudit);
+          // Log executions with real fill values
+          void auditSaveExecutions((j.fills??[]).map((f:Record<string,unknown>)=>({
+            ticker:String(f.ticker??""),action:String(f.action??""),
+            filled:Number(f.filled??0)||0,avg_fill_price:Number(f.avg_fill_price??0)||null,
+            value_eur:Number(f.value_eur??0)||null,ib_order_id:Number(f.ib_order_id??0)||null,
+          })));
           setAuditStatus({ok:true,msg:`✓ Audit guardado · ${fillsForAudit.length} ordens · approvalId=${approvalId??"null"}`});
         }catch(e){
           console.error("[audit] flatten error:", e);
@@ -2981,6 +2993,45 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     }
     console.log(`[audit] auditSaveOrders: all ${fills.length} saved OK`);
   }
+
+  // IB Tiered commission: 0.05% of EUR trade value, min €1.25 per fill
+  function ibCommission(valueEur: number): number {
+    return Math.max(1.25, valueEur * 0.0005);
+  }
+
+  // Log real executions (with IB commission computed from fill value) into execution_logs.
+  // Best-effort: fires-and-forgets individual failures without throwing.
+  async function auditSaveExecutions(
+    fills: Array<{ticker:string;filled?:number;avg_fill_price?:number|null;value_eur?:number|null;ib_order_id?:number|null;action?:string;side?:string}>,
+  ) {
+    const clientId = auditClientId() ?? "unknown";
+    if (!fills.length) return;
+    const execFills = fills.filter(f => (f.filled??0) > 0 || (f.value_eur??0) > 0);
+    if (!execFills.length) return;
+    await Promise.allSettled(execFills.map(f => {
+      const a = (f.action ?? "").toLowerCase();
+      const s = (f.side ?? "").toUpperCase();
+      const side: "BUY"|"SELL" =
+        (a === "comprar" || a === "buy") ? "BUY" :
+        (a === "vender" || a === "reduzir" || a === "sell") ? "SELL" :
+        s === "SELL" ? "SELL" : "BUY";
+      const valueEur = f.value_eur ?? (f.filled && f.avg_fill_price ? f.filled * f.avg_fill_price : 0);
+      const commission = valueEur > 0 ? ibCommission(valueEur) : null;
+      return fetch("/api/audit/execution", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          client_id: clientId,
+          ticker: f.ticker,
+          side,
+          qty_filled: f.filled ?? null,
+          price_executed: f.avg_fill_price ?? null,
+          commission,
+          ibkr_exec_id: f.ib_order_id ? String(f.ib_order_id) : null,
+          executed_at: new Date().toISOString(),
+        }),
+      }).catch(e => console.warn("[audit] execution save failed:", e));
+    }));
+  }
   // ───────────────────────────────────────────────────────────────────────
 
   async function submitOrders() {
@@ -3043,6 +3094,12 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
           qty:r.adjEur,ib_order_id:null,
         }));
         void auditSaveOrders(approvalId, fillsForAudit);
+        // Log executions with real fill values (commission from value_eur)
+        void auditSaveExecutions((j.fills??[]).map((f:Record<string,unknown>)=>({
+          ticker:String(f.ticker??""),action:String(f.action??""),side:String(f.side??""),
+          filled:Number(f.filled??0)||0,avg_fill_price:Number(f.avg_fill_price??0)||null,
+          value_eur:Number(f.value_eur??0)||null,ib_order_id:Number(f.ib_order_id??0)||null,
+        })));
         const buys=fills.filter((f)=>f.side==="BUY");
         const sells=fills.filter((f)=>f.side==="SELL");
         logActivity({

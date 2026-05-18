@@ -21,6 +21,7 @@ from routers.cancel_open_orders_paper import (
 )
 from routers.sync_paper_exec_lines import router as sync_paper_exec_lines_router, sync_paper_exec_lines_probe
 from routers.ibkr_orders import router as ibkr_orders_router
+from routers.ibkr_executions import router as ibkr_executions_router
 from routers.client_auth import router as client_auth_router
 from routers.portfolio_quality import router as portfolio_quality_router
 
@@ -89,6 +90,7 @@ app.add_api_route(
 app.include_router(run_model_router)
 app.include_router(send_orders_router)
 app.include_router(ibkr_orders_router)
+app.include_router(ibkr_executions_router)
 app.include_router(sync_paper_exec_lines_router)
 app.include_router(ibkr_snapshot_router)
 app.include_router(performance_router)

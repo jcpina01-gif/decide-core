@@ -116,6 +116,30 @@ export default function BackofficeAuditPage() {
     }
   };
 
+  const [syncIbMsg, setSyncIbMsg] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const runSyncIb = async () => {
+    setSyncing(true);
+    setSyncIbMsg("A ligar à IB e buscar execuções…");
+    try {
+      const r = await fetch(
+        `/api/backoffice/sync-ib-executions?clientId=${encodeURIComponent(clientId || "jcpina01")}`,
+        { method: "POST", credentials: "same-origin" },
+      );
+      const j = await r.json() as { ok?: boolean; saved?: number; skipped?: number; total?: number; message?: string; error?: string };
+      if (j.ok) {
+        setSyncIbMsg(`✓ ${j.saved ?? 0} execuções guardadas · ${j.skipped ?? 0} ignoradas (duplicados) · total IB: ${j.total ?? 0}${j.message ? " · " + j.message : ""}`);
+        if ((j.saved ?? 0) > 0) void loadRows(clientId || "jcpina01", "executions");
+      } else {
+        setSyncIbMsg(`✗ ${j.error ?? "Erro desconhecido"}`);
+      }
+    } catch (e) {
+      setSyncIbMsg("Erro de rede: " + (e instanceof Error ? e.message : "falha"));
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const [writeTestMsg, setWriteTestMsg] = useState("");
   const runWriteTest = async () => {
     setWriteTestMsg("A escrever…");
@@ -321,6 +345,13 @@ export default function BackofficeAuditPage() {
             <button style={btn(false)} onClick={() => void runWriteTest()}>
               Testar escrita audit
             </button>
+            <button
+              style={{ ...btn(true), background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.3)", color: "#34d399" }}
+              onClick={() => void runSyncIb()}
+              disabled={syncing}
+            >
+              {syncing ? "A sincronizar…" : "↻ Sincronizar execuções IB"}
+            </button>
             <Link
               href="/backoffice/audit-logs"
               style={{ color: DECIDE_DASHBOARD.accentSky, fontSize: 13, fontWeight: 600 }}
@@ -336,6 +367,11 @@ export default function BackofficeAuditPage() {
           {testMsg && (
             <p style={{ marginTop: 10, fontSize: 12, color: testMsg.startsWith("✓") ? "#4ade80" : "#f87171", fontFamily: "monospace", wordBreak: "break-all" }}>
               {testMsg}
+            </p>
+          )}
+          {syncIbMsg && (
+            <p style={{ marginTop: 8, fontSize: 12, color: syncIbMsg.startsWith("✓") ? "#34d399" : "#f87171", fontFamily: "monospace", wordBreak: "break-all" }}>
+              {syncIbMsg}
             </p>
           )}
           {writeTestMsg && (
