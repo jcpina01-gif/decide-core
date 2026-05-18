@@ -3183,7 +3183,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
       </div>
 
       {/* ── Body: two-column layout (stacks on mobile) ───────────────────── */}
-      <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
+      <div className="flex flex-col lg:flex-row flex-1 min-h-0">
 
         {/* LEFT COLUMN — scrollable main content */}
         <div className="flex-1 overflow-y-auto px-4 lg:px-6 py-5 space-y-4">
@@ -3239,13 +3239,13 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
               <span>Total de compras limitado a <strong>{Math.round(BUY_SAFETY_FACTOR*100)}%</strong> do plano (≤ € {fmtE(aum*BUY_SAFETY_FACTOR)}) — reserva de {Math.round((1-BUY_SAFETY_FACTOR)*100)}% em cash.</span>
             </div>
             <div className="overflow-x-auto -mx-1">
-            <table className="w-full text-xs min-w-[520px]">
+            <table className="w-full text-xs">
               <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
-                <th className="pb-2 font-semibold">Ordem / Ticker</th>
+                <th className="pb-2 font-semibold">Ticker</th>
                 <th className="pb-2 font-semibold">Acção</th>
-                <th className="pb-2 font-semibold text-right">QTY / Valor</th>
-                <th className="pb-2 font-semibold text-right">Acr / Preço</th>
-                <th className="pb-2 font-semibold text-right">Est. Impacto</th>
+                <th className="pb-2 font-semibold text-right">Valor</th>
+                <th className="pb-2 font-semibold text-right hidden sm:table-cell">Preço</th>
+                <th className="pb-2 font-semibold text-right hidden sm:table-cell">Impacto</th>
                 <th className="pb-2 font-semibold text-center">Status</th>
               </tr></thead>
               <tbody>
@@ -3287,10 +3287,10 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                           <span className="text-slate-200">€ {fmtEm(displayVal)}</span>
                         ):<span className="text-slate-600">—</span>}
                       </td>
-                      <td className="py-2.5 text-right font-mono text-slate-400 text-[10px]">
+                      <td className="py-2.5 text-right font-mono text-slate-400 text-[10px] hidden sm:table-cell">
                         {refP?`${refP.price.toFixed(2)}`:"—"}
                       </td>
-                      <td className={`py-2.5 text-right font-semibold font-mono ${r.delta>0?"text-emerald-400":r.delta<0?"text-red-400":"text-slate-600"}`}>
+                      <td className={`py-2.5 text-right font-semibold font-mono hidden sm:table-cell ${r.delta>0?"text-emerald-400":r.delta<0?"text-red-400":"text-slate-600"}`}>
                         {r.delta!==0?`${r.delta>0?"+":""}${r.delta.toFixed(2)}%`:"—"}
                       </td>
                       <td className="py-2.5 text-center">
@@ -5400,8 +5400,9 @@ export default function ClientDashboardPage() {
                   </button>
                   {loggedIn ? (
                     <button onClick={()=>void router.push("/client/logout")}
-                      className="hidden sm:flex items-center gap-2 px-3 py-2 text-slate-400 hover:text-slate-200 text-xs rounded-lg border border-[#1a1f2e] hover:bg-white/5 transition-colors min-h-[44px]">
-                      <LogOut size={13}/>Sair
+                      className="flex items-center gap-2 px-2 sm:px-3 py-2 text-slate-400 hover:text-slate-200 text-xs rounded-lg border border-[#1a1f2e] hover:bg-white/5 transition-colors min-h-[44px] min-w-[44px] justify-center">
+                      <LogOut size={14}/>
+                      <span className="hidden sm:inline">Sair</span>
                     </button>
                   ) : (
                     <button onClick={()=>setShowRegModal(true)}
