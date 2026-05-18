@@ -14,7 +14,7 @@ import {
   ShieldCheck, Clock, Settings, LogOut, ChevronDown, Info,
   ArrowUpRight, ArrowDownRight, Minus, X, Eye, EyeOff,
   Globe, Activity, HelpCircle, Mail, Phone, MapPin, Send,
-  CheckCircle2, Receipt, Bell, Sliders, AlertTriangle, Trash2,
+  CheckCircle2, Receipt, Bell, Sliders, AlertTriangle, Trash2, Menu,
 } from "lucide-react";
 import {
   isClientLoggedIn, getCurrentSessionUser,
@@ -842,51 +842,65 @@ const NAV=[
   {id:"ajuda",      label:"Ajuda",          Icon:HelpCircle},
   {id:"contactos",  label:"Contactos",      Icon:Mail},
 ];
-function Sidebar({user,profile,loggedIn,onRegister,activePage,onNavigate}:{
+function Sidebar({user,profile,loggedIn,onRegister,activePage,onNavigate,open,onClose}:{
   user:string|null;profile:string;loggedIn:boolean;onRegister:()=>void;
-  activePage:Page;onNavigate:(p:Page)=>void;
+  activePage:Page;onNavigate:(p:Page)=>void;open:boolean;onClose:()=>void;
 }) {
   const router=useRouter();
   const initials=(user??"JC").slice(0,2).toUpperCase();
   const profilePt=profile==="conservador"?"Conservador":profile==="dinamico"?"Dinâmico":"Moderado";
   return (
-    <aside className="flex flex-col w-56 min-h-screen bg-[#07090f] border-r border-[#1a1f2e] shrink-0">
-      <div className="border-b border-[#1a1f2e]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/images/logo-decide.png" alt="DECIDE" className="w-full h-20 object-cover object-left" />
-      </div>
-      <nav className="flex-1 px-3 py-4 space-y-0.5">
-        {NAV.map(({id,label,Icon})=>(
-          <button key={id} onClick={()=>onNavigate(id as Page)}
-            className={["w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-              activePage===id?"bg-blue-600/15 text-blue-400 border border-blue-500/25":"text-slate-400 hover:text-slate-200 hover:bg-white/5"].join(" ")}>
-            <Icon size={16}/>{label}
+    <>
+      {/* Mobile backdrop */}
+      {open&&<div className="fixed inset-0 bg-black/60 z-40 lg:hidden" onClick={onClose}/>}
+
+      <aside className={[
+        "flex flex-col w-64 bg-[#07090f] border-r border-[#1a1f2e] shrink-0 z-50",
+        // Mobile: fixed overlay drawer, slide in/out
+        "fixed inset-y-0 left-0 lg:static lg:translate-x-0",
+        "transition-transform duration-200 ease-in-out",
+        open?"translate-x-0":"-translate-x-full lg:translate-x-0",
+      ].join(" ")}>
+        <div className="border-b border-[#1a1f2e] flex items-center justify-between pr-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/images/logo-decide.png" alt="DECIDE" className="h-16 w-auto object-contain object-left pl-3" />
+          <button onClick={onClose} className="lg:hidden p-2 text-slate-500 hover:text-slate-300" aria-label="Fechar menu">
+            <X size={18}/>
           </button>
-        ))}
-      </nav>
-      <div className="px-3 py-4 border-t border-[#1a1f2e] space-y-1">
-        {loggedIn ? (
-          <>
-            <div className="flex items-center gap-3 px-3 py-2">
-              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs shrink-0">{initials}</div>
-              <div className="min-w-0">
-                <div className="text-slate-200 text-xs font-semibold truncate">{user??"Utilizador"}</div>
-                <div className="text-slate-400 text-[10px]">Perfil: {profilePt}</div>
-              </div>
-            </div>
-            <button onClick={()=>void router.push("/client/logout")}
-              className="w-full flex items-center gap-3 px-3 py-2 text-slate-500 hover:text-slate-300 text-xs rounded-lg hover:bg-white/5 transition-colors">
-              <LogOut size={14}/>Sair
+        </div>
+        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+          {NAV.map(({id,label,Icon})=>(
+            <button key={id} onClick={()=>{onNavigate(id as Page);onClose();}}
+              className={["w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors min-h-[44px]",
+                activePage===id?"bg-blue-600/15 text-blue-400 border border-blue-500/25":"text-slate-400 hover:text-slate-200 hover:bg-white/5 active:bg-white/10"].join(" ")}>
+              <Icon size={17}/>{label}
             </button>
-          </>
-        ) : (
-          <button onClick={onRegister}
-            className="w-full flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-slate-200 text-xs rounded-lg hover:bg-white/5 transition-colors">
-            <LogOut size={14}/>Entrar / Criar conta
-          </button>
-        )}
-      </div>
-    </aside>
+          ))}
+        </nav>
+        <div className="px-3 py-4 border-t border-[#1a1f2e] space-y-1">
+          {loggedIn ? (
+            <>
+              <div className="flex items-center gap-3 px-3 py-2">
+                <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs shrink-0">{initials}</div>
+                <div className="min-w-0">
+                  <div className="text-slate-200 text-xs font-semibold truncate">{user??"Utilizador"}</div>
+                  <div className="text-slate-400 text-[10px]">Perfil: {profilePt}</div>
+                </div>
+              </div>
+              <button onClick={()=>void router.push("/client/logout")}
+                className="w-full flex items-center gap-3 px-3 py-2.5 text-slate-500 hover:text-slate-300 text-xs rounded-lg hover:bg-white/5 transition-colors min-h-[44px]">
+                <LogOut size={14}/>Sair
+              </button>
+            </>
+          ) : (
+            <button onClick={()=>{onRegister();onClose();}}
+              className="w-full flex items-center gap-3 px-3 py-2.5 text-slate-400 hover:text-slate-200 text-xs rounded-lg hover:bg-white/5 transition-colors min-h-[44px]">
+              <LogOut size={14}/>Entrar / Criar conta
+            </button>
+          )}
+        </div>
+      </aside>
+    </>
   );
 }
 
@@ -2248,7 +2262,8 @@ function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,prof
         ))}
       </div>
       {histTab==="reco"&&(
-        <table className="w-full text-xs">
+        <div className="overflow-x-auto">
+        <table className="w-full text-xs min-w-[500px]">
           <thead>
             <tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
               <th className="px-5 py-3 font-semibold w-36">Data</th>
@@ -2319,7 +2334,7 @@ function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,prof
                         </div>
 
                         {/* ── Section 2: Mini-chart + Actions ── */}
-                        <div className="grid grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 lg:gap-6">
                           {/* Mini chart with benchmark */}
                           <div>
                             <div className="text-[10px] text-slate-600 mb-2 font-semibold uppercase tracking-wide">Evolução ±3 meses</div>
@@ -2418,6 +2433,7 @@ function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,prof
             ))}
           </tbody>
         </table>
+        </div>
       )}
       {histTab==="ops"&&<div className="p-8 text-slate-600 text-sm italic text-center">Operações executadas em corretora — disponível após ligação ao Interactive Brokers.</div>}
       {histTab==="carteira"&&<div className="p-8 text-slate-600 text-sm italic text-center">Evolução histórica da composição da carteira — em breve.</div>}
@@ -3135,46 +3151,46 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [showExposicao,setShowExposicao]=React.useState(false);
 
   return (
-    <div className="flex flex-col h-full bg-[#07090f] -m-4 md:-m-6">
+    <div className="flex flex-col h-full bg-[#07090f] -m-4 lg:-m-6">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="bg-[#07090f] border-b border-[#1a1f2e] px-8 py-5 shrink-0">
-        <div className="flex items-start justify-between mb-5">
+      <div className="bg-[#07090f] border-b border-[#1a1f2e] px-4 sm:px-6 lg:px-8 py-4 lg:py-5 shrink-0">
+        <div className="flex items-start justify-between mb-4">
           <div>
-            <h1 className="text-xl font-bold text-slate-100">Confirmar e enviar ordens</h1>
-            <p className="text-sm text-slate-400 mt-1">Valide os detalhes da nova ordem antes de a submeter ao sistema.</p>
+            <h1 className="text-lg lg:text-xl font-bold text-slate-100">Confirmar e enviar ordens</h1>
+            <p className="text-xs lg:text-sm text-slate-400 mt-1">Valide os detalhes da nova ordem antes de a submeter ao sistema.</p>
           </div>
           <span className="text-xs text-slate-500 mt-1 shrink-0">1 de 1</span>
         </div>
-        {/* Progress steps */}
-        <div className="flex items-center">
+        {/* Progress steps — scroll on mobile */}
+        <div className="flex items-center overflow-x-auto scrollbar-none pb-1">
           {[
             {label:"Seleção da Carteira",done:true},
-            {label:"Revisão e validação da lista de ordem",done:true},
+            {label:"Revisão e validação",done:true},
             {label:"Confirmação",active:true},
           ].map((s,i)=>(
             <React.Fragment key={s.label}>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors ${s.done?"bg-emerald-600 border-emerald-500 text-white":"bg-blue-600 border-blue-500 text-white"}`}>
                   {s.done?<CheckCircle2 size={12}/>:<span className="w-2 h-2 rounded-full bg-white inline-block"/>}
                 </div>
                 <span className={`text-xs font-semibold whitespace-nowrap ${s.done?"text-emerald-400":"text-slate-100"}`}>{s.label}</span>
               </div>
-              {i<2&&<div className="flex-1 h-px bg-[#1a1f2e] mx-4 min-w-6"/>}
+              {i<2&&<div className="flex-1 h-px bg-[#1a1f2e] mx-3 min-w-4"/>}
             </React.Fragment>
           ))}
         </div>
       </div>
 
-      {/* ── Body: two-column layout ──────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* ── Body: two-column layout (stacks on mobile) ───────────────────── */}
+      <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
 
         {/* LEFT COLUMN — scrollable main content */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+        <div className="flex-1 overflow-y-auto px-4 lg:px-6 py-5 space-y-4">
 
           {/* O que mais a confirmar */}
           <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
             <div className="font-semibold text-slate-200 text-sm mb-4">O que mais a confirmar</div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
                 {icon:<ShieldCheck size={15} className="text-blue-400"/>,title:"Validação das ordens",desc:"Serão validadas a conformidade, disponibilidade de liquidez e regras de investimento."},
                 {icon:<Activity size={15} className="text-blue-400"/>,title:"Impacto na carteira e risco",desc:"Serão confirmados os limites de risco impostos na carteira e o impacto nas novas ordens."},
@@ -3221,7 +3237,8 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
               <Info size={10} className="shrink-0"/>
               <span>Total de compras limitado a <strong>{Math.round(BUY_SAFETY_FACTOR*100)}%</strong> do plano (≤ € {fmtE(aum*BUY_SAFETY_FACTOR)}) — reserva de {Math.round((1-BUY_SAFETY_FACTOR)*100)}% em cash.</span>
             </div>
-            <table className="w-full text-xs">
+            <div className="overflow-x-auto -mx-1">
+            <table className="w-full text-xs min-w-[520px]">
               <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
                 <th className="pb-2 font-semibold">Ordem / Ticker</th>
                 <th className="pb-2 font-semibold">Acção</th>
@@ -3305,6 +3322,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                 </tr>
               </tfoot>
             </table>
+            </div>{/* end overflow-x-auto */}
             <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#1a1f2e]">
               <button onClick={onBack} className="text-xs text-sky-400 hover:text-sky-300 transition-colors">Ver recomendações</button>
               <span className="text-[10px] text-slate-600">Estimativa de comissões ({nOrdens>0&&(investEur+reduceEur)>0?(tradeCost/(investEur+reduceEur)*100).toFixed(3):"0.000"}%): € {fmtE(tradeCost)}</span>
@@ -4121,8 +4139,8 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                 <AlertTriangle size={16} className="text-amber-400 shrink-0"/>
                 <span className="text-sm font-bold text-amber-300">Confirmar envio de {nOrdens} {nOrdens===1?"ordem":"ordens"} à Interactive Brokers</span>
               </div>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div className="bg-emerald-900/30 border border-emerald-700/40 rounded-lg px-3 py-2 text-center">
+              <div className="grid grid-cols-3 gap-2 text-xs overflow-x-auto">
+                <div className="bg-emerald-900/30 border border-emerald-700/40 rounded-lg px-3 py-2 text-center min-w-[80px]">
                   <div className="text-slate-400 mb-0.5">Total compras</div>
                   <div className="text-emerald-300 font-bold text-sm">€{investEur.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
                   <div className="text-slate-500">{totalBuyPct.toFixed(1)}% plano</div>
@@ -4145,10 +4163,10 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
                 <p className="text-xs text-red-300 font-semibold">⚠ Já enviou ordens há {Math.round((Date.now()-lastSent.ts)/60000)} min. Confirma que quer enviar de novo?</p>
               )}
               <div className="flex gap-3">
-                <button onClick={()=>setShowSendConfirm(false)} className="flex-1 py-2.5 text-sm font-bold bg-slate-800 hover:bg-slate-700 border border-slate-600/50 text-slate-300 rounded-xl transition-colors">
+                <button onClick={()=>setShowSendConfirm(false)} className="flex-1 py-3 text-sm font-bold bg-slate-800 hover:bg-slate-700 border border-slate-600/50 text-slate-300 rounded-xl transition-colors min-h-[48px]">
                   Cancelar
                 </button>
-                <button onClick={submitOrders} className="flex-1 py-2.5 text-sm font-bold bg-red-700 hover:bg-red-600 text-white rounded-xl transition-colors flex items-center justify-center gap-2">
+                <button onClick={submitOrders} className="flex-1 py-3 text-sm font-bold bg-red-700 hover:bg-red-600 text-white rounded-xl transition-colors flex items-center justify-center gap-2 min-h-[48px]">
                   <Send size={14}/>Confirmar — enviar ordens agora
                 </button>
               </div>
@@ -4166,7 +4184,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         </div>
 
         {/* ── RIGHT PANEL — sticky "Resumo da ordem" ─────────────────────── */}
-        <div className="w-72 shrink-0 border-l border-[#1a1f2e] overflow-y-auto bg-[#07090f]">
+        <div className="w-full lg:w-72 shrink-0 border-t lg:border-t-0 lg:border-l border-[#1a1f2e] overflow-y-auto bg-[#07090f]">
           <div className="p-4 space-y-3">
             {/* Header */}
             <div className="flex items-center justify-between">
@@ -4544,10 +4562,14 @@ export default function ClientDashboardPage() {
   const [period,setPeriod]=useState<Period>("20 Anos");
   const [regSuccess,setRegSuccess]=useState(false);
   const [activePage,setActivePage]=useState<Page>("dashboard");
+  const [sidebarOpen,setSidebarOpen]=useState(false);
   const [riskProfileLocal,setRiskProfileLocalRaw]=useState<RiskProfile>("moderado");
   const [fxExposure,setFxExposureRaw]=useState<FxExposure>("protegida");
   const [marginEnabled,setMarginEnabledRaw]=useState(false);
   const [configPanelOpen,setConfigPanelOpen]=useState(false);
+  const [openProfileDrop,setOpenProfileDrop]=useState(false);
+  const [openFxDrop,setOpenFxDrop]=useState(false);
+  const [openMarginDrop,setOpenMarginDrop]=useState(false);
 
   // Persist preferences in localStorage
   const LS_KEY="decide_prefs_v1";
@@ -5311,7 +5333,7 @@ export default function ClientDashboardPage() {
 
       <div className="flex min-h-screen bg-[#080c14] text-slate-200" style={{fontFamily:"'Nunito',system-ui,sans-serif"}}>
         <Sidebar user={sessionUser} profile={profile} loggedIn={loggedIn} onRegister={()=>setShowRegModal(true)}
-          activePage={activePage} onNavigate={p=>{setActivePage(p);}}/>
+          activePage={activePage} onNavigate={p=>{setActivePage(p);}} open={sidebarOpen} onClose={()=>setSidebarOpen(false)}/>
 
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* discrete top bar for guests */}
@@ -5327,123 +5349,149 @@ export default function ClientDashboardPage() {
 
           <main className="flex-1 overflow-y-auto">
             {/* ── Page title bar ── */}
-            <div className="flex items-center justify-between px-8 py-4 border-b border-[#1a1f2e]">
-              <div>
-                <h1 className="text-xl font-black text-white">{
-                  activePage==="dashboard"?"Dashboard":
-                  activePage==="reco"?"Recomendações":
-                  activePage==="carteira"?"Carteira":
-                  activePage==="perf"?"Performance":
-                  activePage==="risco"?"Risco":
-                  activePage==="historico"?"Histórico":
-                  activePage==="simulador"?"Simulador":
-                  activePage==="relatorios"?"Relatórios":
-                  activePage==="actividade"?"Actividade":
-                  activePage==="custos"?"Custos":
-                  activePage==="robustez"?"Testes de Robustez":
-                  activePage==="ajuda"?"Ajuda":
-                  activePage==="ordens"?"Confirmar e enviar ordens":"Contactos"
-                }</h1>
-                <p className="text-slate-400 text-xs mt-0.5">{
-                  activePage==="dashboard"?"Visão geral da sua carteira e recomendações":
-                  activePage==="reco"?"Recomendação mensal do modelo — "+recoLabel:
-                  activePage==="carteira"?"Composição e alocação da carteira":
-                  activePage==="perf"?"Análise de performance histórica":
-                  activePage==="risco"?"Métricas e análise de risco":
-                  activePage==="historico"?"Histórico de recomendações":
-                  activePage==="simulador"?"Simule diferentes cenários de investimento":
-                  activePage==="relatorios"?"Relatórios detalhados da carteira":
-                  activePage==="actividade"?"Registo completo de todas as operações e alterações":
-                  activePage==="custos"?"Transparência total sobre os custos do serviço e da sua carteira":
-                  activePage==="robustez"?"Metodologia, cenários de stress e resultados dos testes internos":
-                  activePage==="ajuda"?"Perguntas frequentes e recursos":
-                  activePage==="ordens"?"Revise o plano e envie as ordens para execução na Interactive Brokers.":
-                  "Fale connosco"
-                }</p>
+            <div className="flex flex-col border-b border-[#1a1f2e]">
+              {/* Top row: hamburger + title + quick actions */}
+              <div className="flex items-center gap-3 px-4 lg:px-8 py-3 lg:py-4">
+                {/* Hamburger (mobile only) */}
+                <button onClick={()=>setSidebarOpen(true)}
+                  className="lg:hidden p-2 -ml-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/5 active:bg-white/10 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                  aria-label="Abrir menu">
+                  <Menu size={22}/>
+                </button>
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-lg lg:text-xl font-black text-white truncate">{
+                    activePage==="dashboard"?"Dashboard":
+                    activePage==="reco"?"Recomendações":
+                    activePage==="carteira"?"Carteira":
+                    activePage==="perf"?"Performance":
+                    activePage==="risco"?"Risco":
+                    activePage==="historico"?"Histórico":
+                    activePage==="simulador"?"Simulador":
+                    activePage==="relatorios"?"Relatórios":
+                    activePage==="actividade"?"Actividade":
+                    activePage==="custos"?"Custos":
+                    activePage==="robustez"?"Testes de Robustez":
+                    activePage==="ajuda"?"Ajuda":
+                    activePage==="ordens"?"Confirmar e enviar ordens":"Contactos"
+                  }</h1>
+                  <p className="text-slate-400 text-xs mt-0.5 hidden sm:block">{
+                    activePage==="dashboard"?"Visão geral da sua carteira e recomendações":
+                    activePage==="reco"?"Recomendação mensal do modelo — "+recoLabel:
+                    activePage==="carteira"?"Composição e alocação da carteira":
+                    activePage==="perf"?"Análise de performance histórica":
+                    activePage==="risco"?"Métricas e análise de risco":
+                    activePage==="historico"?"Histórico de recomendações":
+                    activePage==="simulador"?"Simule diferentes cenários de investimento":
+                    activePage==="relatorios"?"Relatórios detalhados da carteira":
+                    activePage==="actividade"?"Registo completo de todas as operações e alterações":
+                    activePage==="custos"?"Transparência total sobre os custos do serviço e da sua carteira":
+                    activePage==="robustez"?"Metodologia, cenários de stress e resultados dos testes internos":
+                    activePage==="ajuda"?"Perguntas frequentes e recursos":
+                    activePage==="ordens"?"Revise o plano e envie as ordens para execução na Interactive Brokers.":
+                    "Fale connosco"
+                  }</p>
+                </div>
+                {/* Quick actions: settings + login (always visible) */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button onClick={()=>setConfigPanelOpen(true)}
+                    className="p-2.5 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg hover:border-blue-500/50 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
+                    <Sliders size={16} className="text-slate-400"/>
+                  </button>
+                  {loggedIn ? (
+                    <button onClick={()=>void router.push("/client/logout")}
+                      className="hidden sm:flex items-center gap-2 px-3 py-2 text-slate-400 hover:text-slate-200 text-xs rounded-lg border border-[#1a1f2e] hover:bg-white/5 transition-colors min-h-[44px]">
+                      <LogOut size={13}/>Sair
+                    </button>
+                  ) : (
+                    <button onClick={()=>setShowRegModal(true)}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-colors shadow-lg shadow-blue-900/30 min-h-[44px]">
+                      Criar conta
+                    </button>
+                  )}
+                </div>
               </div>
-              {/* ── Global config strip ── */}
-              <div className="flex items-center gap-2">
+              {/* Config strip (scrollable on mobile) */}
+              <div className="flex items-center gap-2 px-4 lg:px-8 pb-3 overflow-x-auto scrollbar-none">
                 {/* Perfil de risco */}
-                <div className="relative group">
-                  <button className="flex items-center gap-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg px-3 py-2 text-xs text-slate-300 hover:border-blue-500/50 transition-colors">
+                <div className="relative shrink-0">
+                  <button onClick={()=>{setOpenProfileDrop(v=>!v);setOpenFxDrop(false);setOpenMarginDrop(false);}}
+                    className="flex items-center gap-1.5 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg px-3 py-2 text-xs text-slate-300 hover:border-blue-500/50 transition-colors min-h-[40px]">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"/>
-                    <span className="text-[10px] text-slate-500 hidden sm:block">Perfil de risco</span>
+                    <span className="text-[10px] text-slate-500 hidden md:block">Perfil</span>
                     <span className="font-semibold text-slate-200">{riskProfileLocal==="conservador"?"Conservador":riskProfileLocal==="dinamico"?"Dinâmico":"Moderado"}</span>
                     <ChevronDown size={12} className="text-slate-500"/>
                   </button>
-                  <div className="absolute right-0 top-full mt-1 z-50 hidden group-hover:block bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl shadow-xl min-w-[140px]">
-                    {(["conservador","moderado","dinamico"] as RiskProfile[]).map(p=>(
-                      <button key={p} onClick={()=>setRiskProfileLocal(p)} className={`w-full px-4 py-2.5 text-left text-xs hover:bg-white/5 flex items-center gap-2 first:rounded-t-xl last:rounded-b-xl ${riskProfileLocal===p?"text-blue-400 font-bold":"text-slate-300"}`}>
-                        {riskProfileLocal===p&&<span className="w-1.5 h-1.5 rounded-full bg-blue-400"/>}
-                        {p==="conservador"?"Conservador":p==="dinamico"?"Dinâmico":"Moderado"}
-                      </button>
-                    ))}
-                  </div>
+                  {openProfileDrop&&<>
+                    <div className="fixed inset-0 z-40" onClick={()=>setOpenProfileDrop(false)}/>
+                    <div className="absolute left-0 top-full mt-1 z-50 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl shadow-xl min-w-[150px]">
+                      {(["conservador","moderado","dinamico"] as RiskProfile[]).map(p=>(
+                        <button key={p} onClick={()=>{setRiskProfileLocal(p);setOpenProfileDrop(false);}}
+                          className={`w-full px-4 py-3 text-left text-xs hover:bg-white/5 active:bg-white/10 flex items-center gap-2 first:rounded-t-xl last:rounded-b-xl ${riskProfileLocal===p?"text-blue-400 font-bold":"text-slate-300"}`}>
+                          {riskProfileLocal===p&&<span className="w-1.5 h-1.5 rounded-full bg-blue-400"/>}
+                          {p==="conservador"?"Conservador":p==="dinamico"?"Dinâmico":"Moderado"}
+                        </button>
+                      ))}
+                    </div>
+                  </>}
                 </div>
                 {/* Exposição cambial */}
-                <div className="relative group">
-                  <button className="flex items-center gap-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg px-3 py-2 text-xs text-slate-300 hover:border-blue-500/50 transition-colors">
+                <div className="relative shrink-0">
+                  <button onClick={()=>{setOpenFxDrop(v=>!v);setOpenProfileDrop(false);setOpenMarginDrop(false);}}
+                    className="flex items-center gap-1.5 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg px-3 py-2 text-xs text-slate-300 hover:border-blue-500/50 transition-colors min-h-[40px]">
                     <ShieldCheck size={12} className="text-blue-400 shrink-0"/>
-                    <span className="text-[10px] text-slate-500 hidden sm:block">Exposição cambial</span>
+                    <span className="text-[10px] text-slate-500 hidden md:block">Câmbio</span>
                     <span className="font-semibold text-slate-200">{fxExposure==="protegida"?"Protegida":fxExposure==="parcial"?"Parcial":"Aberta"}</span>
                     <ChevronDown size={12} className="text-slate-500"/>
                   </button>
-                  <div className="absolute right-0 top-full mt-1 z-50 hidden group-hover:block bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl shadow-xl min-w-[140px]">
-                    {(["protegida","parcial","aberta"] as FxExposure[]).map(fx=>(
-                      <button key={fx} onClick={()=>setFxExposure(fx)} className={`w-full px-4 py-2.5 text-left text-xs hover:bg-white/5 flex items-center gap-2 first:rounded-t-xl last:rounded-b-xl ${fxExposure===fx?"text-blue-400 font-bold":"text-slate-300"}`}>
-                        {fxExposure===fx&&<span className="w-1.5 h-1.5 rounded-full bg-blue-400"/>}
-                        {fx==="protegida"?"Protegida (Hedge ~90%)":fx==="parcial"?"Parcial (Hedge ~50%)":"Aberta (Sem hedge)"}
-                      </button>
-                    ))}
-                  </div>
+                  {openFxDrop&&<>
+                    <div className="fixed inset-0 z-40" onClick={()=>setOpenFxDrop(false)}/>
+                    <div className="absolute left-0 top-full mt-1 z-50 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl shadow-xl min-w-[180px]">
+                      {(["protegida","parcial","aberta"] as FxExposure[]).map(fx=>(
+                        <button key={fx} onClick={()=>{setFxExposure(fx);setOpenFxDrop(false);}}
+                          className={`w-full px-4 py-3 text-left text-xs hover:bg-white/5 active:bg-white/10 flex items-center gap-2 first:rounded-t-xl last:rounded-b-xl ${fxExposure===fx?"text-blue-400 font-bold":"text-slate-300"}`}>
+                          {fxExposure===fx&&<span className="w-1.5 h-1.5 rounded-full bg-blue-400"/>}
+                          {fx==="protegida"?"Protegida (Hedge ~90%)":fx==="parcial"?"Parcial (Hedge ~50%)":"Aberta (Sem hedge)"}
+                        </button>
+                      ))}
+                    </div>
+                  </>}
                 </div>
                 {/* Uso de margem */}
-                <div className="relative group">
-                  <button className="flex items-center gap-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg px-3 py-2 text-xs text-slate-300 hover:border-blue-500/50 transition-colors">
+                <div className="relative shrink-0">
+                  <button onClick={()=>{setOpenMarginDrop(v=>!v);setOpenProfileDrop(false);setOpenFxDrop(false);}}
+                    className="flex items-center gap-1.5 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg px-3 py-2 text-xs text-slate-300 hover:border-blue-500/50 transition-colors min-h-[40px]">
                     <Activity size={12} className={marginEnabled?"text-amber-400":"text-slate-500"} />
-                    <span className="text-[10px] text-slate-500 hidden sm:block">Uso de margem</span>
+                    <span className="text-[10px] text-slate-500 hidden md:block">Margem</span>
                     <span className={`font-semibold ${marginEnabled?"text-amber-400":"text-slate-200"}`}>{marginEnabled?"Ativado":"Desativado"}</span>
                     <ChevronDown size={12} className="text-slate-500"/>
                   </button>
-                  <div className="absolute right-0 top-full mt-1 z-50 hidden group-hover:block bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl shadow-xl min-w-[180px] p-3">
-                    <div className="text-[10px] text-slate-500 mb-2">Uso de margem (avançado)</div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-slate-300">{marginEnabled?"Ativado":"Desativado"}</span>
-                      <button onClick={()=>setMarginEnabled(v=>!v)} className={`relative w-10 h-5 rounded-full transition-colors ${marginEnabled?"bg-amber-500":"bg-slate-700"}`}>
-                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${marginEnabled?"translate-x-5":"translate-x-0.5"}`}/>
-                      </button>
+                  {openMarginDrop&&<>
+                    <div className="fixed inset-0 z-40" onClick={()=>setOpenMarginDrop(false)}/>
+                    <div className="absolute left-0 top-full mt-1 z-50 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl shadow-xl min-w-[200px] p-3">
+                      <div className="text-[10px] text-slate-500 mb-2">Uso de margem (avançado)</div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-slate-300">{marginEnabled?"Ativado":"Desativado"}</span>
+                        <button onClick={()=>setMarginEnabled(v=>!v)} className={`relative w-11 h-6 rounded-full transition-colors ${marginEnabled?"bg-amber-500":"bg-slate-700"}`}>
+                          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${marginEnabled?"translate-x-5":"translate-x-0.5"}`}/>
+                        </button>
+                      </div>
+                      {marginEnabled&&<div className="flex items-start gap-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
+                        <AlertTriangle size={10} className="text-amber-400 mt-0.5 shrink-0"/>
+                        <div className="text-[9px] text-amber-300 leading-relaxed">A utilização de margem aumenta o risco da carteira e pode amplificar perdas.</div>
+                      </div>}
                     </div>
-                    {marginEnabled&&<div className="flex items-start gap-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
-                      <AlertTriangle size={10} className="text-amber-400 mt-0.5 shrink-0"/>
-                      <div className="text-[9px] text-amber-300 leading-relaxed">A utilização de margem aumenta o risco da carteira e pode amplificar perdas.</div>
-                    </div>}
-                  </div>
+                  </>}
                 </div>
                 {/* Date */}
-                <div className="flex items-center gap-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg px-3 py-2 shrink-0 min-h-[40px]">
                   <span className="text-[10px] text-slate-300">📅</span>
-                  <span className="text-xs text-slate-300 font-medium">{new Date().toLocaleDateString("pt-PT",{month:"long",year:"numeric"}).replace(/^\w/,c=>c.toUpperCase())}</span>
+                  <span className="text-xs text-slate-300 font-medium whitespace-nowrap">{new Date().toLocaleDateString("pt-PT",{month:"long",year:"numeric"}).replace(/^\w/,c=>c.toUpperCase())}</span>
                 </div>
-                {/* Config bell/settings */}
+                {/* Bell */}
                 <button onClick={()=>setConfigPanelOpen(true)}
-                  className="relative p-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg hover:border-blue-500/50 transition-colors">
-                  <Bell size={16} className="text-slate-400"/>
+                  className="relative p-2.5 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg hover:border-blue-500/50 transition-colors shrink-0 min-w-[40px] min-h-[40px] flex items-center justify-center">
+                  <Bell size={15} className="text-slate-400"/>
                 </button>
-                <button onClick={()=>setConfigPanelOpen(true)}
-                  className="p-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-lg hover:border-blue-500/50 transition-colors">
-                  <Sliders size={16} className="text-slate-400"/>
-                </button>
-                {loggedIn ? (
-                  <button onClick={()=>void router.push("/client/logout")}
-                    className="flex items-center gap-2 px-3 py-2 text-slate-400 hover:text-slate-200 text-xs rounded-lg border border-[#1a1f2e] hover:bg-white/5 transition-colors">
-                    <LogOut size={13}/>Sair
-                  </button>
-                ) : (
-                  <button onClick={()=>setShowRegModal(true)}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-colors shadow-lg shadow-blue-900/30">
-                    Criar conta
-                  </button>
-                )}
               </div>
             </div>
 
@@ -5553,7 +5601,7 @@ export default function ClientDashboardPage() {
               </div>
             )}
 
-            <div className="px-8 py-6 space-y-5">
+            <div className="px-4 sm:px-6 lg:px-8 py-5 lg:py-6 space-y-5">
 
 
               {/* ── RELATÓRIOS ── */}
@@ -5978,7 +6026,7 @@ export default function ClientDashboardPage() {
                     const fmtE=(v:number)=>v.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0});
                     const annVal=perfData?.inception.ann??0;
                     return (
-                      <div className="grid grid-cols-5 gap-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                         {[
                           {label:"Património",val:`€ ${fmtE(aum)}`,sub:"valor actual",
                            icon:<div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center"><Briefcase size={15} className="text-blue-400"/></div>,
@@ -6012,10 +6060,10 @@ export default function ClientDashboardPage() {
                   })()}
 
                   {/* ── Row 2: action-count badges + últimas recomendações ── */}
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
-                    {/* Últimas recomendações (2/3) */}
-                    <div className="col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 hover:border-slate-700/60 transition-colors duration-200">
+                    {/* Últimas recomendações (2/3 on lg, full on mobile) */}
+                    <div className="lg:col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 hover:border-slate-700/60 transition-colors duration-200">
                       <div className="flex items-center justify-between mb-4">
                         <div className="font-bold text-slate-100 text-sm">Últimas recomendações</div>
                         <button onClick={()=>setActivePage("reco")} className="text-[11px] text-teal-400 hover:text-teal-300 flex items-center gap-1 transition-colors">Ver todas<ArrowUpRight size={12}/></button>
@@ -6023,7 +6071,8 @@ export default function ClientDashboardPage() {
                       {recoLoading?(
                         <div className="text-slate-500 text-sm text-center py-4">A carregar…</div>
                       ):(
-                        <table className="w-full text-xs">
+                        <div className="overflow-x-auto">
+                        <table className="w-full text-xs min-w-[320px]">
                           <thead><tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
                             <th className="pb-2 font-semibold">Ativo</th>
                             <th className="pb-2 font-semibold">Ação</th>
@@ -6057,6 +6106,7 @@ export default function ClientDashboardPage() {
                             })}
                           </tbody>
                         </table>
+                        </div>
                       )}
                     </div>
 
@@ -6375,12 +6425,12 @@ export default function ClientDashboardPage() {
               {/* ── RECOMENDAÇÕES ── */}
               {activePage==="reco"&&(
               <>{/* 1. recomendação */}
-              <div data-section="reco" className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-6">
-                <div className="flex items-start justify-between gap-8">
+              <div data-section="reco" className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 lg:p-6">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5 lg:gap-8">
                   {/* Action counts */}
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <div className="text-xs text-slate-500 font-medium mb-4 uppercase tracking-widest">Recomendação · {recoLabel}</div>
-                    <div className="flex gap-6">
+                    <div className="flex flex-wrap gap-2 lg:gap-4">
                       {[
                         {label:"Nova posição", count:recoLoading?0:(officialCounts??actionCounts).comprar,  c:"text-teal-400",  bg:"bg-teal-500/10",  b:"border-teal-500/20"},
                         {label:"Reforçar",     count:recoLoading?0:(officialCounts??actionCounts).aumentar, c:"text-blue-400",  bg:"bg-blue-500/10",  b:"border-blue-500/20"},
@@ -6388,28 +6438,28 @@ export default function ClientDashboardPage() {
                         {label:"Encerrar",     count:recoLoading?0:(officialCounts??actionCounts).vender,   c:"text-red-400",   bg:"bg-red-500/10",   b:"border-red-500/20"},
                         {label:"Manter",       count:recoLoading?0:(officialCounts??actionCounts).manter,   c:"text-slate-400", bg:"bg-slate-800/40", b:"border-slate-700/30"},
                       ].map(x=>(
-                        <div key={x.label} className={`flex flex-col items-center gap-1.5 rounded-xl px-5 py-4 ${x.bg} border ${x.b} min-w-[80px]`}>
-                          <span className={`text-3xl font-black tabular-nums ${x.c}`}>{x.count}</span>
+                        <div key={x.label} className={`flex flex-col items-center gap-1.5 rounded-xl px-4 py-3 ${x.bg} border ${x.b} min-w-[68px]`}>
+                          <span className={`text-2xl lg:text-3xl font-black tabular-nums ${x.c}`}>{x.count}</span>
                           <span className={`text-[10px] font-semibold ${x.c} opacity-80`}>{x.label}</span>
                         </div>
                       ))}
                     </div>
-                    <div className="mt-4 flex items-center gap-4 text-xs text-slate-500 pt-4 border-t border-[#1a1f2e]">
+                    <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-500 pt-4 border-t border-[#1a1f2e]">
                       <span>Risco estimado: <span className="text-teal-400 font-semibold">↓ Ligeiro</span></span>
-                      <span className="text-slate-700">·</span>
+                      <span className="hidden sm:inline text-slate-700">·</span>
                       <span>Retorno esperado: <span className="text-blue-400 font-semibold">↑ Moderado</span></span>
-                      <span className="text-slate-700">·</span>
+                      <span className="hidden sm:inline text-slate-700">·</span>
                       <span>Perfil: <span className="text-slate-300 font-semibold">{profileLabel}</span></span>
                     </div>
                   </div>
                   {/* CTA */}
-                  <div className="flex flex-col gap-2 min-w-[200px] shrink-0">
+                  <div className="flex flex-row lg:flex-col gap-2 lg:min-w-[200px] shrink-0">
                     <button onClick={()=>setActivePage(loggedIn?"ordens":"reco")}
                       onClickCapture={!loggedIn?()=>setShowRegModal(true):undefined}
-                      className="bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold px-6 py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-teal-900/40 ring-1 ring-teal-500/30 hover:scale-[1.02] active:scale-100">
+                      className="flex-1 lg:flex-none bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold px-5 py-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-teal-900/40 ring-1 ring-teal-500/30 active:scale-100 min-h-[48px]">
                       <CheckCircle2 size={16}/> Aprovar Plano
                     </button>
-                    <button onClick={()=>setActivePage("carteira")} className="bg-[#111827] border border-[#252a3a] hover:bg-[#151929] text-slate-400 text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors">
+                    <button onClick={()=>setActivePage("carteira")} className="flex-1 lg:flex-none bg-[#111827] border border-[#252a3a] hover:bg-[#151929] text-slate-400 text-xs font-semibold px-4 py-3 rounded-lg transition-colors min-h-[44px]">
                       Ver carteira completa
                     </button>
                   </div>
@@ -6419,7 +6469,7 @@ export default function ClientDashboardPage() {
               {/* O que mudou (full width) */}
               <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                 <SH title="O que mudou"/>
-                <div className="grid grid-cols-2 gap-6 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-6 mt-3">
                   {whatChanged.map((b,i)=>(
                     <div key={i} className="flex gap-3">
                       <div className="mt-0.5 shrink-0">
@@ -6445,7 +6495,8 @@ export default function ClientDashboardPage() {
                 ):actionCounts.allRows.length===0?(
                   <div className="text-slate-500 text-sm text-center py-6">Sem recomendações este mês</div>
                 ):(
-                  <table className="w-full text-xs">
+                  <div className="overflow-x-auto">
+                  <table className="w-full text-xs min-w-[500px]">
                     <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
                       <th className="text-left pb-2 font-semibold">Ativo</th>
                       <th className="text-left pb-2 font-semibold">Setor</th>
@@ -6581,6 +6632,7 @@ export default function ClientDashboardPage() {
                       </tr>
                     </tfoot>
                   </table>
+                  </div>
                 )}
               </div>
             </>
@@ -6620,7 +6672,7 @@ export default function ClientDashboardPage() {
                       return Math.abs(pct-tgt)>=1;
                     }).length:0;
                     return(
-                      <div className="grid grid-cols-4 gap-3">
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                         {[
                           {label:"Acções", val:`${equityPct.toFixed(0)}%`, sub:"exposição a acções", c:"text-teal-400", acc:"border-teal-500/20", bg:"bg-teal-500/5"},
                           {label:"Liquidez (MM)", val:`${cashPct.toFixed(0)}%`, sub:"XEON / cash", c:"text-slate-300", acc:"border-slate-600/30", bg:"bg-slate-800/20"},
@@ -6702,8 +6754,8 @@ export default function ClientDashboardPage() {
                         </div>
                       )}
                       {cartIbPos!==null&&cartIbPos.length>0&&(
-                        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
-                          <table className="w-full text-xs">
+                        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden overflow-x-auto">
+                          <table className="w-full text-xs min-w-[520px]">
                             <thead><tr className="text-slate-500 border-b border-[#1a1f2e] font-semibold">
                               <th className="text-left px-4 py-3">Ativo</th>
                               <th className="text-left px-2 py-3">Nome</th>
@@ -7052,7 +7104,8 @@ export default function ClientDashboardPage() {
                         </label>
                       </div>
                     </div>
-                    <table className="w-full text-xs">
+                    <div className="overflow-x-auto">
+                    <table className="w-full text-xs min-w-[480px]">
                       <thead><tr className="text-slate-500 border-b border-[#1a1f2e] font-semibold">
                         <th className="text-left pb-2">Ativo</th>
                         <th className="text-left pb-2">Nome</th>
@@ -7179,6 +7232,7 @@ export default function ClientDashboardPage() {
                         </tr>
                       </tbody>
                     </table>
+                    </div>{/* end overflow-x-auto */}
                   </div>
                   </>;})()}</div>}{/* end cartTab==="plano" */}
                 </div>
@@ -7209,9 +7263,9 @@ export default function ClientDashboardPage() {
                        delta:benchPerfData.mVol-benchPerfData.vol, isVol:true},
                     ];
                     return(
-                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+                      <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden overflow-x-auto">
                         {/* Header */}
-                        <div className="grid grid-cols-4 border-b border-[#1a1f2e]">
+                        <div className="grid grid-cols-4 border-b border-[#1a1f2e] min-w-[380px]">
                           <div className="px-4 py-2.5 text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Métrica</div>
                           <div className="px-4 py-2.5 text-[10px] font-semibold text-blue-500 uppercase tracking-wider flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-blue-500"/>Modelo</div>
                           <div className="px-4 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-500"/>{BENCH_SHORT}</div>
@@ -7225,7 +7279,7 @@ export default function ClientDashboardPage() {
                               ?`${col.delta>=0?"+":""}${col.delta.toFixed(2)}`
                               :`${col.delta>=0?"+":""}${col.delta.toFixed(2)}pp`;
                           return(
-                            <div key={col.label} className="grid grid-cols-4 border-b border-[#0f172a] hover:bg-white/[0.015]">
+                            <div key={col.label} className="grid grid-cols-4 border-b border-[#0f172a] hover:bg-white/[0.015] min-w-[380px]">
                               <div className="px-4 py-3 text-[11px] text-slate-400 font-medium">{col.label}</div>
                               <div className={`px-4 py-3 text-[14px] font-black ${col.m>=0?"text-emerald-400":"text-red-400"}`}>{col.mFmt}</div>
                               <div className="px-4 py-3 text-[14px] font-bold text-slate-300">{col.bFmt}</div>
@@ -7243,7 +7297,7 @@ export default function ClientDashboardPage() {
                     const ts=turnoverStats;
                     if(!ms&&!ts) return null;
                     return(
-                      <div className="grid grid-cols-4 gap-4">
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         {ms&&<>
                           <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-4">
                             <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Meses acima do bench</div>
@@ -7451,9 +7505,9 @@ export default function ClientDashboardPage() {
                     </div>
 
                     {/* ── Top: gauge + metrics ── */}
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 flex items-center gap-8">
+                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 flex flex-col sm:flex-row items-center gap-6 lg:gap-8">
                       {/* Gauge */}
-                      <div className="flex-shrink-0 w-52">
+                      <div className="flex-shrink-0 w-44 sm:w-52">
                         <div className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Nível de risco</div>
                         <svg viewBox="0 0 220 115" className="w-full">
                           <path d={arc(0,1,R,RI)} fill="#1e293b"/>
@@ -7471,7 +7525,7 @@ export default function ClientDashboardPage() {
                       </div>
                       <div className="w-px self-stretch bg-[#1a1f2e]"/>
                       {/* KPIs — drawdown/vol first, Sharpe secondary */}
-                      <div className="flex-1 grid grid-cols-3 gap-6">
+                      <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 gap-4 lg:gap-6">
                         <div>
                           <div className="text-slate-500 text-[10px] mb-1 uppercase tracking-wide">Volatilidade anual</div>
                           <div className={`text-3xl font-black ${volOk?"text-emerald-400":vol>benchVolTarget*1.1?"text-amber-400":"text-sky-400"}`}>{vol?`${vol.toFixed(1)}%`:"—"}</div>
@@ -7542,7 +7596,7 @@ export default function ClientDashboardPage() {
                     {worstPeriods&&(
                     <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                       <div className="font-bold text-slate-200 text-sm mb-4">Piores períodos históricos</div>
-                      <div className="grid grid-cols-4 gap-4">
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         {[
                           {label:"Pior mês",val:worstPeriods.wm?.ret,date:worstPeriods.wm?.date?.slice(0,7)},
                           {label:"Pior trimestre",val:worstPeriods.wq?.ret,date:worstPeriods.wq?.date?.slice(0,7)},
@@ -7563,7 +7617,7 @@ export default function ClientDashboardPage() {
                     )}
 
                     {/* ── Bottom: sector alloc + return distribution ── */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                         <div className="font-bold text-slate-200 text-sm mb-4">Exposição por sector</div>
                         <div className="space-y-2.5">

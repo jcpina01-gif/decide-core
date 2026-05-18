@@ -1889,3 +1889,13 @@ a.landing-cta:active {
     0 1px 10px rgba(0, 0, 0, 0.35),
     0 0 18px rgba(45, 212, 191, 0.1);
 }
+
+/* ── Mobile utilities ──────────────────────────────────────── */
+/* Hide scrollbar but keep scrollability (mobile config strip) */
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Ensure tables inside cards scroll on small screens */
+@media (max-width: 768px) {
+  .table-scroll-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
