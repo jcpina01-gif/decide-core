@@ -4873,14 +4873,20 @@ export default function ClientDashboardPage() {
     if(!baseTargetVol||!isFinite(baseTargetVol)) return scaledEquity;
     // Boost target vol to ensure average leverage is well above 1× in risk-on periods
     const marginTargetVol=baseTargetVol*MARGIN_BOOST;
-    const xeonPeriods=sortedMonths.length
+    // Prepend a risk-on sentinel for the pre-history period.
+    // Without this, sortedMonths[0]'s XEON % is applied to ALL dates before the first
+    // recommendation (potentially the entire 2006-2023 history), treating them as defensive
+    // and making margin identical to base for the bulk of the 20-year period.
+    const seriesStart=dates[0]??"2000-01-01";
+    const monthPeriods=sortedMonths.length
       ? sortedMonths.map(m=>{
           const date=(m.rebalance_date??m.date??"").slice(0,10);
           const xeonRow=m.rows.find(r=>r.ticker==="XEON");
           const xeonPct=m.tbillsTotalPct??xeonRow?.weightPct??0;
           return {date,xeonPct};
         }).filter(p=>p.date)
-      : [{date:dates[0]??"",xeonPct:0}];
+      : [];
+    const xeonPeriods=[{date:seriesStart,xeonPct:0},...monthPeriods];
     return marginEquityCurveVolTargeted(scaledEquity,benchRaw,dates,xeonPeriods,marginTargetVol,MARGIN_RATE);
   },[scaledEquity,benchRaw,dates,sortedMonths,profileFactor]);
   // Active equity: base or leveraged depending on KPI mode selection
@@ -4918,12 +4924,13 @@ export default function ClientDashboardPage() {
     const s20=Math.max(s20cut,warmupEnd);
     const calYearsInc=calYearsFromDates(dates.slice(s20))??20;
     const inceptionRaw=periodMetrics(activeEquity.slice(s20),benchRaw.slice(s20),"20 Anos",calYearsInc);
-    // Use server-side pre-computed KPIs when available (avoids client warmup detection edge cases)
-    const inception=apiInceptionKpis
+    // Use server-side pre-computed KPIs only for the BASE mode (they are computed from the base
+    // series and would cancel out any margin effect on CAGR/Sharpe if used in margin mode)
+    const inception=(!kpiMode||kpiMode==="base")&&apiInceptionKpis
       ?{...inceptionRaw,ret:apiInceptionKpis.ret,ann:apiInceptionKpis.ann,shp:apiInceptionKpis.shp}
       :inceptionRaw;
     return {vol20y,benchVol20y,curVol,curDD,ddChart,inception};
-  },[dates,activeEquity,benchRaw,apiInceptionKpis]);
+  },[dates,activeEquity,benchRaw,apiInceptionKpis,kpiMode]);
 
   const perfData=useMemo(()=>{
     if(!dates.length||!activeEquity.length) return null;
@@ -4942,10 +4949,12 @@ export default function ClientDashboardPage() {
     const calYears=period==="20 Anos"?calYearsFromDates(dates.slice(s)):undefined;
     const chart=makeChartData(dates,activeEquity,benchRaw,period);
     const mRaw=periodMetrics(activeEquity.slice(s),benchRaw.slice(s),period,calYears);
-    // For "20 Anos": use server pre-computed KPIs if available, otherwise riskData.inception
+    // For "20 Anos": use server pre-computed KPIs only in base mode (not margin — they were
+    // computed from the base series and would suppress the margin effect on CAGR/Sharpe)
+    const useServerKpis=(!kpiMode||kpiMode==="base")&&apiInceptionKpis;
     const m=period==="20 Anos"
-      ?(apiInceptionKpis
-        ?{...mRaw,ret:apiInceptionKpis.ret,ann:apiInceptionKpis.ann,shp:apiInceptionKpis.shp}
+      ?(useServerKpis
+        ?{...mRaw,ret:apiInceptionKpis!.ret,ann:apiInceptionKpis!.ann,shp:apiInceptionKpis!.shp}
         :(riskData?.inception?{...mRaw,ret:riskData.inception.ret,ann:riskData.inception.ann,shp:riskData.inception.shp}:mRaw))
       :mRaw;
     // Anchor YTD to the last year present in the series (not the client's wall clock)
@@ -4963,7 +4972,7 @@ export default function ClientDashboardPage() {
       curDD:riskData?.curDD??0,
       ddChart:riskData?.ddChart??[],
       inception:riskData?.inception??{ret:0,ann:0,shp:0,vol:0,alpha:0,mVol:0}};
-  },[dates,activeEquity,benchRaw,period,riskData,apiInceptionKpis]);
+  },[dates,activeEquity,benchRaw,period,riskData,apiInceptionKpis,kpiMode]);
 
   // Convenience aliases — direct from recomputed curve (no post-hoc multiply)
   const scaledVol  =perfData?.curVol??0;
