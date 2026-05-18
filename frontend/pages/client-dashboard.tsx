@@ -6498,18 +6498,18 @@ export default function ClientDashboardPage() {
                   <div className="text-slate-500 text-sm text-center py-6">Sem recomendações este mês</div>
                 ):(
                   <div className="overflow-x-auto">
-                  <table className="w-full text-xs min-w-[500px]">
+                  <table className="w-full text-xs">
                     <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
                       <th className="text-left pb-2 font-semibold">Ativo</th>
-                      <th className="text-left pb-2 font-semibold">Setor</th>
-                      <th className="text-left pb-2 font-semibold">País</th>
-                      <th className="text-right pb-2 font-semibold">
+                      <th className="text-left pb-2 font-semibold hidden sm:table-cell">Setor</th>
+                      <th className="text-left pb-2 font-semibold hidden sm:table-cell">País</th>
+                      <th className="text-right pb-2 font-semibold whitespace-nowrap">
                         <span title="Peso no plano do mês anterior">Mês ant.</span>
                       </th>
-                      <th className="text-right pb-2 font-semibold">
+                      <th className="text-right pb-2 font-semibold whitespace-nowrap">
                         <span title="Peso no plano deste mês">Este mês</span>
                       </th>
-                      <th className="text-right pb-2 font-semibold">&#916;</th>
+                      <th className="text-right pb-2 font-semibold hidden sm:table-cell">&#916;</th>
                       <th className="text-right pb-2 font-semibold">Ação</th>
                     </tr></thead>
                     <tbody>
@@ -6539,14 +6539,15 @@ export default function ClientDashboardPage() {
                                       <span className={`transition-transform duration-150 text-slate-600 text-[9px] ${expandedReco===r.ticker?"rotate-90":"rotate-0"}`}>▶</span>
                                     </span>
                                   )}
-                                  {getCompany(r.ticker)&&<span className="ml-1.5 text-slate-600 font-normal text-[10px]">{getCompany(r.ticker)}</span>}
+                                  {getCompany(r.ticker)&&<div className="text-slate-600 font-normal text-[10px] mt-0.5 leading-tight">{getCompany(r.ticker)}</div>}
+                                  <div className="sm:hidden text-slate-600 text-[10px] mt-0.5">{getSector(r.ticker)}</div>
                                 </td>
-                                <td className="py-2.5 text-slate-500 text-[11px]">{getSector(r.ticker)}</td>
-                                <td className="py-2.5 text-slate-500 text-[11px]">{getZone(r.ticker)}</td>
-                                <td className="py-2.5 text-right text-slate-500">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
-                                <td className="py-2.5 text-right text-slate-200 font-semibold">{r.cur>0?`${r.cur.toFixed(1)}%`:"—"}</td>
-                                <td className={`py-2.5 text-right font-semibold ${dc}`}>{r.delta!==0?`${r.delta>0?"+":""}${r.delta.toFixed(1)}%`:"—"}</td>
-                                <td className="py-2.5 text-right pr-3">
+                                <td className="py-2.5 text-slate-500 text-[11px] hidden sm:table-cell">{getSector(r.ticker)}</td>
+                                <td className="py-2.5 text-slate-500 text-[11px] hidden sm:table-cell">{getZone(r.ticker)}</td>
+                                <td className="py-2.5 text-right text-slate-500 whitespace-nowrap">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
+                                <td className="py-2.5 text-right text-slate-200 font-semibold whitespace-nowrap">{r.cur>0?`${r.cur.toFixed(1)}%`:"—"}</td>
+                                <td className={`py-2.5 text-right font-semibold whitespace-nowrap hidden sm:table-cell ${dc}`}>{r.delta!==0?`${r.delta>0?"+":""}${r.delta.toFixed(1)}%`:"—"}</td>
+                                <td className="py-2.5 text-right pr-3 whitespace-nowrap">
                                   {!isXeon&&<span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${actionColor(r.action)}`}>{actionLabel(r.action)}</span>}
                                 </td>
                               </tr>
