@@ -2263,7 +2263,7 @@ function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,prof
       </div>
       {histTab==="reco"&&(
         <div className="overflow-x-auto">
-        <table className="w-full text-xs min-w-[500px]">
+        <table className="w-full text-xs min-w-[600px]">
           <thead>
             <tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
               <th className="px-5 py-3 font-semibold w-36">Data</th>
@@ -5906,7 +5906,7 @@ export default function ClientDashboardPage() {
                             {label:"Margem líquida",val:fmt(s.net_margin),raw:s.net_margin,bench:B.net,benchFmt:`${(B.net*100).toFixed(1)}%`,higherBetter:true,desc:"Lucro por euro de receita"},
                           ];
                           return (
-                            <div className="grid grid-cols-3 gap-4">
+                            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                               {metrics.map(m=>{
                                 const beats=m.raw!=null?(m.higherBetter?m.raw>m.bench:m.raw<m.bench):null;
                                 const valColor=m.raw==null?"text-slate-500":beats===true?"text-emerald-400":beats===false?"text-amber-400":"text-slate-300";
@@ -6136,11 +6136,11 @@ export default function ClientDashboardPage() {
                   </div>
 
                   {/* ── Row 3: charts side by side ── */}
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
                     {/* Performance chart (2/3) — hero */}
-                    <div className="col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 hover:border-slate-700/60 transition-colors duration-200">
-                      <div className="flex items-center justify-between mb-4">
+                    <div className="lg:col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 hover:border-slate-700/60 transition-colors duration-200">
+                      <div className="flex flex-wrap items-start justify-between mb-4 gap-2">
                         <div>
                           <div className="font-bold text-slate-100 text-sm">Evolução da carteira</div>
                           {perfData&&(
@@ -6160,10 +6160,10 @@ export default function ClientDashboardPage() {
                             </div>
                           )}
                         </div>
-                        <div className="flex gap-1 bg-[#111827] rounded-lg p-1">
+                        <div className="flex gap-1 bg-[#111827] rounded-lg p-1 overflow-x-auto scrollbar-none shrink-0">
                           {PERIODS.map(p=>(
                             <button key={p} onClick={()=>setPeriod(p)}
-                              className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all duration-150 ${period===p?"bg-teal-600 text-white shadow":"text-slate-500 hover:text-slate-300"}`}>{p}</button>
+                              className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all duration-150 whitespace-nowrap ${period===p?"bg-teal-600 text-white shadow":"text-slate-500 hover:text-slate-300"}`}>{p}</button>
                           ))}
                         </div>
                       </div>
@@ -6253,8 +6253,8 @@ export default function ClientDashboardPage() {
                             </span>
                           )}
                         </div>
-                        <div className="grid grid-cols-3 gap-4">
-                          <div className="col-span-2">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                          <div className="lg:col-span-2">
                             <ComposableMap
                               projection="geoNaturalEarth1"
                               projectionConfig={{scale:140,center:[10,10]}}
@@ -6336,10 +6336,10 @@ export default function ClientDashboardPage() {
                   })()}
 
                   {/* ── Row 4: positions + profile summary ── */}
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
                     {/* Principais posições (2/3) */}
-                    <div className="col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+                    <div className="lg:col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                       <div className="flex items-center justify-between mb-3">
                         <div className="font-bold text-slate-200 text-sm">Principais posições</div>
                         <button onClick={()=>setActivePage("carteira")} className="text-[10px] text-blue-400 hover:underline">Ver carteira completa</button>
@@ -7359,24 +7359,28 @@ export default function ClientDashboardPage() {
                           </div>
                         </div>
                       )}
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <div className="font-bold text-slate-200 text-sm">Evolução do investimento</div>
-                          <div className="text-[10px] text-slate-600 mt-0.5">Simulação histórica · dados desde 2005</div>
+                      <div className="flex flex-col gap-2 mb-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="font-bold text-slate-200 text-sm">Evolução do investimento</div>
+                            <div className="text-[10px] text-slate-600 mt-0.5">Simulação histórica · dados desde 2005</div>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <button onClick={()=>setShowStressPeriods(v=>!v)}
+                              className={`px-2.5 py-1.5 text-[10px] font-semibold rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap ${showStressPeriods?"bg-red-900/30 border-red-500/30 text-red-400":"border-slate-700/50 text-slate-600 hover:text-slate-400"}`}>
+                              <span className="w-1.5 h-1.5 rounded-full bg-current"/>Stress
+                            </button>
+                            <button onClick={()=>setShowMethodModal(true)}
+                              className="px-2.5 py-1.5 text-[10px] font-semibold rounded-lg border border-teal-500/30 text-teal-500 hover:bg-teal-500/10 transition-colors whitespace-nowrap">
+                              Metodologia
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button onClick={()=>setShowStressPeriods(v=>!v)}
-                            className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-colors flex items-center gap-1.5 ${showStressPeriods?"bg-red-900/30 border-red-500/30 text-red-400":"border-slate-700/50 text-slate-600 hover:text-slate-400"}`}>
-                            <span className="w-1.5 h-1.5 rounded-full bg-current"/>Períodos de stress
-                          </button>
-                          <button onClick={()=>setShowMethodModal(true)}
-                            className="px-3 py-1.5 text-[10px] font-semibold rounded-lg border border-teal-500/30 text-teal-500 hover:bg-teal-500/10 transition-colors">
-                            Metodologia
-                          </button>
-                          <div className="flex gap-1">{PERIODS.map(p=>(
+                        <div className="flex gap-1 overflow-x-auto scrollbar-none">
+                          {PERIODS.map(p=>(
                             <button key={p} onClick={()=>setPeriod(p)}
-                              className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${period===p?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>{p}</button>
-                          ))}</div>
+                              className={`px-3 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${period===p?"bg-blue-600 text-white":"text-slate-400 hover:text-slate-200"}`}>{p}</button>
+                          ))}
                         </div>
                       </div>
                       <ResponsiveContainer width="100%" height={240}>
