@@ -6758,16 +6758,16 @@ export default function ClientDashboardPage() {
                       {cartIbPos!==null&&cartIbPos.length>0&&(
                         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
                           <div className="overflow-x-auto">
-                          <table className="w-full text-xs">
+                          <table className="w-full text-xs min-w-[320px]">
                             <thead><tr className="text-slate-500 border-b border-[#1a1f2e] font-semibold">
                               <th className="text-left px-4 py-3">Ativo</th>
                               <th className="text-left px-2 py-3 hidden sm:table-cell">Nome</th>
                               <th className="text-left px-2 py-3 hidden sm:table-cell">Setor</th>
                               <th className="text-left px-2 py-3 hidden sm:table-cell">País</th>
                               <th className="text-right px-2 py-3 hidden sm:table-cell">Qtd</th>
-                              <th className="text-right px-2 py-3">Valor</th>
-                              <th className="text-right px-2 py-3">Peso %</th>
-                              <th className="text-right px-4 py-3 text-slate-600" title="Diferença face ao peso-alvo do plano">Desvio</th>
+                              <th className="text-right px-2 py-3 whitespace-nowrap">Valor</th>
+                              <th className="text-right px-2 py-3 whitespace-nowrap">Peso %</th>
+                              <th className="text-right px-4 py-3 text-slate-600 whitespace-nowrap" title="Diferença face ao peso-alvo do plano">Desvio</th>
                             </tr></thead>
                             <tbody>
                               {(()=>{
@@ -6806,16 +6806,16 @@ export default function ClientDashboardPage() {
                                       <td className="px-2 py-3 text-slate-500 text-[11px] hidden sm:table-cell">{getSector(p.ticker)||(p as any).sector||"—"}</td>
                                       <td className="px-2 py-3 text-slate-500 text-[11px] hidden sm:table-cell">{COUNTRY[p.ticker.toUpperCase()]||(p as any).country||"—"}</td>
                                       <td className="px-2 py-3 text-right text-slate-400 tabular-nums hidden sm:table-cell">{p.qty.toLocaleString("pt-PT",{maximumFractionDigits:2})}</td>
-                                      <td className="px-2 py-3 text-right text-slate-300 font-medium tabular-nums">
+                                      <td className="px-2 py-3 text-right text-slate-300 font-medium tabular-nums whitespace-nowrap">
                                         {(p.value_eur??p.value).toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} €
-                                        {p.currency&&p.currency!=="EUR"&&p.value_eur!=null&&<span className="text-slate-700 ml-1 text-[9px]">≈€</span>}
+                                        {p.currency&&p.currency!=="EUR"&&p.value_eur!=null&&<span className="text-slate-600 ml-0.5 text-[9px] hidden sm:inline">≈€</span>}
                                       </td>
-                                      <td className="px-2 py-3 text-right">
+                                      <td className="px-2 py-3 text-right whitespace-nowrap">
                                         <span className={`font-bold tabular-nums ${pctOfPlan>8?"text-teal-300":pctOfPlan>4?"text-teal-400":pctOfPlan>1?"text-slate-300":"text-slate-500"}`}>
                                           {pctOfPlan.toFixed(1)}%
                                         </span>
                                       </td>
-                                      <td className="px-4 py-3 text-right" title={planTarget>0?`Alvo no plano: ${planTarget.toFixed(1)}%`:"Não está no plano"}>
+                                      <td className="px-4 py-3 text-right whitespace-nowrap" title={planTarget>0?`Alvo no plano: ${planTarget.toFixed(1)}%`:"Não está no plano"}>
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${devBadge}`}>
                                           {desvioTxt}
                                         </span>
