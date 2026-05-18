@@ -5638,16 +5638,16 @@ export default function ClientDashboardPage() {
                   <div className="space-y-6 print:space-y-4">
 
                     {/* ── Masthead ── */}
-                    <div className="bg-gradient-to-br from-[#091220] via-[#0b0f1a] to-[#0d1628] border border-[#1a2540] rounded-2xl p-7">
-                      <div className="flex items-start justify-between mb-6">
+                    <div className="bg-gradient-to-br from-[#091220] via-[#0b0f1a] to-[#0d1628] border border-[#1a2540] rounded-2xl p-4 sm:p-7">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
                         <div>
                           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-2">Relatório de carteira · DECIDE</div>
-                          <div className="text-slate-100 font-black text-3xl tracking-tight mb-1">Relatório de Carteira</div>
+                          <div className="text-slate-100 font-black text-2xl sm:text-3xl tracking-tight mb-1">Relatório de Carteira</div>
                           <div className="text-slate-500 text-sm">Perfil <span className="text-teal-400 font-semibold">{pfLabel}</span> · {reportDate}</div>
                         </div>
-                        <div className="text-right">
+                        <div className="sm:text-right">
                           <div className="text-slate-600 text-[10px] uppercase tracking-wider mb-1">Património</div>
-                          <div className="text-white font-black text-4xl tracking-tight">€ {fmtEur(aum)}</div>
+                          <div className="text-white font-black text-3xl sm:text-4xl tracking-tight">€ {fmtEur(aum)}</div>
                           <div className={`text-base font-bold mt-1.5 ${isUp?"text-emerald-400":"text-red-400"}`}>
                             {fmtPct(scaledYtd,true)} YTD
                             <span className="text-slate-500 font-normal text-sm ml-2">({isUp?"+":""}{fmtEur(ytdGain)} €)</span>
@@ -5683,7 +5683,7 @@ export default function ClientDashboardPage() {
                     </div>
 
                     {/* ── KPI strip ── */}
-                    <div className="grid grid-cols-5 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                       {[
                         {label:"Retorno YTD",val:fmtPct(scaledYtd,true),c:isUp?"text-emerald-400":"text-red-400",sub:"Ano corrente"},
                         {label:"CAGR histórico",val:fmtPct(scaledAnn,true),c:scaledAnn>=0?"text-teal-400":"text-red-400",sub:"Desde início"},
@@ -5691,10 +5691,10 @@ export default function ClientDashboardPage() {
                         {label:"Máx. drawdown",val:scaledDD!==0?fmtPct(scaledDD):"—",c:"text-red-400",sub:"Período completo"},
                         {label:"Sharpe",val:sharpeVal.toFixed(2),c:sharpeVal>=1?"text-emerald-400":sharpeVal>=0?"text-amber-400":"text-red-400",sub:"Rf = 2% EUR ajustado"},
                       ].map(k=>(
-                        <div key={k.label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-4 py-4">
-                          <div className="text-slate-500 text-[10px] font-semibold mb-2 uppercase tracking-wider">{k.label}</div>
-                          <div className={`text-2xl font-black ${k.c}`}>{k.val}</div>
-                          <div className="text-slate-600 text-[10px] mt-1">{k.sub}</div>
+                        <div key={k.label} className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl px-3 sm:px-4 py-4">
+                          <div className="text-slate-500 text-[10px] font-semibold mb-2 uppercase tracking-wider leading-tight">{k.label}</div>
+                          <div className={`text-xl sm:text-2xl font-black ${k.c}`}>{k.val}</div>
+                          <div className="text-slate-600 text-[10px] mt-1 leading-tight">{k.sub}</div>
                         </div>
                       ))}
                     </div>
