@@ -5352,7 +5352,7 @@ export default function ClientDashboardPage() {
             {/* ── Page title bar ── */}
             <div className="flex flex-col border-b border-[#1a1f2e]">
               {/* Top row: hamburger + title + quick actions */}
-              <div className="flex items-center gap-3 px-4 lg:px-8 py-3 lg:py-4">
+              <div className="flex items-center gap-3 px-2 sm:px-4 lg:px-8 py-3 lg:py-4">
                 {/* Hamburger (mobile only) */}
                 <button onClick={()=>setSidebarOpen(true)}
                   className="lg:hidden p-2 -ml-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/5 active:bg-white/10 min-w-[44px] min-h-[44px] flex items-center justify-center"
@@ -5413,7 +5413,7 @@ export default function ClientDashboardPage() {
                 </div>
               </div>
               {/* Config strip (scrollable on mobile) */}
-              <div className="flex items-center gap-2 px-4 lg:px-8 pb-3 overflow-x-auto scrollbar-none">
+              <div className="flex items-center gap-2 px-2 sm:px-4 lg:px-8 pb-3 overflow-x-auto scrollbar-none">
                 {/* Perfil de risco */}
                 <div className="relative shrink-0">
                   <button onClick={()=>{setOpenProfileDrop(v=>!v);setOpenFxDrop(false);setOpenMarginDrop(false);}}
@@ -5603,7 +5603,7 @@ export default function ClientDashboardPage() {
               </div>
             )}
 
-            <div className="px-4 sm:px-6 lg:px-8 py-5 lg:py-6 space-y-5">
+            <div className="px-2 sm:px-6 lg:px-8 py-5 lg:py-6 space-y-5">
 
 
               {/* ── RELATÓRIOS ── */}
@@ -6487,7 +6487,7 @@ export default function ClientDashboardPage() {
               </div>
 
               {/* Recomendações completas */}
-              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
+              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5">
                 <div className="flex items-center justify-between mb-4">
                   <SH title="Recomendações"/>
                   <span className="text-slate-500 text-xs -mt-4">{actionCounts.allRows.length} posições</span>
@@ -6497,20 +6497,20 @@ export default function ClientDashboardPage() {
                 ):actionCounts.allRows.length===0?(
                   <div className="text-slate-500 text-sm text-center py-6">Sem recomendações este mês</div>
                 ):(
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
                   <table className="w-full text-xs">
                     <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
-                      <th className="text-left pb-2 font-semibold">Ativo</th>
-                      <th className="text-left pb-2 font-semibold hidden sm:table-cell">Setor</th>
-                      <th className="text-left pb-2 font-semibold hidden sm:table-cell">País</th>
-                      <th className="text-right pb-2 font-semibold whitespace-nowrap">
+                      <th className="text-left py-2 pl-1 sm:pl-3 font-semibold w-full">Ativo</th>
+                      <th className="text-left py-2 px-2 font-semibold hidden sm:table-cell">Setor</th>
+                      <th className="text-left py-2 px-2 font-semibold hidden sm:table-cell">País</th>
+                      <th className="text-right py-2 px-3 font-semibold whitespace-nowrap">
                         <span title="Peso no plano do mês anterior">Mês ant.</span>
                       </th>
-                      <th className="text-right pb-2 font-semibold whitespace-nowrap">
+                      <th className="text-right py-2 px-3 font-semibold whitespace-nowrap">
                         <span title="Peso no plano deste mês">Este mês</span>
                       </th>
-                      <th className="text-right pb-2 font-semibold hidden sm:table-cell">&#916;</th>
-                      <th className="text-right pb-2 font-semibold">Ação</th>
+                      <th className="text-right py-2 px-2 font-semibold hidden sm:table-cell">&#916;</th>
+                      <th className="text-right py-2 pr-1 sm:pr-3 font-semibold whitespace-nowrap">Ação</th>
                     </tr></thead>
                     <tbody>
                       {(()=>{
@@ -6530,7 +6530,7 @@ export default function ClientDashboardPage() {
                               <tr
                                 onClick={!isXeon?()=>setExpandedReco(v=>v===r.ticker?null:r.ticker):undefined}
                                 className={`border-b border-[#0d1220] transition-colors duration-100 ${isXeon?"opacity-60":"cursor-pointer hover:bg-white/[0.03]"} ${!isXeon?rowAccent(r.action):""} ${expandedReco===r.ticker?"bg-white/[0.03]":""}`}>
-                                <td className="py-2.5 pl-3">
+                                <td className="py-3 pl-1 sm:pl-3">
                                   {isXeon?(
                                     <span className="font-bold text-slate-400">XEON</span>
                                   ):(
@@ -6542,12 +6542,12 @@ export default function ClientDashboardPage() {
                                   {getCompany(r.ticker)&&<div className="text-slate-600 font-normal text-[10px] mt-0.5 leading-tight">{getCompany(r.ticker)}</div>}
                                   <div className="sm:hidden text-slate-600 text-[10px] mt-0.5">{getSector(r.ticker)}</div>
                                 </td>
-                                <td className="py-2.5 text-slate-500 text-[11px] hidden sm:table-cell">{getSector(r.ticker)}</td>
-                                <td className="py-2.5 text-slate-500 text-[11px] hidden sm:table-cell">{getZone(r.ticker)}</td>
-                                <td className="py-2.5 text-right text-slate-500 whitespace-nowrap">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
-                                <td className="py-2.5 text-right text-slate-200 font-semibold whitespace-nowrap">{r.cur>0?`${r.cur.toFixed(1)}%`:"—"}</td>
-                                <td className={`py-2.5 text-right font-semibold whitespace-nowrap hidden sm:table-cell ${dc}`}>{r.delta!==0?`${r.delta>0?"+":""}${r.delta.toFixed(1)}%`:"—"}</td>
-                                <td className="py-2.5 text-right pr-3 whitespace-nowrap">
+                                <td className="py-3 px-2 text-slate-500 text-[11px] hidden sm:table-cell">{getSector(r.ticker)}</td>
+                                <td className="py-3 px-2 text-slate-500 text-[11px] hidden sm:table-cell">{getZone(r.ticker)}</td>
+                                <td className="py-3 px-3 text-right text-slate-500 whitespace-nowrap">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
+                                <td className="py-3 px-3 text-right text-slate-200 font-semibold whitespace-nowrap">{r.cur>0?`${r.cur.toFixed(1)}%`:"—"}</td>
+                                <td className={`py-3 px-2 text-right font-semibold whitespace-nowrap hidden sm:table-cell ${dc}`}>{r.delta!==0?`${r.delta>0?"+":""}${r.delta.toFixed(1)}%`:"—"}</td>
+                                <td className="py-3 pr-1 sm:pr-3 text-right whitespace-nowrap">
                                   {!isXeon&&<span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${actionColor(r.action)}`}>{actionLabel(r.action)}</span>}
                                 </td>
                               </tr>
@@ -6759,16 +6759,16 @@ export default function ClientDashboardPage() {
                       {cartIbPos!==null&&cartIbPos.length>0&&(
                         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
                           <div className="overflow-x-auto">
-                          <table className="w-full text-xs min-w-[320px]">
+                          <table className="w-full text-xs">
                             <thead><tr className="text-slate-500 border-b border-[#1a1f2e] font-semibold">
-                              <th className="text-left px-4 py-3">Ativo</th>
+                              <th className="text-left px-3 sm:px-4 py-3 w-full">Ativo</th>
                               <th className="text-left px-2 py-3 hidden sm:table-cell">Nome</th>
                               <th className="text-left px-2 py-3 hidden sm:table-cell">Setor</th>
                               <th className="text-left px-2 py-3 hidden sm:table-cell">País</th>
                               <th className="text-right px-2 py-3 hidden sm:table-cell">Qtd</th>
-                              <th className="text-right px-2 py-3 whitespace-nowrap">Valor</th>
-                              <th className="text-right px-2 py-3 whitespace-nowrap">Peso %</th>
-                              <th className="text-right px-4 py-3 text-slate-600 whitespace-nowrap" title="Diferença face ao peso-alvo do plano">Desvio</th>
+                              <th className="text-right px-3 sm:px-4 py-3 whitespace-nowrap">Valor</th>
+                              <th className="text-right px-3 sm:px-4 py-3 whitespace-nowrap">Peso %</th>
+                              <th className="text-right px-3 sm:px-4 py-3 text-slate-600 whitespace-nowrap" title="Diferença face ao peso-alvo do plano">Desvio</th>
                             </tr></thead>
                             <tbody>
                               {(()=>{
@@ -6796,7 +6796,7 @@ export default function ClientDashboardPage() {
                                   const desvioTxt=isOrphan?"fora do plano":absD<0.5?"alinhado":`${desvio>0?"+":""}${desvio.toFixed(1)}pp`;
                                   return(
                                     <tr key={p.ticker} className="border-b border-[#0d1220] hover:bg-white/[0.02] transition-colors duration-100">
-                                      <td className="px-4 py-3">
+                                      <td className="px-3 sm:px-4 py-3">
                                         <a href={`https://finance.yahoo.com/quote/${p.ticker}`} target="_blank" rel="noopener noreferrer"
                                           className="inline-flex items-center gap-1 font-bold text-slate-200 hover:text-teal-400 hover:underline underline-offset-2 transition-colors">
                                           {displayTicker(p.ticker)}<ArrowUpRight size={10} className="opacity-40"/>
@@ -6807,16 +6807,16 @@ export default function ClientDashboardPage() {
                                       <td className="px-2 py-3 text-slate-500 text-[11px] hidden sm:table-cell">{getSector(p.ticker)||(p as any).sector||"—"}</td>
                                       <td className="px-2 py-3 text-slate-500 text-[11px] hidden sm:table-cell">{COUNTRY[p.ticker.toUpperCase()]||(p as any).country||"—"}</td>
                                       <td className="px-2 py-3 text-right text-slate-400 tabular-nums hidden sm:table-cell">{p.qty.toLocaleString("pt-PT",{maximumFractionDigits:2})}</td>
-                                      <td className="px-2 py-3 text-right text-slate-300 font-medium tabular-nums whitespace-nowrap">
+                                      <td className="px-3 sm:px-4 py-3 text-right text-slate-300 font-medium tabular-nums whitespace-nowrap">
                                         {(p.value_eur??p.value).toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} €
                                         {p.currency&&p.currency!=="EUR"&&p.value_eur!=null&&<span className="text-slate-600 ml-0.5 text-[9px] hidden sm:inline">≈€</span>}
                                       </td>
-                                      <td className="px-2 py-3 text-right whitespace-nowrap">
+                                      <td className="px-3 sm:px-4 py-3 text-right whitespace-nowrap">
                                         <span className={`font-bold tabular-nums ${pctOfPlan>8?"text-teal-300":pctOfPlan>4?"text-teal-400":pctOfPlan>1?"text-slate-300":"text-slate-500"}`}>
                                           {pctOfPlan.toFixed(1)}%
                                         </span>
                                       </td>
-                                      <td className="px-4 py-3 text-right whitespace-nowrap" title={planTarget>0?`Alvo no plano: ${planTarget.toFixed(1)}%`:"Não está no plano"}>
+                                      <td className="px-3 sm:px-4 py-3 text-right whitespace-nowrap" title={planTarget>0?`Alvo no plano: ${planTarget.toFixed(1)}%`:"Não está no plano"}>
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${devBadge}`}>
                                           {desvioTxt}
                                         </span>
