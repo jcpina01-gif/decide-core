@@ -6481,7 +6481,7 @@ export default function ClientDashboardPage() {
                     <div className="text-xs text-slate-500 font-medium mb-4 uppercase tracking-widest break-words hyphens-auto">
                       Recomendação · <span className="text-slate-400 normal-case font-semibold">{recoLabel}</span>
                     </div>
-                    <div className="flex w-full min-w-0 max-w-full flex-nowrap gap-2 overflow-x-auto overscroll-x-contain overflow-y-visible pb-1 scrollbar-none snap-x snap-mandatory [-webkit-overflow-scrolling:touch] touch-pan-x lg:flex-wrap lg:gap-4 lg:overflow-visible lg:pb-0 lg:touch-auto">
+                    <div className="flex w-full min-w-0 max-w-full flex-nowrap gap-2 overflow-x-auto overscroll-x-contain overflow-y-visible pb-1 scrollbar-none snap-x snap-proximity [-webkit-overflow-scrolling:touch] lg:flex-wrap lg:gap-4 lg:overflow-visible lg:pb-0">
                       {[
                         {label:"Nova posição", count:recoLoading?0:(officialCounts??actionCounts).comprar,  c:"text-teal-400",  bg:"bg-teal-500/10",  b:"border-teal-500/20"},
                         {label:"Reforçar",     count:recoLoading?0:(officialCounts??actionCounts).aumentar, c:"text-blue-400",  bg:"bg-blue-500/10",  b:"border-blue-500/20"},
@@ -6549,7 +6549,7 @@ export default function ClientDashboardPage() {
                 ):actionCounts.allRows.length===0?(
                   <div className="text-slate-500 text-sm text-center py-6">Sem recomendações este mês</div>
                 ):(
-                  <div className="-mx-4 w-[calc(100%+2rem)] min-w-0 px-4 sm:mx-0 sm:w-full sm:max-w-full overflow-x-auto overscroll-x-contain touch-pan-x [scrollbar-gutter:stable]">
+                  <div className="-mx-4 w-[calc(100%+2rem)] min-w-0 px-4 sm:mx-0 sm:w-full sm:max-w-full sm:px-0 overflow-x-auto overscroll-x-contain [scrollbar-gutter:stable]">
                   <table className="w-full min-w-[520px] border-collapse text-xs">
                     <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
                       <th className="py-2 pl-0 pr-2 text-left font-semibold">Ativo</th>
