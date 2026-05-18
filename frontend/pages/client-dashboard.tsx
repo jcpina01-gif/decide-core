@@ -1407,6 +1407,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
           </div>
           {/* 3 KPI — sempre lista (1 coluna) */}
           <div className="grid grid-cols-1 gap-2 mt-6 pt-5 border-t border-white/[0.05]">
+            {[
+              {label:"Taxa de gestão",val:"0,6% / ano",sub:`≈ €${fmtInt(privateAnnual)} anuais`,note:"0,05%/mês sobre o valor actual da carteira"},
               {label:"Performance fee",val:"Não aplicável",sub:"sem performance fee",note:"custo simples e previsível"},
               {label:"Custos externos (broker)",val:`${EXTERN_PCT.toFixed(2)}% / ano`,sub:`≈ €${fmtInt(aumEur*EXTERN_PCT/100)} anuais`,note:"custódia + transações + FX"},
             ].map(k=>(
@@ -3173,7 +3175,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
   const [showExposicao,setShowExposicao]=React.useState(false);
 
   return (
-    <div className="flex flex-col h-full bg-[#07090f] -m-4 lg:-m-6">
+    <div className="flex flex-col bg-[#07090f] -m-4 lg:-m-6">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="bg-[#07090f] border-b border-[#1a1f2e] px-4 sm:px-6 lg:px-8 py-4 lg:py-5 shrink-0">
         <div className="flex items-start justify-between mb-4">
@@ -3203,11 +3205,11 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         </div>
       </div>
 
-      {/* ── Body: two-column layout (stacks on mobile) ───────────────────── */}
-      <div className="flex flex-col lg:flex-row flex-1 min-h-0">
+      {/* ── Body: two-column layout (stacks on mobile) — scroll só no main do dashboard ── */}
+      <div className="flex flex-col lg:flex-row">
 
-        {/* LEFT COLUMN — scrollable main content */}
-        <div className="flex-1 overflow-y-auto px-4 lg:px-6 py-5 space-y-4">
+        {/* LEFT COLUMN */}
+        <div className="flex-1 min-w-0 px-4 lg:px-6 py-5 space-y-4">
 
           {/* O que mais a confirmar */}
           <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
@@ -4205,8 +4207,8 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
           )}
         </div>
 
-        {/* ── RIGHT PANEL — sticky "Resumo da ordem" ─────────────────────── */}
-        <div className="w-full lg:w-72 shrink-0 border-t lg:border-t-0 lg:border-l border-[#1a1f2e] overflow-y-auto bg-[#07090f]">
+        {/* ── RIGHT PANEL — "Resumo da ordem" (sem scroll interno; página faz scroll no main) ── */}
+        <div className="w-full lg:w-72 shrink-0 border-t lg:border-t-0 lg:border-l border-[#1a1f2e] bg-[#07090f] lg:sticky lg:top-0 lg:self-start">
           <div className="p-4 space-y-3">
             {/* Header */}
             <div className="flex items-center justify-between">
@@ -5773,8 +5775,8 @@ export default function ClientDashboardPage() {
                             <Tooltip contentStyle={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:8,fontSize:12}}
                               formatter={(v:number)=>[`${v?.toFixed(2)}%`,""]}
                               labelFormatter={l=>String(l).slice(0,10)}/>
-                            <ReferenceLine y={0} stroke="#1e293b" strokeDasharray="3 3"/>
-                            <Area type="monotone" dataKey="model" stroke="#14b8a6" strokeWidth={2.5} fill="url(#repGrad2)" dot={false} name={pfLabel}/>
+                            <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3"/>
+                            <Area type="monotone" dataKey="modelo" stroke="#14b8a6" strokeWidth={2.5} fill="url(#repGrad2)" dot={false} name={pfLabel}/>
                             <Area type="monotone" dataKey="bench" stroke="#475569" strokeWidth={1.5} strokeDasharray="5 3" fill="none" dot={false} name={BENCH_SHORT}/>
                           </AreaChart>
                         </ResponsiveContainer>
