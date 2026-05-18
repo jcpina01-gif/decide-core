@@ -34,11 +34,11 @@ function Nav() {
       display:"flex",alignItems:"center",justifyContent:"space-between",
       padding:"0 32px",
     }}>
-        {/* Logo — PNG tem padding negro; mostra-se maior e clipado para o logo real ficar visível */}
-        <div style={{height:NAV_H,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center"}}>
+        {/* Logo */}
+        <div style={{height:NAV_H,flexShrink:0,display:"flex",alignItems:"center"}}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/images/decide-logo-full.png" alt="DECIDE"
-            style={{height:220,width:"auto",objectFit:"contain",mixBlendMode:"screen",marginTop:0}} />
+          <img src="/images/decide-logo-new.png?v=5" alt="DECIDE"
+            style={{height:NAV_H - 20,width:"auto",objectFit:"contain",objectPosition:"left center"}} />
         </div>
 
         {/* Nav links */}
@@ -542,7 +542,7 @@ export default function LandingPage() {
               <div style={{position:"absolute",inset:0,background:"linear-gradient(to right,rgba(8,12,20,0.6) 0%,transparent 60%)"}}/>
               <div style={{position:"absolute",bottom:28,right:28,display:"flex",alignItems:"center",gap:10,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(8px)",borderRadius:10,padding:"10px 16px",border:"1px solid rgba(255,255,255,0.08)"}}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/images/decide-logo-full.png" alt="DECIDE" style={{height:36,width:"auto",mixBlendMode:"screen"}}/>
+                <img src="/images/decide-logo-new.png?v=5" alt="DECIDE" style={{height:34,width:"auto",objectFit:"contain"}}/>
               </div>
             </div>
           </div>

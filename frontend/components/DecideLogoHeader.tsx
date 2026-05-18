@@ -15,15 +15,15 @@ import ClientPendingTextLink from "./ClientPendingTextLink";
 import ClientFundDepositNavLink from "./ClientFundDepositNavLink";
 
 /**
- * **«Imagem final do logo Decide»** — `public/images/imagem-final-logo-decide.png` (RGBA).
- * Sincronizar: `scripts/copy-imagem-final-logo.ps1 -Source "<caminho\\Imagem final do logo Decide.png>"`
- * ou cópia manual; o build não inclui o ficheiro das pastas do Cursor — tem de estar em `public/images`.
+ * Lockup raster: `public/images/decide-logo-new.png` (export oficial com fundo preto).
+ * Para atualizar o branding: substituir esse PNG e incrementar `?v=` em `DECIDE_LOGO_SRC`
+ * (opcional: `python scripts/trim-decide-logo.py` se precisar de margens mais apertadas).
  */
-export const DECIDE_LOGO_SRC = "/images/imagem-final-logo-decide.png?v=13";
+export const DECIDE_LOGO_SRC = "/images/decide-logo-new.png?v=5";
 
-/** Dimensões em pixels do PNG (largura × altura). Alinhar ao ficheiro real. */
+/** Dimensões em pixels do PNG (largura × altura). Manter sincronizado com o ficheiro em `public/images`. */
 export const DECIDE_LOGO_INTRINSIC_WIDTH = 1024;
-export const DECIDE_LOGO_INTRINSIC_HEIGHT = 682;
+export const DECIDE_LOGO_INTRINSIC_HEIGHT = 330;
 
 /** @deprecated — alias para compat. */
 export const DECIDE_LOGO_SRC_2X = DECIDE_LOGO_SRC;
@@ -31,12 +31,12 @@ export const DECIDE_LOGO_SRC_2X = DECIDE_LOGO_SRC;
 /** Fundo da barra do logo — transparente para o PNG integrar no fundo da página. */
 export const DECIDE_HEADER_LOGO_BAR_BG = "transparent";
 
-/** Barra de identidade compacta — layout compacto; escala visual extra no CSS (`decide-top-header--app`). */
-export const DECIDE_HEADER_LOGO_HEIGHT = "clamp(80px, 13.5vw, 200px)";
-export const DECIDE_HEADER_LOGO_MAX_WIDTH = "min(94vw, 1080px)";
+/** Barra de identidade — ocupa a altura útil do header (entre bordas). */
+export const DECIDE_HEADER_LOGO_HEIGHT = "clamp(52px, 12vw, 80px)";
+export const DECIDE_HEADER_LOGO_MAX_WIDTH = "min(calc(100vw - 140px), 720px)";
 
-/** Landing: hero sóbrio — escala moderada (evita «poster» promocional). */
-export const DECIDE_LANDING_LOGO_HEIGHT = "clamp(132px, 22vw, 220px)";
+/** Landing: hero — lockup mais largo possível dentro da grelha. */
+export const DECIDE_LANDING_LOGO_HEIGHT = "clamp(72px, 16vw, 160px)";
 export const DECIDE_LANDING_LOGO_MAX_WIDTH = "min(92vw, 640px)";
 
 /**
@@ -44,7 +44,7 @@ export const DECIDE_LANDING_LOGO_MAX_WIDTH = "min(92vw, 640px)";
  * Logo ~148px + padding vertical + borda.
  */
 /** Referência aproximada para layouts (nav + hero KPI + hedge); ajustar se mudar o header. */
-export const DECIDE_TOP_BAR_HEIGHT_PX = 128;
+export const DECIDE_TOP_BAR_HEIGHT_PX = 112;
 
 /** Largura útil opcional para conteúdo. */
 export const DECIDE_HEADER_INNER_MAX_WIDTH_PX = 1400;
@@ -266,39 +266,37 @@ export default function DecideLogoHeader() {
           gridTemplateRows: showClientChrome ? "auto auto" : "auto",
           columnGap: showClientChrome ? 8 : 10,
           rowGap: showClientChrome ? 0 : 0,
-          alignItems: "start",
+          alignItems: "center",
           width: "100%",
-          padding: "0 6px 0 0",
+          padding: "8px 12px 8px 10px",
           boxSizing: "border-box",
         }}
       >
         <Link
           href={logoHref}
           style={{
-            display: "inline-flex",
+            display: "flex",
             flexDirection: "column",
             alignItems: "flex-start",
-            justifyContent: "flex-start",
+            justifyContent: "center",
             lineHeight: 0,
             flexShrink: 0,
-            overflow: "visible",
-            alignSelf: "start",
+            overflow: "hidden",
+            alignSelf: "center",
             gridRow: 1,
             gridColumn: 1,
-            marginTop: -12,
-            marginLeft: -22,
-            marginRight: 0,
-            marginBottom: 0,
+            margin: 0,
             padding: 0,
-            maxWidth: "min(98vw, 1160px)",
+            maxWidth: "min(calc(100vw - 150px), 720px)",
+            maxHeight: 88,
           }}
           aria-label="DECIDE — início"
         >
           <DecideBrandImage
             priority
-            height={200}
-            maxWidth="min(98vw, 1080px)"
-            sizes="(max-width: 640px) 96vw, 1080px"
+            height={84}
+            maxWidth="min(calc(100vw - 150px), 720px)"
+            sizes="(max-width: 768px) calc(100vw - 150px), 720px"
             className="decide-header-brand-mark decide-logo-img--plain decide-logo-img--header-lockup"
             knockoutBackground={false}
           />
@@ -310,7 +308,7 @@ export default function DecideLogoHeader() {
             gridRow: 1,
             gridColumn: showClientChrome ? 2 : 3,
             justifySelf: "end",
-            alignSelf: "start",
+            alignSelf: "center",
             paddingTop: 0,
             display: "flex",
             alignItems: "center",
@@ -431,7 +429,7 @@ export default function DecideLogoHeader() {
               paddingTop: 0,
               marginTop: 0,
               /* Compensa logo maior + margem negativa — menu junto ao bloco sem empurrar a página */
-              transform: "translateY(-40px)",
+              transform: "translateY(-28px)",
               position: "relative",
               zIndex: 2,
               display: "flex",

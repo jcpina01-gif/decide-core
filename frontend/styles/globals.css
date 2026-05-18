@@ -65,8 +65,12 @@ textarea {
   font: inherit;
 }
 
-/* Navbar / header — cinzento escuro + separação nítida */
+/* Navbar / header — cinzento escuro + separação nítida; mantém-se visível ao scroll (site + mobile) */
 header.decide-top-header {
+  position: -webkit-sticky;
+  position: sticky;
+  top: 0;
+  z-index: 100;
   background: linear-gradient(180deg, #101012 0%, #070708 100%) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07) !important;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.55) !important;
@@ -75,6 +79,14 @@ header.decide-top-header {
 header.decide-top-header--app {
   padding-top: 0 !important;
   margin-top: 0 !important;
+}
+
+/** Barra superior onboarding/registo — mesmo comportamento sticky que o header principal */
+.decide-onboarding-flow-bar {
+  position: -webkit-sticky;
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
 header.decide-top-header--app .decide-logo-lockup-scale--header {
@@ -114,18 +126,17 @@ header.decide-top-header--app img.decide-header-brand-mark.decide-logo-img--plai
   filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.42)) !important;
 }
 
-/* Lockup PNG completo (Imagem final) — proporção = DECIDE_LOGO_INTRINSIC_WIDTH/HEIGHT em DecideLogoHeader.tsx */
+/* Lockup header — proporção = DECIDE_LOGO_INTRINSIC_WIDTH / HEIGHT em DecideLogoHeader.tsx */
 header.decide-top-header--app img.decide-logo-img--header-lockup {
   object-fit: contain !important;
-  object-position: left top;
-  aspect-ratio: 1024 / 682;
+  object-position: left center !important;
+  aspect-ratio: 732 / 200 !important;
   width: auto !important;
   height: auto !important;
-  max-height: 200px !important;
-  max-width: min(1080px, 98vw) !important;
-  /* Maior no ecrã sem aumentar a caixa de layout; translateY puxa o desenho para cima */
-  transform: scale(1.16) translateY(-8px);
-  transform-origin: left top;
+  max-height: min(84px, 20vw) !important;
+  max-width: min(calc(100vw - 150px), 720px) !important;
+  transform: none !important;
+  transform-origin: left center;
 }
 
 header.decide-top-header--app a[aria-label="DECIDE — início"] {

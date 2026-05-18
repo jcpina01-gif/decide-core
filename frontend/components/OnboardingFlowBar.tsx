@@ -247,10 +247,8 @@ export default function OnboardingFlowBar({
 
   return (
     <div
+      className="decide-onboarding-flow-bar"
       style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 50,
         background: "#07090f",
         borderBottom: "1px solid #1a1f2e",
       }}
@@ -266,13 +264,13 @@ export default function OnboardingFlowBar({
           gap: 24,
         }}
       >
-        {/* Logo oficial DECIDE — mesmo tratamento da nav da landing (overflow clip + blend) */}
-        <a href="/" style={{ flexShrink: 0, textDecoration: "none", lineHeight: 0, height: 72, overflow: "hidden", display: "flex", alignItems: "center" }}>
+        {/* Logo oficial DECIDE */}
+        <a href="/" style={{ flexShrink: 0, textDecoration: "none", lineHeight: 0, height: 48, display: "flex", alignItems: "center" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/images/decide-logo-full.png"
+            src="/images/decide-logo-new.png?v=5"
             alt="DECIDE"
-            style={{ height: 180, width: "auto", display: "block", mixBlendMode: "screen" }}
+            style={{ height: 52, width: "auto", display: "block", objectFit: "contain" }}
           />
         </a>
 

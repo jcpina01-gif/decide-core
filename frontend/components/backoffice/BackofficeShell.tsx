@@ -77,9 +77,9 @@ export default function BackofficeShell({
           <Link href="/backoffice" style={{ display: "flex", alignItems: "center", textDecoration: "none", flexShrink: 0 }}>
             <DecideBrandImage
               priority
-              height={52}
-              maxWidth="140px"
-              sizes="140px"
+              height={44}
+              maxWidth="200px"
+              sizes="200px"
               knockoutBackground={false}
               className="decide-logo-img--plain"
             />

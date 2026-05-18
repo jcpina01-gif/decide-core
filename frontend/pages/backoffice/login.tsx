@@ -61,7 +61,7 @@ export default function BackofficeLoginPage() {
           }}
         >
           <div style={{ marginBottom: 20, display: "flex", justifyContent: "center" }}>
-            <DecideBrandImage height={48} maxWidth="160px" sizes="160px" knockoutBackground={false} className="decide-logo-img--plain" />
+            <DecideBrandImage height={52} maxWidth="220px" sizes="220px" knockoutBackground={false} className="decide-logo-img--plain" />
           </div>
           <div style={{ fontSize: 11, color: "#475569", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4, textAlign: "center" }}>
             Área interna

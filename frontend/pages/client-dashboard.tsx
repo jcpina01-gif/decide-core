@@ -1,6 +1,6 @@
 ﻿import Head from "next/head";
 import { useRouter } from "next/router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from "react-simple-maps";
 import { displayTicker } from "../lib/tickerDisplay";
 import {
@@ -663,6 +663,9 @@ const YF_ALIAS:Record<string,string>={
 const getYFTicker=(t:string)=>YF_ALIAS[t.toUpperCase()]??t;
 
 type Page="dashboard"|"reco"|"carteira"|"perf"|"risco"|"historico"|"custos"|"robustez"|"ajuda"|"contactos"|"simulador"|"relatorios"|"ordens"|"actividade";
+
+const VALID_PAGE_IDS: Page[]=["dashboard","reco","carteira","perf","risco","historico","custos",
+  "robustez","ajuda","contactos","simulador","relatorios","ordens","actividade"];
 type RiskProfile="conservador"|"moderado"|"dinamico";
 type FxExposure="protegida"|"parcial"|"aberta";
 type KpiMode="base"|"margem";
@@ -863,7 +866,7 @@ function Sidebar({user,profile,loggedIn,onRegister,activePage,onNavigate,open,on
       ].join(" ")}>
         <div className="border-b border-[#1a1f2e] flex items-center justify-between pr-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/images/logo-decide.png" alt="DECIDE" className="h-16 w-auto object-contain object-left pl-3" />
+          <img src="/images/decide-logo-new.png?v=5" alt="DECIDE" className="h-11 w-auto max-w-[min(100%,280px)] object-contain object-left pl-3" />
           <button onClick={onClose} className="lg:hidden p-2 text-slate-500 hover:text-slate-300" aria-label="Fechar menu">
             <X size={18}/>
           </button>
@@ -1327,8 +1330,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
       {/* ── MASTHEAD: diferente para Premium vs Private ── */}
       {!isPrivate?(
         /* ── PREMIUM MASTHEAD ── */
-        <div className="bg-gradient-to-br from-[#0a1628] to-[#0b0f1a] border border-[#1a2540] rounded-2xl p-7">
-          <div className="flex items-start justify-between">
+        <div className="bg-gradient-to-br from-[#0a1628] to-[#0b0f1a] border border-[#1a2540] rounded-2xl p-4 sm:p-7">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
               <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-2">Plano PREMIUM · DECIDE</div>
               <div className="text-slate-100 font-black text-3xl tracking-tight mb-2">
@@ -1339,7 +1342,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
                 Sem performance fee. Sem comissões escondidas.
               </div>
             </div>
-            <div className="text-right space-y-2">
+            <div className="sm:text-right space-y-2 shrink-0">
               <div className="bg-teal-500/10 border border-teal-500/20 rounded-xl px-4 py-3">
                 <div className="text-[10px] text-slate-500 mb-0.5">O seu custo anual estimado</div>
                 <div className="text-xl font-black text-teal-400">€ {fmtInt(premiumAnnual + aumEur*EXTERN_PCT/100)}</div>
@@ -1348,7 +1351,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
             </div>
           </div>
           {/* 3-col KPI */}
-          <div className="grid grid-cols-3 gap-3 mt-6 pt-5 border-t border-white/[0.05]">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-6 pt-5 border-t border-white/[0.05]">
             {[
               {label:"Gestão DECIDE",val:"€29 / mês",sub:"custo fixo, previsível",note:"sem performance fee"},
               {label:"Custos externos (broker)",val:`${EXTERN_PCT.toFixed(2)}% / ano`,sub:`≈ €${fmtInt(aumEur*EXTERN_PCT/100)} / ano`,note:"custódia + transações + FX"},
@@ -1365,8 +1368,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
         </div>
       ):(
         /* ── PRIVATE MASTHEAD ── */
-        <div className="bg-gradient-to-br from-[#100d04] via-[#0b0f1a] to-[#0b0f1a] border border-amber-900/30 rounded-2xl p-7">
-          <div className="flex items-start justify-between">
+        <div className="bg-gradient-to-br from-[#100d04] via-[#0b0f1a] to-[#0b0f1a] border border-amber-900/30 rounded-2xl p-4 sm:p-7">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
               <div className="text-[10px] uppercase tracking-widest text-amber-700 mb-2">Plano PRIVATE · DECIDE</div>
               <div className="text-slate-100 font-black text-3xl tracking-tight mb-2">
@@ -1377,7 +1380,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
                 Sem performance fee. Cobrado mensalmente: 0,05% sobre o valor real da carteira em cada mês.
               </div>
             </div>
-            <div className="text-right space-y-2">
+            <div className="sm:text-right space-y-2 shrink-0">
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3">
                 <div className="text-[10px] text-slate-500 mb-0.5">Custo de gestão anual estimado</div>
                 <div className="text-xl font-black text-amber-400">€ {fmtInt(privateAnnual)}</div>
@@ -1385,7 +1388,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3 mt-6 pt-5 border-t border-white/[0.05]">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-6 pt-5 border-t border-white/[0.05]">
             {[
               {label:"Taxa de gestão",val:"0,6% / ano",sub:`≈ €${fmtInt(privateAnnual)} anuais`,note:"0,05%/mês sobre o valor actual da carteira"},
               {label:"Performance fee",val:"Não aplicável",sub:"sem performance fee",note:"custo simples e previsível"},
@@ -1402,8 +1405,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
         </div>
       )}
 
-      {/* ── Custos separados: DECIDE vs Externos ── */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* ── Custos separados: DECIDE vs Externos — 1 coluna em telemóvel/tablet até lg ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Custos DECIDE */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Custos DECIDE</div>
@@ -1483,7 +1486,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
       </div>
 
       {/* ── Exemplo real + Comparação de mercado ── */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Exemplo real */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Exemplo concreto</div>
@@ -1543,13 +1546,13 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
       </div>
 
       {/* ── Projecção longo prazo + Quando pagas ── */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Projecção */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Impacto dos custos a longo prazo</div>
           <div className="text-[10px] text-slate-600 mb-4 italic">Simulação: €{fmtInt(EX_CAP)} · {YRS} anos · {(HIST_CAGR*100).toFixed(0)}% retorno bruto estimado · simulado, não garantido</div>
-          {/* Cost comparison row */}
-          <div className="grid grid-cols-2 gap-3 mb-4">
+          {/* Cost comparison row — 1 coluna em telemóvel */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
             <div className="bg-teal-900/15 border border-teal-700/25 rounded-xl p-3">
               <div className="text-[10px] text-teal-400 font-semibold mb-1">DECIDE — custo anual</div>
               <div className="text-xl font-black text-teal-300">{totalFixedPct.toFixed(2)}%</div>
@@ -1562,7 +1565,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
             </div>
           </div>
           {/* Projected final values */}
-          <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
             <div className="bg-teal-900/10 border border-teal-700/15 rounded-lg px-3 py-2">
               <div className="text-[9px] text-slate-500">Capital final (DECIDE)</div>
               <div className="text-base font-black text-slate-100">€ {fmtInt(dVal)}</div>
@@ -1624,7 +1627,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
       {/* ── FAQ ── */}
       <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
         <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Perguntas frequentes</div>
-        <div className="grid grid-cols-2 gap-x-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8">
           {FAQS.map((f,i)=>(
             <div key={i} className="border-b border-[#111827] last:border-0">
               <button className="w-full flex items-center justify-between py-3 text-left gap-3"
@@ -2252,7 +2255,7 @@ function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,prof
   }),[sortedMonths,dates,equityRaw,benchRaw,marginEnabled,targetVol]);
 
   return (
-    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+    <div className="bg-[#0b0f1a] border-y lg:border border-[#1a1f2e] lg:rounded-xl overflow-hidden max-lg:w-screen max-lg:max-w-[100vw] max-lg:ml-[calc(50%-50vw)] max-lg:mr-[calc(50%-50vw)] lg:mx-0 lg:w-auto lg:max-w-none">
       <div className="flex border-b border-[#1a1f2e]">
         {([["reco","Recomendações"],["ops","Operações"],["carteira","Histórico de carteira"]] as const).map(([k,l])=>(
           <button key={k} onClick={()=>setHistTab(k)}
@@ -4353,202 +4356,194 @@ function getActivityLog():ActEntry[] {
   try { return JSON.parse(localStorage.getItem(ACT_KEY)||"[]"); } catch { return []; }
 }
 
+type TimelineEvent={
+  id:string; ts:number; kind:string;
+  title:string; subtitle:string; narrative:string; tags:string[];
+};
+
 /* ─── ActividadePage sub-component ─────────────────────────────────────── */
 function ActividadePage({sortedMonths}:{sortedMonths:MonthRec[]}) {
-  const [actLog,setActLog]=useState<ActEntry[]>(()=>getActivityLog());
-  const [actFilter,setActFilter]=useState<string>("todos");
+  const actLog=useState<ActEntry[]>(()=>getActivityLog())[0];
+
+  // ── Build client-facing timeline events ────────────────────────────────
+  // Only high-relevance events: rebalancing from model history + order executions.
+  // Technical noise (login, configuração, raw API) is deliberately excluded.
 
   const rebalanceEvents=useMemo(()=>{
-    const evs:ActEntry[]=[];
+    const evs:TimelineEvent[]=[];
     sortedMonths.forEach((m,idx)=>{
       if(idx===0) return;
       const prev=sortedMonths[idx-1];
       const pm=new Map(prev.rows.map(r=>[r.ticker,r.weightPct]));
       const cm=new Map(m.rows.map(r=>[r.ticker,r.weightPct]));
       const allT=new Set([...pm.keys(),...cm.keys()]);
-      let comprar=0,vender=0,aumentar=0,reduzir=0;
-      const details:string[]=[];
+      let entradas=0,saidas=0,aumentos=0,reducoes=0;
       allT.forEach(t=>{
         if(t.startsWith("TBILL")||t.startsWith("CASH")||t==="XEON") return;
         const p=pm.get(t)??0, c=cm.get(t)??0, d=c-p;
         if(Math.abs(d)<0.01) return;
-        const name=getCompany(t)||t;
-        if(p===0&&c>0){comprar++;details.push(`Nova posição: ${name} (${c.toFixed(1)}%)`);}
-        else if(p>0&&c===0){vender++;details.push(`Encerrar: ${name} (era ${p.toFixed(1)}%)`);}
-        else if(d>0){aumentar++;details.push(`Reforçar: ${name} ${p.toFixed(1)}%→${c.toFixed(1)}%`);}
-        else{reduzir++;details.push(`Reduzir: ${name} ${p.toFixed(1)}%→${c.toFixed(1)}%`);}
+        if(p===0&&c>0) entradas++;
+        else if(p>0&&c===0) saidas++;
+        else if(d>0) aumentos++;
+        else reducoes++;
       });
-      const total=comprar+vender+aumentar+reduzir;
+      const total=entradas+saidas+aumentos+reducoes;
       if(total===0) return;
       const parts:string[]=[];
-      if(comprar) parts.push(`${comprar} nova${comprar>1?"s":""} posição${comprar>1?"ões":""}`);
-      if(aumentar) parts.push(`${aumentar} reforço${aumentar>1?"s":""}`);
-      if(reduzir) parts.push(`${reduzir} redução${reduzir>1?"ões":""}`);
-      if(vender) parts.push(`${vender} encerramento${vender>1?"s":""}`);
+      if(entradas) parts.push(`${entradas} nova${entradas>1?"s":""} posição${entradas>1?"ões":""}`);
+      if(aumentos) parts.push(`${aumentos} reforço${aumentos>1?"s":""}`);
+      if(reducoes) parts.push(`${reducoes} redução${reducoes>1?"ões":""}`);
+      if(saidas) parts.push(`${saidas} encerramento${saidas>1?"s":""}`);
       const dateStr:string=m.date??m.rebalance_date??"1970-01-01";
+      const monthName=new Date(dateStr).toLocaleDateString("pt-PT",{month:"long",year:"numeric"});
       evs.push({
-        id:`reb-${dateStr}`,ts:new Date(dateStr).getTime(),
-        type:"rebalanceamento",
-        label:`Revisão mensal aprovada`,
-        detail:parts.join(" · ")+(details.length>0?" · "+details.slice(0,3).join(" · ")+(details.length>3?` · +${details.length-3} mais`:""):""),
-        icon:"↺",color:"text-blue-400",
+        id:`reb-${dateStr}`,
+        ts:new Date(dateStr).getTime(),
+        kind:"revisao",
+        title:`Revisão mensal do portfólio`,
+        subtitle:monthName.charAt(0).toUpperCase()+monthName.slice(1),
+        narrative:`O modelo identificou ${total} ajuste${total>1?"s":""} na composição da carteira. ${parts.join(", ")}.`,
+        tags:parts.slice(0,2),
       });
     });
     return evs.reverse();
   },[sortedMonths]);
 
-  const allEvents=[...actLog,...rebalanceEvents].sort((a,b)=>b.ts-a.ts);
-  const filterTypes=["todos","rebalanceamento","ordens","cancelamento","configuração","login"];
-  const filtered=actFilter==="todos"?allEvents:allEvents.filter(e=>e.type===actFilter);
+  const orderEvents=useMemo(()=>{
+    return actLog
+      .filter(e=>e.type==="ordens")
+      .map(e=>({
+        id:e.id||`ord-${e.ts}`,
+        ts:e.ts,
+        kind:"execucao" as const,
+        title:"Plano de execução enviado",
+        subtitle:new Date(e.ts).toLocaleDateString("pt-PT",{day:"2-digit",month:"long",year:"numeric"}),
+        narrative:e.detail||"As ordens foram submetidas para execução na Interactive Brokers após confirmação.",
+        tags:[] as string[],
+      }));
+  },[actLog]);
 
-  // Group events by calendar day
-  const groupedByDay=useMemo(()=>{
-    const groups=new Map<string,ActEntry[]>();
-    filtered.forEach(e=>{
+  const timeline=[...rebalanceEvents,...orderEvents].sort((a,b)=>b.ts-a.ts);
+
+  const kindMeta=(kind:string)=>{
+    switch(kind){
+      case "revisao":   return {icon:"◈", accent:"border-l-teal-500",  badge:"text-teal-400 bg-teal-500/10 border-teal-500/25",  dot:"bg-teal-500"};
+      case "execucao":  return {icon:"◆", accent:"border-l-emerald-500",badge:"text-emerald-400 bg-emerald-500/10 border-emerald-500/25",dot:"bg-emerald-500"};
+      default:          return {icon:"○", accent:"border-l-slate-700",  badge:"text-slate-400 bg-slate-800 border-slate-700/30",  dot:"bg-slate-600"};
+    }
+  };
+
+  const kindLabel=(kind:string)=>kind==="revisao"?"Revisão":(kind==="execucao"?"Execução":"Evento");
+
+  const fmtDateShort=(ts:number)=>new Date(ts).toLocaleDateString("pt-PT",{day:"2-digit",month:"short",year:"numeric"});
+
+  // Group by year/quarter for premium feel
+  const grouped=useMemo(()=>{
+    const g=new Map<string,TimelineEvent[]>();
+    timeline.forEach(e=>{
       const d=new Date(e.ts);
-      const key=d.toLocaleDateString("pt-PT",{day:"2-digit",month:"long",year:"numeric"});
-      if(!groups.has(key)) groups.set(key,[]);
-      groups.get(key)!.push(e);
+      const key=`${d.getFullYear()}`;
+      if(!g.has(key)) g.set(key,[]);
+      g.get(key)!.push(e);
     });
-    return [...groups.entries()]; // [[dayLabel, events[]], ...]
-  },[filtered]);
-
-  // Collapse config events within a day
-  const isImportant=(e:ActEntry)=>e.type==="rebalanceamento"||e.type==="ordens";
-
-  const typeStyle=(type:string):{dot:string;badge:string;bg:string}=>{
-    switch(type){
-      case "rebalanceamento": return {dot:"bg-teal-500",badge:"bg-teal-900/30 text-teal-400 border-teal-700/30",bg:"bg-teal-900/10 border-teal-700/20"};
-      case "ordens":          return {dot:"bg-emerald-500",badge:"bg-emerald-900/30 text-emerald-400 border-emerald-700/30",bg:"bg-emerald-900/10 border-emerald-700/20"};
-      case "cancelamento":    return {dot:"bg-red-500",badge:"bg-red-900/30 text-red-400 border-red-700/30",bg:"bg-red-900/10 border-red-700/20"};
-      case "configuração":    return {dot:"bg-amber-500",badge:"bg-amber-900/30 text-amber-400 border-amber-700/30",bg:""};
-      case "login":           return {dot:"bg-slate-600",badge:"bg-slate-800 text-slate-500 border-slate-700/30",bg:""};
-      default:                return {dot:"bg-slate-600",badge:"bg-slate-800 text-slate-500 border-slate-700/30",bg:""};
-    }
-  };
-
-  const typeLabel=(type:string)=>{
-    switch(type){
-      case "rebalanceamento": return "Revisão";
-      case "ordens": return "Execução";
-      case "cancelamento": return "Cancelamento";
-      case "configuração": return "Configuração";
-      case "login": return "Acesso";
-      default: return type;
-    }
-  };
-
-  const fmtTime=(ts:number)=>{
-    const d=new Date(ts);
-    return d.toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"});
-  };
+    return [...g.entries()];
+  },[timeline]);
 
   return (
-    <div className="space-y-5">
-      {/* Header + filters */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="space-y-8 pb-8">
+
+      {/* ── Page intro ── */}
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
-          <div className="text-slate-100 font-bold text-base">Histórico de actividade</div>
-          <div className="text-slate-500 text-xs mt-0.5">{allEvents.length} eventos registados · ordenados por data</div>
+          <h2 className="text-slate-100 font-black text-lg tracking-tight">Percurso da carteira</h2>
+          <p className="text-slate-500 text-xs mt-1 max-w-sm leading-relaxed">
+            Os momentos relevantes da sua gestão — revisões do modelo, execuções e alterações de perfil.
+          </p>
         </div>
-        <button onClick={()=>{localStorage.removeItem(ACT_KEY);setActLog([]);}}
-          className="px-3 py-1.5 rounded-lg text-[11px] font-semibold text-red-500/70 hover:text-red-400 border border-red-900/30 hover:border-red-700/50 transition-colors">
-          Limpar histórico
-        </button>
+        {timeline.length>0&&(
+          <div className="text-[11px] text-slate-600 shrink-0">
+            {timeline.length} evento{timeline.length>1?"s":""} · desde {new Date(timeline[timeline.length-1].ts).getFullYear()}
+          </div>
+        )}
       </div>
 
-      {/* Filter pills */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {filterTypes.map(f=>{
-          const count=f==="todos"?allEvents.length:allEvents.filter(e=>e.type===f).length;
-          return (
-            <button key={f} onClick={()=>setActFilter(f)}
-              className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all ${
-                actFilter===f
-                  ?"bg-teal-600 text-white shadow-md shadow-teal-900/30"
-                  :"bg-[#0b0f1a] border border-[#1a1f2e] text-slate-400 hover:text-slate-200 hover:border-slate-600"}`}>
-              {f==="todos"?"Tudo":typeLabel(f)}
-              <span className={`ml-1.5 text-[10px] ${actFilter===f?"text-teal-200/70":"text-slate-600"}`}>{count}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Timeline */}
-      {groupedByDay.length===0?(
-        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-10 text-center">
-          <div className="text-slate-700 text-3xl mb-3">◎</div>
-          <div className="text-slate-500 text-sm">Sem actividade registada{actFilter!=="todos"?` para "${typeLabel(actFilter)}"`:""}</div>
+      {/* ── Timeline ── */}
+      {timeline.length===0?(
+        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-2xl p-12 text-center">
+          <div className="w-12 h-12 rounded-full bg-slate-800/60 flex items-center justify-center mx-auto mb-4">
+            <span className="text-slate-600 text-xl">◎</span>
+          </div>
+          <div className="text-slate-400 text-sm font-medium mb-1">Sem eventos registados</div>
+          <div className="text-slate-600 text-xs">Os eventos da sua carteira aparecerão aqui à medida que ocorrem.</div>
         </div>
       ):(
-        <div className="space-y-8">
-          {groupedByDay.map(([dayLabel,events])=>{
-            const important=events.filter(e=>isImportant(e));
-            const minor=events.filter(e=>!isImportant(e));
-            return (
-              <div key={dayLabel} className="relative">
-                {/* Day label */}
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">{dayLabel}</div>
-                  <div className="flex-1 h-px bg-[#1a1f2e]"/>
-                </div>
+        <div className="space-y-10">
+          {grouped.map(([year,events])=>(
+            <div key={year}>
+              {/* Year separator */}
+              <div className="flex items-center gap-4 mb-6">
+                <div className="text-xs font-black text-slate-600 tracking-[0.2em] uppercase">{year}</div>
+                <div className="flex-1 h-px bg-[#1a1f2e]"/>
+              </div>
 
-                {/* Events for this day */}
-                <div className="ml-0 space-y-3">
-                  {/* Important events — prominent cards */}
-                  {important.map((e,i)=>{
-                    const s=typeStyle(e.type);
+              {/* Events */}
+              <div className="relative">
+                {/* Vertical timeline line */}
+                <div className="absolute left-[15px] top-4 bottom-4 w-px bg-[#1a1f2e] hidden sm:block"/>
+
+                <div className="space-y-4">
+                  {events.map((e,i)=>{
+                    const m=kindMeta(e.kind);
                     return (
-                      <div key={e.id||i} className={`relative flex items-start gap-4 rounded-xl px-5 py-4 border ${s.bg} border-[#1a2030]`}>
-                        {/* Timeline dot + line */}
-                        <div className="flex flex-col items-center shrink-0 mt-1">
-                          <div className={`w-3 h-3 rounded-full ${s.dot} ring-4 ring-[#080c14] shrink-0`}/>
+                      <div key={e.id||i} className="relative flex items-start gap-4 sm:gap-5">
+                        {/* Dot on timeline */}
+                        <div className="shrink-0 relative z-10 mt-3.5 hidden sm:block">
+                          <div className={`w-[7px] h-[7px] rounded-full ${m.dot} ml-[12px] ring-4 ring-[#080c14]`}/>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${s.badge}`}>{typeLabel(e.type)}</span>
+
+                        {/* Card */}
+                        <div className={`flex-1 bg-[#0b0f1a] border border-[#1a1f2e] border-l-2 ${m.accent} rounded-xl px-5 py-4 transition-colors hover:border-l-2`}>
+                          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4">
+                            <div className="flex-1 min-w-0">
+                              {/* Badge + date row */}
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${m.badge}`}>{kindLabel(e.kind)}</span>
+                                <span className="text-[10px] text-slate-600">{fmtDateShort(e.ts)}</span>
                               </div>
-                              <div className="text-slate-100 text-sm font-bold leading-snug">{e.label}</div>
-                              {e.detail&&(
-                                <div className="text-slate-400 text-xs mt-1.5 leading-relaxed">{e.detail}</div>
+                              {/* Title */}
+                              <div className="text-slate-100 text-sm font-bold leading-snug">{e.title}</div>
+                              {/* Narrative */}
+                              <div className="text-slate-400 text-xs mt-1.5 leading-relaxed">{e.narrative}</div>
+                              {/* Tags */}
+                              {e.tags.length>0&&(
+                                <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+                                  {e.tags.map((t,ti)=>(
+                                    <span key={ti} className="text-[10px] text-slate-500 bg-slate-800/60 border border-slate-700/40 px-2 py-0.5 rounded-full">{t}</span>
+                                  ))}
+                                </div>
                               )}
                             </div>
-                            <div className="shrink-0 text-slate-500 text-[11px] mt-0.5">{fmtTime(e.ts)}</div>
                           </div>
                         </div>
                       </div>
                     );
                   })}
-
-                  {/* Minor events — compact grouped list */}
-                  {minor.length>0&&(
-                    <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
-                      {minor.map((e,i)=>{
-                        const s=typeStyle(e.type);
-                        return (
-                          <div key={e.id||i} className={`flex items-center gap-3 px-4 py-2.5 ${i<minor.length-1?"border-b border-[#111827]":""} hover:bg-white/[0.02] transition-colors`}>
-                            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.dot} opacity-60`}/>
-                            <div className="flex-1 text-[11px] text-slate-400 truncate">{e.label}</div>
-                            {e.detail&&<div className="text-[10px] text-slate-600 truncate max-w-[200px] hidden sm:block">{e.detail}</div>}
-                            <div className="text-[10px] text-slate-600 shrink-0">{fmtTime(e.ts)}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
                 </div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Footer note */}
-      <div className="text-[10px] text-slate-700 text-center pt-2">
-        O histórico de actividade é armazenado localmente neste dispositivo.
-      </div>
+      {/* ── Reassurance footer ── */}
+      {timeline.length>0&&(
+        <div className="flex items-start gap-3 bg-[#080c14] border border-[#1a1f2e] rounded-xl px-5 py-4">
+          <ShieldCheck size={13} className="text-slate-700 shrink-0 mt-0.5"/>
+          <div className="text-[11px] text-slate-600 leading-relaxed">
+            Cada revisão mensal é gerada autonomamente pelo modelo quantitativo e registada com hora e data. O detalhe completo das operações está disponível junto da sua equipa DECIDE.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -4564,6 +4559,15 @@ export default function ClientDashboardPage() {
   const [regSuccess,setRegSuccess]=useState(false);
   const [activePage,setActivePage]=useState<Page>("dashboard");
   const [sidebarOpen,setSidebarOpen]=useState(false);
+
+  const navigateToPage=useCallback((p:Page)=>{
+    setActivePage(p);
+    if(!router.isReady) return;
+    const q:Record<string,string|string[]>={...(router.query as Record<string,string|string[]>)};
+    if(p==="dashboard") delete q.page;
+    else q.page=p;
+    void router.replace({pathname:router.pathname,query:q},undefined,{shallow:true});
+  },[router]);
   const [riskProfileLocal,setRiskProfileLocalRaw]=useState<RiskProfile>("moderado");
   const [fxExposure,setFxExposureRaw]=useState<FxExposure>("protegida");
   const [marginEnabled,setMarginEnabledRaw]=useState(false);
@@ -4682,28 +4686,29 @@ export default function ClientDashboardPage() {
         if (v > 0) setAum(Math.round(v));
       }
     } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
 
-    // Listen for internal navigation events (e.g. from OrdensPage after submit)
+  useEffect(()=>{
     const handleNav=(e:Event)=>{
       const detail=(e as CustomEvent).detail as string;
       if(detail==="carteira"){
-        setActivePage("carteira");
+        navigateToPage("carteira");
         setCartTab("ib");
         setCartIbPos(null); // force refresh
       }
     };
     window.addEventListener("decide:nav",handleNav);
     return ()=>window.removeEventListener("decide:nav",handleNav);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[]);
+  },[navigateToPage]);
 
-  // Navigate to page from URL query param (?page=custos, etc.)
-  useEffect(()=>{
+  // Navigate to page from URL query param (?page=custos, etc.) — layout so first paint matches URL
+  useLayoutEffect(()=>{
     if(!router.isReady) return;
-    const p=String(router.query.page||"").toLowerCase() as Page;
-    const valid:Page[]=["dashboard","reco","carteira","perf","risco","historico","custos",
-      "robustez","ajuda","contactos","simulador","relatorios","ordens","actividade"];
-    if(p&&valid.includes(p)) setActivePage(p);
+    const raw=router.query.page;
+    const pageStr=Array.isArray(raw)?raw[0]:raw;
+    const p=String(pageStr??"").toLowerCase();
+    if(p&&VALID_PAGE_IDS.includes(p as Page)) setActivePage(p as Page);
   },[router.isReady,router.query.page]);
 
   // NO redirect — public dashboard shows to all
@@ -5334,7 +5339,7 @@ export default function ClientDashboardPage() {
 
       <div className="flex min-h-screen bg-[#080c14] text-slate-200" style={{fontFamily:"'Nunito',system-ui,sans-serif"}}>
         <Sidebar user={sessionUser} profile={profile} loggedIn={loggedIn} onRegister={()=>setShowRegModal(true)}
-          activePage={activePage} onNavigate={p=>{setActivePage(p);}} open={sidebarOpen} onClose={()=>setSidebarOpen(false)}/>
+          activePage={activePage} onNavigate={navigateToPage} open={sidebarOpen} onClose={()=>setSidebarOpen(false)}/>
 
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* discrete top bar for guests */}
@@ -5348,11 +5353,11 @@ export default function ClientDashboardPage() {
             </div>
           )}
 
-          <main className="flex-1 overflow-y-auto">
-            {/* ── Page title bar ── */}
-            <div className="flex flex-col border-b border-[#1a1f2e]">
+          <main className="flex-1 overflow-y-auto overflow-x-hidden lg:overflow-x-visible">
+            {/* ── Page title bar + faixa de config — sticky dentro do main (menu sempre visível ao scroll) ── */}
+            <div className="sticky top-0 z-30 flex flex-col border-b border-[#1a1f2e] bg-[#080c14]/98 backdrop-blur-md supports-[backdrop-filter]:bg-[#080c14]/92">
               {/* Top row: hamburger + title + quick actions */}
-              <div className="flex items-center gap-3 px-2 sm:px-4 lg:px-8 py-3 lg:py-4">
+              <div className="flex items-center gap-3 px-3 sm:px-6 lg:px-8 py-3 lg:py-4">
                 {/* Hamburger (mobile only) */}
                 <button onClick={()=>setSidebarOpen(true)}
                   className="lg:hidden p-2 -ml-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/5 active:bg-white/10 min-w-[44px] min-h-[44px] flex items-center justify-center"
@@ -5413,7 +5418,7 @@ export default function ClientDashboardPage() {
                 </div>
               </div>
               {/* Config strip (scrollable on mobile) */}
-              <div className="flex items-center gap-2 px-2 sm:px-4 lg:px-8 pb-3 overflow-x-auto scrollbar-none">
+              <div className="flex items-center gap-2 px-3 sm:px-6 lg:px-8 pb-3 overflow-x-auto scrollbar-none">
                 {/* Perfil de risco */}
                 <div className="relative shrink-0">
                   <button onClick={()=>{setOpenProfileDrop(v=>!v);setOpenFxDrop(false);setOpenMarginDrop(false);}}
@@ -5603,7 +5608,7 @@ export default function ClientDashboardPage() {
               </div>
             )}
 
-            <div className="px-2 sm:px-6 lg:px-8 py-5 lg:py-6 space-y-5">
+            <div className="px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-5">
 
 
               {/* ── RELATÓRIOS ── */}
@@ -6068,7 +6073,7 @@ export default function ClientDashboardPage() {
                     <div className="lg:col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 hover:border-slate-700/60 transition-colors duration-200">
                       <div className="flex items-center justify-between mb-4">
                         <div className="font-bold text-slate-100 text-sm">Últimas recomendações</div>
-                        <button onClick={()=>setActivePage("reco")} className="text-[11px] text-teal-400 hover:text-teal-300 flex items-center gap-1 transition-colors">Ver todas<ArrowUpRight size={12}/></button>
+                        <button onClick={()=>navigateToPage("reco")} className="text-[11px] text-teal-400 hover:text-teal-300 flex items-center gap-1 transition-colors">Ver todas<ArrowUpRight size={12}/></button>
                       </div>
                       {recoLoading?(
                         <div className="text-slate-500 text-sm text-center py-4">A carregar…</div>
@@ -6344,7 +6349,7 @@ export default function ClientDashboardPage() {
                     <div className="lg:col-span-2 bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5">
                       <div className="flex items-center justify-between mb-3">
                         <div className="font-bold text-slate-200 text-sm">Principais posições</div>
-                        <button onClick={()=>setActivePage("carteira")} className="text-[10px] text-blue-400 hover:underline">Ver carteira completa</button>
+                        <button onClick={()=>navigateToPage("carteira")} className="text-[10px] text-blue-400 hover:underline">Ver carteira completa</button>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         {(latestMonth?.rows??[])
@@ -6456,12 +6461,12 @@ export default function ClientDashboardPage() {
                   </div>
                   {/* CTA */}
                   <div className="flex flex-row lg:flex-col gap-2 lg:min-w-[200px] shrink-0">
-                    <button onClick={()=>setActivePage(loggedIn?"ordens":"reco")}
+                    <button onClick={()=>navigateToPage(loggedIn?"ordens":"reco")}
                       onClickCapture={!loggedIn?()=>setShowRegModal(true):undefined}
                       className="flex-1 lg:flex-none bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold px-5 py-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-teal-900/40 ring-1 ring-teal-500/30 active:scale-100 min-h-[48px]">
                       <CheckCircle2 size={16}/> Aprovar Plano
                     </button>
-                    <button onClick={()=>setActivePage("carteira")} className="flex-1 lg:flex-none bg-[#111827] border border-[#252a3a] hover:bg-[#151929] text-slate-400 text-xs font-semibold px-4 py-3 rounded-lg transition-colors min-h-[44px]">
+                    <button onClick={()=>navigateToPage("carteira")} className="flex-1 lg:flex-none bg-[#111827] border border-[#252a3a] hover:bg-[#151929] text-slate-400 text-xs font-semibold px-4 py-3 rounded-lg transition-colors min-h-[44px]">
                       Ver carteira completa
                     </button>
                   </div>
@@ -6487,8 +6492,8 @@ export default function ClientDashboardPage() {
               </div>
 
               {/* Recomendações completas */}
-              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5">
-                <div className="flex items-center justify-between mb-4">
+              <div className="bg-[#0b0f1a] border-y lg:border border-[#1a1f2e] lg:rounded-xl py-3 lg:p-5 max-lg:w-screen max-lg:max-w-[100vw] max-lg:ml-[calc(50%-50vw)] max-lg:mr-[calc(50%-50vw)] lg:mx-0 lg:w-auto lg:max-w-none">
+                <div className="flex items-center justify-between mb-4 px-3 lg:px-0">
                   <SH title="Recomendações"/>
                   <span className="text-slate-500 text-xs -mt-4">{actionCounts.allRows.length} posições</span>
                 </div>
@@ -6497,20 +6502,20 @@ export default function ClientDashboardPage() {
                 ):actionCounts.allRows.length===0?(
                   <div className="text-slate-500 text-sm text-center py-6">Sem recomendações este mês</div>
                 ):(
-                  <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
+                  <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
-                      <th className="text-left py-2 pl-1 sm:pl-3 font-semibold w-full">Ativo</th>
-                      <th className="text-left py-2 px-2 font-semibold hidden sm:table-cell">Setor</th>
-                      <th className="text-left py-2 px-2 font-semibold hidden sm:table-cell">País</th>
-                      <th className="text-right py-2 px-3 font-semibold whitespace-nowrap">
+                      <th className="text-left py-2 pl-3 sm:pl-4 font-semibold w-full">Ativo</th>
+                      <th className="text-left py-2 px-3 font-semibold hidden sm:table-cell">Setor</th>
+                      <th className="text-left py-2 px-3 font-semibold hidden sm:table-cell">País</th>
+                      <th className="text-right py-2 px-4 font-semibold whitespace-nowrap">
                         <span title="Peso no plano do mês anterior">Mês ant.</span>
                       </th>
-                      <th className="text-right py-2 px-3 font-semibold whitespace-nowrap">
+                      <th className="text-right py-2 px-4 font-semibold whitespace-nowrap">
                         <span title="Peso no plano deste mês">Este mês</span>
                       </th>
-                      <th className="text-right py-2 px-2 font-semibold hidden sm:table-cell">&#916;</th>
-                      <th className="text-right py-2 pr-1 sm:pr-3 font-semibold whitespace-nowrap">Ação</th>
+                      <th className="text-right py-2 px-3 font-semibold hidden sm:table-cell">&#916;</th>
+                      <th className="text-right py-2 pr-3 sm:pr-4 font-semibold whitespace-nowrap">Ação</th>
                     </tr></thead>
                     <tbody>
                       {(()=>{
@@ -6530,7 +6535,7 @@ export default function ClientDashboardPage() {
                               <tr
                                 onClick={!isXeon?()=>setExpandedReco(v=>v===r.ticker?null:r.ticker):undefined}
                                 className={`border-b border-[#0d1220] transition-colors duration-100 ${isXeon?"opacity-60":"cursor-pointer hover:bg-white/[0.03]"} ${!isXeon?rowAccent(r.action):""} ${expandedReco===r.ticker?"bg-white/[0.03]":""}`}>
-                                <td className="py-3 pl-1 sm:pl-3">
+                                <td className="py-3 pl-3 sm:pl-4">
                                   {isXeon?(
                                     <span className="font-bold text-slate-400">XEON</span>
                                   ):(
@@ -6542,12 +6547,12 @@ export default function ClientDashboardPage() {
                                   {getCompany(r.ticker)&&<div className="text-slate-600 font-normal text-[10px] mt-0.5 leading-tight">{getCompany(r.ticker)}</div>}
                                   <div className="sm:hidden text-slate-600 text-[10px] mt-0.5">{getSector(r.ticker)}</div>
                                 </td>
-                                <td className="py-3 px-2 text-slate-500 text-[11px] hidden sm:table-cell">{getSector(r.ticker)}</td>
-                                <td className="py-3 px-2 text-slate-500 text-[11px] hidden sm:table-cell">{getZone(r.ticker)}</td>
-                                <td className="py-3 px-3 text-right text-slate-500 whitespace-nowrap">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
-                                <td className="py-3 px-3 text-right text-slate-200 font-semibold whitespace-nowrap">{r.cur>0?`${r.cur.toFixed(1)}%`:"—"}</td>
-                                <td className={`py-3 px-2 text-right font-semibold whitespace-nowrap hidden sm:table-cell ${dc}`}>{r.delta!==0?`${r.delta>0?"+":""}${r.delta.toFixed(1)}%`:"—"}</td>
-                                <td className="py-3 pr-1 sm:pr-3 text-right whitespace-nowrap">
+                                <td className="py-3 px-3 text-slate-500 text-[11px] hidden sm:table-cell">{getSector(r.ticker)}</td>
+                                <td className="py-3 px-3 text-slate-500 text-[11px] hidden sm:table-cell">{getZone(r.ticker)}</td>
+                                <td className="py-3 px-4 text-right text-slate-500 whitespace-nowrap">{r.prev>0?`${r.prev.toFixed(1)}%`:"—"}</td>
+                                <td className="py-3 px-4 text-right text-slate-200 font-semibold whitespace-nowrap">{r.cur>0?`${r.cur.toFixed(1)}%`:"—"}</td>
+                                <td className={`py-3 px-3 text-right font-semibold whitespace-nowrap hidden sm:table-cell ${dc}`}>{r.delta!==0?`${r.delta>0?"+":""}${r.delta.toFixed(1)}%`:"—"}</td>
+                                <td className="py-3 pr-3 sm:pr-4 text-right whitespace-nowrap">
                                   {!isXeon&&<span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${actionColor(r.action)}`}>{actionLabel(r.action)}</span>}
                                 </td>
                               </tr>
@@ -6643,7 +6648,7 @@ export default function ClientDashboardPage() {
 
               {/* ── CARTEIRA ── */}
               {activePage==="carteira"&&(
-                <div className="space-y-5">
+                <div className="space-y-4 sm:space-y-5">
 
                   {/* ── Summary strip ── */}
                   {(()=>{
@@ -6757,7 +6762,7 @@ export default function ClientDashboardPage() {
                         </div>
                       )}
                       {cartIbPos!==null&&cartIbPos.length>0&&(
-                        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+                        <div className="bg-[#0b0f1a] border-y lg:border border-[#1a1f2e] lg:rounded-xl overflow-hidden max-lg:w-screen max-lg:max-w-[100vw] max-lg:ml-[calc(50%-50vw)] max-lg:mr-[calc(50%-50vw)] lg:mx-0 lg:w-auto lg:max-w-none">
                           <div className="overflow-x-auto">
                           <table className="w-full text-xs">
                             <thead><tr className="text-slate-500 border-b border-[#1a1f2e] font-semibold">
@@ -6918,7 +6923,7 @@ export default function ClientDashboardPage() {
                         <div className="text-slate-100 font-bold text-base mb-1">Plano modelo recomendado</div>
                         <div className="text-slate-500 text-xs">Alocação óptima calculada pelo modelo quantitativo DECIDE V5 · {actionCounts.allRows.length} posições</div>
                       </div>
-                      <button onClick={()=>setActivePage("reco")} className="shrink-0 bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all hover:scale-[1.02] shadow-lg shadow-teal-900/30">
+                      <button onClick={()=>navigateToPage("reco")} className="shrink-0 bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all hover:scale-[1.02] shadow-lg shadow-teal-900/30">
                         <CheckCircle2 size={14}/> Aprovar plano
                       </button>
                     </div>
@@ -7087,7 +7092,7 @@ export default function ClientDashboardPage() {
                     );
                   })()}
 
-                  <div className="bg-[#0b0f1a] border border-[#1a1f2e]/60 rounded-xl p-5">
+                  <div className="bg-[#0b0f1a] border-y lg:border border-[#1a1f2e]/60 lg:rounded-xl p-5 max-lg:w-screen max-lg:max-w-[100vw] max-lg:ml-[calc(50%-50vw)] max-lg:mr-[calc(50%-50vw)] lg:mx-0 lg:w-auto lg:max-w-none">
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <div className="font-bold text-slate-200 text-sm">Posições do plano</div>
@@ -7861,7 +7866,7 @@ export default function ClientDashboardPage() {
                   recoLabel={recoLabel}
                   aum={aum}
                   loggedIn={loggedIn}
-                  onBack={()=>setActivePage("reco")}
+                  onBack={()=>navigateToPage("reco")}
                   onShowRegister={()=>setShowRegModal(true)}
                   profileLabel={profileLabel}
                   fxExposure={fxExposure}
