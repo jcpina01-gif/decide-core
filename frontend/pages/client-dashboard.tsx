@@ -5359,18 +5359,18 @@ export default function ClientDashboardPage() {
         className="decide-client-dashboard-root flex h-full min-h-0 w-full max-h-full flex-1 flex-col overflow-hidden bg-[#080c14] text-slate-200 lg:grid lg:h-full lg:max-h-full lg:min-h-0 lg:w-full lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] lg:grid-rows-[auto_1fr]"
         style={{fontFamily:"'Nunito',system-ui,sans-serif"}}>
         {/* Logo desktop: mesma linha que o header à direita — stretch à altura da grelha */}
-        <div className="relative z-40 decide-dashboard-desktop-logo hidden min-h-0 items-stretch border-b border-[#1a1f2e] bg-[#07090f] py-0 pl-1 pr-2 lg:flex lg:row-start-1 lg:col-start-1 lg:col-end-2 lg:h-full lg:self-stretch">
+        <div className="relative z-40 decide-dashboard-desktop-logo hidden min-h-0 items-stretch border-b border-[#1a1f2e] bg-black py-0 pl-1 pr-2 lg:flex lg:row-start-1 lg:col-start-1 lg:col-end-2 lg:h-full lg:self-stretch">
           <div
-            className="decide-sidebar-logo-slot flex h-full min-h-[4.5rem] w-full min-w-0 flex-1 items-center justify-start"
+            className="decide-sidebar-logo-slot flex h-full min-h-[4.5rem] w-full min-w-0 flex-1 items-center justify-start bg-black"
             style={{ maxWidth: "100%", boxSizing: "border-box" }}>
             <DecideBrandImage
               priority
               height="100%"
-              maxWidth="min(11rem, 92%)"
-              sizes="256px"
+              maxWidth="min(13.5rem, 98%)"
+              sizes="280px"
               className="decide-header-brand-mark decide-logo-img--plain decide-logo-img--header-lockup"
               knockoutBackground={false}
-              style={{ maxHeight: "min(9rem, 100%)", objectFit: "contain", objectPosition: "left center" }}
+              style={{ maxHeight: "min(11.5rem, 100%)", objectFit: "contain", objectPosition: "left center" }}
             />
           </div>
         </div>

@@ -203,9 +203,15 @@ aside.decide-dashboard-sidebar .decide-sidebar-logo-slot img.decide-logo-img--he
     height: 0;
   }
 
+  .decide-client-dashboard-root .decide-dashboard-desktop-logo,
+  .decide-client-dashboard-root .decide-dashboard-desktop-logo .decide-sidebar-logo-slot {
+    background-color: #000000 !important;
+  }
+
   .decide-client-dashboard-root .decide-dashboard-desktop-logo .decide-sidebar-logo-slot img.decide-logo-img--header-lockup {
-    max-width: min(10rem, 93%) !important;
-    transform: translateX(-4px) !important;
+    max-width: min(13.5rem, 98%) !important;
+    max-height: min(11.5rem, 100%) !important;
+    transform: translateX(-2px) !important;
   }
 }
 
