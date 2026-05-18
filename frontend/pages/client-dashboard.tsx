@@ -2301,31 +2301,33 @@ function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,prof
               <React.Fragment key={i}>
                 <tr className={`border-b border-[#0f1420] cursor-pointer transition-colors select-none ${expandedIdx===i?"bg-white/[0.04]":"hover:bg-white/[0.02]"}`}
                   onClick={()=>setExpandedIdx(expandedIdx===i?null:i)}>
-                  <td className="px-4 py-3.5">
-                    <div className="font-semibold text-slate-200 capitalize text-sm">{r.label}</div>
-                    <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${r.regimeStyle}`}>{r.regime}</span>
-                    <span className={`sm:hidden inline-block mt-1 ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${r.estadoStyle}`}>{r.estado}</span>
+                  <td className="px-4 py-3 align-middle">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="font-semibold text-slate-200 capitalize text-sm">{r.label}</span>
+                      <span className={`inline-flex shrink-0 items-center px-2 py-0.5 rounded-full text-[10px] font-bold leading-none ${r.regimeStyle}`}>{r.regime}</span>
+                      <span className={`sm:hidden inline-flex shrink-0 items-center px-2 py-0.5 rounded-full text-[10px] font-bold leading-none ${r.estadoStyle}`}>{r.estado}</span>
+                    </div>
                   </td>
-                  <td className="px-3 py-3.5 text-center font-bold text-emerald-400 text-sm">{r.compras.length||<span className="text-slate-700">—</span>}</td>
-                  <td className="px-3 py-3.5 text-center font-bold text-cyan-400 text-sm hidden sm:table-cell">{r.aumentos.length||<span className="text-slate-700">—</span>}</td>
-                  <td className="px-3 py-3.5 text-center font-bold text-rose-400 text-sm">{r.vendas.length||<span className="text-slate-700">—</span>}</td>
-                  <td className="px-3 py-3.5 text-center font-bold text-amber-400 text-sm">{r.reducoes.length||<span className="text-slate-700">—</span>}</td>
-                  <td className="px-3 py-3.5 text-center text-slate-600 text-sm hidden sm:table-cell">{r.manter.length||<span className="text-slate-700">—</span>}</td>
-                  <td className="px-4 py-3.5 max-w-[160px] sm:max-w-xs">
-                    <div className="text-slate-300 truncate text-xs">{r.resumo}</div>
-                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  <td className="px-3 py-3 text-center font-bold text-emerald-400 text-sm align-middle">{r.compras.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-3 py-3 text-center font-bold text-cyan-400 text-sm hidden sm:table-cell align-middle">{r.aumentos.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-3 py-3 text-center font-bold text-rose-400 text-sm align-middle">{r.vendas.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-3 py-3 text-center font-bold text-amber-400 text-sm align-middle">{r.reducoes.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-3 py-3 text-center text-slate-600 text-sm hidden sm:table-cell align-middle">{r.manter.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-4 py-3 align-middle min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                      <span className="text-slate-300 min-w-0">{r.resumo}</span>
                       {r.xeonPct>0&&(
-                        <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[10px] font-semibold">
+                        <span className="inline-flex shrink-0 items-center px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[10px] font-semibold leading-none whitespace-nowrap">
                           MM {r.xeonPct.toFixed(0)}%{r.xeonDelta!==0?` ${r.xeonDelta>0?"+":""}${r.xeonDelta.toFixed(0)}pp`:""}
                         </span>
                       )}
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${r.equityPct>101?"bg-orange-500/15 text-orange-400":"bg-slate-700/40 text-slate-500"}`}>
+                      <span className={`inline-flex shrink-0 items-center px-2 py-0.5 rounded text-[10px] font-semibold leading-none whitespace-nowrap ${r.equityPct>101?"bg-orange-500/15 text-orange-400":"bg-slate-700/40 text-slate-500"}`}>
                         Acções {r.equityPct.toFixed(0)}%{r.lev>1.01?` ×${r.lev.toFixed(2)}`:""}
                         {r.equityDelta!==0?` ${r.equityDelta>0?"+":""}${r.equityDelta.toFixed(0)}pp`:""}
                       </span>
                     </div>
                   </td>
-                  <td className="px-4 py-3.5 hidden sm:table-cell"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${r.estadoStyle}`}>{r.estado}</span></td>
+                  <td className="px-4 py-3 hidden sm:table-cell align-middle"><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold leading-none ${r.estadoStyle}`}>{r.estado}</span></td>
                 </tr>
                 {expandedIdx===i&&(()=>{
                   const {pts,result3m}=r.getMiniPts();
