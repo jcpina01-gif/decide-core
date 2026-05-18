@@ -174,10 +174,27 @@ export default function BackofficeAuditPage() {
         setWriteTestMsg(`✗ order falhou HTTP ${or2.status}: ${oj.error ?? "?"}`);
         return;
       }
-      setWriteTestMsg(`✓ approval=${aj.id?.slice(0,8)} order=${oj.id?.slice(0,8)} — carrega "Ordens" para ver`);
-      // Auto-reload
-      void loadRows(clientId || "jcpina01", "orders");
-      setActiveTable("orders");
+      // 3. Write a test execution
+      const er = await fetch("/api/audit/execution", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: clientId || "jcpina01",
+          order_id: oj.id,
+          ticker: "TEST",
+          side: "BUY",
+          qty_filled: 1,
+          price_executed: 100,
+          commission: 1.25,
+          executed_at: new Date().toISOString(),
+        }),
+      });
+      const ej = await er.json() as { ok?: boolean; id?: string; error?: string };
+      const execStatus = er.ok && ej.ok ? `exec=${ej.id?.slice(0,8)}` : `exec falhou: ${ej.error ?? "?"}`;
+      setWriteTestMsg(`✓ approval=${aj.id?.slice(0,8)} order=${oj.id?.slice(0,8)} ${execStatus}`);
+      // Auto-reload executions
+      void loadRows(clientId || "jcpina01", "executions");
+      setActiveTable("executions");
     } catch (e) {
       setWriteTestMsg("Erro de rede: " + (e instanceof Error ? e.message : "falha"));
     }
