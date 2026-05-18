@@ -9,6 +9,10 @@ import type { BackofficeClientSummary } from "../../lib/server/backofficeData";
 const DECIDE_MONTHLY_PREMIUM = 29;     // €/month
 const DECIDE_MGMT_PCT_PRIVATE = 0.60;  // % per year
 const EXTERN_PCT = 0.12;               // % per year (custody + transactions + FX + other)
+// Margin borrowing: IB charges ~4%/year on borrowed capital.
+// With MARGIN_BOOST=1.35, avg leverage≈1.35x → avg borrow ≈35% of AUM.
+const MARGIN_RATE_AA = 4.0;            // % per year (IB debit rate)
+const MARGIN_AVG_BORROW_PCT = 35;      // % of AUM borrowed on average when margin active
 
 type CostRow = {
   client: BackofficeClientSummary;
@@ -17,6 +21,7 @@ type CostRow = {
   mgmtAnnual: number;
   mgmtPct: number;
   externAnnual: number;
+  marginAnnual: number;
   totalAnnual: number;
   totalPct: number;
   ytdMonths: number;
@@ -37,7 +42,13 @@ function computeCosts(client: BackofficeClientSummary, ytdMonths: number): CostR
     plan === "private" ? DECIDE_MGMT_PCT_PRIVATE : aum > 0 ? (DECIDE_MONTHLY_PREMIUM * 12 / aum) * 100 : 0;
 
   const externAnnual = aum * (EXTERN_PCT / 100);
-  const totalAnnual = mgmtAnnual + externAnnual;
+
+  // Margin borrowing cost: only when margin is enabled
+  const marginAnnual = client.marginEnabled
+    ? aum * (MARGIN_AVG_BORROW_PCT / 100) * (MARGIN_RATE_AA / 100)
+    : 0;
+
+  const totalAnnual = mgmtAnnual + externAnnual + marginAnnual;
   const totalPct = aum > 0 ? (totalAnnual / aum) * 100 : 0;
 
   const mgmtYtd =
@@ -45,7 +56,8 @@ function computeCosts(client: BackofficeClientSummary, ytdMonths: number): CostR
       ? mgmtAnnual * (ytdMonths / 12)
       : DECIDE_MONTHLY_PREMIUM * ytdMonths;
   const externYtd = externAnnual * (ytdMonths / 12);
-  const ytdEstimate = mgmtYtd + externYtd;
+  const marginYtd = marginAnnual * (ytdMonths / 12);
+  const ytdEstimate = mgmtYtd + externYtd + marginYtd;
 
   return {
     client,
@@ -54,6 +66,7 @@ function computeCosts(client: BackofficeClientSummary, ytdMonths: number): CostR
     mgmtAnnual,
     mgmtPct,
     externAnnual,
+    marginAnnual,
     totalAnnual,
     totalPct,
     ytdMonths,
@@ -92,8 +105,10 @@ export default function BackofficeCustosPage() {
   const totalAum = rows.reduce((s, r) => s + r.aum, 0);
   const totalMgmt = rows.reduce((s, r) => s + r.mgmtAnnual, 0);
   const totalExtern = rows.reduce((s, r) => s + r.externAnnual, 0);
+  const totalMargin = rows.reduce((s, r) => s + r.marginAnnual, 0);
   const totalCost = rows.reduce((s, r) => s + r.totalAnnual, 0);
   const totalYtd = rows.reduce((s, r) => s + r.ytdEstimate, 0);
+  const anyMargin = rows.some((r) => r.client.marginEnabled);
 
   return (
     <>
@@ -142,8 +157,9 @@ export default function BackofficeCustosPage() {
               {[
                 { label: "AUM total", value: `€ ${fmtEur(totalAum)}`, sub: `${clients.length} cliente${clients.length !== 1 ? "s" : ""}`, color: "#38bdf8" },
                 { label: "Receita gestão (ano)", value: `€ ${fmtEur(totalMgmt)}`, sub: "fees DECIDE anuais estimados", color: "#34d399" },
-                { label: "Custos externos (ano)", value: `€ ${fmtEur(totalExtern)}`, sub: `${fmtPct(EXTERN_PCT)} do AUM total`, color: "#94a3b8" },
-                { label: "Total encargos (ano)", value: `€ ${fmtEur(totalCost)}`, sub: "gestão + externos", color: "#fb923c" },
+                { label: "Custos externos (ano)", value: `€ ${fmtEur(totalExtern)}`, sub: `${fmtPct(EXTERN_PCT)} do AUM`, color: "#94a3b8" },
+                ...(anyMargin ? [{ label: "Custo margem (ano)", value: `€ ${fmtEur(totalMargin)}`, sub: `~${MARGIN_AVG_BORROW_PCT}% AUM × ${MARGIN_RATE_AA}% (estimado)`, color: "#f472b6" }] : []),
+                { label: "Total encargos (ano)", value: `€ ${fmtEur(totalCost)}`, sub: anyMargin ? "gestão + externos + margem" : "gestão + externos", color: "#fb923c" },
                 { label: `YTD estimado (${ytdMonths}m)`, value: `€ ${fmtEur(totalYtd)}`, sub: `pro-rata ${ytdMonths}/12 do ano`, color: "#a78bfa" },
               ].map((k) => (
                 <div
@@ -188,7 +204,9 @@ export default function BackofficeCustosPage() {
                   <thead>
                     <tr style={{ background: "rgba(0,0,0,0.3)" }}>
                       {[
-                        "Cliente", "Plano", "AUM (€)", "Gestão DECIDE", "Custos externos", "Total encargos", "% total do AUM", "YTD estimado",
+                        "Cliente", "Plano", "AUM (€)", "Gestão DECIDE", "Custos externos",
+                        ...(anyMargin ? ["Custo margem"] : []),
+                        "Total encargos", "% total do AUM", "YTD estimado",
                       ].map((h) => (
                         <th
                           key={h}
@@ -308,6 +326,27 @@ export default function BackofficeCustosPage() {
                             )}
                           </td>
 
+                          {/* Custo margem (only rendered when any client has margin) */}
+                          {anyMargin && (
+                            <td style={{ padding: "14px 16px", fontVariantNumeric: "tabular-nums" }}>
+                              {r.client.marginEnabled ? (
+                                <>
+                                  <div style={{ fontSize: 14, fontWeight: 700, color: "#f472b6" }}>
+                                    € {fmtEur(r.marginAnnual)}
+                                    <span style={{ fontSize: 10, fontWeight: 400, color: "#52525b", marginLeft: 4 }}>
+                                      /ano
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: 10, color: "#52525b", marginTop: 2 }}>
+                                    ~{MARGIN_AVG_BORROW_PCT}% AUM × {MARGIN_RATE_AA}%
+                                  </div>
+                                </>
+                              ) : (
+                                <span style={{ color: "#3f3f46", fontSize: 12 }}>Sem margem</span>
+                              )}
+                            </td>
+                          )}
+
                           {/* Total */}
                           <td style={{ padding: "14px 16px", fontVariantNumeric: "tabular-nums" }}>
                             <div style={{ fontSize: 15, fontWeight: 900, color: "#fb923c" }}>
@@ -365,6 +404,11 @@ export default function BackofficeCustosPage() {
                         <td style={{ padding: "12px 16px", fontSize: 14, fontWeight: 900, color: "#94a3b8" }}>
                           € {fmtEur(totalExtern)}
                         </td>
+                        {anyMargin && (
+                          <td style={{ padding: "12px 16px", fontSize: 14, fontWeight: 900, color: "#f472b6" }}>
+                            € {fmtEur(totalMargin)}
+                          </td>
+                        )}
                         <td style={{ padding: "12px 16px", fontSize: 15, fontWeight: 900, color: "#fb923c" }}>
                           € {fmtEur(totalCost)}
                         </td>
@@ -421,6 +465,16 @@ export default function BackofficeCustosPage() {
                     { k: "Taxas regulatórias", v: "≈ 0,01% / ano" },
                   ],
                 },
+                {
+                  title: "Custo de margem (se ativa)",
+                  color: "#f472b6",
+                  lines: [
+                    { k: "Taxa IB (debit rate)", v: `${MARGIN_RATE_AA}% / ano` },
+                    { k: "Capital médio emprestado", v: `~${MARGIN_AVG_BORROW_PCT}% do AUM` },
+                    { k: "Custo anual estimado", v: `~${((MARGIN_AVG_BORROW_PCT / 100) * MARGIN_RATE_AA).toFixed(2)}% do AUM` },
+                    { k: "Configurar em", v: "backoffice_store.json" },
+                  ],
+                },
               ].map((card) => (
                 <div
                   key={card.title}
@@ -447,7 +501,9 @@ export default function BackofficeCustosPage() {
             </div>
 
             <p style={{ marginTop: 20, fontSize: 11, color: "#3f3f46", lineHeight: 1.6 }}>
-              Valores estimados com base no NAV IBKR atual. Custos externos são estimativas médias — o valor real depende do número de transações, câmbios efectuados e taxas regulatórias variáveis. O plano é auto-detetado pelo NAV se não configurado em <code style={{ color: "#52525b" }}>backoffice_store.json</code>.
+              Valores estimados com base no NAV IBKR atual. Custos externos são estimativas médias — o valor real depende do número de transações, câmbios efectuados e taxas regulatórias variáveis.
+              O custo de margem assume alavancagem média de ~{MARGIN_AVG_BORROW_PCT}% do AUM a {MARGIN_RATE_AA}%/ano (IB debit rate); o valor real varia com a alavancagem diária efectiva.
+              O plano e a margem são configuráveis em <code style={{ color: "#52525b" }}>backoffice_store.json</code>: campos <code style={{ color: "#52525b" }}>plan</code> ("premium" | "private") e <code style={{ color: "#52525b" }}>marginEnabled</code> (true | false).
             </p>
           </>
         )}

@@ -23,6 +23,7 @@ export type BackofficeStoreV1 = {
       accountStatus?: AccountStatus;
       riskProfile?: string;
       plan?: ClientPlan;
+      marginEnabled?: boolean;
       planApprovedAt?: string | null;
       lastRecommendationAt?: string | null;
       notes?: string;
@@ -39,6 +40,7 @@ export type BackofficeClientSummary = {
   accountStatus: AccountStatus;
   riskProfile: string | null;
   plan: ClientPlan | null;
+  marginEnabled: boolean;
   navIbkr: number | null;
   navCurrency: string;
   lastRecommendationAt: string | null;
@@ -279,6 +281,7 @@ export function listBackofficeClients(root: string): {
       accountStatus: st.accountStatus ?? (net.value > 0 ? "active" : "unknown"),
       riskProfile: st.riskProfile ?? null,
       plan: st.plan ?? autoPlan,
+      marginEnabled: st.marginEnabled ?? false,
       navIbkr: navVal,
       navCurrency: net.ccy,
       lastRecommendationAt: st.lastRecommendationAt ?? planMtime,
@@ -305,6 +308,7 @@ export function listBackofficeClients(root: string): {
       accountStatus: st.accountStatus ?? "unknown",
       riskProfile: st.riskProfile ?? null,
       plan: st.plan ?? null,
+      marginEnabled: st.marginEnabled ?? false,
       navIbkr: null,
       navCurrency: "EUR",
       lastRecommendationAt: st.lastRecommendationAt ?? null,
@@ -332,6 +336,7 @@ export function getDemoClient(): BackofficeClientSummary {
     accountStatus: "active",
     riskProfile: "moderado",
     plan: "private",
+    marginEnabled: false,
     navIbkr: 200_000,
     navCurrency: "EUR",
     lastRecommendationAt: new Date().toISOString(),
