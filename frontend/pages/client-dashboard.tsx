@@ -2263,17 +2263,17 @@ function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,prof
       </div>
       {histTab==="reco"&&(
         <div className="overflow-x-auto">
-        <table className="w-full text-xs min-w-[600px]">
+        <table className="w-full text-xs">
           <thead>
             <tr className="text-slate-500 border-b border-[#1a1f2e] text-left">
-              <th className="px-5 py-3 font-semibold w-36">Data</th>
+              <th className="px-4 py-3 font-semibold w-36">Data</th>
               <th className="px-3 py-3 font-semibold text-center text-emerald-500 w-9" title="Compras">▲</th>
-              <th className="px-3 py-3 font-semibold text-center text-cyan-500 w-9" title="Reforços">↑</th>
+              <th className="px-3 py-3 font-semibold text-center text-cyan-500 w-9 hidden sm:table-cell" title="Reforços">↑</th>
               <th className="px-3 py-3 font-semibold text-center text-red-500 w-9" title="Vendas">▼</th>
               <th className="px-3 py-3 font-semibold text-center text-amber-500 w-9" title="Reduções">↓</th>
-              <th className="px-3 py-3 font-semibold text-center text-slate-500 w-9" title="Mantidas">≈</th>
-              <th className="px-5 py-3 font-semibold">Resumo</th>
-              <th className="px-5 py-3 font-semibold w-24">Estado</th>
+              <th className="px-3 py-3 font-semibold text-center text-slate-500 w-9 hidden sm:table-cell" title="Mantidas">≈</th>
+              <th className="px-4 py-3 font-semibold">Resumo</th>
+              <th className="px-4 py-3 font-semibold w-24 hidden sm:table-cell">Estado</th>
             </tr>
           </thead>
           <tbody>
@@ -2281,18 +2281,19 @@ function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,prof
               <React.Fragment key={i}>
                 <tr className={`border-b border-[#0f1420] cursor-pointer transition-colors select-none ${expandedIdx===i?"bg-white/[0.04]":"hover:bg-white/[0.02]"}`}
                   onClick={()=>setExpandedIdx(expandedIdx===i?null:i)}>
-                  <td className="px-5 py-3.5">
+                  <td className="px-4 py-3.5">
                     <div className="font-semibold text-slate-200 capitalize text-sm">{r.label}</div>
                     <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${r.regimeStyle}`}>{r.regime}</span>
+                    <span className={`sm:hidden inline-block mt-1 ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${r.estadoStyle}`}>{r.estado}</span>
                   </td>
                   <td className="px-3 py-3.5 text-center font-bold text-emerald-400 text-sm">{r.compras.length||<span className="text-slate-700">—</span>}</td>
-                  <td className="px-3 py-3.5 text-center font-bold text-cyan-400 text-sm">{r.aumentos.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-3 py-3.5 text-center font-bold text-cyan-400 text-sm hidden sm:table-cell">{r.aumentos.length||<span className="text-slate-700">—</span>}</td>
                   <td className="px-3 py-3.5 text-center font-bold text-rose-400 text-sm">{r.vendas.length||<span className="text-slate-700">—</span>}</td>
                   <td className="px-3 py-3.5 text-center font-bold text-amber-400 text-sm">{r.reducoes.length||<span className="text-slate-700">—</span>}</td>
-                  <td className="px-3 py-3.5 text-center text-slate-600 text-sm">{r.manter.length||<span className="text-slate-700">—</span>}</td>
-                  <td className="px-5 py-3.5 max-w-xs">
+                  <td className="px-3 py-3.5 text-center text-slate-600 text-sm hidden sm:table-cell">{r.manter.length||<span className="text-slate-700">—</span>}</td>
+                  <td className="px-4 py-3.5 max-w-[160px] sm:max-w-xs">
                     <div className="text-slate-300 truncate text-xs">{r.resumo}</div>
-                    <div className="flex items-center gap-2 mt-1.5">
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                       {r.xeonPct>0&&(
                         <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[10px] font-semibold">
                           MM {r.xeonPct.toFixed(0)}%{r.xeonDelta!==0?` ${r.xeonDelta>0?"+":""}${r.xeonDelta.toFixed(0)}pp`:""}
@@ -2304,7 +2305,7 @@ function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,prof
                       </span>
                     </div>
                   </td>
-                  <td className="px-5 py-3.5"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${r.estadoStyle}`}>{r.estado}</span></td>
+                  <td className="px-4 py-3.5 hidden sm:table-cell"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${r.estadoStyle}`}>{r.estado}</span></td>
                 </tr>
                 {expandedIdx===i&&(()=>{
                   const {pts,result3m}=r.getMiniPts();
@@ -6754,14 +6755,15 @@ export default function ClientDashboardPage() {
                         </div>
                       )}
                       {cartIbPos!==null&&cartIbPos.length>0&&(
-                        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden overflow-x-auto">
-                          <table className="w-full text-xs min-w-[520px]">
+                        <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden">
+                          <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
                             <thead><tr className="text-slate-500 border-b border-[#1a1f2e] font-semibold">
                               <th className="text-left px-4 py-3">Ativo</th>
-                              <th className="text-left px-2 py-3">Nome</th>
-                              <th className="text-left px-2 py-3">Setor</th>
-                              <th className="text-left px-2 py-3">País</th>
-                              <th className="text-right px-2 py-3">Qtd</th>
+                              <th className="text-left px-2 py-3 hidden sm:table-cell">Nome</th>
+                              <th className="text-left px-2 py-3 hidden sm:table-cell">Setor</th>
+                              <th className="text-left px-2 py-3 hidden sm:table-cell">País</th>
+                              <th className="text-right px-2 py-3 hidden sm:table-cell">Qtd</th>
                               <th className="text-right px-2 py-3">Valor</th>
                               <th className="text-right px-2 py-3">Peso %</th>
                               <th className="text-right px-4 py-3 text-slate-600" title="Diferença face ao peso-alvo do plano">Desvio</th>
@@ -6797,11 +6799,12 @@ export default function ClientDashboardPage() {
                                           className="inline-flex items-center gap-1 font-bold text-slate-200 hover:text-teal-400 hover:underline underline-offset-2 transition-colors">
                                           {displayTicker(p.ticker)}<ArrowUpRight size={10} className="opacity-40"/>
                                         </a>
+                                        <div className="sm:hidden text-[10px] text-slate-600 mt-0.5">{getSector(p.ticker)||"—"}</div>
                                       </td>
-                                      <td className="px-2 py-3 text-slate-500 text-[11px]">{(p as any).name||"—"}</td>
-                                      <td className="px-2 py-3 text-slate-500 text-[11px]">{getSector(p.ticker)||(p as any).sector||"—"}</td>
-                                      <td className="px-2 py-3 text-slate-500 text-[11px]">{COUNTRY[p.ticker.toUpperCase()]||(p as any).country||"—"}</td>
-                                      <td className="px-2 py-3 text-right text-slate-400 tabular-nums">{p.qty.toLocaleString("pt-PT",{maximumFractionDigits:2})}</td>
+                                      <td className="px-2 py-3 text-slate-500 text-[11px] hidden sm:table-cell">{(p as any).name||"—"}</td>
+                                      <td className="px-2 py-3 text-slate-500 text-[11px] hidden sm:table-cell">{getSector(p.ticker)||(p as any).sector||"—"}</td>
+                                      <td className="px-2 py-3 text-slate-500 text-[11px] hidden sm:table-cell">{COUNTRY[p.ticker.toUpperCase()]||(p as any).country||"—"}</td>
+                                      <td className="px-2 py-3 text-right text-slate-400 tabular-nums hidden sm:table-cell">{p.qty.toLocaleString("pt-PT",{maximumFractionDigits:2})}</td>
                                       <td className="px-2 py-3 text-right text-slate-300 font-medium tabular-nums">
                                         {(p.value_eur??p.value).toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} €
                                         {p.currency&&p.currency!=="EUR"&&p.value_eur!=null&&<span className="text-slate-700 ml-1 text-[9px]">≈€</span>}
@@ -6850,15 +6853,18 @@ export default function ClientDashboardPage() {
                                   <>
                                     {/* ── Linha do plano (% sobre o AUM do utilizador) ── */}
                                     <tr className="border-t-2 border-[#252a3a] bg-[#0b0f1a]">
-                                      <td colSpan={4} className="px-4 py-2.5 text-xs font-bold text-slate-300">
-                                        Investido da carteira
+                                      <td className="px-4 py-2.5 text-xs font-bold text-slate-300">
+                                        Investido
                                         <span className="ml-1.5 text-[10px] font-normal text-slate-500">
                                           (plano {(aum/1000).toFixed(0)}k€)
                                         </span>
                                       </td>
-                                      <td className="px-2 py-2.5 text-right text-xs text-slate-500">—</td>
+                                      <td className="px-2 py-2.5 text-right text-xs text-slate-500 hidden sm:table-cell">—</td>
+                                      <td className="px-2 py-2.5 text-right text-xs text-slate-500 hidden sm:table-cell">—</td>
+                                      <td className="px-2 py-2.5 text-right text-xs text-slate-500 hidden sm:table-cell">—</td>
+                                      <td className="px-2 py-2.5 text-right text-xs text-slate-500 hidden sm:table-cell">—</td>
                                       <td className="px-2 py-2.5 text-right text-xs font-bold text-emerald-400">
-                                        {totalInvestedEur.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2})} EUR
+                                        {totalInvestedEur.toLocaleString("pt-PT",{minimumFractionDigits:0,maximumFractionDigits:0})} €
                                       </td>
                                       <td className="px-2 py-2.5 text-right text-xs font-bold text-emerald-400">
                                         {pctInvested.toFixed(1)}%
@@ -6887,6 +6893,7 @@ export default function ClientDashboardPage() {
                               })()}
                             </tfoot>
                           </table>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -7105,18 +7112,18 @@ export default function ClientDashboardPage() {
                       </div>
                     </div>
                     <div className="overflow-x-auto">
-                    <table className="w-full text-xs min-w-[480px]">
+                    <table className="w-full text-xs">
                       <thead><tr className="text-slate-500 border-b border-[#1a1f2e] font-semibold">
                         <th className="text-left pb-2">Ativo</th>
-                        <th className="text-left pb-2">Nome</th>
-                        <th className="text-left pb-2 text-slate-600 font-medium">Setor</th>
-                        <th className="text-left pb-2 text-slate-600 font-medium">País</th>
-                        {portfolioQuality&&<th className="text-right pb-2 text-slate-600 font-medium" title="Return on Invested Capital (TTM)">ROIC</th>}
+                        <th className="text-left pb-2 hidden sm:table-cell">Nome</th>
+                        <th className="text-left pb-2 text-slate-600 font-medium hidden sm:table-cell">Setor</th>
+                        <th className="text-left pb-2 text-slate-600 font-medium hidden sm:table-cell">País</th>
+                        {portfolioQuality&&<th className="text-right pb-2 text-slate-600 font-medium hidden sm:table-cell" title="Return on Invested Capital (TTM)">ROIC</th>}
                         <th className="text-right pb-2">Mês ant.</th>
                         <th className="text-right pb-2">Este mês</th>
                         <th className="text-right pb-2">Δ</th>
-                        <th className="text-right pb-2">Preço</th>
-                        <th className="text-right pb-2">Acções</th>
+                        <th className="text-right pb-2 hidden sm:table-cell">Preço</th>
+                        <th className="text-right pb-2 hidden sm:table-cell">Acções</th>
                         <th className="text-right pb-2">Acção</th>
                       </tr></thead>
                       <tbody>
@@ -7166,22 +7173,23 @@ export default function ClientDashboardPage() {
                                       {displayTicker(r.ticker)}<ArrowUpRight size={10} className="opacity-40"/>
                                     </a>
                                   )}
+                                  <div className="sm:hidden text-[10px] text-slate-600 mt-0.5">{isHedge?"Cambial":isXeon?"MM Euro":getSector(r.ticker)||""}</div>
                                 </td>
-                                <td className="py-2.5 text-slate-500 text-[11px]">
+                                <td className="py-2.5 text-slate-500 text-[11px] hidden sm:table-cell">
                                   {isHedge?"Hedge Cambial":isXeon?"MM Euro":getCompany(r.ticker)||"—"}
                                 </td>
-                                <td className="py-2.5 text-slate-600 text-[11px]">
+                                <td className="py-2.5 text-slate-600 text-[11px] hidden sm:table-cell">
                                   {isHedge?"Cambial":getSector(r.ticker)}
                                 </td>
-                                <td className="py-2.5 text-slate-600 text-[11px]">
+                                <td className="py-2.5 text-slate-600 text-[11px] hidden sm:table-cell">
                                   {isHedge?"Global":getZone(r.ticker)}
                                 </td>
                                 {portfolioQuality&&(()=>{
-                                  if(isHedge||isXeon) return <td className="py-2.5 text-right text-slate-700">—</td>;
+                                  if(isHedge||isXeon) return <td className="py-2.5 text-right text-slate-700 hidden sm:table-cell">—</td>;
                                   const qd=portfolioQuality.tickers?.find(t=>t.ticker===r.ticker);
                                   const roic=qd?.roic;
                                   return(
-                                    <td className="py-2.5 text-right tabular-nums font-semibold text-[11px]">
+                                    <td className="py-2.5 text-right tabular-nums font-semibold text-[11px] hidden sm:table-cell">
                                       {roic!=null?(
                                         <span className={roic>0.15?"text-emerald-400":roic>0.08?"text-amber-400":roic>0?"text-slate-400":"text-red-400"}>
                                           {(roic*100).toFixed(1)}%
@@ -7197,11 +7205,11 @@ export default function ClientDashboardPage() {
                                 <td className={`py-2.5 text-right font-semibold tabular-nums ${isHedge?"text-slate-600":delta>0?"text-teal-400":delta<0?"text-red-400":"text-slate-600"}`}>
                                   {isHedge?"—":Math.abs(delta)>=0.05?`${delta>0?"+":""}${delta.toFixed(1)}pp`:"—"}
                                 </td>
-                                <td className="py-2.5 text-right">
+                                <td className="py-2.5 text-right hidden sm:table-cell">
                                   {!isHedge&&!isXeon&&r.action!=="Manter"&&<span className={`text-[10px] font-semibold ${actionColor2(r.action)}`}>{actionLabel2(r.action)}</span>}
                                 </td>
                                 {(()=>{
-                                  if(isHedge||isXeon) return <><td className="py-2 text-right text-slate-600">—</td><td className="py-2 text-right text-slate-600">—</td></>;
+                                  if(isHedge||isXeon) return <><td className="py-2 text-right text-slate-600 hidden sm:table-cell">—</td><td className="py-2 text-right text-slate-600 hidden sm:table-cell">—</td></>;
                                   const p=prices[r.ticker];
                                   const priceVal=p?.price;
                                   const ccy=p?.currency??"USD";
@@ -7211,10 +7219,10 @@ export default function ClientDashboardPage() {
                                   const shares=p?.qty!=null?Math.round(p.qty):priceVal&&effW>0?Math.round((effW/100)*aum/priceVal):null;
                                   return (
                                     <>
-                                      <td className="py-2 text-right text-slate-300">
+                                      <td className="py-2 text-right text-slate-300 hidden sm:table-cell">
                                         {priceVal?`${ccySym}${priceVal>=1?priceVal.toFixed(2):priceVal.toFixed(4)}`:"—"}
                                       </td>
-                                      <td className="py-2 text-right text-slate-200 font-semibold">
+                                      <td className="py-2 text-right text-slate-200 font-semibold hidden sm:table-cell">
                                         {shares!=null?shares.toLocaleString("pt-PT"):"—"}
                                       </td>
                                     </>
