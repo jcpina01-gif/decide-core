@@ -3005,8 +3005,12 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
     fills: Array<{ticker:string;filled?:number;avg_fill_price?:number|null;value_eur?:number|null;ib_order_id?:number|null;action?:string;side?:string}>,
   ) {
     const clientId = auditClientId() ?? "unknown";
+    console.log(`[audit] auditSaveExecutions: ${fills.length} fills, clientId=${clientId}`, fills.map(f=>({t:f.ticker,filled:f.filled,val:f.value_eur})));
     if (!fills.length) return;
-    const execFills = fills.filter(f => (f.filled??0) > 0 || (f.value_eur??0) > 0);
+    // Include all fills that have at least a ticker — even PreSubmitted orders (filled=0)
+    // so they appear in execution_logs; commission will be null until IB sync fills the data.
+    const execFills = fills.filter(f => f.ticker && f.ticker.length > 0 && f.ticker !== "EUR/USD");
+    console.log(`[audit] execFills after filter: ${execFills.length}/${fills.length}`);
     if (!execFills.length) return;
     await Promise.allSettled(execFills.map(f => {
       const a = (f.action ?? "").toLowerCase();
@@ -3015,6 +3019,7 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
         (a === "comprar" || a === "buy") ? "BUY" :
         (a === "vender" || a === "reduzir" || a === "sell") ? "SELL" :
         s === "SELL" ? "SELL" : "BUY";
+      const isFilled = (f.filled ?? 0) > 0;
       const valueEur = f.value_eur ?? (f.filled && f.avg_fill_price ? f.filled * f.avg_fill_price : 0);
       const commission = valueEur > 0 ? ibCommission(valueEur) : null;
       return fetch("/api/audit/execution", {
@@ -3023,12 +3028,17 @@ function OrdensPage({actionCounts,latestMonth,recoLabel,aum,loggedIn,onBack,onSh
           client_id: clientId,
           ticker: f.ticker,
           side,
-          qty_filled: f.filled ?? null,
+          qty_filled: isFilled ? f.filled : null,
           price_executed: f.avg_fill_price ?? null,
           commission,
+          fill_status: isFilled ? "filled" : "presubmitted",
           ibkr_exec_id: f.ib_order_id ? String(f.ib_order_id) : null,
           executed_at: new Date().toISOString(),
         }),
+      }).then(async r => {
+        const j = await r.json().catch(()=>({})) as {ok?:boolean;error?:string};
+        if (!r.ok || !j.ok) console.error(`[audit] execution save HTTP ${r.status}:`, j.error ?? "unknown");
+        else console.log(`[audit] execution saved: ${f.ticker} ${side} filled=${f.filled??0}`);
       }).catch(e => console.warn("[audit] execution save failed:", e));
     }));
   }

@@ -100,13 +100,23 @@ CREATE TABLE IF NOT EXISTS config_change_logs (
 CREATE INDEX IF NOT EXISTS idx_cfg_client ON config_change_logs(client_id);
 `;
 
+// Incremental ALTER TABLE migrations (idempotent — safe to run multiple times)
+const ALTER_MIGRATIONS = [
+  // Add fill_status to execution_logs to distinguish filled vs presubmitted
+  `ALTER TABLE execution_logs ADD COLUMN IF NOT EXISTS fill_status TEXT DEFAULT 'filled'`,
+];
+
 export async function migrateDb(): Promise<void> {
   const sql = getDb();
-  // Split on semicolons, run each statement individually
+  // CREATE TABLE / INDEX statements
   const stmts = MIGRATE_SQL.split(";")
     .map((s) => s.trim())
     .filter(Boolean);
   for (const stmt of stmts) {
+    await sql(stmt);
+  }
+  // ALTER TABLE migrations
+  for (const stmt of ALTER_MIGRATIONS) {
     await sql(stmt);
   }
 }

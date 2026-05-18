@@ -29,6 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     commission,
     ibkr_exec_id,
     executed_at,
+    fill_status,
   } = req.body as Record<string, unknown>;
 
   if (!client_id || typeof client_id !== "string") {
@@ -44,13 +45,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const id = makeId((order_id as string) ?? "none");
 
+  const resolvedFillStatus =
+    (fill_status as string | null) ?? ((qty_filled && Number(qty_filled) > 0) ? "filled" : "presubmitted");
+
   try {
     const sql = getDb();
+    // Ensure fill_status column exists (idempotent ALTER)
+    await sql(`ALTER TABLE execution_logs ADD COLUMN IF NOT EXISTS fill_status TEXT DEFAULT 'filled'`);
     await sql(
       `INSERT INTO execution_logs
          (id, order_id, client_id, ticker, side, qty_filled, price_executed,
-          commission, ibkr_exec_id, executed_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          commission, ibkr_exec_id, executed_at, fill_status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
         id,
         order_id ?? null,
@@ -62,6 +68,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         commission ?? null,
         ibkr_exec_id ?? null,
         executed_at ?? null,
+        resolvedFillStatus,
       ],
     );
     return res.status(201).json({ ok: true, id });

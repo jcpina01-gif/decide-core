@@ -43,13 +43,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const backendRes = await fetch(`${BACKEND_URL}/api/ibkr-executions`, {
       signal: AbortSignal.timeout(35_000),
     });
-    const backendData = await backendRes.json() as { ok: boolean; fills?: typeof ibFills; error?: string };
+    const rawText = await backendRes.text();
+    let backendData: { ok?: boolean; fills?: typeof ibFills; error?: string; detail?: string } = {};
+    try { backendData = JSON.parse(rawText) as typeof backendData; } catch { /* non-JSON */ }
+
+    if (backendRes.status === 404) {
+      return res.status(502).json({
+        ok: false,
+        error: `Endpoint /api/ibkr-executions não existe no backend Python (HTTP 404). Reinicia o backend para carregar o novo router.`,
+      });
+    }
     if (!backendData.ok) {
-      return res.status(502).json({ ok: false, error: backendData.error ?? "Backend returned error" });
+      const errDetail = backendData.error ?? backendData.detail ?? rawText.slice(0, 200);
+      return res.status(502).json({ ok: false, error: `Backend: ${errDetail}` });
     }
     ibFills = backendData.fills ?? [];
   } catch (e) {
-    return res.status(502).json({ ok: false, error: `Cannot reach IB backend: ${String(e)}` });
+    return res.status(502).json({ ok: false, error: `Cannot reach IB backend (${BACKEND_URL}): ${String(e)}` });
   }
 
   if (ibFills.length === 0) {
