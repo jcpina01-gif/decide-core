@@ -1367,8 +1367,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
               </div>
             </div>
           </div>
-          {/* 3 KPI — mobile/tablet: lista; lg+: três colunas */}
-          <div className="grid grid-cols-1 gap-2 lg:grid-cols-3 lg:gap-3 mt-6 pt-5 border-t border-white/[0.05]">
+          {/* 3 KPI — sempre lista (1 coluna) */}
+          <div className="grid grid-cols-1 gap-2 mt-6 pt-5 border-t border-white/[0.05]">
             {[
               {label:"Gestão DECIDE",val:"€29 / mês",sub:"custo fixo, previsível",note:"sem performance fee"},
               {label:"Custos externos (broker)",val:`${EXTERN_PCT.toFixed(2)}% / ano`,sub:`≈ €${fmtInt(aumEur*EXTERN_PCT/100)} / ano`,note:"custódia + transações + FX"},
@@ -1405,9 +1405,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-1 gap-2 lg:grid-cols-3 lg:gap-3 mt-6 pt-5 border-t border-white/[0.05]">
-            {[
-              {label:"Taxa de gestão",val:"0,6% / ano",sub:`≈ €${fmtInt(privateAnnual)} anuais`,note:"0,05%/mês sobre o valor actual da carteira"},
+          {/* 3 KPI — sempre lista (1 coluna) */}
+          <div className="grid grid-cols-1 gap-2 mt-6 pt-5 border-t border-white/[0.05]">
               {label:"Performance fee",val:"Não aplicável",sub:"sem performance fee",note:"custo simples e previsível"},
               {label:"Custos externos (broker)",val:`${EXTERN_PCT.toFixed(2)}% / ano`,sub:`≈ €${fmtInt(aumEur*EXTERN_PCT/100)} anuais`,note:"custódia + transações + FX"},
             ].map(k=>(
@@ -1422,8 +1421,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
         </div>
       )}
 
-      {/* ── Custos separados: DECIDE vs Externos — até lg: uma coluna (lista); lg+: duas ── */}
-      <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 lg:gap-4">
+      {/* ── Custos separados: DECIDE vs Externos — sempre lista (1 coluna) ── */}
+      <div className="grid grid-cols-1 gap-2 lg:gap-4">
         {/* Custos DECIDE */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5 min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-4">Custos DECIDE</div>
@@ -1502,8 +1501,8 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
         </div>
       </div>
 
-      {/* ── Exemplo real + Comparação de mercado — até lg: uma coluna ── */}
-      <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 lg:gap-4">
+      {/* ── Exemplo real + Comparação de mercado — sempre lista ── */}
+      <div className="grid grid-cols-1 gap-2 lg:gap-4">
         {/* Exemplo real */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5 min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Exemplo concreto</div>
@@ -1562,14 +1561,14 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
         </div>
       </div>
 
-      {/* ── Projecção longo prazo + Quando pagas — até lg: uma coluna ── */}
-      <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 lg:gap-4">
+      {/* ── Projecção longo prazo + Quando pagas — sempre lista ── */}
+      <div className="grid grid-cols-1 gap-2 lg:gap-4">
         {/* Projecção */}
         <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-3 sm:p-5 min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Impacto dos custos a longo prazo</div>
           <div className="text-[10px] text-slate-600 mb-4 italic">Simulação: €{fmtInt(EX_CAP)} · {YRS} anos · {(HIST_CAGR*100).toFixed(0)}% retorno bruto estimado · simulado, não garantido</div>
-          {/* Cost comparison row — até lg: lista vertical */}
-          <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 lg:gap-3 mb-4">
+          {/* Cost comparison row — lista */}
+          <div className="grid grid-cols-1 gap-2 mb-4">
             <div className="bg-teal-900/15 border border-teal-700/25 rounded-xl p-3">
               <div className="text-[10px] text-teal-400 font-semibold mb-1">DECIDE — custo anual</div>
               <div className="text-xl font-black text-teal-300">{totalFixedPct.toFixed(2)}%</div>
@@ -1582,7 +1581,7 @@ function CustosPage({aum,planOverride}:{aum:number;planOverride?:"premium"|"priv
             </div>
           </div>
           {/* Projected final values */}
-          <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 lg:gap-3 mb-3">
+          <div className="grid grid-cols-1 gap-2 mb-3">
             <div className="bg-teal-900/10 border border-teal-700/15 rounded-lg px-3 py-2">
               <div className="text-[9px] text-slate-500">Capital final (DECIDE)</div>
               <div className="text-base font-black text-slate-100">€ {fmtInt(dVal)}</div>
@@ -5648,7 +5647,7 @@ export default function ClientDashboardPage() {
               </div>
             )}
 
-            <div className="w-full min-w-0 px-3 py-4 space-y-4 sm:px-6 sm:py-5 sm:space-y-5 lg:px-8 lg:py-6">
+            <div className="w-full min-w-0 max-w-full px-3 py-4 space-y-4 sm:px-6 sm:py-5 sm:space-y-5 lg:px-8 lg:py-6">
 
 
               {/* ── RELATÓRIOS ── */}
@@ -6471,13 +6470,13 @@ export default function ClientDashboardPage() {
 
               {/* ── RECOMENDAÇÕES ── */}
               {activePage==="reco"&&(
-              <>{/* 1. recomendação */}
-              <div data-section="reco" className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 lg:p-6 w-full min-w-0">
-                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5 lg:gap-8">
+              <div className="w-full min-w-0 max-w-full space-y-4">{/* contenção: evita largura da página > viewport no mobile */}
+              <div data-section="reco" className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 lg:p-6 w-full min-w-0 max-w-full overflow-hidden">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5 lg:gap-8 min-w-0">
                   {/* Action counts */}
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 max-w-full">
                     <div className="text-xs text-slate-500 font-medium mb-4 uppercase tracking-widest">Recomendação · {recoLabel}</div>
-                    <div className="-mx-1 flex flex-nowrap gap-2 overflow-x-auto overflow-y-visible pb-1 px-1 scrollbar-none snap-x snap-mandatory [-webkit-overflow-scrolling:touch] lg:mx-0 lg:flex-wrap lg:gap-4 lg:overflow-visible lg:px-0 lg:pb-0">
+                    <div className="flex max-w-full flex-nowrap gap-2 overflow-x-auto overflow-y-visible pb-1 scrollbar-none snap-x snap-mandatory [-webkit-overflow-scrolling:touch] lg:flex-wrap lg:gap-4 lg:overflow-visible lg:pb-0">
                       {[
                         {label:"Nova posição", count:recoLoading?0:(officialCounts??actionCounts).comprar,  c:"text-teal-400",  bg:"bg-teal-500/10",  b:"border-teal-500/20"},
                         {label:"Reforçar",     count:recoLoading?0:(officialCounts??actionCounts).aumentar, c:"text-blue-400",  bg:"bg-blue-500/10",  b:"border-blue-500/20"},
@@ -6514,7 +6513,7 @@ export default function ClientDashboardPage() {
               </div>
 
               {/* O que mudou (full width) */}
-              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 w-full min-w-0">
+              <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl p-5 w-full min-w-0 max-w-full overflow-hidden">
                 <SH title="O que mudou"/>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-6 mt-3">
                   {whatChanged.map((b,i)=>(
@@ -6533,7 +6532,7 @@ export default function ClientDashboardPage() {
 
               {/* Recomendações completas */}
               <div className="bg-[#0b0f1a] border border-[#1a1f2e] rounded-xl overflow-hidden p-5 w-full min-w-0 max-w-full">
-                <div className="flex items-center justify-between mb-4 px-3 lg:mb-4 lg:px-0">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-4 px-0 lg:mb-4 lg:px-0 min-w-0">
                   <SH title="Recomendações"/>
                   <span className="text-slate-500 text-xs -mt-4">{actionCounts.allRows.length} posições</span>
                 </div>
@@ -6542,8 +6541,8 @@ export default function ClientDashboardPage() {
                 ):actionCounts.allRows.length===0?(
                   <div className="text-slate-500 text-sm text-center py-6">Sem recomendações este mês</div>
                 ):(
-                  <div className="w-full min-w-0 overflow-x-auto px-0 sm:px-0 lg:px-0">
-                  <table className="w-full min-w-[640px] border-collapse text-xs">
+                  <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
+                  <table className="w-full min-w-[520px] border-collapse text-xs">
                     <thead><tr className="text-slate-500 border-b border-[#1a1f2e]">
                       <th className="py-2 pl-0 pr-2 text-left font-semibold">Ativo</th>
                       <th className="hidden py-2 px-2 text-left font-semibold sm:table-cell">Setor</th>
@@ -6629,7 +6628,7 @@ export default function ClientDashboardPage() {
                                 return(
                                   <tr className="bg-[#080c14] border-b border-[#0d1220]">
                                     <td colSpan={7} className="px-6 py-4">
-                                      <div className="flex items-start gap-8">
+                                      <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-start sm:gap-8 min-w-0">
                                         <div className="flex-1">
                                           <div className="text-[10px] text-slate-600 uppercase tracking-widest mb-3 font-semibold">Análise da posição</div>
                                           <div className="space-y-2">
@@ -6683,7 +6682,7 @@ export default function ClientDashboardPage() {
                   </div>
                 )}
               </div>
-            </>
+              </div>
             )}
 
               {/* ── CARTEIRA ── */}
