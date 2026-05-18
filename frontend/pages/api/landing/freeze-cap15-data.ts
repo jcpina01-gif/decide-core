@@ -145,6 +145,12 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     ? applyFxHedgeToSeries(built.dates, built.equity_overlayed, hedgePct, cwd)
     : built.equity_overlayed;
 
+  const equity_overlayed_margin = built.equity_overlayed_margin
+    ? (hedgePct > 0
+        ? applyFxHedgeToSeries(built.dates, built.equity_overlayed_margin, hedgePct, cwd)
+        : built.equity_overlayed_margin)
+    : null;
+
   const lastD =
     built.dates.length > 0 ? String(built.dates[built.dates.length - 1]) : null;
   const m = lastD && lastD.match(/(\d{4}-\d{2}-\d{2})/);
@@ -172,6 +178,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       dates: built.dates,
       benchmark_equity: built.benchmark_equity,
       equity_overlayed,
+      equity_overlayed_margin,
       equity_raw: built.equity_raw,
     },
     result: {

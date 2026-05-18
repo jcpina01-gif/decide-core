@@ -13,6 +13,7 @@ export type PlafonadoFeesSeriesResult = {
   dates: string[];
   benchmark_equity: number[];
   equity_overlayed: number[];
+  equity_overlayed_margin: number[] | null;
   equity_raw: number[];
   meta: {
     profile: string;
@@ -438,10 +439,33 @@ export function buildLandingFreezeCap15Series(
   equity_overlayed = capEquitySeriesVsBenchmarkRail(benchmark_equity, equity_overlayed);
   const equity_rawCapped = capEquitySeriesVsBenchmarkRail(benchmark_equity, equity_raw.slice());
 
+  // Load pre-computed margin CSV (produced by Python with leverage already embedded)
+  let equity_overlayed_margin: number[] | null = null;
+  const marginFile =
+    pk === "moderado"
+      ? path.join(land, "model_equity_final_20y_margin.csv")
+      : path.join(land, `model_equity_final_20y_${pk}_margin.csv`);
+  try {
+    if (fs.existsSync(marginFile)) {
+      const mt = fs.readFileSync(marginFile, "utf8");
+      const mm = parseEquityCsv(mt, "model_equity");
+      const mn = Math.min(n, mm.equity.length, mm.dates.length);
+      if (mn >= 50) {
+        const aligned = alignM100EquityToCapDates(dates, mm.dates, mm.equity);
+        if (aligned) {
+          equity_overlayed_margin = capEquitySeriesVsBenchmarkRail(benchmark_equity, aligned);
+        }
+      }
+    }
+  } catch {
+    /* margin CSV not available — leave null */
+  }
+
   return {
     dates,
     benchmark_equity,
     equity_overlayed,
+    equity_overlayed_margin,
     equity_raw: equity_rawCapped,
     meta: {
       profile: pk,
@@ -530,6 +554,7 @@ function buildPlafonadoEmbedLikeSeriesFromFreezeOnly(
     dates: capDates,
     benchmark_equity,
     equity_overlayed,
+    equity_overlayed_margin: null,
     equity_raw: equity_rawCapped,
     meta: {
       profile: pk,

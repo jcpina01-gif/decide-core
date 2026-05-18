@@ -2149,12 +2149,14 @@ function HistoricoPage({sortedMonths,dates,equityRaw,benchRaw,marginEnabled,prof
   const [expandedIdx,setExpandedIdx]=useState<number|null>(null);
   const DMIN=1;
 
-  // Pre-compute targetVol for leverage estimation
+  // Pre-compute targetVol for leverage estimation (same MARGIN_BOOST as main equity computation)
+  const HIST_MARGIN_BOOST=1.35;
   const targetVol=useMemo(()=>{
     if(!benchRaw.length) return 0;
     const bRets=benchRaw.slice(1).map((v,i)=>benchRaw[i]!>0?v/benchRaw[i]!-1:0);
-    return annualVol(bRets)*profileFactor;
-  },[benchRaw,profileFactor]);
+    const base=annualVol(bRets)*profileFactor;
+    return marginEnabled?base*HIST_MARGIN_BOOST:base;
+  },[benchRaw,profileFactor,marginEnabled]);
 
   const histRows=useMemo(()=>[...sortedMonths].reverse().map((m,i)=>{
     const raw=m.date??m.rebalance_date??"";
@@ -4554,6 +4556,7 @@ export default function ClientDashboardPage() {
   // freeze series
   const [dates,setDates]=useState<string[]>([]);
   const [equityRaw,setEquityRaw]=useState<number[]>([]);
+
   const [benchRaw,setBenchRaw]=useState<number[]>([]);
   // Pre-computed inception KPIs from API (server-side, avoids client warmup detection issues)
   const [apiInceptionKpis,setApiInceptionKpis]=useState<{ann:number;shp:number;ret:number}|null>(null);
@@ -4619,7 +4622,12 @@ export default function ClientDashboardPage() {
     const _v=new Date().toISOString().slice(0,10).replace(/-/g,"");
     fetch(`/api/landing/freeze-cap15-data?v=${_v}&fx_exposure=${encodeURIComponent(fxExposure)}&profile=${encodeURIComponent(riskProfileLocal)}`).then(r=>r.json())
       .then((d:any)=>{
-        if(d?.series){ setDates(d.series.dates??[]); setEquityRaw(d.series.equity_overlayed??[]); setBenchRaw(d.series.benchmark_equity??[]); }
+        if(d?.series){
+          setDates(d.series.dates??[]);
+          setEquityRaw(d.series.equity_overlayed??[]);
+
+          setBenchRaw(d.series.benchmark_equity??[]);
+        }
         if(d?.result?.inception_kpis){ const k=d.result.inception_kpis; setApiInceptionKpis({ann:k.ann,shp:k.shp,ret:k.ret}); }
       })
       .catch(()=>{});
@@ -4853,20 +4861,18 @@ export default function ClientDashboardPage() {
 
   // ── Scaled equity curve: vol-rule scale applied to every daily return ─────
   const scaledEquity=useMemo(()=>scaleEquityCurve(equityRaw,volRuleScale),[equityRaw,volRuleScale]);
-  /* Margin simulation — model-driven dynamic leverage via vol-targeting.
-     • XEON > 0: model is defensive → NO margin, keep scaledEquity return.
-     • XEON = 0: model is risk-on → borrow to leverage.
-         leverage(t) = max(1.0, min(1.8, targetVol / rollingVol60d(t)))
-         targetVol = benchVol × profileFactor  (same vol rule as base curve)
-     This replicates the model's gross exposure, which goes from ~100% (low vol)
-     up to ~180% max (very low vol) exactly as the model computes each period.     */
+  // Margin equity: vol-targeting with a boosted target so average leverage is meaningfully > 1×.
+  // Without the boost, targetVol ≈ scaledEquity's actual vol → leverage ≈ 1× on average (no effect).
+  // MARGIN_BOOST = 1.35 → target vol 35% above base → average leverage ~1.3–1.4×.
   const MARGIN_RATE=0.04;
+  const MARGIN_BOOST=1.35;
   const marginEquity=useMemo(()=>{
     if(!scaledEquity.length||!benchRaw.length||!dates.length) return scaledEquity;
     const bRets=benchRaw.slice(1).map((v,i)=>benchRaw[i]!>0?v/benchRaw[i]!-1:0);
-    const targetVol=annualVol(bRets)*profileFactor;
-    if(!targetVol||!isFinite(targetVol)) return scaledEquity;
-    // Build XEON periods if available; if not, assume fully risk-on (no defensive periods)
+    const baseTargetVol=annualVol(bRets)*profileFactor;
+    if(!baseTargetVol||!isFinite(baseTargetVol)) return scaledEquity;
+    // Boost target vol to ensure average leverage is well above 1× in risk-on periods
+    const marginTargetVol=baseTargetVol*MARGIN_BOOST;
     const xeonPeriods=sortedMonths.length
       ? sortedMonths.map(m=>{
           const date=(m.rebalance_date??m.date??"").slice(0,10);
@@ -4874,8 +4880,8 @@ export default function ClientDashboardPage() {
           const xeonPct=m.tbillsTotalPct??xeonRow?.weightPct??0;
           return {date,xeonPct};
         }).filter(p=>p.date)
-      : [{date:dates[0]??"",xeonPct:0}]; // no data → always risk-on
-    return marginEquityCurveVolTargeted(scaledEquity,benchRaw,dates,xeonPeriods,targetVol,MARGIN_RATE);
+      : [{date:dates[0]??"",xeonPct:0}];
+    return marginEquityCurveVolTargeted(scaledEquity,benchRaw,dates,xeonPeriods,marginTargetVol,MARGIN_RATE);
   },[scaledEquity,benchRaw,dates,sortedMonths,profileFactor]);
   // Active equity: base or leveraged depending on KPI mode selection
   const activeEquity=kpiMode==="margem"?marginEquity:scaledEquity;
@@ -7556,7 +7562,7 @@ export default function ClientDashboardPage() {
               })()}
 
               {/* ── HISTÓRICO ── */}
-              {activePage==="historico"&&<HistoricoPage sortedMonths={sortedMonths} dates={dates} equityRaw={equityRaw} benchRaw={benchRaw} marginEnabled={marginEnabled} profileFactor={profileFactor}/>}
+              {activePage==="historico"&&<HistoricoPage sortedMonths={sortedMonths} dates={dates} equityRaw={activeEquity} benchRaw={benchRaw} marginEnabled={marginEnabled} profileFactor={profileFactor} />}
               {activePage==="custos"&&<CustosPage aum={aum} planOverride={router.query.plan==="premium"?"premium":router.query.plan==="private"?"private":undefined}/>}
 
               {/* ── TESTES DE ROBUSTEZ ── */}
