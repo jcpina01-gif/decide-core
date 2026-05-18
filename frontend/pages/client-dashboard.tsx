@@ -5770,10 +5770,11 @@ export default function ClientDashboardPage() {
                             <XAxis dataKey="date" tick={{fill:"#475569",fontSize:10}} tickLine={false} axisLine={false}
                               tickFormatter={d=>d?String(d).slice(0,7):""}
                               interval={Math.floor(reportChart.length/7)}/>
-                            <YAxis tick={{fill:"#475569",fontSize:10}} tickLine={false} axisLine={false}
-                              tickFormatter={v=>`${(+v).toFixed(0)}%`} domain={["auto","auto"]}/>
+                            <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow width={44}
+                              tick={{fill:"#475569",fontSize:10}} tickLine={false} axisLine={false}
+                              tickFormatter={(v:number)=>{const r=(Number(v)/100-1)*100;return `${r>=0?"+":""}${r.toFixed(0)}%`;}}/>
                             <Tooltip contentStyle={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:8,fontSize:12}}
-                              formatter={(v:number)=>[`${v?.toFixed(2)}%`,""]}
+                              formatter={(v:number)=>[`${v!=null&&!Number.isNaN(+v)?`${((Number(v)/100-1)*100).toFixed(2)}%`:"—"}`,""]}
                               labelFormatter={l=>String(l).slice(0,10)}/>
                             <ReferenceLine y={100} stroke="#1e293b" strokeDasharray="3 3"/>
                             <Area type="monotone" dataKey="modelo" stroke="#14b8a6" strokeWidth={2.5} fill="url(#repGrad2)" dot={false} name={pfLabel}/>
