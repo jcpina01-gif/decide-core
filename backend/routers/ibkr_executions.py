@@ -39,9 +39,9 @@ def _fetch_executions(host: str, port: int, client_id: int) -> dict[str, Any]:
     results: list[dict[str, Any]] = []
 
     connected = False
-    for cid in [client_id] + list(range(client_id + 1, client_id + 4)):
+    for cid in [client_id] + list(range(client_id + 1, client_id + 3)):
         try:
-            ib.connect(host, port, clientId=cid, timeout=8)
+            ib.connect(host, port, clientId=cid, timeout=5)
             connected = True
             break
         except Exception:
