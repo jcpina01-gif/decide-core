@@ -6608,11 +6608,25 @@ export default function ClientDashboardPage() {
                                 const qd=portfolioQuality?.tickers?.find(t=>t.ticker===r.ticker);
                                 const scoreRaw=(latestMonth?.rows??[]).find((x:any)=>x.ticker===r.ticker||x.ticker===r.ticker.replace("XYZ","SQ"))?.score??null;
                                 const score=scoreRaw??0;
-                                const momentumLabel=score>50?"Convicção máxima no modelo":score>30?"Convicção forte no modelo":score>15?"Convicção moderada no modelo":"Convicção reduzida no modelo";
-                                const momentumColor=score>50?"text-emerald-400":score>30?"text-teal-400":score>15?"text-amber-400":"text-slate-500";
+                                /** Copy UX: separar decisão do modelo (peso/ação) da leitura fundamental — evitar «convicção» ao lado de Reforçar. */
+                                const modelDecisionExplainer=(()=>{
+                                  switch(r.action){
+                                    case"Aumentar":
+                                      return "Apesar de alguns indicadores fundamentais poderem parecer menos favoráveis, um reforço no plano reflecte o modelo de alocação mensal — contributo relativo à carteira, limites de concentração e regras de diversificação. A coluna «Ação» e o peso alvo são a decisão do modelo; o que se segue é contexto.";
+                                    case"Comprar":
+                                      return "A inclusão no plano mensal reflecte o modelo de alocação (ranking, diversificação e limites de exposição). A coluna «Ação» e o peso alvo são a decisão do modelo; os indicadores abaixo são apenas leitura complementar.";
+                                    case"Reduzir":
+                                      return "A redução de peso reflecte o modelo de alocação mensal. Os indicadores fundamentais abaixo são contexto informativo — não repetem sozinhos a decisão na coluna «Ação».";
+                                    case"Vender":
+                                      return "A saída do plano reflecte o modelo de alocação mensal. Os indicadores abaixo são contexto informativo.";
+                                    case"Manter":
+                                      return "O modelo mantém esta exposição no plano mensal. Os indicadores abaixo são leitura complementar sobre fundamentos.";
+                                    default:
+                                      return "A decisão na coluna «Ação» e o peso alvo vêm do modelo de carteira mensal. Os indicadores abaixo são leitura complementar.";
+                                  }
+                                })();
                                 type Bullet={dot:string;text:string};
                                 const bullets:Bullet[]=[];
-                                bullets.push({dot:score>30?"bg-teal-500":score>15?"bg-amber-500":"bg-slate-600",text:momentumLabel});
                                 if(qd?.roic!=null){
                                   const roic=qd.roic as number;
                                   const roicPct=(roic*100).toFixed(1);
@@ -6637,8 +6651,10 @@ export default function ClientDashboardPage() {
                                   <tr className="bg-[#080c14] border-b border-[#0d1220]">
                                     <td colSpan={7} className="px-3 py-4 sm:px-6">
                                       <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-start sm:gap-8 min-w-0">
-                                        <div className="flex-1">
-                                          <div className="text-[10px] text-slate-600 uppercase tracking-widest mb-3 font-semibold">Análise da posição</div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-[10px] text-slate-600 uppercase tracking-widest mb-2 font-semibold">Análise da posição</div>
+                                          <p className="text-xs text-slate-400 leading-relaxed mb-4">{modelDecisionExplainer}</p>
+                                          <div className="text-[10px] text-slate-600 uppercase tracking-widest mb-2 font-semibold">Indicadores fundamentais</div>
                                           <div className="space-y-2">
                                             {bullets.map((b,i)=>(
                                               <div key={i} className="flex min-w-0 items-start gap-2.5">
@@ -6649,16 +6665,16 @@ export default function ClientDashboardPage() {
                                             {!hasFmp&&(
                                               <div className="flex items-center gap-2.5">
                                                 <div className="w-1.5 h-1.5 rounded-full bg-slate-700 shrink-0"/>
-                                                <span className="text-xs text-slate-600 italic">Análise detalhada não disponível para esta posição</span>
+                                                <span className="text-xs text-slate-600 italic">Indicadores fundamentais não disponíveis para esta posição</span>
                                               </div>
                                             )}
                                           </div>
                                         </div>
                                         {scoreRaw!=null&&(
-                                          <div className="shrink-0 text-right">
-                                            <div className="text-[10px] text-slate-600 uppercase tracking-widest mb-2 font-semibold">Convicção</div>
-                                            <div className={`text-2xl font-black tabular-nums ${momentumColor}`}>{score.toFixed(0)}</div>
-                                            <div className="text-[10px] text-slate-600 mt-0.5">quantitativo</div>
+                                          <div className="shrink-0 text-right sm:max-w-[11rem]">
+                                            <div className="text-[10px] text-slate-600 uppercase tracking-widest mb-2 font-semibold">Sinal quantitativo (motor)</div>
+                                            <div className="text-2xl font-black tabular-nums text-slate-300">{score.toFixed(0)}</div>
+                                            <div className="text-[10px] text-slate-500 mt-1.5 leading-snug">Ranking interno do modelo; não corresponde literalmente ao peso nem substitui a decisão do plano.</div>
                                           </div>
                                         )}
                                       </div>
